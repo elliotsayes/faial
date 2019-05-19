@@ -2,7 +2,7 @@ open Proto
 open Phaseord
 
 type acc = Proto.variable * Proto.access
-type lang = acc L0.t
+type lang = acc Phaseord.prog
 
 
 let proto_to_phaseord (e:Proto.proto) =
@@ -18,15 +18,15 @@ let proto_to_phaseord (e:Proto.proto) =
   let rec trans e =
     match e with
     | Proto.Skip ->
-      L0.Skip
+      Phaseord.Skip
     | Proto.Seq (e1, e2) ->
-      L0.Seq (trans e1, trans e2)
+      Phaseord.Seq (trans e1, trans e2)
     | Proto.Sync ->
-      L0.Sync
-    | Proto.Acc (x,a) -> L0.Step (x,a)
+      Phaseord.Sync
+    | Proto.Acc (x,a) -> Phaseord.Step (x,a)
     | Proto.Loop ({range_var = var; range_upper_bound = ub}, e) ->
       let new_ub = gen_id ub () in
-      L0.Loop (var, Var new_ub, trans e)
+      Phaseord.Loop (var, Var new_ub, trans e)
   in
-  to_list ids, trans e |> Phaseord.flatten
+  to_list ids, trans e |> Phaseord.extract_steps
 
