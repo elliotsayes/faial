@@ -1,5 +1,7 @@
 type variable = string
 
+let tid = "$tid"
+
 type nbin =
 | Plus
 | Minus
@@ -20,7 +22,7 @@ type bexp =
 | Bool of bool
 | NRel of nrel * nexp * nexp
 | BRel of brel * bexp * bexp
-| BNot of bexp * bexp
+| BNot of bexp
 
 type set = {
   (* elem | idx \in [0..upper_bound) if cond *)
@@ -41,3 +43,6 @@ type proto =
 | Acc of variable * access
 | Seq of proto * proto
 | Loop of range * proto
+
+(** A timed access is prefixed by the phase it was accessed *)
+type timed_access = TAcc of nexp * access

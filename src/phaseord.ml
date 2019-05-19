@@ -1,12 +1,12 @@
 type var = string
 
 type exp =
-  | Nat of int
+  | Num of int
   | Var of var
   | Add of exp * exp
-  | Mul of exp * exp
+  | Mult of exp * exp
 
-let inc e = Add(Nat 1, e)
+let inc e = Add (Num 1, e)
 
 type 'a prog =
   | Step of 'a
@@ -19,18 +19,18 @@ let rec infer_loop_steps e =
   match e with
   | Skip
   | Step _
-    -> Nat 0
-  | Sync -> Nat 1
-  | Loop (_, ub, body) -> Mul (ub, infer_loop_steps body)
+    -> Num 0
+  | Sync -> Num 1
+  | Loop (_, ub, body) -> Mult (ub, infer_loop_steps body)
   | Seq (e1, e2) ->
     Add (infer_loop_steps e1, infer_loop_steps e2)
 
-type 'a node = (exp * 'a)
+type 'a step = (exp * 'a)
 
 (**
-  Given a program, extracts the sequence
+  Given a program, extracts the sequence of steps
   *)
-let extract_steps (e:'a prog) : ('a node) list =
+let extract_steps (e:'a prog) : ('a step) list =
   let rec iter (e:'a prog) (p,accum)  =
     match e with
     | Skip -> p, accum
@@ -39,10 +39,10 @@ let extract_steps (e:'a prog) : ('a node) list =
     | Seq (e1, e2) ->
       iter e2 (iter e1 (p, accum))
     | Loop (var, ub, body) ->
-      let step = infer_loop_steps body in
-      let new_p = Add (p, Mul (Var var, step)) in
+      let loop_step = infer_loop_steps body in
+      let new_p = Add (p, Mult (Var var, loop_step)) in
       let (_, accum) = iter body (new_p, accum) in
-      Add (p, Mul(step, ub)), accum
+      Add (p, Mult(loop_step, ub)), accum
   in
-  iter e ((Nat 0), []) |> snd |> List.rev
+  iter e ((Num 0), []) |> snd |> List.rev
 

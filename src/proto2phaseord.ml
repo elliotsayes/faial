@@ -2,14 +2,23 @@ open Proto
 open Phaseord
 
 type acc = Proto.variable * Proto.access
-type lang = acc Phaseord.prog
 
-
-let proto_to_phaseord (e:Proto.proto) =
-  let ids = Hashtbl.create 0 in
-  let to_list h =
-    Hashtbl.fold (fun k v acc -> (k, v) :: acc) h []
+let pexp_to_nexp (ubs:(string,nexp) Hashtbl.t) (e:Phaseord.exp) : Proto.nexp =
+  let rec trans e =
+    match e with
+    | Phaseord.Num n -> Proto.Num n
+    | Phaseord.Add (e1, e2) -> Proto.Bin (Proto.Plus, trans e1, trans e2)
+    | Phaseord.Mult (e1, e2) -> Proto.Bin (Proto.Mult, trans e1, trans e2)
+    | Phaseord.Var x -> begin
+      match Hashtbl.find_opt ubs x with
+      | Some n -> n
+      | None -> Proto.Var x
+    end
   in
+  trans e
+
+let remove_loops (e:Proto.proto) : (string * timed_access) list =
+  let ids : (string,nexp) Hashtbl.t = Hashtbl.create 0 in
   let gen_id e () =
     let key = "$ub" ^ string_of_int (Hashtbl.length ids) in
     Hashtbl.add ids key e;
@@ -28,5 +37,8 @@ let proto_to_phaseord (e:Proto.proto) =
       let new_ub = gen_id ub () in
       Phaseord.Loop (var, Var new_ub, trans e)
   in
-  to_list ids, trans e |> Phaseord.extract_steps
-
+  let steps = trans e |> Phaseord.extract_steps in
+  (* Each step pairs a phase of type Phase.exp with accesses *)
+  (* We now need to convert each Phase.exp into a Proto.nexp *)
+  let acc_to_tacc (n, (x, y)) = (x, TAcc (pexp_to_nexp ids n, y)) in
+  List.map acc_to_tacc steps
