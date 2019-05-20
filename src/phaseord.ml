@@ -40,6 +40,9 @@ let extract_steps (e:'a prog) : ('a step) list =
       iter e2 (iter e1 (p, accum))
     | Loop (var, ub, body) ->
       let loop_step = infer_loop_steps body in
+      (match loop_step with
+      | Num 0 -> raise (Failure "Loops must synchronize at least once.")
+      | _ -> ());
       let new_p = Add (p, Mult (Var var, loop_step)) in
       let (_, accum) = iter body (new_p, accum) in
       Add (p, Mult(loop_step, ub)), accum
