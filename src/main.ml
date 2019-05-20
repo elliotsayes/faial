@@ -1,6 +1,6 @@
 open Proto
 
-let translate (p:proto) =
+let check (p:proto) =
   (* 0. Make sure each loop has a synchronization step going on *)
   (* XXX *)
   (* 1. Make sure each loops as a unique variable *)
@@ -15,5 +15,5 @@ let translate (p:proto) =
      yielding a formula *)
   (* 6. Flatten out our theory into First-Order Logic with numbers. *)
   (* 7. Generate Z3 *)
-  steps
+  owned_steps
   
