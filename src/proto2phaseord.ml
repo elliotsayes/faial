@@ -17,7 +17,7 @@ let pexp_to_nexp (ubs:(string,nexp) Hashtbl.t) (e:Phaseord.exp) : Proto.nexp =
   in
   trans e
 
-let remove_loops (e:Proto.proto) : (string * timed_access) list =
+let remove_loops (e:Proto.proto) : (string * access timed) list =
   let ids : (string,nexp) Hashtbl.t = Hashtbl.create 0 in
   let gen_id e () =
     let key = "$ub" ^ string_of_int (Hashtbl.length ids) in
@@ -40,5 +40,7 @@ let remove_loops (e:Proto.proto) : (string * timed_access) list =
   let steps = trans e |> Phaseord.extract_steps in
   (* Each step pairs a phase of type Phase.exp with accesses *)
   (* We now need to convert each Phase.exp into a Proto.nexp *)
-  let acc_to_tacc (n, (x, y)) = (x, TAcc (pexp_to_nexp ids n, y)) in
-  List.map acc_to_tacc steps
+  let mk_timed (n, (x, y)) =
+    (x, {timed_phase=pexp_to_nexp ids n;timed_data=y})
+  in
+  List.map mk_timed steps

@@ -45,4 +45,5 @@ type proto =
 | Loop of range * proto
 
 (** A timed access is prefixed by the phase it was accessed *)
-type timed_access = TAcc of nexp * access
+type 'a timed = {timed_phase: nexp; timed_data: 'a}
+type 'a owned = {owned_tid: string; owned_data: 'a}

@@ -4,18 +4,23 @@ let tid1 = "$TID1"
 let tid2 = "$TID2"
 
 
-let as_binary (t:timed_access) : timed_access * timed_access =
+let as_binary (t:access timed) : (access timed) owned * (access timed) owned =
   match t with
-  | TAcc (n, {access_set = s; access_mode = m}) ->
-    let mk si = TAcc (
-      Subst.n_subst si n,
-      {access_set = Subst.s_subst si s; access_mode = m})
+  | {timed_phase=n; timed_data={access_set = s; access_mode = m}} ->
+    let mk ti =
+      let si = (tid, Var ti) in
+      {
+        owned_tid = ti;
+        owned_data = {
+          timed_phase=Subst.n_subst si n;
+          timed_data={access_set = Subst.s_subst si s; access_mode = m}
+        }
+      }
     in
-    let s1 = (tid, Var tid1) in
-    let s2 = (tid, Var tid2) in
-    mk s1, mk s2
+    mk tid1, mk tid2
 
-let split (l:(string * timed_access) list) : (string * timed_access) list =
+let split (l:(string * access timed) list)
+    : (string * (access timed) owned) list =
   let on_elem (x, t) =
     let a1, a2 = as_binary t in
     [(x, a1); (x, a2)]
