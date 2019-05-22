@@ -8,7 +8,7 @@ let check (p:proto) =
   let (p, _) = Loops.normalize_variables p in
   let _ = Loops.get_declarations p in
   (* 2. Flatten outer loops *)
-  let steps = Proto2phaseord.remove_loops p in
+  let steps = Loops.remove_loops p in
   (* 3. Make the owner of each access explicit *)
   let steps = Spmd2binary.split steps in
   (* 4. Perform a constant-fold optimization, to reduce the problem space *)
