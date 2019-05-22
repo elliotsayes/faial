@@ -1,0 +1,10 @@
+(begin
+  (loc x (ro (set (* idx tid) 999 true)))
+  (loop (range i 999)
+    (begin
+      sync
+      (loc tempBuffer (rw (set tid 1 (= (mod tid (* i 2)) 0))))
+    )
+  )
+  (loc tempBuffer (ro (set 0 1 (= idx tid))))
+)
