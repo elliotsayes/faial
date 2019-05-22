@@ -18,6 +18,7 @@ let is_some o =
   | None -> false
 
 type 'a parser = {is_valid: Sexp.t -> bool; run: Sexp.t -> 'a}
+
 let make name f = {
   is_valid = (fun x -> is_some (f x));
   run = call name f;
@@ -125,9 +126,10 @@ let rec parse_proto s =
   match s with
   | Sexp.Atom "skip" -> Some Skip
   | Sexp.Atom "sync" -> Some Sync
-  | Sexp.List [Sexp.Atom "begin"; p1; p2] ->
-    bind (parse_proto p1) (fun p1 ->
-      bind (parse_proto p2) (fun p2 ->
+  | Sexp.List [Sexp.Atom "begin"] -> Some Skip
+  | Sexp.List (Sexp.Atom "begin" :: p :: l) ->
+    bind (parse_proto p) (fun p1 ->
+      bind (parse_proto (Sexp.List (Sexp.Atom "begin" :: l))) (fun p2 ->
         Some (Seq (p1, p2))
       )
     )
