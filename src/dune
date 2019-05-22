@@ -1,5 +1,5 @@
 ;(library
 ;  (name faial))
 
-(executable (name main))
-;  (libraries faial))
+(executable (name main)
+  (libraries sexplib yaml))
