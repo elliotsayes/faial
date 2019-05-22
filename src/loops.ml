@@ -12,7 +12,7 @@ let fresh_name x xs =
   if List.mem x xs then do_fresh_name x 1 else x
 
 (** Makes all loop variables distinct. *)
-let norm (p:proto) : proto =
+let normalize_variables (p:proto) : (proto * string list) =
   let rec norm e xs =
     match e with
     | Loop ({range_var=x; range_upper_bound=ub}, e) ->
@@ -33,4 +33,21 @@ let norm (p:proto) : proto =
     | Sync
     | Acc _ -> e, xs
   in
-  norm p [] |> fst
+  norm p []
+
+let get_declarations (p:proto) : (string,nexp) Hashtbl.t =
+  let decls = Hashtbl.create 0 in
+  let rec iter p =
+    match p with
+    | Skip
+    | Sync
+    | Acc _ -> ()
+    | Loop (r, p) ->
+      Hashtbl.add decls r.range_var r.range_upper_bound;
+      iter p
+    | Seq (p1, p2) ->
+      iter p1;
+      iter p2
+  in
+  iter p;
+  decls

@@ -50,3 +50,15 @@ type 'a owned = {owned_tid: string; owned_data: 'a}
 
 type access_t = access timed owned
 type step_list = (string * access_t) list
+
+type kernel = {
+  (* The shared locations that can be accessed in the kernel. *)
+  kernel_locations: string list;
+  (* The internal variables are used in the code of the kernel.  *)
+  kernel_variables: string list;
+  (* A precondition that restricts the values of internal variables. *)
+  kernel_pre: bexp;
+  (* The code of a kernel performs the actual memory accesses. *)
+  kernel_code: proto;
+}
+
