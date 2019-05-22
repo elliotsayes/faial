@@ -28,5 +28,5 @@ let () =
     | Sexp.Atom x -> print_endline x
     | Sexp.List l ->
       List.iter (fun x ->
-        Sexp.to_string x |> print_endline
+        Sexp.to_string_hum x |> print_endline
       ) l
