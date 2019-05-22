@@ -1,9 +1,7 @@
   (loc x
     (rw
-      (set
-        (* 2 (* tid idx))
+        (* 2 (* $tid idx))
         1
         (< idx count)
-      )
     )
   )

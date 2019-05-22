@@ -4,7 +4,7 @@ open Sexplib
 exception ParseError of (string list)
 
 let parse_error (cause:string list) msg data =
-  raise (ParseError ((msg ^ ": " ^ Sexp.to_string data)::cause))
+  raise (ParseError (( "Error parsing '" ^ msg ^"': " ^ Sexp.to_string_hum data)::cause))
 
 let call msg f data =
   let o = (try f data with ParseError l -> parse_error l msg data) in
@@ -111,14 +111,21 @@ let parse_range = make "range" (fun s ->
 
 let parse_access = make "access" (fun s ->
   let mk_acc m s =
-    Some {
-      access_set = parse_set.run s;
-      access_mode = m;
-    }
+    match s with
+    | [n1; n2; b] ->
+      Some {
+        access_set = {
+          set_elem=parse_nexp.run n1;
+          set_upper_bound=parse_nexp.run n2;
+          set_cond=parse_bexp.run b;
+        };
+        access_mode = m;
+      }
+    | _ -> None
   in
   match s with
-  | Sexp.List [Sexp.Atom "ro"; s] -> mk_acc R s
-  | Sexp.List [Sexp.Atom "rw"; s] -> mk_acc W s
+  | Sexp.List ((Sexp.Atom "ro")::s) -> mk_acc R s
+  | Sexp.List ((Sexp.Atom "rw")::s) -> mk_acc W s
   | _ -> None
 )
 

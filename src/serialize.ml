@@ -57,8 +57,11 @@ let m_ser m = match m with
   | Proto.W -> "rw"
 
 let a_ser a =
+  let s = a.access_set in
   call (m_ser a.access_mode) [
-    s_ser a.access_set;
+    n_ser s.set_elem;
+    n_ser s.set_upper_bound;
+    b_ser s.set_cond
   ]
 
 let t_ser t =
