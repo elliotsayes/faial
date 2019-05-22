@@ -1,4 +1,5 @@
 open Proto
+open Sexplib
 
 let check (p:proto) =
   (* 0. Make sure each loop has a synchronization step going on *)
@@ -16,4 +17,16 @@ let check (p:proto) =
   (* 6. Flatten out our theory into First-Order Logic with numbers. *)
   (* 7. Generate Z3 *)
   owned_steps
-  
+
+let () =
+  let s : Sexp.t = Sexp.input_sexp stdin in
+    let elems = Parse.parse_proto.run s
+      |> check
+      |> Serialize.stream_ser
+    in
+    match elems with
+    | Sexp.Atom x -> print_endline x
+    | Sexp.List l ->
+      List.iter (fun x ->
+        Sexp.to_string x |> print_endline
+      ) l
