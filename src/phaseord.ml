@@ -22,8 +22,7 @@ let rec infer_loop_steps e =
     -> Num 0
   | Sync -> Num 1
   | Loop (_, ub, body) -> Mult (ub, infer_loop_steps body)
-  | Seq (e1, e2) ->
-    Add (infer_loop_steps e1, infer_loop_steps e2)
+  | Seq (e1, e2) -> Add (infer_loop_steps e1, infer_loop_steps e2)
 
 type 'a step = (exp * 'a)
 
@@ -47,5 +46,5 @@ let extract_steps (e:'a prog) : ('a step) list =
       let (_, accum) = iter body (new_p, accum) in
       Add (p, Mult(loop_step, ub)), accum
   in
-  iter e ((Num 0), []) |> snd |> List.rev
+  iter e (Num 0, []) |> snd |> List.rev
 
