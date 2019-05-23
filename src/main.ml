@@ -102,9 +102,11 @@ let () =
         (* Print the pre-conditions of each location *)
         print_string "Pre: ";
         restrict_bexp c x_fns |> Serialize.b_ser |> Sexp.to_string_hum |> print_endline;
+        (* Print the various accesses *)
         List.iter (fun o ->
           Serialize.o_ser o |> Sexp.to_string_hum |> print_endline
         ) elems;
+        print_endline "";
       ) groups;
     with
     | Parse.ParseError l ->
