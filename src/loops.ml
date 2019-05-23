@@ -10,7 +10,7 @@ let fresh_name x xs =
   if List.mem x xs then do_fresh_name x 1 else x
 
 (** Loop normalization: Makes all loop variables distinct. *)
-let normalize_variables (p:proto) : (proto * string list) =
+let normalize_variables (p:proto) =
   let rec norm e xs =
     match e with
     | Loop ({range_var=x; range_upper_bound=ub}, e) ->
@@ -31,25 +31,22 @@ let normalize_variables (p:proto) : (proto * string list) =
     | Sync
     | Acc _ -> e, xs
   in
-  norm p []
+  norm p [] |> fst
 
 (** Extracts every variable declaration and how to restrict each variable.*)
-let get_declarations (p:proto) : (string,nexp) Hashtbl.t =
-  let decls = Hashtbl.create 0 in
-  let rec iter p =
+let get_constraints (p:proto) : bexp =
+  let rec iter p b =
     match p with
     | Skip
     | Sync
-    | Acc _ -> ()
+    | Acc _ -> b
     | Loop (r, p) ->
-      Hashtbl.add decls r.range_var r.range_upper_bound;
-      iter p
+      let b2 = (NRel (NLt, Var r.range_var, r.range_upper_bound)) in
+      iter p (BRel (BAnd, b, b2))
     | Seq (p1, p2) ->
-      iter p1;
-      iter p2
+      iter p2 (iter p1 b)
   in
-  iter p;
-  decls
+  iter p (Bool true)
 
 
 let pexp_to_nexp (ubs:(string,nexp) Hashtbl.t) (e:Phaseord.exp) : Proto.nexp =
