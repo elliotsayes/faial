@@ -65,9 +65,19 @@ match e with
   begin
     let b1 = b_opt b1 in
     let b2 = b_opt b2 in
-    match bexp_to_bool b1, bexp_to_bool b2 with
-    | Some b1, Some b2 -> Bool ((eval_brel b) b1 b2)
-    | _, _ -> BRel (b, b1, b2)
+    match b, bexp_to_bool b1, bexp_to_bool b2 with
+    | _, Some b1, Some b2 -> Bool ((eval_brel b) b1 b2)
+    | BAnd, _, Some true -> b1
+    | BAnd, Some true, _ -> b2
+    | BAnd, Some false, _
+    | BAnd, _, Some false
+      -> Bool false
+    | BOr, Some true, _
+    | BOr, _, Some true
+      -> Bool true
+    | BOr, _, Some false -> b1
+    | BOr, Some false, _ -> b2
+    | _, _, _ -> BRel (b, b1, b2)
   end
 | NRel (o, a1, a2) ->
   begin
