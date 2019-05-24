@@ -93,11 +93,19 @@ match e with
   | Some b -> Bool (not b)
   | _ -> BNot b
 
-let s_opt ({set_elem=e;set_upper_bound=ub;set_cond=b}:set) : set =
+let r_opt (r:range) : range =
   {
-    set_elem = n_opt e;
-    set_upper_bound = n_opt ub;
-    set_cond = b_opt b;
+    range_var = r.range_var;
+    range_upper_bound = n_opt r.range_upper_bound;
+  }
+
+let s_opt (s:set) : set =
+  {
+    set_elem = n_opt s.set_elem;
+    set_range = (match s.set_range with
+    | Some r -> Some (r_opt r)
+    | None -> None);
+    set_cond = b_opt s.set_cond;
   }
 
 let a_opt ({access_set=s; access_mode=m}) =
@@ -117,15 +125,15 @@ let stream_opt (l:(string * access timed owned) list) : (string *access timed ow
           timed_phase = _;
           timed_data = {
             access_set = {
-              set_elem = _; set_upper_bound = ub; set_cond = bc
+              set_elem = _; set_range = r; set_cond = bc
             };
             access_mode = _
           }
         }
       } ->
       begin
-        match ub,bc with
-        | Num 0, _ | _, Bool false -> false
+        match r,bc with
+        | Some {range_var=_;range_upper_bound=Num 0}, _ | _, Bool false -> false
         | _, _ -> true
       end
   in

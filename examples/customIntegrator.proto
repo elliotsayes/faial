@@ -1,11 +1,11 @@
 (begin
-  (loc x (ro (* idx $tid) 999 true))
-  (loc x (rw $tid 1 true))
+  (loc x (ro (* idx $tid) (range idx 999) true))
+  (loc x (rw $tid true))
   (loop (range i 999)
     (begin
       sync
-      (loc tempBuffer (rw $tid 1 (= (mod $tid (* i 2)) 0)))
+      (loc tempBuffer (rw $tid (= (mod $tid (* i 2)) 0)))
     )
   )
-  (loc tempBuffer (ro 0 1 (= idx $tid)))
+  (loc tempBuffer (ro 0 (= idx $tid)))
 )

@@ -23,13 +23,38 @@ let normalize_variables (p:proto) =
         let (e, new_xs) = norm e (x::xs) in
         Loop ({range_var=x;range_upper_bound=ub}, e), new_xs
       )
+    | Acc (loc, a) ->
+      begin
+        let s = a.access_set in
+        match s.set_range with
+        | Some r ->
+          if List.mem r.range_var xs then (
+            let var = fresh_name r.range_var xs in
+            let sigma = (r.range_var, Var var) in
+            let elem = Subst.n_subst sigma s.set_elem in
+            let cond = Subst.b_subst sigma s.set_cond in
+            Acc (loc, {
+              access_set = {
+                set_elem = elem;
+                set_range = Some {
+                  range_var = var;
+                  range_upper_bound = r.range_upper_bound;
+                };
+                set_cond = cond;
+              };
+              access_mode = a.access_mode;
+            }), var::xs
+          ) else (
+            e, r.range_var::xs
+          )
+        | None -> e, xs
+      end
     | Seq (e1, e2) ->
       let (e1, xs) = norm e1 xs in
       let (e2, xs) = norm e2 xs in
       Seq (e1, e2), xs
     | Skip
-    | Sync
-    | Acc _ -> e, xs
+    | Sync -> e, xs
   in
   norm p [] |> fst
 

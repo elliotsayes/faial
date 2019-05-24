@@ -14,10 +14,15 @@ let rec free_names_bexp e fns =
   | BRel (_, b1, b2) -> free_names_bexp b1 fns |> free_names_bexp b2
   | BNot b -> free_names_bexp b fns
 
+let free_names_range r = free_names_nexp r.range_upper_bound
+
 let free_names_set s fns =
-  free_names_nexp s.set_elem fns
-  |> free_names_nexp s.set_upper_bound
-  |> free_names_bexp s.set_cond
+  let fns = free_names_nexp s.set_elem fns
+    |> free_names_bexp s.set_cond
+  in
+  match s.set_range with
+  | Some r -> free_names_range r fns
+  | None -> fns
 
 let free_names_access a = free_names_set a.access_set
 

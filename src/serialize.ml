@@ -45,35 +45,52 @@ let rec b_ser (b:bexp) : Sexp.t =
     binop (brel_to_string b) (b_ser b1) (b_ser b2)
   | BNot b -> unop "not" (b_ser b)
 
-let s_ser r =
-  call "set" [
-    n_ser r.set_elem;
-    n_ser r.set_upper_bound;
-    b_ser r.set_cond
-  ]
+let s_ser s =
+  let args =
+    match s.set_range with
+    | Some r -> [
+        n_ser s.set_elem;
+        Sexp.Atom r.range_var;
+        n_ser r.range_upper_bound;
+        b_ser s.set_cond
+      ]
+    | None -> [
+        n_ser s.set_elem;
+        b_ser s.set_cond
+      ]
+  in
+  call "set" args
 
 let m_ser m = match m with
   | Proto.R -> "ro"
   | Proto.W -> "rw"
 
+let r_ser r =
+  call "range" [
+    Sexp.Atom r.range_var;
+    n_ser r.range_upper_bound;
+  ]
+
 let a_ser a =
   let s = a.access_set in
-  call (m_ser a.access_mode) [
-    n_ser s.set_elem;
-    n_ser s.set_upper_bound;
-    b_ser s.set_cond
-  ]
+  let args =
+    match s.set_range with
+    | Some r -> [
+        n_ser s.set_elem;
+        r_ser r;
+        b_ser s.set_cond
+      ]
+    | None -> [
+        n_ser s.set_elem;
+        b_ser s.set_cond
+      ]
+  in
+  call (m_ser a.access_mode) args
 
 let t_ser t =
   call "timed" [
     n_ser t.timed_phase;
     a_ser t.timed_data
-  ]
-
-let r_ser r =
-  call "range" [
-    Sexp.Atom r.range_var;
-    n_ser r.range_upper_bound;
   ]
 
 let o_ser o =

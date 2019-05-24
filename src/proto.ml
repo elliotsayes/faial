@@ -1,6 +1,7 @@
 type variable = string
 
 let tid = "$tid"
+let idx = "idx"
 
 type nbin =
 | Plus
@@ -24,14 +25,14 @@ type bexp =
 | BRel of brel * bexp * bexp
 | BNot of bexp
 
+type range = {range_var: variable; range_upper_bound: nexp}
+
 type set = {
   (* elem | idx \in [0..upper_bound) if cond *)
   set_elem: nexp;
-  set_upper_bound: nexp;
+  set_range: range option;
   set_cond: bexp;
 }
-
-type range = {range_var: variable; range_upper_bound: nexp}
 
 type mode = R | W
 

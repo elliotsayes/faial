@@ -90,10 +90,19 @@ let parse_bexp = make "bexp" parse_bexp
 
 let parse_set = make "set" (fun s ->
   match s with
-  | Sexp.List [Sexp.Atom "set"; n1; n2; b] ->
+  | Sexp.List [Sexp.Atom "set"; n1; Sexp.Atom var; n2; b] ->
+    Some {
+      set_elem = parse_nexp.run n1;
+      set_range = Some {
+        range_var = var;
+        range_upper_bound = parse_nexp.run n2
+      };
+      set_cond = parse_bexp.run b;
+    }
+  | Sexp.List [Sexp.Atom "set"; n1; b] ->
     Some {
       set_elem=parse_nexp.run n1;
-      set_upper_bound=parse_nexp.run n2;
+      set_range=None;
       set_cond=parse_bexp.run b;
     }
   | _ -> None
@@ -112,11 +121,23 @@ let parse_range = make "range" (fun s ->
 let parse_access = make "access" (fun s ->
   let mk_acc m s =
     match s with
-    | [n1; n2; b] ->
+    | [n1; Sexp.List [Sexp.Atom "range"; Sexp.Atom var; n2]; b] ->
       Some {
         access_set = {
           set_elem=parse_nexp.run n1;
-          set_upper_bound=parse_nexp.run n2;
+          set_range = Some {
+            range_var = var;
+            range_upper_bound = parse_nexp.run n2;
+          };
+          set_cond=parse_bexp.run b;
+        };
+        access_mode = m;
+      }
+    | [n1; b] ->
+      Some {
+        access_set = {
+          set_elem=parse_nexp.run n1;
+          set_range=None;
           set_cond=parse_bexp.run b;
         };
         access_mode = m;
