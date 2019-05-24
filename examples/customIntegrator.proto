@@ -1,6 +1,6 @@
 (begin
-  (loc x (ro (* idx $tid) (range idx 999) true))
-  (loc x (rw $tid true))
+  (loc sumBuffer (ro (* idx $tid) (range idx 999) true))
+  (loc tempBuffer (rw $tid true))
   (loop (range i 999)
     (begin
       sync
@@ -8,4 +8,5 @@
     )
   )
   (loc tempBuffer (ro 0 (= idx $tid)))
+  (loc result (rw 0 (= idx $tid)))
 )
