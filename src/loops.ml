@@ -17,7 +17,8 @@ let normalize_variables (p:proto) =
       if List.mem x xs then (
         let new_x = fresh_name x xs in
         let new_xs = new_x::xs in
-        let (e, new_xs) = norm (Subst.p_subst (x, Var new_x) e) new_xs in
+        let do_subst = Subst.replace_by (x, Var new_x) in
+        let (e, new_xs) = norm (Subst.p_subst do_subst e) new_xs in
         Loop ({range_var=new_x; range_upper_bound=ub}, e), new_xs
       ) else (
         let (e, new_xs) = norm e (x::xs) in

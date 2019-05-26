@@ -8,7 +8,7 @@ let as_binary (t:access timed) : (access timed) owned * (access timed) owned =
   match t with
   | {timed_phase=n; timed_data=a} ->
     let mk ti =
-      let si = (tid, Var ti) in
+      let si = Subst.replace_by (tid, Var ti) in
       {
         owned_tid = ti;
         owned_data = {
