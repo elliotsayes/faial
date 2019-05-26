@@ -27,16 +27,9 @@ type bexp =
 
 type range = {range_var: variable; range_upper_bound: nexp}
 
-type set = {
-  (* elem | idx \in [0..upper_bound) if cond *)
-  set_elem: nexp;
-  set_range: range option;
-  set_cond: bexp;
-}
-
 type mode = R | W
 
-type access = {access_set: set; access_mode: mode}
+type access = {access_index: nexp; access_cond: bexp; access_mode: mode}
 
 type proto =
 | Skip

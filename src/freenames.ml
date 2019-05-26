@@ -16,15 +16,8 @@ let rec free_names_bexp e fns =
 
 let free_names_range r = free_names_nexp r.range_upper_bound
 
-let free_names_set s fns =
-  let fns = free_names_nexp s.set_elem fns
-    |> free_names_bexp s.set_cond
-  in
-  match s.set_range with
-  | Some r -> free_names_range r fns
-  | None -> fns
-
-let free_names_access a = free_names_set a.access_set
+let free_names_access a fns =
+  free_names_nexp a.access_index fns |> free_names_bexp a.access_cond
 
 let free_names_timed t fns : string list =
   free_names_nexp t.timed_phase fns |> free_names_access t.timed_data

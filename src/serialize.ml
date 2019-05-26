@@ -45,22 +45,6 @@ let rec b_ser (b:bexp) : Sexp.t =
     binop (brel_to_string b) (b_ser b1) (b_ser b2)
   | BNot b -> unop "not" (b_ser b)
 
-let s_ser s =
-  let args =
-    match s.set_range with
-    | Some r -> [
-        n_ser s.set_elem;
-        Sexp.Atom r.range_var;
-        n_ser r.range_upper_bound;
-        b_ser s.set_cond
-      ]
-    | None -> [
-        n_ser s.set_elem;
-        b_ser s.set_cond
-      ]
-  in
-  call "set" args
-
 let m_ser m = match m with
   | Proto.R -> "ro"
   | Proto.W -> "rw"
@@ -72,20 +56,7 @@ let r_ser r =
   ]
 
 let a_ser a =
-  let s = a.access_set in
-  let args =
-    match s.set_range with
-    | Some r -> [
-        n_ser s.set_elem;
-        r_ser r;
-        b_ser s.set_cond
-      ]
-    | None -> [
-        n_ser s.set_elem;
-        b_ser s.set_cond
-      ]
-  in
-  call (m_ser a.access_mode) args
+  call (m_ser a.access_mode) [n_ser a.access_index; b_ser a.access_cond]
 
 let t_ser t =
   call "timed" [

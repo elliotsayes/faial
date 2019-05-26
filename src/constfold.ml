@@ -99,17 +99,12 @@ let r_opt (r:range) : range =
     range_upper_bound = n_opt r.range_upper_bound;
   }
 
-let s_opt (s:set) : set =
+let a_opt a =
   {
-    set_elem = n_opt s.set_elem;
-    set_range = (match s.set_range with
-    | Some r -> Some (r_opt r)
-    | None -> None);
-    set_cond = b_opt s.set_cond;
+    access_mode = a.access_mode;
+    access_cond = b_opt a.access_cond;
+    access_index = n_opt a.access_index;
   }
-
-let a_opt ({access_set=s; access_mode=m}) =
-  {access_set=s_opt s; access_mode=m}
 
 let ta_opt ({timed_phase=p; timed_data=d}:access timed) =
   {timed_phase=n_opt p; timed_data=a_opt d}
@@ -124,17 +119,16 @@ let stream_opt (l:(string * access timed owned) list) : (string *access timed ow
         owned_data = {
           timed_phase = _;
           timed_data = {
-            access_set = {
-              set_elem = _; set_range = r; set_cond = bc
-            };
-            access_mode = _
+            access_index = _;
+            access_mode = _;
+            access_cond = c;
           }
         }
       } ->
       begin
-        match r,bc with
-        | Some {range_var=_;range_upper_bound=Num 0}, _ | _, Bool false -> false
-        | _, _ -> true
+        match c with
+        | Bool false -> false
+        | _ -> true
       end
   in
     List.map (fun (x, a) -> (x, ota_opt a)) l |> List.filter keep_acc

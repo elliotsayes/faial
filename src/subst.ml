@@ -19,25 +19,12 @@ let b_subst (x,v) b : bexp =
   in
   subst b
 
-
-let s_subst (x,v) ({set_elem = gen; set_range = r; set_cond = b}:set) : set =
-  match r with
-  | None ->
-    {set_elem = n_subst (x,v) gen; set_range = None; set_cond = b_subst (x,v) b}
-  | Some r ->
-    {
-      set_elem =
-        if String.equal x r.range_var
-        then gen
-        else n_subst (x,v) gen;
-      set_range = Some {
-        range_var = r.range_var;
-        range_upper_bound = n_subst (x, v) r.range_upper_bound;
-      };
-      set_cond = b_subst (x,v) b}
-
-let a_subst (x,v) {access_set = s; access_mode = m} : access =
-  {access_set = s_subst (x,v) s; access_mode = m}
+let a_subst s a : access =
+  {
+    access_index = n_subst s a.access_index;
+    access_mode = a.access_mode;
+    access_cond = b_subst s a.access_cond;
+  }
 
 let p_subst (x,v) p =
   let rec subst p =
