@@ -1,4 +1,5 @@
 open Proto
+open Common
 
 let fresh_name x xs =
   let rec do_fresh_name x n =
@@ -49,6 +50,25 @@ let get_constraints (p:proto) : bexp =
   in
   iter p (Bool true)
 
+let rec does_sync (p:proto) : bool =
+  match p with
+  | Skip
+  | Loop _
+  | Acc _
+    -> false
+  | Sync -> true
+  | Seq (p1, p2) -> does_sync p1 || does_sync p2
+
+let rec single_loop_variables (p:proto) (s:StringSet.t) : StringSet.t =
+  match p with
+  | Acc _
+  | Sync
+  | Skip -> s
+  | Loop (r, p) ->
+    let s = if does_sync p then StringSet.add r.range_var s else s in
+    single_loop_variables p s
+  | Seq (p1, p2) ->
+    single_loop_variables p1 s |> single_loop_variables p2
 
 let pexp_to_nexp (ubs:(string,nexp) Hashtbl.t) (e:Phaseord.exp) : Proto.nexp =
   let rec trans e =

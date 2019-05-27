@@ -57,12 +57,14 @@ let check (p:proto) =
   (* XXX *)
   (* 1. Make sure each loops as a unique variable *)
   let p = Loops.normalize_variables p in
+  let single_vars = Loops.single_loop_variables p StringSet.empty in
   let c = Loops.get_constraints p in
   (* 2. Flatten outer loops *)
   let steps = Loops.remove_loops p in
   (* 3. Get the local variables defined in steps *)
   let locals = List.fold_right (fun (_, t) fns -> Freenames.free_names_timed t fns) steps [] in
   let locals = locals |> StringSet.of_list in
+  let locals = StringSet.diff locals single_vars in
   (* 3. Make the owner of each access explicit *)
   let steps1, steps2 = Spmd2binary.project_stream locals steps in
   let steps1, steps2 = Constfold.stream_opt steps1, Constfold.stream_opt steps2 in
