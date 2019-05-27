@@ -64,14 +64,8 @@ let t_ser t =
     a_ser t.timed_data
   ]
 
-let o_ser o =
-  call "owned" [
-    Sexp.Atom o.owned_tid;
-    t_ser o.owned_data
-  ]
-
-let stream_ser l =
-  Sexp.List (List.map (fun (x,o) -> unop x (o_ser o)) l)
+let serialize_steps l =
+  Sexp.List (List.map (fun (x,o) -> unop x (t_ser o)) l)
 
 let rec proto_ser p =
   match p with

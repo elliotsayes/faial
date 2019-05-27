@@ -1,7 +1,9 @@
 (begin
   (loc x (rw tid true))
   sync
-  (loc x (rw (+ idx 1) (range idx 1000) (= tid 0) ) )
+  (loop (range idx 1000)
+    (loc x (rw (+ idx 1) (= tid 0) ) ))
   (loc x (rw tid (= tid 0)))
-  (loc x (ro idx (range idx tid) true))
+  (loop (range idx tid)
+    (loc x (ro idx true)))
 )

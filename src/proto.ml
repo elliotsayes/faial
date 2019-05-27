@@ -40,9 +40,9 @@ type proto =
 
 (** A timed access is prefixed by the phase it was accessed *)
 type 'a timed = {timed_phase: nexp; timed_data: 'a}
-type 'a owned = {owned_tid: string; owned_data: 'a}
+(*type 'a owned = {owned_tid: string; owned_data: 'a}*)
 
-type access_t = access timed owned
+type access_t = access timed
 type step_list = (string * access_t) list
 
 type kernel = {

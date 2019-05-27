@@ -1,5 +1,6 @@
 (begin
-  (loc sumBuffer (ro (* idx $tid) (range idx 999) true))
+  (loop (range idx 999)
+    (loc sumBuffer (ro (* idx $tid) true)))
   (loc tempBuffer (rw $tid true))
   (loop (range i 999)
     (begin

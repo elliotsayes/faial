@@ -22,7 +22,5 @@ let free_names_access a fns =
 let free_names_timed t fns : string list =
   free_names_nexp t.timed_phase fns |> free_names_access t.timed_data
 
-let free_names_owned o = free_names_timed o.owned_data
-
-let free_names_list_owned  (l: access_t list) : string list =
-  List.fold_right free_names_owned l []
+let free_names_steps  (l: access_t list) : string list =
+  List.fold_right free_names_timed l []

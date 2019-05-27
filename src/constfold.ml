@@ -109,20 +109,15 @@ let a_opt a =
 let ta_opt ({timed_phase=p; timed_data=d}:access timed) =
   {timed_phase=n_opt p; timed_data=a_opt d}
 
-let ota_opt ({owned_tid=t; owned_data=d}:access timed owned) =
-  {owned_tid=t; owned_data=ta_opt d}
-
-let stream_opt (l:(string * access timed owned) list) : (string *access timed owned) list =
+let stream_opt (l:(string * access timed) list) : (string *access timed) list =
   let keep_acc (_,a) =
     match a with
-    | {owned_tid = _;
-        owned_data = {
-          timed_phase = _;
-          timed_data = {
-            access_index = _;
-            access_mode = _;
-            access_cond = c;
-          }
+    | {
+        timed_phase = _;
+        timed_data = {
+          access_index = _;
+          access_mode = _;
+          access_cond = c;
         }
       } ->
       begin
@@ -131,5 +126,5 @@ let stream_opt (l:(string * access timed owned) list) : (string *access timed ow
         | _ -> true
       end
   in
-    List.map (fun (x, a) -> (x, ota_opt a)) l |> List.filter keep_acc
+    List.map (fun (x, a) -> (x, ta_opt a)) l |> List.filter keep_acc
 

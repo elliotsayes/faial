@@ -146,20 +146,10 @@ let parse_timed = make "timed" (fun s ->
   | _ -> None
 )
 
-let parse_owned = make "owned" (fun s ->
-  match s with
-  | Sexp.List [Sexp.Atom "owned"; Sexp.Atom x; t] ->
-    Some {
-      owned_tid = x;
-      owned_data = parse_timed.run t;
-    }
-  | _ -> None
-)
-
 let parse_step = make "step" (fun s ->
   match s with
   | Sexp.List [Sexp.Atom x; o] ->
-    Some (x, parse_owned.run o)
+    Some (x, parse_timed.run o)
   | _ -> None
 )
 

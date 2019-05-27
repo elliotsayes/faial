@@ -12,20 +12,17 @@ let do_project locals prefix =
     then Some (Var (project prefix x))
     else None
 
-let project_access locals (t:access timed) : (access timed) owned * (access timed) owned =
+let project_access locals (t:access timed) : (access timed) * (access timed) =
   match t with
   | {timed_phase=n; timed_data=a} ->
     let mk ti =
       let si = do_project locals ti in
       {
-        owned_tid = project ti tid;
-        owned_data = {
-          timed_phase=Subst.n_subst si n;
-          timed_data={
-            access_index = Subst.n_subst si a.access_index;
-            access_mode = a.access_mode;
-            access_cond = Subst.b_subst si a.access_cond;
-          };
+        timed_phase=Subst.n_subst si n;
+        timed_data={
+          access_index = Subst.n_subst si a.access_index;
+          access_mode = a.access_mode;
+          access_cond = Subst.b_subst si a.access_cond;
         }
       }
     in
@@ -35,10 +32,11 @@ let project_condition locals (b:bexp) =
   let do_subst ti = Subst.b_subst (do_project locals ti) in
   do_subst tid1 b, do_subst tid2 b
 
-let project_stream locals (l:(string * access timed) list)
-    : (string * (access timed) owned) list =
-  let on_elem (x, t) =
-    let a1, a2 = project_access locals t in
-    [(x, a1); (x, a2)]
+type stream = (string * access timed) list
+
+let project_stream locals (l:stream) : stream * stream =
+  let on_elem ((l1:stream),(l2:stream)) ((x:string), (a:access timed)) : stream * stream =
+    let (a1, a2) = project_access locals a in
+    (x,a1)::l1, (x, a2)::l2
   in
-  List.flatten (List.map on_elem l)
+  List.fold_left on_elem ([],[]) l

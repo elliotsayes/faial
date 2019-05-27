@@ -2,27 +2,7 @@ open Proto
 open Sexplib
 open Common
 
-type list_owned = access timed owned list
-
-let group_multiset l =
-  let groups = Hashtbl.create 0 in
-  let rec iter l =
-    match l with
-    | (x, a)::l -> begin
-      let elems =
-        match Hashtbl.find_opt groups x with
-        | Some elems -> elems
-        | None -> []
-      in
-      Hashtbl.replace groups x (a::elems);
-      iter l
-      end
-    | [] -> ()
-  in
-  iter l;
-  groups
-
-let group_steps (l: (string *access timed owned) list) : (string, list_owned) Hashtbl.t =
+let group_assoc l =
   let groups = Hashtbl.create 0 in
   let rec iter l =
     match l with
@@ -47,7 +27,7 @@ let extract_free_names h
   : (string, StringSet.t) Hashtbl.t =
   let result = Hashtbl.create 0 in
   Hashtbl.iter (fun x elems ->
-    as_set (Freenames.free_names_list_owned elems) |> Hashtbl.add result x
+    as_set (Freenames.free_names_steps elems) |> Hashtbl.add result x
   ) h;
   result
 
@@ -84,11 +64,11 @@ let check (p:proto) =
   let locals = List.fold_right (fun (_, t) fns -> Freenames.free_names_timed t fns) steps [] in
   let locals = locals |> StringSet.of_list in
   (* 3. Make the owner of each access explicit *)
-  let steps = Spmd2binary.project_stream locals steps in
+  let steps1, steps2 = Spmd2binary.project_stream locals steps in
+  let steps1, steps2 = Constfold.stream_opt steps1, Constfold.stream_opt steps2 in
   (* 4. Perform a constant-fold optimization, to reduce the problem space *)
-  let owned_steps = Constfold.stream_opt steps in
   let c1, c2 = Spmd2binary.project_condition locals c in
-  c1, c2, owned_steps
+  (c1, steps1), (c2, steps2)
 
 let join sep elems =
   let on_elem accum x =
@@ -99,29 +79,31 @@ let join sep elems =
   List.fold_left on_elem "" elems
 
 let () =
+  let print_elems itid c (elems:(string*access timed) list) =
+    let groups = group_assoc elems in
+    let fns = extract_free_names groups in
+    Hashtbl.iter (fun x elems ->
+      print_string "Location: ";
+      print_endline x;
+      (* Print the locals of each location *)
+      print_string "Vars: ";
+      let x_fns = Hashtbl.find fns x in
+      join ", " (StringSet.elements x_fns) |> print_endline;
+      (* Print the pre-conditions of each location *)
+      print_string ("Pre (" ^ itid ^ "): ");
+      restrict_bexp c x_fns |> Serialize.b_ser |> Sexp.to_string_hum |> print_endline;
+      (* Print the various accesses *)
+      List.iter (fun o ->
+        Serialize.t_ser o |> Sexp.to_string_hum |> print_endline
+      ) elems;
+      print_endline "";
+    ) groups
+  in
   let s : Sexp.t = Sexp.input_sexp stdin in
     try
-      let (c1, c2, elems) = Parse.parse_proto.run s |> check in
-      let groups = group_steps elems in
-      let fns = extract_free_names groups in
-      Hashtbl.iter (fun x elems ->
-        print_string "Location: ";
-        print_endline x;
-        (* Print the locals of each location *)
-        print_string "Vars: ";
-        let x_fns = Hashtbl.find fns x in
-        join ", " (StringSet.elements x_fns) |> print_endline;
-        (* Print the pre-conditions of each location *)
-        print_string "Pre (tid1): ";
-        restrict_bexp c1 x_fns |> Serialize.b_ser |> Sexp.to_string_hum |> print_endline;
-        print_string "Pre (tid2): ";
-        restrict_bexp c2 x_fns |> Serialize.b_ser |> Sexp.to_string_hum |> print_endline;
-        (* Print the various accesses *)
-        List.iter (fun o ->
-          Serialize.o_ser o |> Sexp.to_string_hum |> print_endline
-        ) elems;
-        print_endline "";
-      ) groups;
+      let (c1, elems1), (c2, elems2) = Parse.parse_proto.run s |> check in
+      print_elems "TID1" c1 elems1;
+      print_elems "TID2" c2 elems2;
     with
     | Parse.ParseError l ->
       List.iter (fun x ->
