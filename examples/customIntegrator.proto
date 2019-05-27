@@ -1,13 +1,18 @@
 (begin
-  (loop (range idx 999)
-    (loc sumBuffer (ro (* idx $tid) true)))
+  (loop (range idx1 (div SUM_BUFFER_SIZE blockDim_x))
+    (loc sumBuffer (ro (* idx1 blockDim_x) true)))
+
   (loc tempBuffer (rw $tid true))
-  (loop (range i 999)
+  (loop (range i (div SUM_BUFFER_SIZE 2))
     (begin
       sync
-      (loc tempBuffer (rw $tid (= (mod $tid (* i 2)) 0)))
+      (loc tempBuffer
+        (rw $tid
+          (and
+            (= (mod $tid (* i 2)) 0)
+            (< (+ $tid 1) WORK_GROUP_SIZE))))
     )
   )
-  (loc tempBuffer (ro 0 (= idx $tid)))
-  (loc result (rw 0 (= idx $tid)))
+  (loc tempBuffer (ro 0 (= 0 $tid)))
+  (loc result (rw 0 (= 0 $tid)))
 )
