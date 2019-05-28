@@ -1,0 +1,5 @@
+(kernel
+  (locations x)
+  (const)
+  (pre true)
+  (loc x (rw $tid true)))
