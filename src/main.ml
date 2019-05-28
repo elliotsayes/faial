@@ -71,7 +71,8 @@ let check (k:kernel) =
   let steps1, steps2 = Constfold.stream_opt steps1, Constfold.stream_opt steps2 in
   (* 4. Perform a constant-fold optimization, to reduce the problem space *)
   let c1, c2 = Spmd2binary.project_condition locals c in
-  (c1, steps1), (c2, steps2)
+  let pre_and_ x = BRel (BAnd, x, k.kernel_pre) in
+  (pre_and_ c1, steps1), (pre_and_ c2, steps2)
 
 let join sep elems =
   let on_elem accum x =
