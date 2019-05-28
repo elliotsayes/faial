@@ -133,9 +133,12 @@ let access_list_to_bexp elems time idx mode other_mode =
   ) elems |> b_or_ex
 
 let steps_to_bexp (step1, step2) (time1, idx1, mode1) (time2, idx2, mode2) =
-  b_and
-    (access_list_to_bexp step1 time1 idx1 mode1 mode2)
-    (access_list_to_bexp step2 time2 idx2 mode2 mode1)
+  b_and_ex [
+    access_list_to_bexp step1 time1 idx1 mode1 mode2;
+    access_list_to_bexp step2 time2 idx2 mode2 mode1;
+    n_eq time1 time2;
+    n_eq idx1 idx2;
+  ]
 
 let merged_to_bexp m =
   let time1 = Var "1:time:" in
@@ -163,7 +166,7 @@ let () =
       print_string "Vars: ";
       join ", " (StringSet.elements m.merged_fns) |> print_endline;
       (* Print the pre-conditions of each location *)
-      merged_to_bexp m |> Serialize.b_ser |> Sexp.to_string_hum |> print_endline;
+      merged_to_bexp m |> Constfold.b_opt |> Serialize.b_ser |> Sexp.to_string_hum |> print_endline;
       (*
       print_string ("Pre: ");
       Serialize.b_ser m.merged_pre |> Sexp.to_string_hum |> print_endline;
