@@ -25,11 +25,26 @@ type bexp =
 | BRel of brel * bexp * bexp
 | BNot of bexp
 
+let n_eq n1 n2 =
+  NRel (NEq, n1, n2)
+
 let b_or b1 b2 =
   BRel (BOr, b1, b2)
 
 let b_and b1 b2 =
   BRel (BAnd, b1, b2)
+
+let rec b_and_ex l =
+  match l with
+  | [] -> Bool true
+  | [x] -> x
+  | x::l -> b_and x (b_and_ex l)
+
+let rec b_or_ex l =
+  match l with
+  | [] -> Bool true
+  | [x] -> x
+  | x::l -> b_or x (b_or_ex l)
 
 type range = {range_var: variable; range_upper_bound: nexp}
 

@@ -77,7 +77,9 @@ type merged = {
   merged_steps: access_t list * access_t list
 }
 
-let merge (c1, (steps1: (string * access_t) list)) (c2, steps2) =
+(** Groups two streams together in a single data structure *)
+
+let merge (c1, steps1) (c2, steps2) =
   let pre = b_and c1 c2 in
   let group1 = group_assoc steps1 in
   let group2 = group_assoc steps2 in
@@ -112,6 +114,37 @@ let merge (c1, (steps1: (string * access_t) list)) (c2, steps2) =
   ) group2;
   result
 
+let mode_to_nexp m =
+  Num (match m with
+  | R -> 0
+  | W -> 1)
+
+let access_list_to_bexp elems time idx mode other_mode =
+  List.map (fun elem ->
+    let result = [
+      n_eq time elem.timed_phase;
+      n_eq idx elem.timed_data.access_index;
+      n_eq mode (elem.timed_data.access_mode |> mode_to_nexp);
+      elem.timed_data.access_cond
+    ] in
+    (if elem.timed_data.access_mode = R
+    then (n_eq other_mode (mode_to_nexp W))::result
+    else result) |> b_and_ex
+  ) elems |> b_or_ex
+
+let steps_to_bexp (step1, step2) (time1, idx1, mode1) (time2, idx2, mode2) =
+  b_and
+    (access_list_to_bexp step1 time1 idx1 mode1 mode2)
+    (access_list_to_bexp step2 time2 idx2 mode2 mode1)
+
+let merged_to_bexp m =
+  let time1 = Var "1:time:" in
+  let time2 = Var "2:time:" in
+  let idx1 = Var "1:idx:" in
+  let idx2 = Var "2:idx:" in
+  let mode1 = Var "1:mode:" in
+  let mode2 = Var "2:mode:" in
+  b_and m.merged_pre (steps_to_bexp m.merged_steps (time1, idx1, mode1) (time2, idx2, mode2))
 
 let join sep elems =
   let on_elem accum x =
@@ -130,6 +163,8 @@ let () =
       print_string "Vars: ";
       join ", " (StringSet.elements m.merged_fns) |> print_endline;
       (* Print the pre-conditions of each location *)
+      merged_to_bexp m |> Serialize.b_ser |> Sexp.to_string_hum |> print_endline;
+      (*
       print_string ("Pre: ");
       Serialize.b_ser m.merged_pre |> Sexp.to_string_hum |> print_endline;
       (* Print the various accesses *)
@@ -141,6 +176,7 @@ let () =
       List.iter (fun o ->
         Serialize.t_ser o |> Sexp.to_string_hum |> print_endline
       ) (snd m.merged_steps);
+      *)
       print_endline "";
     ) data;
   in
