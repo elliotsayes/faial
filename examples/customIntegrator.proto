@@ -1,6 +1,6 @@
 (kernel
   (locations sumBuffer tempBuffer result)
-  (const blockDim_x SUM_BUFFER_SIZE)
+  (const blockDim_x SUM_BUFFER_SIZE WORK_GROUP_SIZE)
   (pre (< blockDim_x SUM_BUFFER_SIZE))
   (begin
     (loop (range index (div SUM_BUFFER_SIZE blockDim_x))
