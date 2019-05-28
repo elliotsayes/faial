@@ -25,6 +25,12 @@ type bexp =
 | BRel of brel * bexp * bexp
 | BNot of bexp
 
+let b_or b1 b2 =
+  BRel (BOr, b1, b2)
+
+let b_and b1 b2 =
+  BRel (BAnd, b1, b2)
+
 type range = {range_var: variable; range_upper_bound: nexp}
 
 type mode = R | W

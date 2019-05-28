@@ -20,20 +20,17 @@ let group_assoc l =
   iter l;
   groups
 
-let as_set (l:string list) : StringSet.t =
-  List.fold_right StringSet.add l StringSet.empty
-
 let extract_free_names h
   : (string, StringSet.t) Hashtbl.t =
   let result = Hashtbl.create 0 in
   Hashtbl.iter (fun x elems ->
-    as_set (Freenames.free_names_steps elems) |> Hashtbl.add result x
+    Freenames.free_names_steps elems |> StringSet.of_list |> Hashtbl.add result x
   ) h;
   result
 
 let restrict_bexp (b:bexp) (fns:StringSet.t) : bexp =
   let simpl b =
-    let new_fn = Freenames.free_names_bexp b [] |> as_set in
+    let new_fn = Freenames.free_names_bexp b [] |> StringSet.of_list in
     if StringSet.is_empty (StringSet.inter fns new_fn) then Bool true
     else b
   in
@@ -74,6 +71,48 @@ let check (k:kernel) =
   let pre_and_ x = BRel (BAnd, x, k.kernel_pre) in
   (pre_and_ c1, steps1), (pre_and_ c2, steps2)
 
+type merged = {
+  merged_pre: bexp;
+  merged_fns: StringSet.t;
+  merged_steps: access_t list * access_t list
+}
+
+let merge (c1, (steps1: (string * access_t) list)) (c2, steps2) =
+  let pre = b_and c1 c2 in
+  let group1 = group_assoc steps1 in
+  let group2 = group_assoc steps2 in
+  let fns1 = extract_free_names group1 in
+  let fns2 = extract_free_names group2 in
+  let result = Hashtbl.create (Hashtbl.length group1) in
+  let find_or tb k d =
+    match Hashtbl.find_opt tb k with
+      | Some v -> v
+      | None -> d
+  in
+  let get_fns x =
+    StringSet.union
+      (find_or fns1 x StringSet.empty)
+      (find_or fns2 x StringSet.empty)
+  in
+  let add_result x steps1 steps2 =
+    let fns = get_fns x in
+    Hashtbl.add result x {
+      merged_fns = fns;
+      merged_pre = restrict_bexp pre fns;
+      merged_steps = (steps1, steps2)
+    }
+  in
+  Hashtbl.iter (fun x steps1 ->
+    let steps2 = find_or group2 x [] in
+    Hashtbl.remove group2 x;
+    add_result x steps1 steps2
+  ) group1;
+  Hashtbl.iter (fun x steps2 ->
+    add_result x (find_or group1 x []) steps2
+  ) group2;
+  result
+
+
 let join sep elems =
   let on_elem accum x =
     if String.equal accum ""
@@ -83,31 +122,32 @@ let join sep elems =
   List.fold_left on_elem "" elems
 
 let () =
-  let print_elems itid c (elems:(string*access timed) list) =
-    let groups = group_assoc elems in
-    let fns = extract_free_names groups in
-    Hashtbl.iter (fun x elems ->
+  let print_data data =
+    Hashtbl.iter (fun x m ->
       print_string "Location: ";
       print_endline x;
       (* Print the locals of each location *)
       print_string "Vars: ";
-      let x_fns = Hashtbl.find fns x in
-      join ", " (StringSet.elements x_fns) |> print_endline;
+      join ", " (StringSet.elements m.merged_fns) |> print_endline;
       (* Print the pre-conditions of each location *)
-      print_string ("Pre (" ^ itid ^ "): ");
-      restrict_bexp c x_fns |> Serialize.b_ser |> Sexp.to_string_hum |> print_endline;
+      print_string ("Pre: ");
+      Serialize.b_ser m.merged_pre |> Sexp.to_string_hum |> print_endline;
       (* Print the various accesses *)
+      print_endline ("T1:");
       List.iter (fun o ->
         Serialize.t_ser o |> Sexp.to_string_hum |> print_endline
-      ) elems;
+      ) (fst m.merged_steps);
+      print_endline ("T2:");
+      List.iter (fun o ->
+        Serialize.t_ser o |> Sexp.to_string_hum |> print_endline
+      ) (snd m.merged_steps);
       print_endline "";
-    ) groups
+    ) data;
   in
   let s : Sexp.t = Sexp.input_sexp stdin in
     try
-      let (c1, elems1), (c2, elems2) = Parse.parse_kernel.run s |> check in
-      print_elems "TID1" c1 elems1;
-      print_elems "TID2" c2 elems2;
+      let d1, d2 = Parse.parse_kernel.run s |> check in
+      print_data (merge d1 d2);
     with
     | Parse.ParseError l ->
       List.iter (fun x ->
