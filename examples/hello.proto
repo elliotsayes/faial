@@ -1,9 +1,14 @@
-(begin
-  (loc x (rw tid true))
-  sync
-  (loop (range idx 1000)
-    (loc x (rw (+ idx 1) (= tid 0) ) ))
-  (loc x (rw tid (= tid 0)))
-  (loop (range idx tid)
-    (loc x (ro idx true)))
+(kernel
+  (locations x)
+  (const)
+  (pre true)
+  (begin
+    (loc x (rw tid true))
+    sync
+    (loop (range idx 1000)
+      (loc x (rw (+ idx 1) (= tid 0) ) ))
+    (loc x (rw tid (= tid 0)))
+    (loop (range idx tid)
+      (loc x (ro idx true)))
+  )
 )

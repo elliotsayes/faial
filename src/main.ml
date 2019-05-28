@@ -52,12 +52,13 @@ let restrict_bexp (b:bexp) (fns:StringSet.t) : bexp =
   in
   iter b |> Constfold.b_opt
 
-let check (p:proto) =
+let check (k:kernel) =
   (* 0. Make sure each loop has a synchronization step going on *)
   (* XXX *)
   (* 1. Make sure each loops as a unique variable *)
-  let p = Loops.normalize_variables p in
+  let p = Loops.normalize_variables k.kernel_code in
   let single_vars = Loops.single_loop_variables p StringSet.empty in
+  let single_vars = StringSet.union single_vars (StringSet.of_list k.kernel_variables) in
   let c = Loops.get_constraints p in
   (* 2. Flatten outer loops *)
   let steps = Loops.remove_loops p in
@@ -103,7 +104,7 @@ let () =
   in
   let s : Sexp.t = Sexp.input_sexp stdin in
     try
-      let (c1, elems1), (c2, elems2) = Parse.parse_proto.run s |> check in
+      let (c1, elems1), (c2, elems2) = Parse.parse_kernel.run s |> check in
       print_elems "TID1" c1 elems1;
       print_elems "TID2" c2 elems2;
     with

@@ -1,8 +1,13 @@
-(loop (range idx 1)
-  (loc x
-    (rw
-        (* 2 (* $tid idx))
-        (< idx count)
+(kernel
+  (locations x)
+  (const)
+  (pre true)
+  (loop (range idx 1)
+    (loc x
+      (rw
+          (* 2 (* $tid idx))
+          (< idx count)
+      )
     )
   )
 )
