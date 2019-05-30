@@ -167,7 +167,7 @@ let serialize_merged m =
         (can-write p (write q e n) m)
       )
     *)
-    let vars =
+    let decl =
       List.append more_vars (StringSet.elements vars)
       |> List.map (fun x ->
           Sexp.List [Sexp.Atom "declare-const"; Sexp.Atom x; Sexp.Atom "Int"]
@@ -177,11 +177,15 @@ let serialize_merged m =
       [
         Sexp.List [Sexp.Atom "push"];
       ];
-      vars;
-      [
+      decl;
+      if StringSet.mem tid1_s vars || StringSet.mem tid2_s vars
+      then [
         Sexp.List [Sexp.Atom "assert";
-          Serialize.b_ser (b_not (n_eq (Var ".1.$tid") (Var ".2.$tid")))
+          Serialize.b_ser (n_neq tid1_t tid2_t)
         ];
+      ]
+      else [];
+      [
         Sexp.List [Sexp.Atom "assert"; Serialize.b_ser b];
         Sexp.List [Sexp.Atom "check-sat"];
         Sexp.List [Sexp.Atom "get-model"];

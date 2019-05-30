@@ -6,6 +6,12 @@ let tid2 = ".2."
 
 let project prefix x = prefix ^ x
 
+let tid1_s = project tid1 tid
+let tid2_s = project tid2 tid
+
+let tid1_t = Var tid1_s
+let tid2_t = Var tid2_s
+
 let do_project locals prefix =
   fun x ->
     if StringSet.mem x locals
