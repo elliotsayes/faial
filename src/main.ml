@@ -24,13 +24,13 @@ let extract_free_names h
   : (string, StringSet.t) Hashtbl.t =
   let result = Hashtbl.create 0 in
   Hashtbl.iter (fun x elems ->
-    Freenames.free_names_steps elems |> StringSet.of_list |> Hashtbl.add result x
+    Freenames.free_names_steps elems |> Hashtbl.add result x
   ) h;
   result
 
 let restrict_bexp (b:bexp) (fns:StringSet.t) : bexp =
   let simpl b =
-    let new_fn = Freenames.free_names_bexp b [] |> StringSet.of_list in
+    let new_fn = Freenames.free_names_bexp b StringSet.empty in
     if StringSet.is_empty (StringSet.inter fns new_fn) then Bool true
     else b
   in
@@ -60,8 +60,7 @@ let check (k:kernel) =
   (* 2. Flatten outer loops *)
   let steps = Loops.remove_loops p in
   (* 3. Get the local variables defined in steps *)
-  let locals = List.fold_right (fun (_, t) fns -> Freenames.free_names_timed t fns) steps [] in
-  let locals = locals |> StringSet.of_list in
+  let locals = List.fold_right (fun (_, t) fns -> Freenames.free_names_timed t fns) steps StringSet.empty in
   let locals = StringSet.diff locals single_vars in
   (* 3. Make the owner of each access explicit *)
   let steps1, steps2 = Spmd2binary.project_stream locals steps in
@@ -100,7 +99,7 @@ let merge (c1, steps1) (c2, steps2) =
     let fns = get_fns x in
     let pre = restrict_bexp pre fns in
     Hashtbl.add result x {
-      merged_fns = StringSet.elements fns |> Freenames.free_names_bexp pre |> StringSet.of_list;
+      merged_fns = Freenames.free_names_bexp pre fns;
       merged_pre = pre;
       merged_steps = (steps1, steps2)
     }
