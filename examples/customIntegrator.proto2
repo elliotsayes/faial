@@ -1,11 +1,24 @@
+#|
+
+Proof that computeFloatSum is DRF:
+
+https://github.com/pandegroup/openmm/blob/master/platforms/cuda/src/kernels/customIntegrator.cu#L1
+
+|#
+
+# Declare shared variables
 shared sumBuffer, tempBuffer, result;
+# (Optional) Declare global constants:
 const blockDim_x, SUM_BUFFER_SIZE, WORK_GROUP_SIZE;
-assume blockDim_x < SUM_BUFFER_SIZE;
+# (Optional) Declare assumptions:
+assume blockDim_x < SUM_BUFFER_SIZE;  # DRF does not depend on this
 
 for index < SUM_BUFFER_SIZE / blockDim_x {
   rw sumBuffer[$tid] if index >= $tid;
-};
+}; # We require a semi after a loop
+
 rw tempBuffer[$tid];
+
 for i < WORK_GROUP_SIZE / 2 {
   sync;
   rw tempBuffer[$tid]
@@ -13,5 +26,6 @@ for i < WORK_GROUP_SIZE / 2 {
   ro tempBuffer[$tid + 1]
     if ($tid%(i*2*2) == 0 && $tid+(i*2) < WORK_GROUP_SIZE) && i > 0;
 };
+
 rw result[0] if $tid == 0;
 rw tempBuffer[0] if $tid == 0;

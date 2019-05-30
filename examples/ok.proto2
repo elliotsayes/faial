@@ -1,2 +1,5 @@
+#| Multi-line comments |#
+# Single line comments
+
 shared x;
 rw x[$tid];
