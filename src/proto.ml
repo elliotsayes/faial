@@ -24,6 +24,11 @@ type bexp =
 | NRel of nrel * nexp * nexp
 | BRel of brel * bexp * bexp
 | BNot of bexp
+let n_lt n1 n2 =
+  NRel (NLt, n1, n2)
+let n_gt n1 n2 = n_lt n2 n1
+let n_le n1 n2 = NRel (NLe, n1, n2)
+let n_ge n1 n2 = n_le n2 n1
 
 let n_eq n1 n2 =
   NRel (NEq, n1, n2)

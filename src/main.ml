@@ -206,7 +206,22 @@ let join sep elems =
   in
   List.fold_left on_elem "" elems
 
+let do_parse filename =
+  let input = open_in filename in
+  let filebuf = Lexing.from_channel input in
+  let data = try
+    Parse2.main Lexer.read filebuf
+  with
+  | Lexer.Error msg ->
+      Printf.eprintf "%s%!" msg
+  | Parse2.Error ->
+      Printf.eprintf "At offset %d: syntax error.\n%!" (Lexing.lexeme_start filebuf)
+  in
+  IO.close_in input;
+  data
+
 let () =
+  (* let filename = Sys.argv.(1) *)
   let print_data data =
     Hashtbl.iter (fun x m ->
       print_string "; Location: ";
@@ -214,14 +229,6 @@ let () =
       serialize_merged m |> List.iter (fun s ->
         Sexp.to_string_hum s |> print_endline;
       );
-      (*
-      (* Print the locals of each location *)
-      print_string "Vars: ";
-      join ", " (StringSet.elements m.merged_fns) |> print_endline;
-      (* Print the pre-conditions of each location *)
-      let b = merged_to_bexp m |> Constfold.b_opt in
-      merged_to_bexp m |> Constfold.b_opt |> Serialize.b_ser |> Sexp.to_string_hum |> print_endline;
-      *)
       print_endline "";
     ) data;
   in

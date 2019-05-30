@@ -1,5 +1,12 @@
-;(library
-;  (name faial))
+; The lexer
+(ocamllex (modules lexer))
+; The parser
+(menhir (modules parse2))
 
-(executable (name main)
-  (libraries sexplib yaml))
+(executable
+  (name main)
+  (libraries sexplib)
+)
+
+
+
