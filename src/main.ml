@@ -98,9 +98,10 @@ let merge (c1, steps1) (c2, steps2) =
   in
   let add_result x steps1 steps2 =
     let fns = get_fns x in
+    let pre = restrict_bexp pre fns in
     Hashtbl.add result x {
-      merged_fns = fns;
-      merged_pre = restrict_bexp pre fns;
+      merged_fns = StringSet.elements fns |> Freenames.free_names_bexp pre |> StringSet.of_list;
+      merged_pre = pre;
       merged_steps = (steps1, steps2)
     }
   in
