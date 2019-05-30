@@ -1,8 +1,8 @@
 open Proto
 open Common
 
-let tid1 = "1:"
-let tid2 = "2:"
+let tid1 = ".1."
+let tid2 = ".2."
 
 let project prefix x = prefix ^ x
 

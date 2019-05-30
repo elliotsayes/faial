@@ -34,6 +34,10 @@ let b_or b1 b2 =
 let b_and b1 b2 =
   BRel (BAnd, b1, b2)
 
+let b_not b = BNot b
+
+let n_neq b1 b2 = b_not (n_eq b1 b2)
+
 let rec b_and_ex l =
   match l with
   | [] -> Bool true

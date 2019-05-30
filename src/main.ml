@@ -140,14 +140,58 @@ let steps_to_bexp (step1, step2) (time1, idx1, mode1) (time2, idx2, mode2) =
     n_eq idx1 idx2;
   ]
 
-let merged_to_bexp m =
-  let time1 = Var "1:time:" in
-  let time2 = Var "2:time:" in
-  let idx1 = Var "1:idx:" in
-  let idx2 = Var "2:idx:" in
-  let mode1 = Var "1:mode:" in
-  let mode2 = Var "2:mode:" in
-  b_and m.merged_pre (steps_to_bexp m.merged_steps (time1, idx1, mode1) (time2, idx2, mode2))
+let serialize_merged m =
+  let open Spmd2binary in
+  let time1 = Var (tid1 ^ "time.") in
+  let time2 = Var (tid2 ^ "time.") in
+  let idx1 = Var (tid1 ^ "idx.") in
+  let idx2 = Var (tid2 ^ "idx.") in
+  let mode1 = Var (tid1 ^ "mode.") in
+  let mode2 = Var (tid2 ^ "mode.") in
+  let more_vars =
+    List.map
+      (fun x -> match x with | Var x -> x | _ -> "")
+      [time1; time2; idx1; idx2; mode1; mode2]
+  in
+  let merged_to_bexp m =
+    b_and m.merged_pre (steps_to_bexp m.merged_steps (time1, idx1, mode1) (time2, idx2, mode2))
+  in
+  let serialize_constr (vars:StringSet.t) (b:bexp) =
+    (*
+      (assert (forall ((p Int) (q Int) (n Int) (m Int) (e Exp))
+        (=>
+          (and
+            (can-write p e m)
+            (=> (not (= p q)) (not (= n m)))
+          )
+        (can-write p (write q e n) m)
+      )
+    *)
+    let vars =
+      List.append more_vars (StringSet.elements vars)
+      |> List.map (fun x ->
+          Sexp.List [Sexp.Atom "declare-const"; Sexp.Atom x; Sexp.Atom "Int"]
+        )
+    in
+    List.flatten [
+      [
+        Sexp.List [Sexp.Atom "push"];
+      ];
+      vars;
+      [
+        Sexp.List [Sexp.Atom "assert";
+          Serialize.b_ser (b_not (n_eq (Var ".1.$tid") (Var ".2.$tid")))
+        ];
+        Sexp.List [Sexp.Atom "assert"; Serialize.b_ser b];
+        Sexp.List [Sexp.Atom "check-sat"];
+        Sexp.List [Sexp.Atom "get-model"];
+        Sexp.List [Sexp.Atom "pop"]
+      ]
+    ]
+  in
+  merged_to_bexp m
+    |> Constfold.b_opt
+    |> serialize_constr m.merged_fns
 
 let join sep elems =
   let on_elem accum x =
@@ -160,25 +204,18 @@ let join sep elems =
 let () =
   let print_data data =
     Hashtbl.iter (fun x m ->
-      print_string "Location: ";
+      print_string "; Location: ";
       print_endline x;
+      serialize_merged m |> List.iter (fun s ->
+        Sexp.to_string_hum s |> print_endline;
+      );
+      (*
       (* Print the locals of each location *)
       print_string "Vars: ";
       join ", " (StringSet.elements m.merged_fns) |> print_endline;
       (* Print the pre-conditions of each location *)
+      let b = merged_to_bexp m |> Constfold.b_opt in
       merged_to_bexp m |> Constfold.b_opt |> Serialize.b_ser |> Sexp.to_string_hum |> print_endline;
-      (*
-      print_string ("Pre: ");
-      Serialize.b_ser m.merged_pre |> Sexp.to_string_hum |> print_endline;
-      (* Print the various accesses *)
-      print_endline ("T1:");
-      List.iter (fun o ->
-        Serialize.t_ser o |> Sexp.to_string_hum |> print_endline
-      ) (fst m.merged_steps);
-      print_endline ("T2:");
-      List.iter (fun o ->
-        Serialize.t_ser o |> Sexp.to_string_hum |> print_endline
-      ) (snd m.merged_steps);
       *)
       print_endline "";
     ) data;
