@@ -1,0 +1,16 @@
+shared sumBuffer, tempBuffer, result;
+const blockDim_x, SUM_BUFFER_SIZE, WORK_GROUP_SIZE;
+assume blockDim_x < SUM_BUFFER_SIZE;
+
+for index < (SUM_BUFFER_SIZE / blockDim_x) {
+  rw tempBuffer[$tid];
+};
+for i < (WORK_GROUP_SIZE / 2) {
+  sync;
+  rw tempBuffer[$tid]
+    if ($tid%(i*2*2) == 0 && $tid+(i*2) < WORK_GROUP_SIZE) && i > 0;
+  ro tempBuffer[$tid + 1]
+    if ($tid%(i*2*2) == 0 && $tid+(i*2) < WORK_GROUP_SIZE) && i > 0;
+};
+rw result[0] if $tid == 0;
+rw rempBuffer[0] if $tid == 0;

@@ -25,7 +25,6 @@ rule read = parse
   | white    { read lexbuf }
   | newline  { next_line lexbuf; read lexbuf }
   | uint     { UINT (int_of_string (Lexing.lexeme lexbuf)) }
-  | id { ID (Lexing.lexeme lexbuf) }
   | ';' { SEMICOLON }
   | '+' { PLUS }
   | '-' { MINUS }
@@ -46,11 +45,17 @@ rule read = parse
   | "ro" {RO}
   | "for" {FOR}
   | "if" { IF }
+  | "shared" { LOCS }
+  | "const" { CONST }
+  | "assume" { PRE }
+  | ',' { COMMA }
   | '[' { LBRACK }
   | ']' { RBRACK }
   | '(' { LPAREN }
   | ')' { RPAREN }
   | '{' { LBRACE }
   | '}' { RBRACE }
+  | "$tid" { ID (Lexing.lexeme lexbuf) }
+  | id { ID (Lexing.lexeme lexbuf) }
   | eof { EOF }
   | _ { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }

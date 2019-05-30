@@ -1,0 +1,2 @@
+shared x;
+rw x[$tid];

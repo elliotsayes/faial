@@ -1,0 +1,5 @@
+shared x;
+for idx < 1 {
+  rw x[2 * $tid * (idx + 1)] if idx < count;
+  sync
+}

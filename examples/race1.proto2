@@ -1,0 +1,2 @@
+shared x, y;
+rw x[0];

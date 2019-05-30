@@ -1,5 +1,5 @@
 ; The lexer
-(ocamllex (modules lexer))
+(ocamllex (modules scan))
 ; The parser
 (menhir (modules parse2))
 

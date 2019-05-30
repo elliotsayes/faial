@@ -4,6 +4,7 @@
 %token NOT
 %token EOF
 %token SYNC RW RO FOR IF
+%token LOCS CONST PRE COMMA
 %token LPAREN RPAREN LBRACE RBRACE LBRACK RBRACK
 
 %left MOD
@@ -12,9 +13,9 @@
 
 %{ open Proto %}
 
-%start <Proto.proto> main
+%start <Proto.kernel> main
 %%
-main : p = proto { p };
+main : p = kernel EOF { p };
 
 nexp:
   | i = UINT { Num i }
@@ -40,7 +41,7 @@ bexp:
   | NOT b = bexp { b_not b }
   ;
 
-mode: RW { W } | RO { R }
+mode: RW { W } | RO { R };
 
 proto:
   | SYNC { Sync }
@@ -52,5 +53,35 @@ proto:
     { Acc (x, {access_index=n; access_cond=b; access_mode=m}) }
   | FOR x = ID LT n = nexp LBRACE p = proto RBRACE
     { Loop ({range_var=x; range_upper_bound=n}, p) }
-  | SEMICOLON { Skip }
+  | p = proto SEMICOLON { p }
   ;
+
+ids:
+  | { [] }
+  | x = ID { [x] }
+  | x = ID COMMA xs = ids { x :: xs }
+
+locs:
+  | LOCS l1 = ids SEMICOLON { l1 }
+  | { [] }
+
+const:
+  | CONST l2 = ids SEMICOLON { l2 }
+  | { [] }
+
+pre:
+  | PRE b = bexp SEMICOLON { b }
+  | { Bool true }
+
+kernel:
+  | l1 = locs
+    l2 = const
+    b = pre
+    p = proto {
+      {
+        kernel_locations = l1;
+        kernel_variables = l2;
+        kernel_pre = b;
+        kernel_code = p;
+      }
+    }

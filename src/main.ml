@@ -1,6 +1,6 @@
 open Proto
-open Sexplib
 open Common
+open Lexing
 
 let group_assoc l =
   let groups = Hashtbl.create 0 in
@@ -143,6 +143,7 @@ let steps_to_bexp (step1, step2) (time1, idx1, mode1) (time2, idx2, mode2) =
 
 let serialize_merged m =
   let open Spmd2binary in
+  let open Sexplib in
   let time1 = Var (tid1 ^ "time.") in
   let time2 = Var (tid2 ^ "time.") in
   let idx1 = Var (tid1 ^ "idx.") in
@@ -206,38 +207,40 @@ let join sep elems =
   in
   List.fold_left on_elem "" elems
 
-let do_parse filename =
-  let input = open_in filename in
-  let filebuf = Lexing.from_channel input in
-  let data = try
-    Parse2.main Lexer.read filebuf
-  with
-  | Lexer.Error msg ->
-      Printf.eprintf "%s%!" msg
-  | Parse2.Error ->
-      Printf.eprintf "At offset %d: syntax error.\n%!" (Lexing.lexeme_start filebuf)
-  in
-  IO.close_in input;
-  data
+let print_position outx lexbuf =
+  let pos = lexbuf.lex_curr_p in
+  Printf.fprintf outx "%s:%d:%d" pos.pos_fname
+    pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)
 
-let () =
-  (* let filename = Sys.argv.(1) *)
-  let print_data data =
-    Hashtbl.iter (fun x m ->
-      print_string "; Location: ";
-      print_endline x;
-      serialize_merged m |> List.iter (fun s ->
-        Sexp.to_string_hum s |> print_endline;
-      );
-      print_endline "";
-    ) data;
-  in
-  let s : Sexp.t = Sexp.input_sexp stdin in
+let v2_parse input : kernel =
+  let filebuf = Lexing.from_channel input in
+  try Parse2.main Scan.read filebuf with
+  | Parse2.Error ->
+    Printf.fprintf stderr "%a: syntax error\n" print_position filebuf;
+    exit (-1)
+
+let sexp_parse input : kernel =
+  let open Sexplib in
+  let s : Sexp.t = Sexp.input_sexp input in
     try
-      let d1, d2 = Parse.parse_kernel.run s |> check in
-      print_data (merge d1 d2);
+      Parse.parse_kernel.run s
     with
     | Parse.ParseError l ->
       List.iter (fun x ->
         print_endline x
-      ) l
+      ) l;
+      exit (-1)
+
+let main () =
+  let d1, d2 = v2_parse stdin |> check in
+  merge d1 d2
+  |> Hashtbl.iter (fun x m ->
+    print_string "; Location: ";
+    print_endline x;
+    serialize_merged m |> List.iter (fun s ->
+      Sexplib.Sexp.to_string_hum s |> print_endline;
+    );
+    print_endline "";
+  )
+
+let _ = main ()
