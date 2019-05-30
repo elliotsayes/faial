@@ -22,6 +22,8 @@ let id = ['a'-'z' 'A'-'Z' '_'] ['a'-'z' 'A'-'Z' '0'-'9' '_']*
 
 (* part 4 *)
 rule read = parse
+  | "#|" { multiline_comment lexbuf; read lexbuf }
+  | "#" { singleline_comment lexbuf; read lexbuf }
   | white    { read lexbuf }
   | newline  { next_line lexbuf; read lexbuf }
   | uint     { UINT (int_of_string (Lexing.lexeme lexbuf)) }
@@ -59,3 +61,12 @@ rule read = parse
   | id { ID (Lexing.lexeme lexbuf) }
   | eof { EOF }
   | _ { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
+and singleline_comment = parse
+  | '\n'   { new_line lexbuf }
+  | eof    { () }
+  | _      { singleline_comment lexbuf }
+and multiline_comment = parse
+  | "|#"   { () }
+  | eof    { failwith "unterminated comment" }
+  | '\n'   { new_line lexbuf; multiline_comment lexbuf }
+  | _      { multiline_comment lexbuf }
