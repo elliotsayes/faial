@@ -8,13 +8,15 @@ https://github.com/pandegroup/openmm/blob/master/platforms/cuda/src/kernels/cust
 
 # Declare shared variables
 shared sumBuffer, tempBuffer, result;
-# (Optional) Declare global constants:
+
+# Declare global constants:
 const blockDim_x, SUM_BUFFER_SIZE, WORK_GROUP_SIZE;
+
 # (Optional) Declare assumptions:
-assume blockDim_x < SUM_BUFFER_SIZE;  # DRF does not depend on this
+assume blockDim_x < SUM_BUFFER_SIZE && $tid >= 0;  # DRF does not depend on this
 
 for index < SUM_BUFFER_SIZE / blockDim_x {
-  rw sumBuffer[$tid] if index >= $tid;
+  ro sumBuffer[index * blockDim_x] if index >= $tid;
 }; # We require a semi after a loop
 
 rw tempBuffer[$tid];
@@ -27,5 +29,5 @@ for i < WORK_GROUP_SIZE / 2 {
     if ($tid%(i*2*2) == 0 && $tid+(i*2) < WORK_GROUP_SIZE) && i > 0;
 };
 
+ro tempBuffer[0] if $tid == 0;
 rw result[0] if $tid == 0;
-rw tempBuffer[0] if $tid == 0;
