@@ -65,10 +65,9 @@ let check (k:kernel) =
   (* 3. Make the owner of each access explicit *)
   let steps1, steps2 = Spmd2binary.project_stream locals steps in
   let steps1, steps2 = Constfold.stream_opt steps1, Constfold.stream_opt steps2 in
-  (* 4. Perform a constant-fold optimization, to reduce the problem space *)
   let c1, c2 = Spmd2binary.project_condition locals c in
-  let pre_and_ x = BRel (BAnd, x, k.kernel_pre) in
-  (pre_and_ c1, steps1), (pre_and_ c2, steps2)
+  let pre = b_and c1 c2 |> b_and k.kernel_pre in
+  pre, steps1, steps2
 
 type merged = {
   merged_pre: bexp;
@@ -78,8 +77,7 @@ type merged = {
 
 (** Groups two streams together in a single data structure *)
 
-let merge (c1, steps1) (c2, steps2) =
-  let pre = b_and c1 c2 in
+let merge pre steps1 steps2 =
   let group1 = group_assoc steps1 in
   let group2 = group_assoc steps2 in
   let fns1 = extract_free_names group1 in
@@ -171,8 +169,13 @@ let serialize_merged m =
     let decl =
       List.append more_vars (StringSet.elements vars)
       |> List.map (fun x ->
-          Sexp.List [Sexp.Atom "declare-const"; Sexp.Atom x; Sexp.Atom "Int"]
+          [
+            Sexp.List [Sexp.Atom "declare-const"; Sexp.Atom x; Sexp.Atom "Int"];
+            (* x >= 0 *)
+            Sexp.List [Sexp.Atom "assert"; Serialize.b_ser (n_ge (Var x) (Num 0))];
+          ]
         )
+      |> List.flatten
     in
     List.flatten [
       [
@@ -231,8 +234,8 @@ let sexp_parse input : kernel =
       exit (-1)
 
 let main () =
-  let d1, d2 = v2_parse stdin |> check in
-  merge d1 d2
+  let pre, d1, d2 = v2_parse stdin |> check in
+  merge pre d1 d2
   |> Hashtbl.iter (fun x m ->
     print_string "; Location: ";
     print_endline x;
