@@ -13,7 +13,7 @@ shared sumBuffer, tempBuffer, result;
 const blockDim_x, SUM_BUFFER_SIZE, WORK_GROUP_SIZE;
 
 # (Optional) Declare assumptions:
-assume blockDim_x < SUM_BUFFER_SIZE && $tid >= 0;  # DRF does not depend on this
+assume blockDim_x < SUM_BUFFER_SIZE;  # DRF does not depend on this
 
 for index < SUM_BUFFER_SIZE / blockDim_x {
   ro sumBuffer[index * blockDim_x] if index >= $tid;
