@@ -1,2 +1,2 @@
-shared x, y;
+shared x;
 rw x[0];
