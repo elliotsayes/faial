@@ -1,5 +1,7 @@
 shared x;
-for idx < 1 {
-  rw x[2 * $tid * (idx + 1)] if idx < count;
+const count;
+loop idx < 1 {
+  assert idx < count;
+  rw x[idx];
   sync
 }

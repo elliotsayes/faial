@@ -31,30 +31,33 @@ let normalize_variables (p:proto) =
       Seq (e1, e2), xs
     | Acc (_, _)
     | Skip
+    | Assert _
     | Sync -> e, xs
   in
   norm p [] |> fst
 
 (** Extracts every variable declaration and how to restrict each variable.*)
-let get_constraints (p:proto) : bexp =
-  let rec iter p b =
+let get_constraints (p:proto) : bexp list =
+  let rec iter p l =
     match p with
     | Skip
     | Sync
-    | Acc _ -> b
+    | Acc _ -> l
+    | Assert b -> b::l
     | Loop (r, p) ->
-      let b2 = (NRel (NLt, Var r.range_var, r.range_upper_bound)) in
-      iter p (BRel (BAnd, b, b2))
+      let b = n_lt (Var r.range_var) r.range_upper_bound in
+      iter p (b::l)
     | Seq (p1, p2) ->
-      iter p2 (iter p1 b)
+      iter p2 (iter p1 l)
   in
-  iter p (Bool true)
+  iter p []
 
 let rec does_sync (p:proto) : bool =
   match p with
   | Skip
   | Loop _
   | Acc _
+  | Assert _
     -> false
   | Sync -> true
   | Seq (p1, p2) -> does_sync p1 || does_sync p2
@@ -62,6 +65,7 @@ let rec does_sync (p:proto) : bool =
 let rec single_loop_variables (p:proto) (s:StringSet.t) : StringSet.t =
   match p with
   | Acc _
+  | Assert _
   | Sync
   | Skip -> s
   | Loop (r, p) ->
@@ -94,7 +98,8 @@ let remove_loops (e:Proto.proto) : (string * access timed) list =
   in
   let rec trans e =
     match e with
-    | Proto.Skip ->
+    | Proto.Skip
+    | Proto.Assert _ ->
       Phaseord.Skip
     | Proto.Seq (e1, e2) ->
       Phaseord.Seq (trans e1, trans e2)

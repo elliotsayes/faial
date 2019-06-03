@@ -36,6 +36,7 @@ let p_subst f p =
     match p with
     | Skip -> Skip
     | Sync -> Sync
+    | Assert b -> Assert (b_subst f b)
     | Acc (x, a) -> Acc (x, a_subst f a)
     | Seq (p1, p2) -> Seq (subst p1, subst p2)
     | Loop (r, p) ->

@@ -71,6 +71,7 @@ let rec proto_ser p =
   match p with
   | Skip -> Sexp.Atom "skip"
   | Sync -> Sexp.Atom "sync"
+  | Assert b -> unop "assert" (b_ser b)
   | Acc (x, a) -> binop "loc" (Sexp.Atom x) (a_ser a)
   | Seq (p1, p2) -> binop "begin" (proto_ser p1) (proto_ser p2)
   | Loop (r, p) -> binop "loop" (r_ser r) (proto_ser p)

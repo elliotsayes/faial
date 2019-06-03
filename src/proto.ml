@@ -47,7 +47,7 @@ let eval_brel o : bool -> bool -> bool =
 let n_rel o n1 n2 =
   match n1, n2 with
   | Num n1, Num n2 -> Bool (eval_nrel o n1 n2)
-  | _, _ -> NRel (NLt, n1, n2)
+  | _, _ -> NRel (o, n1, n2)
 
 let n_lt = n_rel NLt
 
@@ -110,6 +110,7 @@ type access = {access_index: nexp; access_cond: bexp; access_mode: mode}
 type proto =
 | Skip
 | Sync
+| Assert of bexp
 | Acc of variable * access
 | Seq of proto * proto
 | Loop of range * proto
@@ -126,8 +127,6 @@ type kernel = {
   kernel_locations: string list;
   (* The internal variables are used in the code of the kernel.  *)
   kernel_variables: string list;
-  (* A precondition that restricts the values of internal variables. *)
-  kernel_pre: bexp;
   (* The code of a kernel performs the actual memory accesses. *)
   kernel_code: proto;
 }

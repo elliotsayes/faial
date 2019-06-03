@@ -65,8 +65,8 @@ let check (k:kernel) =
   (* 3. Make the owner of each access explicit *)
   let steps1, steps2 = Spmd2binary.project_stream locals steps in
   let steps1, steps2 = Constfold.stream_opt steps1, Constfold.stream_opt steps2 in
-  let loop_pre = Loops.get_constraints p |> Spmd2binary.project_condition locals in
-  b_and k.kernel_pre loop_pre, steps1, steps2
+  let loop_pre = Loops.get_constraints p |> b_and_ex |> Spmd2binary.project_condition locals in
+  loop_pre, steps1, steps2
 
 type merged = {
   merged_pre: bexp;

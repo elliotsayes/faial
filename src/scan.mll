@@ -45,11 +45,11 @@ rule read = parse
   | "sync" {SYNC}
   | "rw" {RW}
   | "ro" {RO}
-  | "for" {FOR}
+  | "loop" { LOOP }
   | "if" { IF }
   | "shared" { LOCS }
   | "const" { CONST }
-  | "assume" { PRE }
+  | "assert" { ASSERT }
   | ',' { COMMA }
   | '[' { LBRACK }
   | ']' { RBRACK }

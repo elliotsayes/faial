@@ -12,16 +12,13 @@ shared sumBuffer, tempBuffer, result;
 # Declare global constants:
 const blockDim_x, SUM_BUFFER_SIZE, WORK_GROUP_SIZE;
 
-# (Optional) Declare assumptions:
-assume blockDim_x < SUM_BUFFER_SIZE;  # DRF does not depend on this
-
-for index < SUM_BUFFER_SIZE / blockDim_x {
+loop index < SUM_BUFFER_SIZE / blockDim_x {
   ro sumBuffer[index * blockDim_x] if index >= $tid;
 }; # We require a semi after a loop
 
 rw tempBuffer[$tid];
 
-for i < WORK_GROUP_SIZE / 2 {
+loop i < WORK_GROUP_SIZE / 2 {
   sync;
   rw tempBuffer[$tid]
     if ($tid%(i*2*2) == 0 && $tid+(i*2) < WORK_GROUP_SIZE) && i > 0;

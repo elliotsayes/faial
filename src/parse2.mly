@@ -3,9 +3,10 @@
 %token SEMICOLON PLUS MINUS MULT DIV MOD LT GT GTE LTE OR AND EQ NEQ
 %token NOT
 %token EOF
-%token SYNC RW RO FOR IF
-%token LOCS CONST PRE COMMA
+%token SYNC RW RO IF
+%token LOCS CONST ASSERT COMMA
 %token LPAREN RPAREN LBRACE RBRACE LBRACK RBRACK
+%token LOOP
 
 %left OR
 %left AND
@@ -57,13 +58,14 @@ mode: RW { W } | RO { R };
 
 proto:
   | SYNC { Sync }
+  | ASSERT b = bexp { Assert b }
   | p1 = proto SEMICOLON p2 = proto
     { Seq (p1, p2) }
   | m = mode x = ID LBRACK n = nexp RBRACK
     { Acc (x, {access_index=n; access_cond=Bool true; access_mode=m}) }
   | m = mode x = ID LBRACK n = nexp RBRACK IF b = bexp
     { Acc (x, {access_index=n; access_cond=b; access_mode=m}) }
-  | FOR x = ID LT n = nexp LBRACE p = proto RBRACE
+  | LOOP x = ID LT n = nexp LBRACE p = proto RBRACE
     { Loop ({range_var=x; range_upper_bound=n}, p) }
   | p = proto SEMICOLON { p }
 
@@ -78,30 +80,22 @@ locs:
 const:
   | CONST l2 = ids SEMICOLON { l2 }
 
-pre:
-  | PRE b = bexp SEMICOLON { b }
-  | { Bool true }
-
 kernel:
   | l1 = locs
     l2 = loption(const)
-    b = pre
     p = proto {
       {
         kernel_locations = l1;
         kernel_variables = l2;
-        kernel_pre = b;
         kernel_code = p;
       }
     }
-  | l2 = const
+  | l2 = loption(const)
     l1 = locs
-    b = pre
     p = proto {
       {
         kernel_locations = l1;
         kernel_variables = l2;
-        kernel_pre = b;
         kernel_code = p;
       }
     }
