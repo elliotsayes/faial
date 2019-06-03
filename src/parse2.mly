@@ -7,9 +7,14 @@
 %token LOCS CONST PRE COMMA
 %token LPAREN RPAREN LBRACE RBRACE LBRACK RBRACK
 
-%left MOD
-%left PLUS MINUS        /* lowest precedence */
-%left MULT DIV        /* medium precedence */
+%left OR
+%left AND
+(*
+%left EQ NEQ
+%left LT GT GTE LTE
+*)
+%left PLUS MINUS
+%left MULT DIV MOD
 
 %{ open Proto %}
 
@@ -21,25 +26,32 @@ nexp:
   | i = UINT { Num i }
   | x = ID { Var x }
   | LPAREN n = nexp RPAREN { n }
-  | n1 = nexp PLUS n2 = nexp { Bin (Plus, n1, n2) }
-  | n1 = nexp MINUS n2 = nexp { Bin (Minus, n1, n2) }
-  | n1 = nexp MULT n2 = nexp { Bin (Mult, n1, n2) }
-  | n1 = nexp DIV n2 = nexp { Bin (Div, n1, n2) }
-  | n1 = nexp MOD n2 = nexp { Bin (Mod, n1, n2) }
-  ;
+  | n1 = nexp ; o = nbin ; n2 = nexp { o n1 n2 }
+
+%inline nbin:
+  | PLUS { n_plus }
+  | MINUS { n_minus }
+  | MULT { n_mult }
+  | DIV { n_div }
+  | MOD { n_mod }
 
 bexp:
   | LPAREN b = bexp RPAREN { b }
-  | n1 = nexp EQ n2 = nexp { n_eq n1 n2 }
-  | n1 = nexp NEQ n2 = nexp { n_neq n1 n2 }
-  | n1 = nexp LT n2 = nexp { n_lt n1 n2 }
-  | n1 = nexp GT n2 = nexp { n_gt n1 n2 }
-  | n1 = nexp LTE n2 = nexp { n_le n1 n2 }
-  | n1 = nexp GTE n2 = nexp { n_ge n1 n2 }
-  | b1 = bexp OR b2 = bexp { b_or b1 b2 }
-  | b1 = bexp AND b2 = bexp { b_and b1 b2 }
+  | n1 = nexp; o = nrel; n2 = nexp { o n1 n2 }
+  | b1 = bexp; o = brel; b2 = bexp { o b1 b2 }
   | NOT b = bexp { b_not b }
-  ;
+
+%inline nrel:
+  | EQ { n_eq }
+  | NEQ { n_neq }
+  | LT { n_lt }
+  | GT { n_gt  }
+  | LTE { n_le }
+  | GTE { n_ge }
+
+%inline brel:
+  | OR { b_or }
+  | AND { b_and }
 
 mode: RW { W } | RO { R };
 
@@ -54,7 +66,6 @@ proto:
   | FOR x = ID LT n = nexp LBRACE p = proto RBRACE
     { Loop ({range_var=x; range_upper_bound=n}, p) }
   | p = proto SEMICOLON { p }
-  ;
 
 ids:
   | { [] }
@@ -63,11 +74,9 @@ ids:
 
 locs:
   | LOCS l1 = ids SEMICOLON { l1 }
-  | { [] }
 
 const:
   | CONST l2 = ids SEMICOLON { l2 }
-  | { [] }
 
 pre:
   | PRE b = bexp SEMICOLON { b }
@@ -75,7 +84,18 @@ pre:
 
 kernel:
   | l1 = locs
-    l2 = const
+    l2 = loption(const)
+    b = pre
+    p = proto {
+      {
+        kernel_locations = l1;
+        kernel_variables = l2;
+        kernel_pre = b;
+        kernel_code = p;
+      }
+    }
+  | l2 = const
+    l1 = locs
     b = pre
     p = proto {
       {
