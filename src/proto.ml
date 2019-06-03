@@ -34,10 +34,16 @@ let n_eq n1 n2 =
   NRel (NEq, n1, n2)
 
 let b_or b1 b2 =
-  BRel (BOr, b1, b2)
+  match b1, b2 with
+  | Bool true, _ | _, Bool true -> Bool true
+  | Bool false, b | b, Bool false -> b
+  | _, _ -> BRel (BOr, b1, b2)
 
 let b_and b1 b2 =
-  BRel (BAnd, b1, b2)
+  match b1, b2 with
+  | Bool true, b | b, Bool true -> b
+  | Bool false, _ | _, Bool false -> Bool false
+  | _, _ -> BRel (BAnd, b1, b2)
 
 let b_not b = BNot b
 

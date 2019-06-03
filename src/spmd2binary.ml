@@ -36,7 +36,7 @@ let project_access locals (t:access timed) : (access timed) * (access timed) =
 
 let project_condition locals (b:bexp) =
   let do_subst ti = Subst.b_subst (do_project locals ti) in
-  do_subst tid1 b, do_subst tid2 b
+  b_and (do_subst tid1 b) (do_subst tid2 b)
 
 type stream = (string * access timed) list
 

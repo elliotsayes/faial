@@ -54,9 +54,9 @@ let check (k:kernel) =
   (* XXX *)
   (* 1. Make sure each loops as a unique variable *)
   let p = Loops.normalize_variables k.kernel_code in
+  (* 2. Extract single-valued variables *)
   let single_vars = Loops.single_loop_variables p StringSet.empty in
   let single_vars = StringSet.union single_vars (StringSet.of_list k.kernel_variables) in
-  let c = Loops.get_constraints p in
   (* 2. Flatten outer loops *)
   let steps = Loops.remove_loops p in
   (* 3. Get the local variables defined in steps *)
@@ -65,9 +65,8 @@ let check (k:kernel) =
   (* 3. Make the owner of each access explicit *)
   let steps1, steps2 = Spmd2binary.project_stream locals steps in
   let steps1, steps2 = Constfold.stream_opt steps1, Constfold.stream_opt steps2 in
-  let c1, c2 = Spmd2binary.project_condition locals c in
-  let pre = b_and c1 c2 |> b_and k.kernel_pre in
-  pre, steps1, steps2
+  let loop_pre = Loops.get_constraints p |> Spmd2binary.project_condition locals in
+  b_and k.kernel_pre loop_pre, steps1, steps2
 
 type merged = {
   merged_pre: bexp;
