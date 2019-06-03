@@ -1,27 +1,5 @@
 open Proto
 
-let eval_nbin (o:nbin) : int -> int -> int =
-  match o with
-  | Plus -> (+)
-  | Minus -> (-)
-  | Mult -> ( * )
-  | Div -> (/)
-  | Mod -> (mod)
-
-
-let eval_nrel o: int -> int -> bool =
-  match o with
-  | NEq -> (=)
-  | NLe -> (<=)
-  | NLt -> (<)
-
-
-let eval_brel o : bool -> bool -> bool =
-  match o with
-  | BOr -> (||)
-  | BAnd -> (&&)
-
-
 let rec n_opt (a : nexp) : nexp =
   match a with
   | Var _ -> a

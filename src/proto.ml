@@ -24,14 +24,40 @@ type bexp =
 | NRel of nrel * nexp * nexp
 | BRel of brel * bexp * bexp
 | BNot of bexp
-let n_lt n1 n2 =
-  NRel (NLt, n1, n2)
+
+let eval_nbin (o:nbin) : int -> int -> int =
+  match o with
+  | Plus -> (+)
+  | Minus -> (-)
+  | Mult -> ( * )
+  | Div -> (/)
+  | Mod -> (mod)
+
+let eval_nrel o: int -> int -> bool =
+  match o with
+  | NEq -> (=)
+  | NLe -> (<=)
+  | NLt -> (<)
+
+let eval_brel o : bool -> bool -> bool =
+  match o with
+  | BOr -> (||)
+  | BAnd -> (&&)
+
+let n_rel o n1 n2 =
+  match n1, n2 with
+  | Num n1, Num n2 -> Bool (eval_nrel o n1 n2)
+  | _, _ -> NRel (NLt, n1, n2)
+
+let n_lt = n_rel NLt
+
 let n_gt n1 n2 = n_lt n2 n1
-let n_le n1 n2 = NRel (NLe, n1, n2)
+
+let n_le = n_rel NLe
+
 let n_ge n1 n2 = n_le n2 n1
 
-let n_eq n1 n2 =
-  NRel (NEq, n1, n2)
+let n_eq = n_rel NEq
 
 let b_or b1 b2 =
   match b1, b2 with
@@ -45,7 +71,10 @@ let b_and b1 b2 =
   | Bool false, _ | _, Bool false -> Bool false
   | _, _ -> BRel (BAnd, b1, b2)
 
-let b_not b = BNot b
+let b_not b =
+  match b with
+  | Bool b -> Bool (not b)
+  | _ -> BNot b
 
 let n_neq b1 b2 = b_not (n_eq b1 b2)
 
