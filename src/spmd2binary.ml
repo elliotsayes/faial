@@ -35,8 +35,14 @@ let project_access locals (t:access timed) : (access timed) * (access timed) =
     mk tid1, mk tid2
 
 let project_condition locals (b:bexp) =
-  let do_subst ti = Subst.b_subst (do_project locals ti) in
-  b_and (do_subst tid1 b) (do_subst tid2 b)
+  let locs_in_b = Freenames.free_names_bexp b StringSet.empty
+    |> StringSet.inter locals
+  in
+  if StringSet.is_empty locs_in_b then
+    [b]
+  else
+    let do_subst ti = Subst.b_subst (do_project locals ti) in
+    [do_subst tid1 b; do_subst tid2 b]
 
 type stream = (string * access timed) list
 

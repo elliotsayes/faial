@@ -28,7 +28,7 @@ let extract_free_names h
   ) h;
   result
 
-let restrict_bexp (b:bexp) (fns:StringSet.t) : bexp =
+let restrict_bexp (fns:StringSet.t) (b:bexp) : bexp =
   let simpl b =
     let new_fn = Freenames.free_names_bexp b StringSet.empty in
     if StringSet.is_empty (StringSet.inter fns new_fn) then Bool true
@@ -69,13 +69,13 @@ let check (k:kernel) =
     Loops.get_constraints p
     |> List.map Constfold.norm
     |> List.flatten
-    |> b_and_ex
-    |> Spmd2binary.project_condition locals
+    |> List.map (Spmd2binary.project_condition locals)
+    |> List.flatten
   in
   loop_pre, steps1, steps2
 
 type merged = {
-  merged_pre: bexp;
+  merged_pre: bexp list;
   merged_fns: StringSet.t;
   merged_steps: access_t list * access_t list
 }
@@ -100,9 +100,9 @@ let merge pre steps1 steps2 =
   in
   let add_result x steps1 steps2 =
     let fns = get_fns x in
-    let pre = restrict_bexp pre fns in
+    let pre = List.map (restrict_bexp fns) pre in
     Hashtbl.add result x {
-      merged_fns = Freenames.free_names_bexp pre fns;
+      merged_fns = List.fold_left (fun new_fns b -> Freenames.free_names_bexp b new_fns) fns pre;
       merged_pre = pre;
       merged_steps = (steps1, steps2)
     }
@@ -157,8 +157,8 @@ let serialize_merged m =
       (fun x -> match x with | Var x -> x | _ -> "")
       [time1; time2; idx1; idx2; mode1; mode2]
   in
-  let merged_to_bexp m =
-    b_and m.merged_pre (steps_to_bexp m.merged_steps (time1, idx1, mode1) (time2, idx2, mode2))
+  let merged_steps_to_bexp m =
+    steps_to_bexp m.merged_steps (time1, idx1, mode1) (time2, idx2, mode2)
   in
   let serialize_constr (vars:StringSet.t) (b:bexp) =
     (*
@@ -194,6 +194,11 @@ let serialize_merged m =
         ];
       ]
       else [];
+      List.map (fun b -> 
+        Sexp.List [Sexp.Atom "assert";
+          Serialize.b_ser b
+        ];
+      ) m.merged_pre;
       [
         Sexp.List [Sexp.Atom "assert"; Serialize.b_ser b];
         Sexp.List [Sexp.Atom "check-sat"];
@@ -202,7 +207,7 @@ let serialize_merged m =
       ]
     ]
   in
-  merged_to_bexp m
+  merged_steps_to_bexp m
     |> Constfold.b_opt
     |> serialize_constr m.merged_fns
 
