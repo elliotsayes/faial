@@ -1,5 +1,19 @@
 open Proto
 
+let rec norm (b:bexp) : bexp list =
+  match b with
+  | BNot (NRel (NEq, _, _))
+  | Bool _
+  | NRel _ -> [b]
+  | BRel (BOr, b1, b2) -> List.append (norm (BNot b1)) (norm (BNot b2))
+  | BRel (BAnd, b1, b2) -> List.append (norm b1) (norm b2)
+  | BNot (Bool b) -> [Bool (not b)]
+  | BNot (BRel (BAnd, b1, b2)) -> norm (b_or (b_not b1) (b_not b2))
+  | BNot (BRel (BOr, b1, b2)) -> norm (b_and (b_not b1) (b_not b2))
+  | BNot (NRel (NLt, n1, n2)) -> norm (NRel (NLe, n1, n2))
+  | BNot (NRel (NLe, n1, n2)) -> norm (NRel (NLt, n1, n2))
+  | BNot (BNot b) -> norm b
+
 let rec n_opt (a : nexp) : nexp =
   match a with
   | Var _ -> a
