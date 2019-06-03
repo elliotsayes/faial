@@ -59,6 +59,17 @@ let n_ge n1 n2 = n_le n2 n1
 
 let n_eq = n_rel NEq
 
+let n_bin o n1 n2 =
+  match n1, n2 with
+  | Num n1, Num n2 -> Num (eval_nbin o n1 n2)
+  | _, _ -> Bin (o, n1, n2)
+
+let n_plus = n_bin Plus
+let n_minus = n_bin Minus
+let n_mult = n_bin Mult
+let n_div = n_bin Div
+let n_mod = n_bin Mod
+
 let b_or b1 b2 =
   match b1, b2 with
   | Bool true, _ | _, Bool true -> Bool true
