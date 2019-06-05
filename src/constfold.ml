@@ -2,10 +2,10 @@ open Proto
 
 let rec norm (b:bexp) : bexp list =
   match b with
+  | BRel (BOr, _, _)
   | BNot (NRel (NEq, _, _))
   | Bool _
   | NRel _ -> [b]
-  | BRel (BOr, b1, b2) -> List.append (norm (BNot b1)) (norm (BNot b2))
   | BRel (BAnd, b1, b2) -> List.append (norm b1) (norm b2)
   | BNot (Bool b) -> [Bool (not b)]
   | BNot (BRel (BAnd, b1, b2)) -> norm (b_or (b_not b1) (b_not b2))
