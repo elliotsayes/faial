@@ -12,18 +12,27 @@ shared sumBuffer, tempBuffer, result;
 # Declare global constants:
 const blockDim_x, SUM_BUFFER_SIZE, WORK_GROUP_SIZE;
 
-loop index < SUM_BUFFER_SIZE / blockDim_x {
-  ro sumBuffer[index * blockDim_x] if index >= $tid;
+loop index < SUM_BUFFER_SIZE {
+  assert index >= $tid;
+  assert index % blockDim_x == 0;
+  ro sumBuffer[$tid + index];
 }; # We require a semi after a loop
 
 rw tempBuffer[$tid];
 
-loop i < WORK_GROUP_SIZE / 2 {
+loop i < WORK_GROUP_SIZE {
+  assert i == 1 || i == 2 || i == 4 || i == 8 || i == 16 || i == 32
+    || i == 64 || i == 128 || i == 256 || i == 512 || i == 1024
+    || i == 2048 || i == 4096 || i == 8192 || i == 16384 || i == 32768
+    || i == 65536 || i == 131072 || i == 262144 || i == 524288
+    || i == 1048576 || i == 2097152 || i == 4194304 || i == 8388608
+    || i == 16777216 || i == 33554432 || i == 67108864 || i == 134217728
+    || i == 268435456 || i == 536870912 || i == 1073741824 || i == 2147483648;
   sync;
   rw tempBuffer[$tid]
-    if ($tid%(i*2*2) == 0 && $tid+(i*2) < WORK_GROUP_SIZE) && i > 0;
-  ro tempBuffer[$tid + 1]
-    if ($tid%(i*2*2) == 0 && $tid+(i*2) < WORK_GROUP_SIZE) && i > 0;
+    if ($tid%(i*2) == 0 && $tid+i < WORK_GROUP_SIZE);
+  ro tempBuffer[$tid + i]
+    if ($tid%(i*2) == 0 && $tid+i < WORK_GROUP_SIZE);
 };
 
 ro tempBuffer[0] if $tid == 0;
