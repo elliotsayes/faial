@@ -151,9 +151,9 @@ let range i j =
   in
   iter j []
 
-let pow2 n : bexp =
+let pow2 n x : bexp =
     range 0 n
-    |> List.map (fun i -> n_eq (Var "x") (Num (1 lsl i)))
+    |> List.map (fun i -> n_eq x (Num (1 lsl i)))
     |> b_or_ex
 
 let serialize_merged m =
@@ -256,15 +256,21 @@ let sexp_parse input : kernel =
       ) l;
       exit (-1)
 
-let main () =
+let pred name body =
   let open Sexplib in
   Sexp.List [
     Sexp.Atom "define-fun";
-    Sexp.Atom "exp2";
+    Sexp.Atom name;
     Sexp.List [Serialize.unop "x" (Sexp.Atom "Int")];
     Sexp.Atom "Bool";
-    pow2 31 |> Serialize.b_ser;
+    body (Var "x") |> Serialize.b_ser;
   ]
+
+let main () =
+  let open Sexplib in
+  pred "exp2" (pow2 31)
+  |> Sexp.to_string_hum |> print_endline;
+  pred "uint32" (fun x -> n_le x (Num 2147483648))
   |> Sexp.to_string_hum |> print_endline;
   let pre, d1, d2 = v2_parse stdin |> check in
   merge pre d1 d2
