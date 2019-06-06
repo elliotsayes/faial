@@ -44,6 +44,7 @@ let rec b_ser (b:bexp) : Sexp.t =
   | BRel (b, b1, b2) ->
     binop (brel_to_string b) (b_ser b1) (b_ser b2)
   | BNot b -> unop "not" (b_ser b)
+  | Pred (x, v) -> unop x (Sexp.Atom v)
 
 let m_ser m = match m with
   | Proto.R -> "ro"

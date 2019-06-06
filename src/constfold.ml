@@ -2,6 +2,8 @@ open Proto
 
 let rec norm (b:bexp) : bexp list =
   match b with
+  | Pred _
+  | BNot (Pred _)
   | BRel (BOr, _, _)
   | BNot (NRel (NEq, _, _))
   | Bool _
@@ -52,6 +54,7 @@ let bexp_to_bool b =
 
 let rec b_opt (e : bexp) : bexp =
 match e with
+| Pred _
 | Bool _ -> e
 | BRel (b, b1, b2) ->
   begin

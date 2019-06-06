@@ -17,6 +17,7 @@ let n_subst f n : nexp =
 let b_subst f b : bexp =
   let rec subst b =
     match b with
+      | Pred _ -> b
       | Bool _ -> b
       | NRel (o, n1, n2) -> NRel (o, n_subst f n1, n_subst f n2)
       | BRel (o, b1, b2) -> BRel (o, subst b1, subst b2)

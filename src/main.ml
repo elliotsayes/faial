@@ -36,6 +36,7 @@ let restrict_bexp (fns:StringSet.t) (b:bexp) : bexp =
   in
   let rec iter b =
     match b with
+    | Pred _
     | Bool _ -> b
     | BNot b -> BNot (simpl b)
     | NRel (_, _, _) -> simpl b
@@ -143,6 +144,18 @@ let steps_to_bexp (step1, step2) (time1, idx1, mode1) (time2, idx2, mode2) =
     n_eq idx1 idx2;
   ]
 
+
+let range i j =
+  let rec iter n acc =
+    if n < i then acc else iter (n-1) (n :: acc)
+  in
+  iter j []
+
+let pow2 n : bexp =
+    range 0 n
+    |> List.map (fun i -> n_eq (Var "x") (Num (1 lsl i)))
+    |> b_or_ex
+
 let serialize_merged m =
   let open Spmd2binary in
   let open Sexplib in
@@ -194,7 +207,7 @@ let serialize_merged m =
         ];
       ]
       else [];
-      List.map (fun b -> 
+      List.map (fun b ->
         Sexp.List [Sexp.Atom "assert";
           Serialize.b_ser b
         ];
@@ -244,6 +257,15 @@ let sexp_parse input : kernel =
       exit (-1)
 
 let main () =
+  let open Sexplib in
+  Sexp.List [
+    Sexp.Atom "define-fun";
+    Sexp.Atom "exp2";
+    Sexp.List [Serialize.unop "x" (Sexp.Atom "Int")];
+    Sexp.Atom "Bool";
+    pow2 31 |> Serialize.b_ser;
+  ]
+  |> Sexp.to_string_hum |> print_endline;
   let pre, d1, d2 = v2_parse stdin |> check in
   merge pre d1 d2
   |> Hashtbl.iter (fun x m ->

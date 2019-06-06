@@ -10,6 +10,7 @@ let rec free_names_nexp e (fns:StringSet.t) =
 
 let rec free_names_bexp e fns =
   match e with
+  | Pred (_, x) -> StringSet.add x fns
   | Bool _ -> fns
   | NRel (_, n1, n2) -> free_names_nexp n1 fns |> free_names_nexp n2
   | BRel (_, b1, b2) -> free_names_bexp b1 fns |> free_names_bexp b2
