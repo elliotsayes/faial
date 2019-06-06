@@ -1,7 +1,7 @@
 open Proto
 open Common
 
-let fresh_name x xs =
+let generate_fresh_name x xs =
   let rec do_fresh_name x n =
     let name = (x ^ string_of_int n) in
     if List.mem name xs
@@ -16,7 +16,7 @@ let normalize_variables (p:proto) =
     match e with
     | Loop ({range_var=x; range_upper_bound=ub}, e) ->
       if List.mem x xs then (
-        let new_x = fresh_name x xs in
+        let new_x = generate_fresh_name x xs in
         let new_xs = new_x::xs in
         let do_subst = Subst.replace_by (x, Var new_x) in
         let (e, new_xs) = norm (Subst.p_subst do_subst e) new_xs in
