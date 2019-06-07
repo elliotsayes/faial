@@ -133,17 +133,18 @@ type flat_kernel = {
 let flatten_kernel (k:kernel) : flat_kernel =
   (* 1. Make sure each loops as a unique variable *)
   let p = normalize_variables k.kernel_code in
-  (* 2. Extract single-valued variables *)
+  (* 2. Extract single-valued variables, as these are not split into two *)
   let single_vars = single_loop_variables p StringSet.empty in
   let single_vars = StringSet.union single_vars (StringSet.of_list k.kernel_variables) in
   (* 2. Flatten outer loops *)
   let steps = remove_loops p in
-  (* 3. Get the local variables defined in steps *)
+  (* 3. Get all constrains defined in the code *)
   let pre =
     get_constraints p
     |> List.map Constfold.norm
     |> List.flatten
   in
+  (* 4. Extract all local variables *)
   let locals : StringSet.t =
     Freenames.(
       StringSet.empty
@@ -152,6 +153,7 @@ let flatten_kernel (k:kernel) : flat_kernel =
     )
   in
   let locals = StringSet.diff locals single_vars in
+  (* 5. Finally, return the flat kernel *)
   {
     flat_kernel_pre = pre;
     flat_kernel_steps = steps;
