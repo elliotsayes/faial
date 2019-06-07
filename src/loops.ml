@@ -119,7 +119,7 @@ let remove_loops (e:Proto.proto) : (string * access timed) list =
   (* Each step pairs a phase of type Phase.exp with accesses *)
   (* We now need to convert each Phase.exp into a Proto.nexp *)
   let mk_timed (n, (x, y)) =
-    (x, {timed_phase=pexp_to_nexp ids n;timed_data=y})
+    (x, {timed_phase=pexp_to_nexp ids n |> Constfold.n_opt;timed_data=y})
   in
   List.map mk_timed steps
 
