@@ -1,8 +1,8 @@
 open Proto
-open Sexplib
+open Common
 
 let call func args =
-  Sexp.(
+  Sexplib.Sexp.(
     List ((Atom func)::args)
   )
 
@@ -18,7 +18,8 @@ let nbin_to_string (m:nbin) : string =
 let binop f arg1 arg2 = call f [arg1;arg2]
 let unop f arg = call f [arg]
 
-let rec n_ser (a:nexp) : Sexp.t =
+let rec n_ser (a:nexp) : Sexplib.Sexp.t =
+  let open Sexplib in
   match a with
   | Num n -> Sexp.Atom (string_of_int n)
   | Var x -> Sexp.Atom x
@@ -36,7 +37,8 @@ let brel_to_string (r:brel) =
   | BOr -> "or"
   | BAnd -> "and"
 
-let rec b_ser (b:bexp) : Sexp.t =
+let rec b_ser (b:bexp) : Sexplib.Sexp.t =
+  let open Sexplib in
   match b with
   | Bool b -> Sexp.Atom (if b then "true" else "false")
   | NRel (b, a1, a2) ->
@@ -52,7 +54,7 @@ let m_ser m = match m with
 
 let r_ser r =
   call "range" [
-    Sexp.Atom r.range_var;
+    Sexplib.Sexp.Atom r.range_var;
     n_ser r.range_upper_bound;
   ]
 
@@ -65,10 +67,18 @@ let t_ser t =
     a_ser t.timed_data
   ]
 
-let serialize_steps l =
-  Sexp.List (List.map (fun (x,o) -> unop x (t_ser o)) l)
+let serialize_steps name l =
+  Sexplib.Sexp.(
+    List (Atom name :: (List.map t_ser l))
+  )
+
+let serialize_lsteps name l =
+  Sexplib.Sexp.(
+    List (Atom name :: (List.map (fun (x,o) -> unop x (t_ser o)) l))
+  )
 
 let rec proto_ser p =
+  let open Sexplib in
   match p with
   | Skip -> Sexp.Atom "skip"
   | Sync -> Sexp.Atom "sync"
@@ -76,3 +86,41 @@ let rec proto_ser p =
   | Acc (x, a) -> binop "loc" (Sexp.Atom x) (a_ser a)
   | Seq (p1, p2) -> binop "begin" (proto_ser p1) (proto_ser p2)
   | Loop (r, p) -> binop "loop" (r_ser r) (proto_ser p)
+
+let bexp_list_ser name pre =
+  let open Sexplib in
+  Sexp.(List (Atom name :: (List.map b_ser pre)))
+
+let string_set_ser name s =
+  let open Sexplib in
+  let l = StringSet.elements s |> List.map (fun x -> Sexp.Atom x) in
+  Sexp.List (Sexp.Atom name :: l)
+
+let flat_kernel_ser k =
+  let open Loops in
+  let open Sexplib in
+  Sexp.List [Sexp.Atom "flat";
+    bexp_list_ser "pre" k.flat_kernel_pre;
+    string_set_ser "single_vars" k.flat_kernel_single_vars;
+    string_set_ser "multi_vars" k.flat_kernel_multi_vars;
+    serialize_lsteps "steps" k.flat_kernel_steps;
+  ]
+
+let location_ser l =
+  let open Sexplib in
+  let open Sexp in
+  let open Spmd2binary in
+  List [Atom "location";
+    bexp_list_ser "pre" l.location_pre;
+    string_set_ser "fns" l.location_fns;
+    serialize_steps "steps1" (fst l.location_steps);
+    serialize_steps "steps2" (snd l.location_steps);
+  ]
+
+let proj_ser t =
+  let open Sexplib in
+  let open Sexp in
+  let elems = hashtbl_elements t
+    |> List.map (fun (k,v) -> List [Atom k; location_ser v])
+  in
+  List (Atom "proj-kernel"::elems)

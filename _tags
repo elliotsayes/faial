@@ -1,5 +1,5 @@
 # Always (true) use the following packages (comma separated)
-true: package(sexplib)
+true: package(sexplib), package(cmdliner)
 # Always (true) pass the Mehir option -explain
 true: explain
 # For files starting with "test_" in directory "src" add package oUnit

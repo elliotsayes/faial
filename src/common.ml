@@ -13,3 +13,7 @@ let join sep elems =
   in
   List.fold_left on_elem "" elems
 
+let hashtbl_elements t =
+  Hashtbl.fold (fun k v accum ->
+    (k,v)::accum
+  ) t []
