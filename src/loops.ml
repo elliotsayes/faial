@@ -122,3 +122,40 @@ let remove_loops (e:Proto.proto) : (string * access timed) list =
     (x, {timed_phase=pexp_to_nexp ids n;timed_data=y})
   in
   List.map mk_timed steps
+
+type flat_kernel = {
+  flat_kernel_pre: bexp list;
+  flat_kernel_steps: (string * access_t) list;
+  flat_kernel_single_vars: StringSet.t;
+  flat_kernel_multi_vars: StringSet.t;
+}
+
+let flatten_kernel (k:kernel) : flat_kernel =
+  (* 1. Make sure each loops as a unique variable *)
+  let p = normalize_variables k.kernel_code in
+  (* 2. Extract single-valued variables *)
+  let single_vars = single_loop_variables p StringSet.empty in
+  let single_vars = StringSet.union single_vars (StringSet.of_list k.kernel_variables) in
+  (* 2. Flatten outer loops *)
+  let steps = remove_loops p in
+  (* 3. Get the local variables defined in steps *)
+  let pre =
+    get_constraints p
+    |> List.map Constfold.norm
+    |> List.flatten
+  in
+  let locals : StringSet.t =
+    Freenames.(
+      StringSet.empty
+      |> free_names_list (fun (_,x) -> free_names_timed x) steps
+      |> free_names_list free_names_bexp pre
+    )
+  in
+  let locals = StringSet.diff locals single_vars in
+  {
+    flat_kernel_pre = pre;
+    flat_kernel_steps = steps;
+    flat_kernel_single_vars = single_vars;
+    flat_kernel_multi_vars = locals;
+  }
+

@@ -52,3 +52,105 @@ let project_stream locals (l:stream) : stream * stream =
     (x,a1)::l1, (x, a2)::l2
   in
   List.fold_left on_elem ([],[]) l
+
+type location = {
+  location_pre: bexp list;
+  location_fns: StringSet.t;
+  location_steps: access_t list * access_t list
+}
+
+let group_assoc l =
+  let groups = Hashtbl.create 0 in
+  let rec iter l =
+    match l with
+    | (x, a)::l -> begin
+      let elems =
+        match Hashtbl.find_opt groups x with
+        | Some elems -> elems
+        | None -> []
+      in
+      Hashtbl.replace groups x (a::elems);
+      iter l
+      end
+    | [] -> ()
+  in
+  iter l;
+  groups
+
+let extract_free_names h
+  : (string, StringSet.t) Hashtbl.t =
+  let result = Hashtbl.create 0 in
+  Hashtbl.iter (fun x elems ->
+    Freenames.free_names_list Freenames.free_names_timed elems StringSet.empty |> Hashtbl.add result x
+  ) h;
+  result
+
+let restrict_bexp (fns:StringSet.t) (b:bexp) : bexp =
+  let simpl b =
+    let new_fn = Freenames.free_names_bexp b StringSet.empty in
+    if StringSet.is_empty (StringSet.inter fns new_fn) then Bool true
+    else b
+  in
+  let rec iter b =
+    match b with
+    | Pred _
+    | Bool _ -> b
+    | BNot b -> BNot (simpl b)
+    | NRel (_, _, _) -> simpl b
+    | BRel (o, b1, b2) -> begin
+        let b1 = iter b1 |> simpl in
+        let b2 = iter b2 |> simpl in
+        match b1, b2 with
+        | Bool true, b | b, Bool true -> b
+        | _, _ -> BRel (o, b1, b2)
+      end
+  in
+  iter b |> Constfold.b_opt
+
+let project_kernel (k:Loops.flat_kernel) =
+  (* 3. Make the owner of each access explicit *)
+  let locals = k.flat_kernel_multi_vars in
+  let steps1, steps2 = project_stream locals k.flat_kernel_steps in
+  let steps1, steps2 = Constfold.stream_opt steps1, Constfold.stream_opt steps2 in
+  let pre = k.flat_kernel_pre
+    |> List.map (project_condition locals)
+    |> List.flatten
+    |> List.filter (fun x -> match x with | Bool true -> false | _ -> true)
+  in
+  let group1 = group_assoc steps1 in
+  let group2 = group_assoc steps2 in
+  let fns1 = extract_free_names group1 in
+  let fns2 = extract_free_names group2 in
+  let result = Hashtbl.create (Hashtbl.length group1) in
+  let find_or tb k d =
+    match Hashtbl.find_opt tb k with
+      | Some v -> v
+      | None -> d
+  in
+  let get_fns x =
+    StringSet.union
+      (find_or fns1 x StringSet.empty)
+      (find_or fns2 x StringSet.empty)
+  in
+  let add_result x steps1 steps2 =
+    let fns = get_fns x in
+    let pre = List.map (restrict_bexp fns) pre in
+    Hashtbl.add result x {
+      location_fns = List.fold_left (fun new_fns b -> Freenames.free_names_bexp b new_fns) fns pre;
+      location_pre = pre;
+      location_steps = (steps1, steps2)
+    }
+  in
+  Hashtbl.iter (fun x steps1 ->
+    let steps2 = find_or group2 x [] in
+    Hashtbl.remove group2 x;
+    add_result x steps1 steps2
+  ) group1;
+  Hashtbl.iter (fun x steps2 ->
+    add_result x (find_or group1 x []) steps2
+  ) group2;
+  result
+
+
+(** Groups two streams together in a single data structure *)
+

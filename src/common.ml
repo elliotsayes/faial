@@ -4,3 +4,12 @@ module StringOT = struct
 end
 
 module StringSet = Set.Make(StringOT)
+
+let join sep elems =
+  let on_elem accum x =
+    if String.equal accum ""
+    then x
+    else x ^ sep ^ accum
+  in
+  List.fold_left on_elem "" elems
+

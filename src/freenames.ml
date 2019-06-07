@@ -24,5 +24,6 @@ let free_names_access a fns =
 let free_names_timed t fns : StringSet.t =
   free_names_nexp t.timed_phase fns |> free_names_access t.timed_data
 
-let free_names_steps  (l: access_t list) : StringSet.t =
-  List.fold_right free_names_timed l StringSet.empty
+let free_names_list f l fns =
+  List.fold_right f l fns
+
