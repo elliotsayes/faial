@@ -14,18 +14,17 @@ const blockDim_x, SUM_BUFFER_SIZE, WORK_GROUP_SIZE;
 
 loop index < SUM_BUFFER_SIZE {
   assert index >= $tid;
-  assert index % blockDim_x == 0;
-  ro sumBuffer[$tid + index];
+  assert (index - $tid) % blockDim_x == 0;
+  ro sumBuffer[index];
 }; # We require a semi after a loop
 
 rw tempBuffer[$tid];
 loop i < WORK_GROUP_SIZE {
-  assert exp2(i);
+  assert i >= 1;
+  assert pow2(i);
   sync;
-  rw tempBuffer[$tid]
-    if ($tid%(i*2) == 0 && $tid+i < WORK_GROUP_SIZE);
-  ro tempBuffer[$tid + i]
-    if ($tid%(i*2) == 0 && $tid+i < WORK_GROUP_SIZE);
+  ro tempBuffer[$tid + i]  if ($tid%(i*2) == 0 && $tid+i < WORK_GROUP_SIZE);
+  rw tempBuffer[$tid] if ($tid%(i*2) == 0 && $tid+i < WORK_GROUP_SIZE);
 };
 
 ro tempBuffer[0] if $tid == 0;
