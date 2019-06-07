@@ -1,6 +1,8 @@
 OCB_FLAGS   = -use-ocamlfind -use-menhir -I src -no-links
 OCB = ocamlbuild $(OCB_FLAGS)
 
+BUILD = _build/src
+
 all: native byte
 
 clean:
@@ -9,7 +11,10 @@ clean:
 native:
 	$(OCB) main.native
 	$(OCB) test_loops.native
-	cp _build/src/main.native main
+	cp $(BUILD)/main.native main
+
+test:
+	@$(BUILD)/test_loops.native
 
 byte:
 	$(OCB) main.byte
