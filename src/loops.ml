@@ -1,6 +1,9 @@
 open Proto
 open Common
 
+(** Given a variable and a set of known variables, returns
+    a fresh variable name. *)
+
 let generate_fresh_name x xs =
   let rec do_fresh_name x n =
     let name = (x ^ string_of_int n) in
@@ -11,6 +14,7 @@ let generate_fresh_name x xs =
   if List.mem x xs then do_fresh_name x 1 else x
 
 (** Loop normalization: Makes all loop variables distinct. *)
+
 let normalize_variables (p:proto) =
   let rec norm e xs =
     match e with
@@ -37,6 +41,7 @@ let normalize_variables (p:proto) =
   norm p [] |> fst
 
 (** Extracts every variable declaration and how to restrict each variable.*)
+
 let get_constraints (p:proto) : bexp list =
   let rec iter p l =
     match p with
