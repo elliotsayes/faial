@@ -124,10 +124,11 @@ let predicates = [
 ]
 
 let iter_generated_code t =
+  print_endline "; Standard-library:";
   List.iter (fun s ->
-    print_endline "; Standard-library:";
     Sexplib.Sexp.to_string_hum s |> print_endline;
   ) predicates;
+  print_endline "";
   Hashtbl.iter (fun x m ->
     print_string "; Location: ";
     print_endline x;
