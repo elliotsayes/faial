@@ -66,9 +66,6 @@ let main_t =
       close_in_noerr ic;
       raise e
   in
-  let cmd_str = function
-    | Flatten -> "flat" | Project -> "proj" | Sat -> "sat"
-  in
   let get_cmd =
     (* Override the codegeneration (for debugging only). *)
     let doc = "Step 1: remove loops and merge assertions." in

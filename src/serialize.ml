@@ -106,17 +106,6 @@ let flat_kernel_ser k =
     serialize_lsteps "steps" k.flat_kernel_steps;
   ]
 
-let location_ser l =
-  let open Sexplib in
-  let open Sexp in
-  let open Spmd2binary in
-  List [Atom "location";
-    bexp_list_ser "pre" l.location_pre;
-    string_set_ser "fns" l.location_fns;
-    serialize_steps "steps1" (fst l.location_steps);
-    serialize_steps "steps2" (snd l.location_steps);
-  ]
-
 let proj_ser (k:Spmd2binary.proj_kernel) : Sexplib.Sexp.t =
   let open Sexplib in
   let open Sexp in
