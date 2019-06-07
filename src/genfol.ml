@@ -123,7 +123,97 @@ let predicates = [
   pred "uint32" (fun x -> n_le x (Num 2147483648));
 ]
 
-let iter_generated_code t =
+let b_assert b =
+  let open Sexplib in
+  Serialize.b_ser b
+    |> fun b -> Sexp.List [Sexp.Atom "assert"; b]
+
+
+let generate_kernel k =
+  let open Spmd2binary in
+  let open Sexplib in
+  let time1 = Var (tid1 ^ "time.") in
+  let time2 = Var (tid2 ^ "time.") in
+  let idx1 = Var (tid1 ^ "idx.") in
+  let idx2 = Var (tid2 ^ "idx.") in
+  let mode1 = Var (tid1 ^ "mode.") in
+  let mode2 = Var (tid2 ^ "mode.") in
+
+  let generate_vars =
+    let vars = k.proj_kernel_vars in
+    let more_vars =
+      List.map
+        (fun x -> match x with | Var x -> x | _ -> "")
+        [time1; time2; idx1; idx2; mode1; mode2]
+    in
+    let all_vars = List.append more_vars (StringSet.elements vars) in
+    let decls = all_vars
+      |> List.map (fun x ->
+          [
+            Sexp.List [Sexp.Atom "declare-const"; Sexp.Atom x; Sexp.Atom "Int"];
+            (* x >= 0 *)
+            b_assert (n_ge (Var x) (Num 0));
+          ]
+        )
+      |> List.flatten
+    in
+    [
+      decls;
+      if StringSet.mem tid1_s vars || StringSet.mem tid2_s vars
+      then [
+        b_assert (n_neq tid1_t tid2_t);
+      ]
+      else [];
+    ]
+    |> List.flatten
+  in
+
+  let generate_loc b =
+    List.flatten [
+      [
+        Sexp.List [Sexp.Atom "push"];
+      ];
+      [
+        Sexp.List [Sexp.Atom "assert"; Serialize.b_ser b];
+        Sexp.List [Sexp.Atom "check-sat"];
+        Sexp.List [Sexp.Atom "get-model"];
+        Sexp.List [Sexp.Atom "pop"]
+      ]
+    ]
+  in
+
+  let gen_steps ss =
+    steps_to_bexp ss (time1, idx1, mode1) (time2, idx2, mode2)
+      |> generate_loc
+  in
+  (generate_vars, gen_steps)
+
+let iter_generated_code k =
+  let open Spmd2binary in
+  let print_code =
+    List.iter (fun s ->
+      Sexplib.Sexp.to_string_hum s |> print_endline;
+    )
+  in
+  let decls, gen_steps = generate_kernel k in
+  print_endline "; Predicates:";
+  print_code predicates;
+  print_endline "";
+  print_endline "; Variables declarations:";
+  print_code decls;
+  print_endline "";
+  print_endline "; Assumptions:";
+  print_code (List.map b_assert k.proj_kernel_pre);
+  print_endline "";
+  Hashtbl.iter (fun x s ->
+    print_string "; Location: ";
+    print_endline x;
+    print_code (gen_steps s);
+    print_endline ""
+  ) k.proj_kernel_steps
+
+
+let iter_generated_code2 t =
   print_endline "; Standard-library:";
   List.iter (fun s ->
     Sexplib.Sexp.to_string_hum s |> print_endline;

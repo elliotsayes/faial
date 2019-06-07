@@ -59,6 +59,14 @@ type location = {
   location_steps: access_t list * access_t list
 }
 
+type access_2d = access_t list * access_t list
+
+type proj_kernel = {
+  proj_kernel_pre: bexp list;
+  proj_kernel_vars: StringSet.t;
+  proj_kernel_steps: (string, access_2d) Hashtbl.t
+}
+
 let group_assoc l =
   let groups = Hashtbl.create 0 in
   let rec iter l =
@@ -107,7 +115,7 @@ let restrict_bexp (fns:StringSet.t) (b:bexp) : bexp =
   in
   iter b |> Constfold.b_opt
 
-let project_kernel (k:Loops.flat_kernel) =
+let project_kernel2 (k:Loops.flat_kernel) =
   (* 3. Make the owner of each access explicit *)
   let locals = k.flat_kernel_multi_vars in
   let steps1, steps2 = project_stream locals k.flat_kernel_steps in
@@ -151,6 +159,48 @@ let project_kernel (k:Loops.flat_kernel) =
   ) group2;
   result
 
+let project_kernel (k:Loops.flat_kernel) : proj_kernel =
+  (* 1. Variables *)
+  let locals = k.flat_kernel_multi_vars in
+  (* 2. Pre-conditions *)
+  let pre = k.flat_kernel_pre
+    |> List.map (project_condition locals)
+    |> List.flatten
+    |> List.filter (fun x -> match x with | Bool true -> false | _ -> true)
+  in
+  (* 3. Steps *)
+  let steps1, steps2 = project_stream locals k.flat_kernel_steps in
+  let steps1, steps2 = Constfold.stream_opt steps1, Constfold.stream_opt steps2 in
+  let group1 = group_assoc steps1 in
+  let group2 = group_assoc steps2 in
+  let result = Hashtbl.create (Hashtbl.length group1) in
+  let find_or tb k d =
+    match Hashtbl.find_opt tb k with
+      | Some v -> v
+      | None -> d
+  in
+  let add_result x steps1 steps2 =
+    Hashtbl.add result x (steps1, steps2)
+  in
+  Hashtbl.iter (fun x steps1 ->
+    let steps2 = find_or group2 x [] in
+    Hashtbl.remove group2 x;
+    add_result x steps1 steps2
+  ) group1;
+  Hashtbl.iter (fun x steps2 ->
+    add_result x (find_or group1 x []) steps2
+  ) group2;
+  (* 4. Split locals *)
+  let locals =
+    StringSet.union
+      (StringSet.map (project tid1) locals)
+      (StringSet.map (project tid2) locals)
+  in
+  {
+    proj_kernel_pre = pre;
+    proj_kernel_vars = StringSet.union locals k.flat_kernel_single_vars;
+    proj_kernel_steps = result;
+  }
 
 (** Groups two streams together in a single data structure *)
 

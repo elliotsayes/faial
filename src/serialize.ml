@@ -117,10 +117,20 @@ let location_ser l =
     serialize_steps "steps2" (snd l.location_steps);
   ]
 
-let proj_ser t =
+let proj_ser (k:Spmd2binary.proj_kernel) : Sexplib.Sexp.t =
   let open Sexplib in
   let open Sexp in
-  let elems = hashtbl_elements t
-    |> List.map (fun (k,v) -> List [Atom k; location_ser v])
+  let open Spmd2binary in
+  let elems t = hashtbl_elements t
+    |> List.map (fun (k,v) -> List [
+      Atom k;
+      serialize_steps "steps1" (fst v);
+      serialize_steps "steps2" (snd v);
+    ])
   in
-  List (Atom "proj-kernel"::elems)
+  List [
+    Atom "proj-kernel";
+    bexp_list_ser "pre" k.proj_kernel_pre;
+    string_set_ser "fns" k.proj_kernel_vars;
+    List (Atom "steps" :: elems k.proj_kernel_steps);
+  ]
