@@ -79,28 +79,22 @@ let rec single_loop_variables (p:proto) (s:StringSet.t) : StringSet.t =
   | Seq (p1, p2) ->
     single_loop_variables p1 s |> single_loop_variables p2
 
-let pexp_to_nexp (ubs:(string,nexp) Hashtbl.t) (e:Phaseord.exp) : Proto.nexp =
-  let rec trans e =
-    match e with
-    | Phaseord.Num n -> Proto.Num n
-    | Phaseord.Add (e1, e2) -> Proto.Bin (Proto.Plus, trans e1, trans e2)
-    | Phaseord.Mult (e1, e2) -> Proto.Bin (Proto.Mult, trans e1, trans e2)
-    | Phaseord.Var x -> begin
-      match Hashtbl.find_opt ubs x with
-      | Some n -> n
-      | None -> Proto.Var x
-    end
-  in
-  trans e
+
 
 (** Flatten out the loops of a protocol. *)
+
 let remove_loops (e:Proto.proto) : (string * access timed) list =
+  (* We rename all upper-bounds to variables, as these will show up in
+     expressions as per the Phaseord translation.
+     We therefore convert upper-bound to variables, and then replace
+     variables by the original upperbound. *)
   let ids : (string,nexp) Hashtbl.t = Hashtbl.create 0 in
   let gen_id e () =
     let key = "$ub" ^ string_of_int (Hashtbl.length ids) in
     Hashtbl.add ids key e;
     key
   in
+  (* Convert a protocol to a phase-ordering program *)
   let rec trans e =
     match e with
     | Proto.Skip
@@ -117,6 +111,20 @@ let remove_loops (e:Proto.proto) : (string * access timed) list =
   in
   let steps = trans e |> Phaseord.extract_steps in
   (* Each step pairs a phase of type Phase.exp with accesses *)
+  let pexp_to_nexp (ubs:(string,nexp) Hashtbl.t) (e:Phaseord.exp) : Proto.nexp =
+    let rec trans e =
+      match e with
+      | Phaseord.Num n -> Proto.Num n
+      | Phaseord.Add (e1, e2) -> Proto.Bin (Proto.Plus, trans e1, trans e2)
+      | Phaseord.Mult (e1, e2) -> Proto.Bin (Proto.Mult, trans e1, trans e2)
+      | Phaseord.Var x -> begin
+        match Hashtbl.find_opt ubs x with
+        | Some n -> n
+        | None -> Proto.Var x
+      end
+    in
+    trans e
+  in
   (* We now need to convert each Phase.exp into a Proto.nexp *)
   let mk_timed (n, (x, y)) =
     (x, {timed_phase=pexp_to_nexp ids n |> Constfold.n_opt;timed_data=y})
@@ -131,16 +139,15 @@ type flat_kernel = {
 }
 
 let flatten_kernel (k:kernel) : flat_kernel =
-  (* 1. Make sure each loops as a unique variable *)
+  (* 1. Make sure each loop variables are unique *)
   let p = normalize_variables k.kernel_code in
   (* 2. Extract single-valued variables, as these are not split into two *)
   let single_vars = single_loop_variables p StringSet.empty in
   let single_vars = StringSet.union single_vars (StringSet.of_list k.kernel_variables) in
-  (* 2. Flatten outer loops *)
+  (* 2. Flatten out loops, extracting only the accesses *)
   let steps = remove_loops p in
   (* 3. Get all constrains defined in the code *)
-  let pre =
-    get_constraints p
+  let pre = get_constraints p
     |> List.map Constfold.norm
     |> List.flatten
   in
