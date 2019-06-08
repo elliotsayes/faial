@@ -69,11 +69,11 @@ let main_t =
   let get_cmd =
     (* Override the codegeneration (for debugging only). *)
     let doc = "Step 1: remove loops and merge assertions." in
-    let flat = Flatten, Arg.info ["f"; "flat"] ~doc in
+    let flat = Flatten, Arg.info ["1"; "flat"] ~doc in
     let doc = "Step 2: project into two tasks." in
-    let proj = Project, Arg.info ["p"; "proj"] ~doc in
+    let proj = Project, Arg.info ["2"; "proj"] ~doc in
     let doc = "Step 3: generate Z3." in
-    let sat = Sat, Arg.info ["s"; "sat"] ~doc in
+    let sat = Sat, Arg.info ["3"; "sat"] ~doc in
     Arg.(last & vflag_all [Sat] [flat; proj; sat])
   in
   Term.(const do_main $ get_cmd $ get_fname)
