@@ -10,7 +10,14 @@ https://github.com/pandegroup/openmm/blob/master/platforms/cuda/src/kernels/cust
 shared sumBuffer, tempBuffer, result;
 
 # Declare global constants:
-const blockDim_x, SUM_BUFFER_SIZE, WORK_GROUP_SIZE;
+const local blockDim_x,
+  SUM_BUFFER_SIZE,
+  WORK_GROUP_SIZE,
+  local $tid; # We must declare $tid as a thread-local variable
+
+# We must also declare $tid as being unique across threads
+# That is: no two threads have the same $tid.
+assert 1@$tid != 2@$tid;
 
 loop index < SUM_BUFFER_SIZE {
   assert index >= $tid;
