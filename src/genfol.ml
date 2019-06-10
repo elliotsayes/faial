@@ -52,7 +52,9 @@ let pred name body =
 
 let predicates = [
   pred "pow2" (pow2 31);
-  pred "uint32" (fun x -> n_le x (Num 2147483648));
+  pred "uint32" (fun x -> n_le x (Num 0xFFFFFFFF));
+  pred "uint16" (fun x -> n_le x (Num 0xFFFF));
+  pred "uint8" (fun x -> n_le x (Num 0xFF));
 ]
 
 let b_assert b =
@@ -78,8 +80,8 @@ let generate_kernel k =
         (fun x -> match x with | Var x -> x | _ -> "")
         [time1; time2; idx1; idx2; mode1; mode2]
     in
-    let all_vars = List.append more_vars (StringSet.elements vars) in
-    let decls = all_vars
+    StringSet.elements vars
+      |> List.append more_vars
       |> List.map (fun x ->
           [
             Sexp.List [Sexp.Atom "declare-const"; Sexp.Atom x; Sexp.Atom "Int"];
@@ -88,18 +90,7 @@ let generate_kernel k =
           ]
         )
       |> List.flatten
-    in
-    [
-      decls;
-      if StringSet.mem tid1_s vars || StringSet.mem tid2_s vars
-      then [
-        b_assert (n_neq tid1_t tid2_t);
-      ]
-      else [];
-    ]
-    |> List.flatten
   in
-
   let generate_loc b =
     List.flatten [
       [
@@ -113,7 +104,6 @@ let generate_kernel k =
       ]
     ]
   in
-
   let gen_steps ss =
     steps_to_bexp ss (time1, idx1, mode1) (time2, idx2, mode2)
       |> generate_loc

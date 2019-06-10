@@ -41,6 +41,20 @@ let print_proj_kernel t =
 
 type command = Flatten | Project | Sat
 
+let print_errs errs =
+  let open Typecheck in
+  List.iter (fun x ->
+    (match x with
+    | DuplicateLocs l -> "Duplicate locations: " ^ (join ", " l)
+    | DuplicateVars l -> "Duplicate variables: " ^ (join ", " l)
+    | UndefinedLocs l -> "Undefined locations: " ^ (join ", " l)
+    | UndefinedVars l -> "Undefined variables: " ^ (join ", " l)
+    ) |> print_endline
+  )
+  errs;
+  if List.length errs > 0 then
+    exit (-1)
+  else ()
 
 let main_t =
   let get_fname =
@@ -51,6 +65,7 @@ let main_t =
     let ic = open_in fname in
     try
       let k = v2_parse ic in
+      Typecheck.typecheck_kernel k |> print_errs;
       match cmd with
       | Flatten -> Loops.flatten_kernel k
         |> print_flat_kernel
@@ -82,20 +97,7 @@ let info =
   let doc = "Verifies a GPU contract" in
   Term.info "main" ~doc ~exits:Term.default_exits
 
-let main () =
-  let cmd = Project in
-  let k = v2_parse stdin in
-  match cmd with
-  | Flatten -> Loops.flatten_kernel k
-    |> print_flat_kernel
-  | Project ->
-    Loops.flatten_kernel k
-    |> Spmd2binary.project_kernel
-    |> print_proj_kernel
-  | Sat ->
-    Loops.flatten_kernel k
-    |> Spmd2binary.project_kernel
-    |> Genfol.iter_generated_code
+
 
 let _ =
   Term.exit @@ Term.eval (main_t, info)

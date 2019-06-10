@@ -143,7 +143,7 @@ let flatten_kernel (k:kernel) : flat_kernel =
   let p = normalize_variables k.kernel_code in
   (* 2. Extract single-valued variables, as these are not split into two *)
   let single_vars = single_loop_variables p StringSet.empty in
-  let single_vars = StringSet.union single_vars (StringSet.of_list k.kernel_variables) in
+  let single_vars = StringSet.union single_vars (StringSet.of_list k.kernel_global_variables) in
   (* 2. Flatten out loops, extracting only the accesses *)
   let steps = remove_loops p in
   (* 3. Get all constrains defined in the code *)
@@ -154,7 +154,7 @@ let flatten_kernel (k:kernel) : flat_kernel =
   (* 4. Extract all local variables *)
   let locals : StringSet.t =
     Freenames.(
-      StringSet.empty
+      StringSet.of_list k.kernel_local_variables
       |> free_names_list (fun (_,x) -> free_names_timed x) steps
       |> free_names_list free_names_bexp pre
     )

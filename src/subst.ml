@@ -10,6 +10,7 @@ let n_subst f n : nexp =
         | _ -> n
       end
     | Num _ -> n
+    | Proj (t, n) -> Proj (t, subst n)
     | Bin (o, n1, n2) -> Bin (o, subst n1, subst n2)
   in
   subst n
@@ -17,7 +18,11 @@ let n_subst f n : nexp =
 let b_subst f b : bexp =
   let rec subst b =
     match b with
-      | Pred _ -> b
+      | Pred (p,x) ->
+        begin match f x with
+        | Some (Var v) -> Pred (p, v)
+        | _ -> raise (Failure "Subsitution inside predicate returned a non-variable.")
+        end
       | Bool _ -> b
       | NRel (o, n1, n2) -> NRel (o, n_subst f n1, n_subst f n2)
       | BRel (o, b1, b2) -> BRel (o, subst b1, subst b2)

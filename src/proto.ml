@@ -10,10 +10,13 @@ type nbin =
 | Div
 | Mod
 
+type task = Task1 | Task2
+
 type nexp =
 | Var of variable
 | Num of int
 | Bin of nbin * nexp * nexp
+| Proj of task * nexp
 
 type nrel = NEq | NLe | NLt
 
@@ -127,7 +130,9 @@ type kernel = {
   (* The shared locations that can be accessed in the kernel. *)
   kernel_locations: string list;
   (* The internal variables are used in the code of the kernel.  *)
-  kernel_variables: string list;
+  kernel_global_variables: string list;
+  (* The internal variables are used in the code of the kernel.  *)
+  kernel_local_variables: string list;
   (* The code of a kernel performs the actual memory accesses. *)
   kernel_code: proto;
 }

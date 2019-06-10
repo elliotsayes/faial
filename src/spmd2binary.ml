@@ -34,7 +34,35 @@ let project_access locals (t:access timed) : (access timed) * (access timed) =
     in
     mk tid1, mk tid2
 
+(** Given an expression apply all projections in a boolean expression *)
+
+let apply_proj locals (b:bexp) =
+  let rec do_n_project (n:nexp) =
+    let do_proj ti n =
+      let n = do_n_project n in
+      Subst.n_subst (do_project locals ti) n
+    in
+    match n with
+    | Var _
+    | Num _ -> n
+    | Bin (o, n1, n2) -> Bin (o, do_n_project n1, do_n_project n2)
+    | Proj (Task1, n) -> do_proj tid1 n
+    | Proj (Task2, n) -> do_proj tid2 n
+  in
+
+  let rec do_b_project (b:bexp) =
+    match b with
+    | Pred _
+    | Bool _ -> b
+    | NRel (o, n1, n2) -> NRel (o, do_n_project n1, do_n_project n2)
+    | BRel (o, b1, b2) -> BRel (o, do_b_project b1, do_b_project b2)
+    | BNot b -> BNot (do_b_project b)
+  in
+
+  do_b_project b
+
 let project_condition locals (b:bexp) =
+  let b = apply_proj locals b in
   let locs_in_b = Freenames.free_names_bexp b StringSet.empty
     |> StringSet.inter locals
   in

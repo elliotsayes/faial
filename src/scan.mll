@@ -18,7 +18,7 @@ let uint = ['0'-'9'] ['0'-'9']*
 (* part 3 *)
 let white = [' ' '\t']+
 let newline = '\r' | '\n' | "\r\n"
-let id = ['a'-'z' 'A'-'Z' '_'] ['a'-'z' 'A'-'Z' '0'-'9' '_']*
+let id = '$'?['a'-'z' 'A'-'Z' '_'] ['a'-'z' 'A'-'Z' '0'-'9' '_']*
 
 (* part 4 *)
 rule read = parse
@@ -26,6 +26,8 @@ rule read = parse
   | "#" { singleline_comment lexbuf; read lexbuf }
   | white    { read lexbuf }
   | newline  { next_line lexbuf; read lexbuf }
+  | '1' { ONE }
+  | '2' { TWO }
   | uint     { UINT (int_of_string (Lexing.lexeme lexbuf)) }
   | ';' { SEMICOLON }
   | '+' { PLUS }
@@ -36,6 +38,7 @@ rule read = parse
   | '<' { LT }
   | '>' { GT }
   | '!' { NOT }
+  | '@' { AT }
   | ">=" { GTE }
   | "<=" { LTE }
   | "||" { OR }
@@ -50,6 +53,7 @@ rule read = parse
   | "shared" { LOCS }
   | "const" { CONST }
   | "assert" { ASSERT }
+  | "local" { LOCAL }
   | ',' { COMMA }
   | '[' { LBRACK }
   | ']' { RBRACK }
@@ -57,7 +61,6 @@ rule read = parse
   | ')' { RPAREN }
   | '{' { LBRACE }
   | '}' { RBRACE }
-  | "$tid" { ID (Lexing.lexeme lexbuf) }
   | id { ID (Lexing.lexeme lexbuf) }
   | eof { EOF }
   | _ { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }

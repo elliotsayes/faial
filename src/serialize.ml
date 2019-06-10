@@ -18,9 +18,16 @@ let nbin_to_string (m:nbin) : string =
 let binop f arg1 arg2 = call f [arg1;arg2]
 let unop f arg = call f [arg]
 
+let t_ser t =
+  let open Sexplib in
+  Sexp.Atom (match t with
+    | Task1 -> "1"
+    | Task2 -> "2")
+
 let rec n_ser (a:nexp) : Sexplib.Sexp.t =
   let open Sexplib in
   match a with
+  | Proj (t, n) -> binop "proj" (t_ser t) (n_ser n)
   | Num n -> Sexp.Atom (string_of_int n)
   | Var x -> Sexp.Atom x
   | Bin (b, a1, a2) ->

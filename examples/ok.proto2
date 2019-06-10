@@ -2,4 +2,6 @@
 # Single line comments
 
 shared x;
+const local $tid;
+assert 1@$tid != 2@$tid;
 rw x[$tid];

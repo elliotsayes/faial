@@ -1,2 +1,15 @@
-shared x;
-rw x[0];
+# A single-line comment
+#|
+
+This would be a multi-line comment.
+
+|#
+
+shared x;  # We declare exactly one shared location
+const SIZE;
+
+# All threads are writing (and possibly also reading) to position
+# 0 of array x
+
+
+rw x[SIZE];

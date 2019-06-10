@@ -159,12 +159,14 @@ let parse_kernel = make "kernel" (fun s->
   match s with
   | Sexp.List [Sexp.Atom "kernel";
       Sexp.List (Sexp.Atom "locations"::locs);
-      Sexp.List (Sexp.Atom "const"::consts);
+      Sexp.List (Sexp.Atom "local"::ls);
+      Sexp.List (Sexp.Atom "global"::gs);
       p
     ] ->
     Some {
       kernel_locations = parse_string_list locs;
-      kernel_variables = parse_string_list consts;
+      kernel_local_variables = parse_string_list ls;
+      kernel_global_variables = parse_string_list gs;
       kernel_code = parse_proto.run p;
     }
   | _ -> None
