@@ -21,7 +21,7 @@ assert $gridDim_x >= 1;
 assert NUM_ATOMS <= $blockDim_x;
 
 assert $threadCount == $blockDim_x * $gridDim_x;
-loop index < NUM_ATOMS {
+foreach index < NUM_ATOMS {
   assert index >= $blockIdx_x*$blockDim_x + $threadIdx_x;
   assert (index - $blockIdx_x*$blockDim_x + $threadIdx_x) % $threadCount == 0;
   ro posq[index];           # 36

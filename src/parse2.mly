@@ -8,7 +8,7 @@
 %token SYNC RW RO IF
 %token LOCS CONST ASSERT COMMA
 %token LPAREN RPAREN LBRACE RBRACE LBRACK RBRACK
-%token LOOP
+%token FOREACH
 
 %left OR
 %left AND
@@ -80,7 +80,7 @@ proto:
     { Acc (x, {access_index=n; access_cond=Bool true; access_mode=m}) }
   | m = mode x = ID LBRACK n = nexp RBRACK IF b = bexp
     { Acc (x, {access_index=n; access_cond=b; access_mode=m}) }
-  | LOOP x = ID LT n = nexp LBRACE p = proto RBRACE
+  | FOREACH x = ID LT n = nexp LBRACE p = proto RBRACE
     { Loop ({range_var=x; range_upper_bound=n}, p) }
   | p = proto SEMICOLON { p }
 

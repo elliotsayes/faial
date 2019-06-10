@@ -1,6 +1,6 @@
 shared x;
 const count;
-loop idx < 1 {
+foreach idx < 1 {
   assert idx < count;
   rw x[idx];
   sync

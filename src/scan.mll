@@ -48,7 +48,7 @@ rule read = parse
   | "sync" {SYNC}
   | "rw" {RW}
   | "ro" {RO}
-  | "loop" { LOOP }
+  | "foreach" { FOREACH }
   | "if" { IF }
   | "shared" { LOCS }
   | "const" { CONST }
