@@ -30,10 +30,11 @@ groups.
 # Declare shared variables
 shared sumBuffer, tempBuffer, result;
 
-local blockDim_x;
-global SUM_BUFFER_SIZE;
-global WORK_GROUP_SIZE;
-local $tid;
+const
+  local blockDim_x,
+  global SUM_BUFFER_SIZE,
+  global WORK_GROUP_SIZE,
+  local $tid;
 
 # We must also declare $tid as being unique across threads
 # That is: no two threads have the same $tid.

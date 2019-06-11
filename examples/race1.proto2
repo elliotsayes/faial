@@ -5,11 +5,13 @@ This would be a multi-line comment.
 
 |#
 
-shared x;  # We declare exactly one shared location
-const SIZE;
+# We declare exactly one shared location, named x
+shared x;
+
+# We declare a thread-global constant
+const global SIZE;
 
 # All threads are writing (and possibly also reading) to position
-# 0 of array x
-
+# the same position of the array, position SIZE.
 
 rw x[SIZE];

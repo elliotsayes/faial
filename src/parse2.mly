@@ -5,6 +5,7 @@
 %token EOF
 %token ONE TWO AT
 %token LOCAL
+%token GLOBAL
 %token SYNC RW RO IF
 %token LOCS CONST ASSERT COMMA
 %token LPAREN RPAREN LBRACE RBRACE LBRACK RBRACK
@@ -91,9 +92,9 @@ loc_names:
 
 var_names:
   | { [] }
-  | x = ID { [Global, x] }
+  | GLOBAL x = ID { [Global, x] }
   | LOCAL x = ID { [Local, x] }
-  | x = ID COMMA xs = var_names { (Global, x):: xs }
+  | GLOBAL x = ID COMMA xs = var_names { (Global, x):: xs }
   | LOCAL x = ID COMMA xs = var_names { (Local, x) :: xs }
 
 locs:

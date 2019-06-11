@@ -53,6 +53,7 @@ rule read = parse
   | "shared" { LOCS }
   | "const" { CONST }
   | "assert" { ASSERT }
+  | "global" { GLOBAL }
   | "local" { LOCAL }
   | ',' { COMMA }
   | '[' { LBRACK }
