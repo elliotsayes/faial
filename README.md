@@ -117,6 +117,58 @@ but only if `SIZE` is an even number.
 **Summary.** Example [`race2`](examples/race2.proto2) introduces `foreach` and
 synchronization.
 
+*Modeling iteration, looping with `foreach`.* A `foreach` describes how a
+variable changes in a looping construct. It defines a variable that ranges from
+0 until an upper bound. Inside the loop we may further constrain the
+range of possible values bound to the loop variable.
+
+For instance, in the code below we specify that a variable `x` ranges from 0 up
+to 9 (inclusively) and that all tasks read position `x` from array `buffer`.
+
+```
+foreach x < 10 {
+  ro buffer[x];
+}
+```
+
+We can further restrict the possible values being read to only the even
+elements the array `buffer` with the following code, which will read
+elements 0, 2, 4, 6, and 8.
+
+```
+foreach x < 10 {
+  ro buffer[x] if x % 2 == 0;
+}
+```
+
+Alternatively, we can use an `assert` to restrict variable `x` in the lexical scope defined inside the braces.
+
+```
+foreach x < 10 {
+  assert x % 2 == 0;
+  ro buffer[x];
+}
+```
+
+If we wish to read elements 4, 6, and 8 we may write the following code:
+
+```
+foreach x < 10 {
+  assert x >= 4;
+  assert x % 2 == 0;
+  ro buffer[x];
+}
+```
+
+*Synchronization.* Tasks can synchronize with `sync`. For instance, we can
+ensure all tasks read position 0 from `buffer`, then all tasks must wait for
+each other, and finally all tasks read position 1 from the array.
+```
+ro buffer[0];
+sync;
+ro buffer[1];
+```
+
 
 ## Example 3: thread-local variables and data-race freedom
 
