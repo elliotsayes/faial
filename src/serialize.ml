@@ -45,9 +45,9 @@ end
 module BvNexp : NEXP_SERIALIZER = struct
   let nbin_to_string (m:nbin) : string =
     match m with
-    | Plus -> "bvuadd"
+    | Plus -> "bvadd"
     | Minus -> "bvusub"
-    | Mult -> "bvumul"
+    | Mult -> "bvmul"
     | Div -> "bvudiv"
     | Mod -> "bvurem"
 
