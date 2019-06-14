@@ -6,17 +6,16 @@ let call func args =
     List ((Atom func)::args)
   )
 
-
-let nbin_to_string (m:nbin) : string =
-  match m with
-  | Plus -> "+"
-  | Minus -> "-"
-  | Mult -> "*"
-  | Div -> "div"
-  | Mod -> "mod"
+let flat_call func args =
+  List.map (fun x -> Sexplib.Sexp.Atom x) args
+    |> call func
 
 let binop f arg1 arg2 = call f [arg1;arg2]
 let unop f arg = call f [arg]
+
+module type NEXP_SERIALIZER = sig
+  val n_ser: nexp -> Sexplib.Sexp.t
+end
 
 let t_ser t =
   let open Sexplib in
@@ -24,36 +23,100 @@ let t_ser t =
     | Task1 -> "1"
     | Task2 -> "2")
 
-let rec n_ser (a:nexp) : Sexplib.Sexp.t =
-  let open Sexplib in
-  match a with
-  | Proj (t, n) -> binop "proj" (t_ser t) (n_ser n)
-  | Num n -> Sexp.Atom (string_of_int n)
-  | Var x -> Sexp.Atom x
-  | Bin (b, a1, a2) ->
-    binop (nbin_to_string b) (n_ser a1) (n_ser a2)
+module StdNexp : NEXP_SERIALIZER = struct
+  let nbin_to_string (m:nbin) : string =
+    match m with
+    | Plus -> "+"
+    | Minus -> "-"
+    | Mult -> "*"
+    | Div -> "div"
+    | Mod -> "mod"
 
-let nrel_to_string (r:nrel) =
-  match r with
-  | NEq -> "="
-  | NLe -> "<="
-  | NLt -> "<"
+  let rec n_ser (a:nexp) : Sexplib.Sexp.t =
+    let open Sexplib in
+    match a with
+    | Proj (t, n) -> binop "proj" (t_ser t) (n_ser n)
+    | Num n -> Sexp.Atom (string_of_int n)
+    | Var x -> Sexp.Atom x
+    | Bin (b, a1, a2) ->
+      binop (nbin_to_string b) (n_ser a1) (n_ser a2)
+end
+
+module BvNexp : NEXP_SERIALIZER = struct
+  let nbin_to_string (m:nbin) : string =
+    match m with
+    | Plus -> "bvadd"
+    | Minus -> "bvsub"
+    | Mult -> "bvmul"
+    | Div -> "bvudiv"
+    | Mod -> "bvurem"
+
+  let rec n_ser (a:nexp) : Sexplib.Sexp.t =
+    let open Sexplib in
+    match a with
+    | Proj (t, n) -> binop "proj" (t_ser t) (n_ser n)
+    | Num n -> Sexp.List [
+        Sexp.Atom "_";
+        Sexp.Atom ("bv" ^ (string_of_int n));
+        Sexp.Atom "32";
+      ]
+    | Var x -> Sexp.Atom x
+    | Bin (b, a1, a2) ->
+      binop (nbin_to_string b) (n_ser a1) (n_ser a2)
+end
+
+let n_ser = StdNexp.n_ser
 
 let brel_to_string (r:brel) =
   match r with
   | BOr -> "or"
   | BAnd -> "and"
 
-let rec b_ser (b:bexp) : Sexplib.Sexp.t =
-  let open Sexplib in
-  match b with
-  | Bool b -> Sexp.Atom (if b then "true" else "false")
-  | NRel (b, a1, a2) ->
-    binop (nrel_to_string b) (n_ser a1) (n_ser a2)
-  | BRel (b, b1, b2) ->
-    binop (brel_to_string b) (b_ser b1) (b_ser b2)
-  | BNot b -> unop "not" (b_ser b)
-  | Pred (x, v) -> unop x (Sexp.Atom v)
+module type BEXP_SERIALIZER = sig
+  val b_ser: bexp -> Sexplib.Sexp.t
+end
+
+module StdBexp : BEXP_SERIALIZER =
+  struct
+    let nrel_to_string (r:nrel) =
+      match r with
+      | NEq -> "="
+      | NLe -> "<="
+      | NLt -> "<"
+
+    let rec b_ser (b:bexp) : Sexplib.Sexp.t =
+      let open Sexplib in
+      match b with
+      | Bool b -> Sexp.Atom (if b then "true" else "false")
+      | NRel (b, a1, a2) ->
+        binop (nrel_to_string b) (StdNexp.n_ser a1) (StdNexp.n_ser a2)
+      | BRel (b, b1, b2) ->
+        binop (brel_to_string b) (b_ser b1) (b_ser b2)
+      | BNot b -> unop "not" (b_ser b)
+      | Pred (x, v) -> unop x (Sexp.Atom v)
+  end
+
+module BvBexp : BEXP_SERIALIZER =
+  struct
+    let nrel_to_string (r:nrel) =
+      match r with
+      | NEq -> "="
+      | NLe -> "bvule"
+      | NLt -> "bvult"
+
+    let rec b_ser (b:bexp) : Sexplib.Sexp.t =
+      let open Sexplib in
+      match b with
+      | Bool b -> Sexp.Atom (if b then "true" else "false")
+      | NRel (b, a1, a2) ->
+        binop (nrel_to_string b) (BvNexp.n_ser a1) (BvNexp.n_ser a2)
+      | BRel (b, b1, b2) ->
+        binop (brel_to_string b) (b_ser b1) (b_ser b2)
+      | BNot b -> unop "not" (b_ser b)
+      | Pred (x, v) -> unop x (Sexp.Atom v)
+  end
+
+let b_ser = StdBexp.b_ser
 
 let m_ser m = match m with
   | Proto.R -> "ro"
