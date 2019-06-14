@@ -1,0 +1,34 @@
+#|
+https://github.com/NVIDIA/cuda-samples/blob/master/Samples/shfl_scan/shfl_scan.cu#L132
+|#
+
+shared data, partial_sums, buf;
+
+const
+  local blockIdx,
+  local threadIdx,
+  local id,
+  global blockDim,
+  global len,
+  local y;
+
+# Standard CUDA restrictions
+assert blockDim >= 1;
+assert blockDim % 32 == 0;
+assert threadIdx < blockDim;
+assert 1@threadIdx != 2@threadIdx || 1@blockIdx != 2@blockIdx;
+
+# We need to further restrict the model for scale
+assert uint8(blockDim);
+
+assert id == blockIdx * blockDim + threadIdx;
+assert id < len;
+
+
+# __shared__ data accesses are prefixed with blockIdx
+rw buf[blockIdx] if threadIdx == 0;
+ro partial_sums[blockIdx] if threadIdx == 0;
+sync;
+rw data[id];
+# __shared__ data accesses are prefixed with blockIdx
+ro buf[blockIdx];
