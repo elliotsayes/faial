@@ -57,11 +57,16 @@ let print_errs errs =
   else ()
 
 let main_t =
+  let use_bv =
+    let doc = "Generate bit-vector code." in
+    Arg.(value & flag & info ["b"; "generate-bv"] ~doc)
+  in
+
   let get_fname =
     let doc = "The path $(docv) of the GPU contract." in
     Arg.(value & pos 0 string "/dev/stdin" & info [] ~docv:"CONTRACT" ~doc)
   in
-  let do_main cmd fname =
+  let do_main cmd fname use_bv =
     let ic = open_in fname in
     try
       let k = v2_parse ic in
@@ -76,7 +81,9 @@ let main_t =
       | Sat ->
         Loops.flatten_kernel k
         |> Spmd2binary.project_kernel
-        |> Genfol.iter_generated_code
+        |> if use_bv
+            then Genfol.Bv.iter_generated_code
+            else Genfol.Std.iter_generated_code
     with e ->
       close_in_noerr ic;
       raise e
@@ -91,7 +98,7 @@ let main_t =
     let sat = Sat, Arg.info ["3"; "sat"] ~doc in
     Arg.(last & vflag_all [Sat] [flat; proj; sat])
   in
-  Term.(const do_main $ get_cmd $ get_fname)
+  Term.(const do_main $ get_cmd $ get_fname $ use_bv)
 
 let info =
   let doc = "Verifies a GPU contract" in

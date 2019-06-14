@@ -185,5 +185,4 @@ end
 module Bv = Make(BvGen)
 module Std = Make(StdGen)
 
-let iter_generated_code = Std.iter_generated_code
 
