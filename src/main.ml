@@ -64,7 +64,7 @@ let main_t =
 
   let get_fname =
     let doc = "The path $(docv) of the GPU contract." in
-    Arg.(value & pos 0 string "/dev/stdin" & info [] ~docv:"CONTRACT" ~doc)
+    Arg.(required & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
   in
   let do_main cmd fname use_bv =
     let ic = open_in fname in
