@@ -1,19 +1,57 @@
 open Proto
 open Common
-open Lexing
 open Cmdliner
+(** Prints the nth-line of a file (starts at base 0) *)
+let nth_line filename n =
+  let ic = open_in filename in
+  let rec iter i =
+    let line = input_line ic in
+    if i = n then begin
+      close_in ic;
+      (line)
+    end else iter (succ i)
+  in
+  iter 0
+
+let underline offset count : string =
+  (String.make offset ' ') ^ (String.make count '^')
+
 
 (** Human-readable parser: *)
-let v2_parse input : kernel =
+let v2_parse fname input : kernel =
+
+  let open Lexing in
+  (* Return the line number and position of a position *)
+  let get_file_offset pos = pos.pos_lnum, (pos.pos_cnum - pos.pos_bol + 1) in
+  (* Prints the file offset *)
   let print_position outx lexbuf =
-    let pos = lexbuf.lex_curr_p in
-    Printf.fprintf outx "%s:%d:%d" pos.pos_fname
-      pos.pos_lnum (pos.pos_cnum - pos.pos_bol + 1)
+    let lineno, offset = get_file_offset lexbuf.lex_start_p in
+    Printf.fprintf outx "%s:%d:%d" fname lineno offset
   in
-  let filebuf = Lexing.from_channel input in
+  (* Prints the line number in the given source location *)
+  let print_data outx lexbuf =
+    let start_line, start_off = get_file_offset lexbuf.lex_start_p in
+    let start_idx = start_off - 1 in
+    let err_text = nth_line fname (start_line - 1) in
+    let end_line, end_off = get_file_offset lexbuf.lex_curr_p in
+    let end_idx = end_off - 1 in
+    let count =
+      if start_line != end_line
+      then String.length err_text
+      else end_off - start_off
+    in
+    (*
+    Printf.fprintf outx "%s\n%s" err_text (underline start_off end_off)
+    *)
+    Printf.fprintf outx "%s\n" err_text;
+    Printf.fprintf outx "%s\n" (underline start_idx count);
+
+  in
+  let filebuf = from_channel input in
   try Parse2.main Scan.read filebuf with
   | Parse2.Error ->
     Printf.fprintf stderr "%a: syntax error\n" print_position filebuf;
+    Printf.fprintf stderr "\n%a" print_data filebuf;
     exit (-1)
 
 (** Machine-readable parser: *)
@@ -69,7 +107,7 @@ let main_t =
   let do_main cmd fname use_bv =
     let ic = open_in fname in
     try
-      let k = v2_parse ic in
+      let k = v2_parse fname ic in
       Typecheck.typecheck_kernel k |> print_errs;
       match cmd with
       | Flatten -> Loops.flatten_kernel k
