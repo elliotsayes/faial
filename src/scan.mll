@@ -6,12 +6,12 @@ exception SyntaxError of string
 
 let next_line lexbuf =
   let pos = lexbuf.lex_curr_p in
-  lexbuf.lex_curr_p <-
-    { pos with pos_bol = lexbuf.lex_curr_pos;
-               pos_lnum = pos.pos_lnum + 1
-    }
-}
+  lexbuf.lex_curr_p <- { pos with
+    pos_bol = pos.pos_cnum;
+    pos_lnum = pos.pos_lnum + 1;
+  }
 
+}
 (* part 1 *)
 let uint = ['0'-'9'] ['0'-'9']*
 
@@ -66,11 +66,11 @@ rule read = parse
   | eof { EOF }
   | _ { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
 and singleline_comment = parse
-  | '\n'   { new_line lexbuf }
+  | '\n'   { next_line lexbuf }
   | eof    { () }
   | _      { singleline_comment lexbuf }
 and multiline_comment = parse
   | "|#"   { () }
   | eof    { failwith "unterminated comment" }
-  | '\n'   { new_line lexbuf; multiline_comment lexbuf }
+  | '\n'   { next_line lexbuf; multiline_comment lexbuf }
   | _      { multiline_comment lexbuf }

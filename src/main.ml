@@ -40,11 +40,8 @@ let v2_parse fname input : kernel =
       then String.length err_text
       else end_off - start_off
     in
-    (*
-    Printf.fprintf outx "%s\n%s" err_text (underline start_off end_off)
-    *)
     Printf.fprintf outx "%s\n" err_text;
-    Printf.fprintf outx "%s\n" (underline start_idx count);
+    Printf.fprintf outx "%s\n" (underline start_idx count)
 
   in
   let filebuf = from_channel input in
