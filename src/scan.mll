@@ -4,11 +4,17 @@ open Parse2
 
 exception SyntaxError of string
 
+(** https://stackoverflow.com/questions/16503396/ *)
 let next_line lexbuf =
   let pos = lexbuf.lex_curr_p in
   lexbuf.lex_curr_p <- { pos with
     pos_bol = pos.pos_cnum;
     pos_lnum = pos.pos_lnum + 1;
+  }
+
+let set_filename lexbuf filename =
+  lexbuf.lex_curr_p <- {
+      lexbuf.lex_curr_p with pos_fname = filename
   }
 
 }

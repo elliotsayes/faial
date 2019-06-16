@@ -13,42 +13,16 @@ let nth_line filename n =
   in
   iter 0
 
-let underline offset count : string =
-  (String.make offset ' ') ^ (String.make count '^')
-
-
 (** Human-readable parser: *)
 let v2_parse fname input : kernel =
 
-  let open Lexing in
-  (* Return the line number and position of a position *)
-  let get_file_offset pos = pos.pos_lnum, (pos.pos_cnum - pos.pos_bol + 1) in
-  (* Prints the file offset *)
-  let print_position outx lexbuf =
-    let lineno, offset = get_file_offset lexbuf.lex_start_p in
-    Printf.fprintf outx "%s:%d:%d" fname lineno offset
-  in
-  (* Prints the line number in the given source location *)
-  let print_data outx lexbuf =
-    let start_line, start_off = get_file_offset lexbuf.lex_start_p in
-    let start_idx = start_off - 1 in
-    let err_text = nth_line fname (start_line - 1) in
-    let end_line, end_off = get_file_offset lexbuf.lex_curr_p in
-    let end_idx = end_off - 1 in
-    let count =
-      if start_line != end_line
-      then String.length err_text
-      else end_off - start_off
-    in
-    Printf.fprintf outx "%s\n" err_text;
-    Printf.fprintf outx "%s\n" (underline start_idx count)
-
-  in
-  let filebuf = from_channel input in
+  let filebuf = Lexing.from_channel input in
+  Scan.set_filename filebuf fname;
   try Parse2.main Scan.read filebuf with
   | Parse2.Error ->
-    Printf.fprintf stderr "%a: syntax error\n" print_position filebuf;
-    Printf.fprintf stderr "\n%a" print_data filebuf;
+    let sloc = Sourceloc.of_lexbuf filebuf in
+    Printf.fprintf stderr "%a: syntax error\n" Sourceloc.location_print_start sloc;
+    Printf.fprintf stderr "\n%a" Sourceloc.location_print_title sloc;
     exit (-1)
 
 (** Machine-readable parser: *)
