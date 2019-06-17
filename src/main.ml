@@ -60,15 +60,15 @@ let print_errs errs =
   in
   let print_vars msg l =
     List.iter (fun x ->
-      print_err (msg ^ " '" ^ x.var_name ^ "'") x.var_loc
+      print_err (msg ^ " '" ^ x.var_name ^ "'\n") x.var_loc
     ) l
   in
   List.iter (fun x ->
     match x with
-    | DuplicateLocs l -> print_vars "Duplicate locations: " l
-    | DuplicateVars l -> print_vars "Duplicate variables: " l
-    | UndefinedLocs l -> print_vars "Undefined locations: " l
-    | UndefinedVars l -> print_vars "Undefined variables: " l
+    | DuplicateLocs l -> print_vars "Duplicate location" l
+    | DuplicateVars l -> print_vars "Duplicate variable" l
+    | UndefinedLocs l -> print_vars "Undefined location" l
+    | UndefinedVars l -> print_vars "Undefined variable" l
   )
   errs;
   if List.length errs > 0 then
