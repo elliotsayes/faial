@@ -5,32 +5,38 @@ const global MaxCol,
       local threadIdx_x,
       global m,
       global n,
-      local myFunc;
+      local myFunc,
+      local id;
 
 assert 1@threadIdx_x != 2@threadIdx_x || 1@blockIdx_x != 2@blockIdx_x;
 assert blockIdx_y > blockIdx_x;
 assert threadIdx_x < m;
 
-# Handle any power of 2, 3, 4; the problem becomes intractable if we allow any m
+assert m >= 1;
+assert id == blockIdx_x * m + threadIdx_x;
+
+# If we could this expression, then this kernel becomes trivial
+# assert 1@id != 2@id;
+# Since we cannot assume this, we just constrain m
 assert pow2(m) || pow3(m) || pow4(m);
 
 # funcValue = Func(blockIdx.x, threadIdx.x); //func 1
-ro func[blockIdx_x * m + threadIdx_x] if threadIdx_x < m;
+ro func[id] if threadIdx_x < m;
 
 # minVector[threadIdx.x] = funcValue;
-rw minVector[blockIdx_x * m + threadIdx_x] if threadIdx_x < m;
+rw minVector[id] if threadIdx_x < m;
 
 # maxVector[threadIdx.x] = funcValue;
-rw maxVector[blockIdx_x * m + threadIdx_x] if threadIdx_x < m;
+rw maxVector[id] if threadIdx_x < m;
 
 # funcValue = Func(blockIdx.y + 1, threadIdx.x);
-ro func[(blockIdx_y + 1) * m + threadIdx_x] if threadIdx_x < m;
+ro func[id + m] if threadIdx_x < m;
 
 # minVector[threadIdx.x] = min(minVector[threadIdx.x], funcValue);
-rw minVector[blockIdx_x * m + threadIdx_x] if threadIdx_x < m;
+rw minVector[id] if threadIdx_x < m;
 
 # maxVector[threadIdx.x] = max(maxVector[threadIdx.x], funcValue);
-rw maxVector[blockIdx_x * m + threadIdx_x] if threadIdx_x < m;
+rw maxVector[id] if threadIdx_x < m;
 
 sync;
 
