@@ -31,6 +31,8 @@
 %%
 main : p = kernel EOF { p };
 
+%inline ident: x = ID { var_of_loc x $loc(x) }
+
 num:
   | ONE { 1 }
   | TWO { 2 }
@@ -38,7 +40,7 @@ num:
 
 nexp:
   | i = num { Num i }
-  | x = ID { Var x }
+  | x = ident { Var x }
   | LPAREN n = nexp RPAREN { n }
   | n1 = nexp ; o = nbin ; n2 = nexp { o n1 n2 }
   | ONE AT n = nexp { Proj(Task1, n) }
@@ -56,7 +58,7 @@ bexp:
   | n1 = nexp; o = nrel; n2 = nexp { o n1 n2 }
   | b1 = bexp; o = brel; b2 = bexp { o b1 b2 }
   | NOT b = bexp { b_not b }
-  | p = ID LPAREN x = ID RPAREN { Pred (p, x) }
+  | p = ID LPAREN x = ident RPAREN { Pred (p, x) }
 
 %inline nrel:
   | EQ { n_eq }
@@ -77,25 +79,25 @@ proto:
   | ASSERT b = bexp { Assert b }
   | p1 = proto SEMICOLON p2 = proto
     { Seq (p1, p2) }
-  | m = mode x = ID LBRACK n = nexp RBRACK
+  | m = mode x = ident LBRACK n = nexp RBRACK
     { Acc (x, {access_index=n; access_cond=Bool true; access_mode=m}) }
-  | m = mode x = ID LBRACK n = nexp RBRACK IF b = bexp
+  | m = mode x = ident LBRACK n = nexp RBRACK IF b = bexp
     { Acc (x, {access_index=n; access_cond=b; access_mode=m}) }
-  | FOREACH x = ID LT n = nexp LBRACE p = proto RBRACE
+  | FOREACH x = ident LT n = nexp LBRACE p = proto RBRACE
     { Loop ({range_var=x; range_upper_bound=n}, p) }
   | p = proto SEMICOLON { p }
 
 loc_names:
   | { [] }
-  | x = ID { [x] }
-  | x = ID COMMA xs = loc_names { x :: xs }
+  | x = ident { [x] }
+  | x = ident COMMA xs = loc_names { x :: xs }
 
 var_names:
   | { [] }
-  | GLOBAL x = ID { [Global, x] }
-  | LOCAL x = ID { [Local, x] }
-  | GLOBAL x = ID COMMA xs = var_names { (Global, x):: xs }
-  | LOCAL x = ID COMMA xs = var_names { (Local, x) :: xs }
+  | GLOBAL x = ident { [Global, x] }
+  | LOCAL x = ident { [Local, x] }
+  | GLOBAL x = ident COMMA xs = var_names { (Global, x):: xs }
+  | LOCAL x = ident COMMA xs = var_names { (Local, x) :: xs }
 
 locs:
   | LOCS l1 = loc_names SEMICOLON { l1 }
@@ -111,9 +113,9 @@ kernel:
       let ls = List.map snd ls in
       let gs = List.map snd gs in
       {
-        kernel_locations = l1;
-        kernel_local_variables = ls;
-        kernel_global_variables = gs;
+        kernel_locations = l1 |> VarSet.of_list;
+        kernel_local_variables = ls |> VarSet.of_list;
+        kernel_global_variables = gs |> VarSet.of_list;
         kernel_code = p;
       }
     }
@@ -124,9 +126,9 @@ kernel:
       let ls = List.map snd ls in
       let gs = List.map snd gs in
       {
-        kernel_locations = l1;
-        kernel_local_variables = ls;
-        kernel_global_variables = gs;
+        kernel_locations = l1 |> VarSet.of_list;
+        kernel_local_variables = ls |> VarSet.of_list;
+        kernel_global_variables = gs |> VarSet.of_list;
         kernel_code = p;
       }
     }

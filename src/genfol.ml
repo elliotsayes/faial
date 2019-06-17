@@ -82,14 +82,14 @@ module Make = functor (Gen: BASE_GEN) ->
       Sexp.Atom name;
       Sexp.List [Serialize.unop "x" Gen.uint_s];
       Sexp.Atom "Bool";
-      body (Var "x") |> Gen.b_ser;
+      body (Var (var_make "x")) |> Gen.b_ser;
     ]
 
-  let define_const var_name ty =
+  let define_const v ty =
     let open Sexplib in
     Sexp.List [
       Sexp.Atom "declare-fun";
-      Sexp.Atom var_name;
+      Sexp.Atom v.var_name;
       Sexp.List [];
       ty;
     ]
@@ -116,21 +116,22 @@ module Make = functor (Gen: BASE_GEN) ->
   let generate_kernel k =
     let open Spmd2binary in
     let open Sexplib in
-    let time1 = Var (tid1 ^ "time$") in
-    let time2 = Var (tid2 ^ "time$") in
-    let idx1 = Var (tid1 ^ "idx$") in
-    let idx2 = Var (tid2 ^ "idx$") in
-    let mode1 = Var (tid1 ^ "mode$") in
-    let mode2 = Var (tid2 ^ "mode$") in
+    let mk_var x = Var (var_make x) in
+    let time1 = mk_var (tid1 ^ "time$") in
+    let time2 = mk_var (tid2 ^ "time$") in
+    let idx1 = mk_var (tid1 ^ "idx$") in
+    let idx2 = mk_var (tid2 ^ "idx$") in
+    let mode1 = mk_var (tid1 ^ "mode$") in
+    let mode2 = mk_var (tid2 ^ "mode$") in
 
     let generate_vars =
       let vars = k.proj_kernel_vars in
       let more_vars =
         List.map
-          (fun x -> match x with | Var x -> x | _ -> "")
+          (fun x -> match x with | Var x -> x | _ -> failwith "")
           [time1; time2; idx1; idx2; mode1; mode2]
       in
-      StringSet.elements vars
+      VarSet.elements vars
         |> List.append more_vars
         |> List.map define_uint32
         |> List.flatten
@@ -175,7 +176,7 @@ module Make = functor (Gen: BASE_GEN) ->
     print_endline "";
     Hashtbl.iter (fun x s ->
       print_string "; Location: ";
-      print_endline x;
+      print_endline x.var_name;
       print_code (gen_steps s);
       print_endline ""
     ) k.proj_kernel_steps

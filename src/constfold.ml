@@ -105,7 +105,7 @@ let a_opt a =
 let ta_opt ({timed_phase=p; timed_data=d}:access timed) =
   {timed_phase=n_opt p; timed_data=a_opt d}
 
-let stream_opt (l:(string * access timed) list) : (string *access timed) list =
+let stream_opt (l:(variable * access timed) list) : (variable *access timed) list =
   let keep_acc (_,a) =
     match a with
     | {

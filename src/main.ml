@@ -52,13 +52,23 @@ type command = Flatten | Project | Sat
 
 let print_errs errs =
   let open Typecheck in
+  let print_err msg loc =
+    Printf.printf "%a: %s\n%a"
+      Sourceloc.location_print_start loc
+      msg
+      Sourceloc.location_print_title loc
+  in
+  let print_vars msg l =
+    List.iter (fun x ->
+      print_err (msg ^ " '" ^ x.var_name ^ "'") x.var_loc
+    ) l
+  in
   List.iter (fun x ->
-    (match x with
-    | DuplicateLocs l -> "Duplicate locations: " ^ (join ", " l)
-    | DuplicateVars l -> "Duplicate variables: " ^ (join ", " l)
-    | UndefinedLocs l -> "Undefined locations: " ^ (join ", " l)
-    | UndefinedVars l -> "Undefined variables: " ^ (join ", " l)
-    ) |> print_endline
+    match x with
+    | DuplicateLocs l -> print_vars "Duplicate locations: " l
+    | DuplicateVars l -> print_vars "Duplicate variables: " l
+    | UndefinedLocs l -> print_vars "Undefined locations: " l
+    | UndefinedVars l -> print_vars "Undefined variables: " l
   )
   errs;
   if List.length errs > 0 then

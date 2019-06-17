@@ -1,28 +1,31 @@
 open Proto
 open Common
 
-let rec free_names_nexp e (fns:StringSet.t) =
+let rec fold_nexp f e a =
   match e with
-  | Num _ -> fns
-  | Proj (_, n) -> free_names_nexp n fns
-  | Var x -> StringSet.add x fns
-  | Bin (_, e1, e2) ->
-    free_names_nexp e1 fns |> free_names_nexp e2
+  | Num _ -> a
+  | Proj (_, n) -> fold_nexp f n a
+  | Var x -> f x a
+  | Bin (_, e1, e2) -> fold_nexp f e1 a |> fold_nexp f e2
 
-let rec free_names_bexp e fns =
+let rec fold_bexp f e a =
   match e with
-  | Pred (_, x) -> StringSet.add x fns
-  | Bool _ -> fns
-  | NRel (_, n1, n2) -> free_names_nexp n1 fns |> free_names_nexp n2
-  | BRel (_, b1, b2) -> free_names_bexp b1 fns |> free_names_bexp b2
-  | BNot b -> free_names_bexp b fns
+  | Pred (_, x) -> f x a
+  | Bool _ -> a
+  | NRel (_, n1, n2) -> fold_nexp f n1 a |> fold_nexp f n2
+  | BRel (_, b1, b2) -> fold_bexp f b1 a |> fold_bexp f b2
+  | BNot b -> fold_bexp f b a
+
+let free_names_nexp e (fns:VarSet.t) = fold_nexp VarSet.add e fns
+
+let free_names_bexp e fns = fold_bexp VarSet.add e fns
 
 let free_names_range r = free_names_nexp r.range_upper_bound
 
 let free_names_access a fns =
   free_names_nexp a.access_index fns |> free_names_bexp a.access_cond
 
-let free_names_timed t fns : StringSet.t =
+let free_names_timed t fns : VarSet.t =
   free_names_nexp t.timed_phase fns |> free_names_access t.timed_data
 
 let free_names_list f l fns =
@@ -41,15 +44,15 @@ let rec free_names_proto p fns =
       |> free_names_proto p2
   | Loop (r, p) ->
     free_names_proto p fns
-      |> StringSet.remove r.range_var
-      |> StringSet.union (free_names_nexp r.range_upper_bound fns)
+      |> VarSet.remove r.range_var
+      |> VarSet.union (free_names_nexp r.range_upper_bound fns)
 
 let rec free_locs_proto p fns =
   match p with
   | Assert _
   | Sync
   | Skip -> fns
-  | Acc (x, _) -> StringSet.add x fns
+  | Acc (x, _) -> VarSet.add x fns
   | Seq (p1, p2) ->
     free_locs_proto p1 fns
       |> free_locs_proto p2

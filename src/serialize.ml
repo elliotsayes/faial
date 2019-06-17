@@ -37,7 +37,7 @@ module StdNexp : NEXP_SERIALIZER = struct
     match a with
     | Proj (t, n) -> binop "proj" (t_ser t) (n_ser n)
     | Num n -> Sexp.Atom (string_of_int n)
-    | Var x -> Sexp.Atom x
+    | Var x -> Sexp.Atom x.var_name
     | Bin (b, a1, a2) ->
       binop (nbin_to_string b) (n_ser a1) (n_ser a2)
 end
@@ -60,7 +60,7 @@ module BvNexp : NEXP_SERIALIZER = struct
         Sexp.Atom ("bv" ^ (string_of_int n));
         Sexp.Atom "32";
       ]
-    | Var x -> Sexp.Atom x
+    | Var x -> Sexp.Atom x.var_name
     | Bin (b, a1, a2) ->
       binop (nbin_to_string b) (n_ser a1) (n_ser a2)
 end
@@ -93,7 +93,7 @@ module StdBexp : BEXP_SERIALIZER =
       | BRel (b, b1, b2) ->
         binop (brel_to_string b) (b_ser b1) (b_ser b2)
       | BNot b -> unop "not" (b_ser b)
-      | Pred (x, v) -> unop x (Sexp.Atom v)
+      | Pred (x, v) -> unop x (Sexp.Atom v.var_name)
   end
 
 module BvBexp : BEXP_SERIALIZER =
@@ -113,7 +113,7 @@ module BvBexp : BEXP_SERIALIZER =
       | BRel (b, b1, b2) ->
         binop (brel_to_string b) (b_ser b1) (b_ser b2)
       | BNot b -> unop "not" (b_ser b)
-      | Pred (x, v) -> unop x (Sexp.Atom v)
+      | Pred (x, v) -> unop x (Sexp.Atom v.var_name)
   end
 
 let b_ser = StdBexp.b_ser
@@ -124,7 +124,7 @@ let m_ser m = match m with
 
 let r_ser r =
   call "range" [
-    Sexplib.Sexp.Atom r.range_var;
+    Sexplib.Sexp.Atom r.range_var.var_name;
     n_ser r.range_upper_bound;
   ]
 
@@ -144,7 +144,7 @@ let serialize_steps name l =
 
 let serialize_lsteps name l =
   Sexplib.Sexp.(
-    List (Atom name :: (List.map (fun (x,o) -> unop x (t_ser o)) l))
+    List (Atom name :: (List.map (fun (x,o) -> unop x.var_name (t_ser o)) l))
   )
 
 let rec proto_ser p =
@@ -153,7 +153,7 @@ let rec proto_ser p =
   | Skip -> Sexp.Atom "skip"
   | Sync -> Sexp.Atom "sync"
   | Assert b -> unop "assert" (b_ser b)
-  | Acc (x, a) -> binop "loc" (Sexp.Atom x) (a_ser a)
+  | Acc (x, a) -> binop "loc" (Sexp.Atom x.var_name) (a_ser a)
   | Seq (p1, p2) -> binop "begin" (proto_ser p1) (proto_ser p2)
   | Loop (r, p) -> binop "loop" (r_ser r) (proto_ser p)
 
@@ -161,9 +161,9 @@ let bexp_list_ser name pre =
   let open Sexplib in
   Sexp.(List (Atom name :: (List.map b_ser pre)))
 
-let string_set_ser name s =
+let var_set_ser name s =
   let open Sexplib in
-  let l = StringSet.elements s |> List.map (fun x -> Sexp.Atom x) in
+  let l = VarSet.elements s |> List.map (fun x -> Sexp.Atom x.var_name) in
   Sexp.List (Sexp.Atom name :: l)
 
 let flat_kernel_ser k =
@@ -171,8 +171,8 @@ let flat_kernel_ser k =
   let open Sexplib in
   Sexp.List [Sexp.Atom "flat";
     bexp_list_ser "pre" k.flat_kernel_pre;
-    string_set_ser "single_vars" k.flat_kernel_single_vars;
-    string_set_ser "multi_vars" k.flat_kernel_multi_vars;
+    var_set_ser "single_vars" k.flat_kernel_single_vars;
+    var_set_ser "multi_vars" k.flat_kernel_multi_vars;
     serialize_lsteps "steps" k.flat_kernel_steps;
   ]
 
@@ -182,7 +182,7 @@ let proj_ser (k:Spmd2binary.proj_kernel) : Sexplib.Sexp.t =
   let open Spmd2binary in
   let elems t = hashtbl_elements t
     |> List.map (fun (k,v) -> List [
-      Atom k;
+      Atom k.var_name;
       serialize_steps "steps1" (fst v);
       serialize_steps "steps2" (snd v);
     ])
@@ -190,6 +190,6 @@ let proj_ser (k:Spmd2binary.proj_kernel) : Sexplib.Sexp.t =
   List [
     Atom "proj-kernel";
     bexp_list_ser "pre" k.proj_kernel_pre;
-    string_set_ser "fns" k.proj_kernel_vars;
+    var_set_ser "fns" k.proj_kernel_vars;
     List (Atom "steps" :: elems k.proj_kernel_steps);
   ]

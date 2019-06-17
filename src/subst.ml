@@ -61,4 +61,4 @@ let p_subst f p =
   in
   subst p
 
-let replace_by (x, v) y = if String.equal x y then Some v else None
+let replace_by (x, v) y = if var_equal x y then Some v else None

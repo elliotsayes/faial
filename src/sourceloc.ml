@@ -5,8 +5,10 @@ type position = {
   pos_column: int;
 }
 
+let pos_empty = {pos_line = 1; pos_column=1}
+
 (* Return the line number and position of a position *)
-let of_lexing_position pos =
+let of_lex_position pos =
   let open Lexing in
   {
     pos_line = pos.pos_lnum;
@@ -28,13 +30,24 @@ type location = {
   loc_end : position;
 }
 
-let of_lexbuf lb =
+let loc_empty = {
+  loc_filename = "";
+  loc_start = pos_empty;
+  loc_end=pos_empty;
+}
+
+let of_lex_position_pair (p_start, p_end) =
   let open Lexing in
   {
-    loc_filename = lb.lex_start_p.pos_fname;
-    loc_start = lb.lex_start_p |> of_lexing_position;
-    loc_end = lb.lex_curr_p |> of_lexing_position;
+    loc_filename = p_start.pos_fname;
+    loc_start = p_start |> of_lex_position;
+    loc_end = p_end |> of_lex_position;
   }
+
+let of_lexbuf lb =
+  let open Lexing in
+  of_lex_position_pair (lb.lex_start_p, lb.lex_curr_p)
+
 
 (** Prints the start of the file location:
     filename:start-line:start-col *)

@@ -4,14 +4,14 @@ open Common
 (** Given a variable and a set of known variables, returns
     a fresh variable name. *)
 
-let generate_fresh_name x xs =
+let generate_fresh_name (x:variable) (xs:VarSet.t) : variable =
   let rec do_fresh_name x n =
-    let name = (x ^ string_of_int n) in
-    if List.mem name xs
+    let new_x = {x with var_name = x.var_name ^ string_of_int n } in
+    if VarSet.mem new_x xs
     then do_fresh_name x (n + 1)
-    else name
+    else new_x
   in
-  if List.mem x xs then do_fresh_name x 1 else x
+  if VarSet.mem x xs then do_fresh_name x 1 else x
 
 (** Loop normalization: Makes all loop variables distinct. *)
 
@@ -19,14 +19,14 @@ let normalize_variables (p:proto) =
   let rec norm e xs =
     match e with
     | Loop ({range_var=x; range_upper_bound=ub}, e) ->
-      if List.mem x xs then (
-        let new_x = generate_fresh_name x xs in
-        let new_xs = new_x::xs in
+      if VarSet.mem x xs then (
+        let new_x : variable = generate_fresh_name x xs in
+        let new_xs = VarSet.add new_x xs in
         let do_subst = Subst.replace_by (x, Var new_x) in
         let (e, new_xs) = norm (Subst.p_subst do_subst e) new_xs in
         Loop ({range_var=new_x; range_upper_bound=ub}, e), new_xs
       ) else (
-        let (e, new_xs) = norm e (x::xs) in
+        let (e, new_xs) = norm e (VarSet.add x xs) in
         Loop ({range_var=x;range_upper_bound=ub}, e), new_xs
       )
     | Seq (e1, e2) ->
@@ -38,7 +38,7 @@ let normalize_variables (p:proto) =
     | Assert _
     | Sync -> e, xs
   in
-  norm p [] |> fst
+  norm p VarSet.empty |> fst
 
 (** Extracts every variable declaration and how to restrict each variable.*)
 
@@ -67,14 +67,14 @@ let rec does_sync (p:proto) : bool =
   | Sync -> true
   | Seq (p1, p2) -> does_sync p1 || does_sync p2
 
-let rec single_loop_variables (p:proto) (s:StringSet.t) : StringSet.t =
+let rec single_loop_variables (p:proto) (s:VarSet.t) : VarSet.t =
   match p with
   | Acc _
   | Assert _
   | Sync
   | Skip -> s
   | Loop (r, p) ->
-    let s = if does_sync p then StringSet.add r.range_var s else s in
+    let s = if does_sync p then VarSet.add r.range_var s else s in
     single_loop_variables p s
   | Seq (p1, p2) ->
     single_loop_variables p1 s |> single_loop_variables p2
@@ -83,19 +83,20 @@ let rec single_loop_variables (p:proto) (s:StringSet.t) : StringSet.t =
 
 (** Flatten out the loops of a protocol. *)
 
-let remove_loops (e:Proto.proto) : (string * access timed) list =
+let remove_loops (p:Proto.proto)
+  (* : (variable * access timed) list *)  =
   (* We rename all upper-bounds to variables, as these will show up in
      expressions as per the Phaseord translation.
      We therefore convert upper-bound to variables, and then replace
      variables by the original upperbound. *)
   let ids : (string,nexp) Hashtbl.t = Hashtbl.create 0 in
-  let gen_id e () =
+  let gen_id e () : variable =
     let key = "$ub" ^ string_of_int (Hashtbl.length ids) in
     Hashtbl.add ids key e;
-    key
+    var_make key
   in
   (* Convert a protocol to a phase-ordering program *)
-  let rec trans e =
+  let rec trans e  =
     match e with
     | Proto.Skip
     | Proto.Assert _ ->
@@ -109,19 +110,20 @@ let remove_loops (e:Proto.proto) : (string * access timed) list =
       let new_ub = gen_id ub () in
       Phaseord.Loop (var, Var new_ub, trans e)
   in
-  let steps = trans e |> Phaseord.extract_steps in
+  let steps = trans p |> Phaseord.extract_steps in
   (* Each step pairs a phase of type Phase.exp with accesses *)
-  let pexp_to_nexp (ubs:(string,nexp) Hashtbl.t) (e:Phaseord.exp) : Proto.nexp =
+  let pexp_to_nexp (ubs:(string,nexp) Hashtbl.t) (e:variable Phaseord.exp) : Proto.nexp =
     let rec trans e =
       match e with
       | Phaseord.Num n -> Proto.Num n
       | Phaseord.Add (e1, e2) -> Proto.Bin (Proto.Plus, trans e1, trans e2)
       | Phaseord.Mult (e1, e2) -> Proto.Bin (Proto.Mult, trans e1, trans e2)
-      | Phaseord.Var x -> begin
-        match Hashtbl.find_opt ubs x with
-        | Some n -> n
-        | None -> Proto.Var x
-      end
+      | Phaseord.Var x ->
+        begin
+          match Hashtbl.find_opt ubs x.var_name with
+          | Some n -> n
+          | None -> Proto.Var x
+        end
     in
     trans e
   in
@@ -133,17 +135,17 @@ let remove_loops (e:Proto.proto) : (string * access timed) list =
 
 type flat_kernel = {
   flat_kernel_pre: bexp list;
-  flat_kernel_steps: (string * access_t) list;
-  flat_kernel_single_vars: StringSet.t;
-  flat_kernel_multi_vars: StringSet.t;
+  flat_kernel_steps: (variable * access_t) list;
+  flat_kernel_single_vars: VarSet.t;
+  flat_kernel_multi_vars: VarSet.t;
 }
 
-let flatten_kernel (k:kernel) : flat_kernel =
+let flatten_kernel (k:kernel) =
   (* 1. Make sure each loop variables are unique *)
   let p = normalize_variables k.kernel_code in
   (* 2. Extract single-valued variables, as these are not split into two *)
-  let single_vars = single_loop_variables p StringSet.empty in
-  let single_vars = StringSet.union single_vars (StringSet.of_list k.kernel_global_variables) in
+  let single_vars = single_loop_variables p VarSet.empty in
+  let single_vars = VarSet.union single_vars k.kernel_global_variables in
   (* 2. Flatten out loops, extracting only the accesses *)
   let steps = remove_loops p in
   (* 3. Get all constrains defined in the code *)
@@ -152,14 +154,14 @@ let flatten_kernel (k:kernel) : flat_kernel =
     |> List.flatten
   in
   (* 4. Extract all local variables *)
-  let locals : StringSet.t =
+  let locals : VarSet.t =
     Freenames.(
-      StringSet.of_list k.kernel_local_variables
+      k.kernel_local_variables
       |> free_names_list (fun (_,x) -> free_names_timed x) steps
       |> free_names_list free_names_bexp pre
     )
   in
-  let locals = StringSet.diff locals single_vars in
+  let locals = VarSet.diff locals single_vars in
   (* 5. Finally, return the flat kernel *)
   {
     flat_kernel_pre = pre;

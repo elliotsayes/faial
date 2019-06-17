@@ -43,7 +43,7 @@ let rec parse_nexp (a:Sexp.t) : nexp option =
   match a with
   | Sexp.Atom x -> Some (begin
       try Num (int_of_string x)
-      with Failure _ -> Var x
+      with Failure _ -> Var (var_make x)
     end)
   | Sexp.List [m; o1; o2] when (parse_nbin.is_valid m) ->
     bind (parse_nexp o1) (fun n1 ->
@@ -92,7 +92,7 @@ let parse_range = make "range" (fun s ->
   match s with
   | Sexp.List [Sexp.Atom "range"; Sexp.Atom x; n] ->
     Some {
-      range_var = x;
+      range_var = var_make x;
       range_upper_bound = parse_nexp.run n;
     }
   | _ -> None
@@ -131,7 +131,7 @@ let rec parse_proto s =
       Some (Loop (parse_range.run r, p))
     )
   | Sexp.List [Sexp.Atom "loc"; Sexp.Atom x; a] ->
-    Some (Acc (x, parse_access.run a))
+    Some (Acc (var_make x, parse_access.run a))
   | _ -> None
 
 let parse_proto = make "proto" parse_proto
@@ -164,9 +164,9 @@ let parse_kernel = make "kernel" (fun s->
       p
     ] ->
     Some {
-      kernel_locations = parse_string_list locs;
-      kernel_local_variables = parse_string_list ls;
-      kernel_global_variables = parse_string_list gs;
+      kernel_locations = parse_string_list locs |> List.map var_make |> VarSet.of_list;
+      kernel_local_variables = parse_string_list ls |> List.map var_make |> VarSet.of_list;
+      kernel_global_variables = parse_string_list gs |> List.map var_make |> VarSet.of_list;
       kernel_code = parse_proto.run p;
     }
   | _ -> None

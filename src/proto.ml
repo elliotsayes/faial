@@ -1,4 +1,27 @@
-type variable = string
+type variable = {
+  var_loc: Sourceloc.location;
+  var_name: string;
+}
+
+let var_make (name:string) = {
+  var_loc = Sourceloc.loc_empty;
+  var_name = name;
+}
+
+let var_of_loc name pair =
+  {
+    var_loc = Sourceloc.of_lex_position_pair pair;
+    var_name = name;
+  }
+
+let var_equal (x:variable) (y:variable) = String.equal x.var_name y.var_name
+
+module VarOT = struct
+  type t = variable
+  let compare = fun x y -> Pervasives.compare x.var_name y.var_name
+end
+
+module VarSet = Set.Make(VarOT)
 
 let tid = "$tid"
 let idx = "idx"
@@ -119,6 +142,12 @@ type proto =
 | Seq of proto * proto
 | Loop of range * proto
 
+let rec proto_block l =
+  match l with
+  | [] -> Skip
+  | [x] -> x
+  | x::l -> Seq (x, proto_block l)
+
 (** A timed access is prefixed by the phase it was accessed *)
 type 'a timed = {timed_phase: nexp; timed_data: 'a}
 
@@ -128,11 +157,11 @@ type step_list = (string * access_t) list
 
 type kernel = {
   (* The shared locations that can be accessed in the kernel. *)
-  kernel_locations: string list;
+  kernel_locations: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
-  kernel_global_variables: string list;
+  kernel_global_variables: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
-  kernel_local_variables: string list;
+  kernel_local_variables: VarSet.t;
   (* The code of a kernel performs the actual memory accesses. *)
   kernel_code: proto;
 }

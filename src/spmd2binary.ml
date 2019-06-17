@@ -4,17 +4,20 @@ open Common
 let tid1 = "$1$"
 let tid2 = "$2$"
 
-let project prefix x = prefix ^ x
-
+let project prefix x = { x with
+  var_name = prefix ^ x.var_name;
+}
+(*
 let tid1_s = project tid1 tid
 let tid2_s = project tid2 tid
-
+*)
+(*
 let tid1_t = Var tid1_s
 let tid2_t = Var tid2_s
-
+*)
 let do_project locals prefix =
   fun x ->
-    if StringSet.mem x locals
+    if VarSet.mem x locals
     then Some (Var (project prefix x))
     else None
 
@@ -63,19 +66,19 @@ let apply_proj locals (b:bexp) =
 
 let project_condition locals (b:bexp) =
   let b = apply_proj locals b in
-  let locs_in_b = Freenames.free_names_bexp b StringSet.empty
-    |> StringSet.inter locals
+  let locs_in_b = Freenames.free_names_bexp b VarSet.empty
+    |> VarSet.inter locals
   in
-  if StringSet.is_empty locs_in_b then
+  if VarSet.is_empty locs_in_b then
     [b]
   else
     let do_subst ti = Subst.b_subst (do_project locals ti) in
     [do_subst tid1 b; do_subst tid2 b]
 
-type stream = (string * access timed) list
+type stream = (variable * access timed) list
 
 let project_stream locals (l:stream) : stream * stream =
-  let on_elem ((l1:stream),(l2:stream)) ((x:string), (a:access timed)) : stream * stream =
+  let on_elem ((l1:stream),(l2:stream)) ((x:variable), (a:access timed)) : stream * stream =
     let (a1, a2) = project_access locals a in
     (x,a1)::l1, (x, a2)::l2
   in
@@ -85,8 +88,8 @@ type access_2d = access_t list * access_t list
 
 type proj_kernel = {
   proj_kernel_pre: bexp list;
-  proj_kernel_vars: StringSet.t;
-  proj_kernel_steps: (string, access_2d) Hashtbl.t
+  proj_kernel_vars: VarSet.t;
+  proj_kernel_steps: (variable, access_2d) Hashtbl.t
 }
 
 let group_assoc l =
@@ -140,13 +143,13 @@ let project_kernel (k:Loops.flat_kernel) : proj_kernel =
   ) group2;
   (* 4. Split locals *)
   let locals =
-    StringSet.union
-      (StringSet.map (project tid1) locals)
-      (StringSet.map (project tid2) locals)
+    VarSet.union
+      (VarSet.map (project tid1) locals)
+      (VarSet.map (project tid2) locals)
   in
   {
     proj_kernel_pre = pre;
-    proj_kernel_vars = StringSet.union locals k.flat_kernel_single_vars;
+    proj_kernel_vars = VarSet.union locals k.flat_kernel_single_vars;
     proj_kernel_steps = result;
   }
 
