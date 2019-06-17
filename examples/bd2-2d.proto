@@ -1,0 +1,45 @@
+# Source: https://github.com/mingouyang/bandDepth/blob/master/gpuBD2.cu#L15-L47
+
+shared func, count, minVector, maxVector;
+const global MaxCol,
+      local blockIdx_y,
+      local blockIdx_x,
+      local threadIdx_x,
+      global m,
+      global n,
+      local myFunc,
+      local id;
+
+# assert id == blockIdx_x * m + threadIdx_x;
+# goal distinct [id];
+
+distinct [threadIdx_x][blockIdx_x];
+
+# funcValue = Func(blockIdx.x, threadIdx.x); //func 1
+ro func[blockIdx_x][threadIdx_x] if threadIdx_x < m;
+
+# minVector[threadIdx.x] = funcValue;
+rw minVector[blockIdx_x][threadIdx_x] if threadIdx_x < m;
+
+# maxVector[threadIdx.x] = funcValue;
+rw maxVector[blockIdx_x][threadIdx_x] if threadIdx_x < m;
+
+# funcValue = Func(blockIdx.y + 1, threadIdx.x);
+ro func[blockIdx_y + 1][threadIdx_x] if threadIdx_x < m;
+
+# minVector[threadIdx.x] = min(minVector[threadIdx.x], funcValue);
+rw minVector[blockIdx_x][threadIdx_x] if threadIdx_x < m;
+
+# maxVector[threadIdx.x] = max(maxVector[threadIdx.x], funcValue);
+rw maxVector[blockIdx_x][threadIdx_x] if threadIdx_x < m;
+
+sync;
+
+foreach i < n {
+  foreach j < m {
+    # funcValue = Func(myFunc, j);
+    assert myFunc == i + threadIdx_x;
+    ro func[myFunc][j] if myFunc < n;
+  };
+};
+

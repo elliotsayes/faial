@@ -35,6 +35,11 @@ module BvGen : BASE_GEN =
     ]
   end
 
+let rec zip l1 l2 =
+  match l1, l2 with
+  | [], _ | _, [] -> []
+  | x::l1, y::l2 -> (x,y) :: (zip l1 l2)
+
 module Make = functor (Gen: BASE_GEN) ->
   struct
 
@@ -47,22 +52,27 @@ module Make = functor (Gen: BASE_GEN) ->
     List.map (fun elem ->
       let result = [
         n_eq time elem.timed_phase;
-        n_eq idx elem.timed_data.access_index;
         n_eq mode (elem.timed_data.access_mode |> mode_to_nexp);
         elem.timed_data.access_cond
-      ] in
+      ] @
+      List.map (fun (i, j) -> n_eq i j) (zip idx elem.timed_data.access_index);
+
+      in
       (if elem.timed_data.access_mode = R
       then (n_eq other_mode (mode_to_nexp W))::result
       else result) |> b_and_ex
     ) elems |> b_or_ex
 
   let steps_to_bexp (step1, step2) (time1, idx1, mode1) (time2, idx2, mode2) =
-    b_and_ex [
-      access_list_to_bexp step1 time1 idx1 mode1 mode2;
-      access_list_to_bexp step2 time2 idx2 mode2 mode1;
-      n_eq time1 time2;
-      n_eq idx1 idx2;
-    ]
+    b_and_ex (
+      [
+        access_list_to_bexp step1 time1 idx1 mode1 mode2;
+        access_list_to_bexp step2 time2 idx2 mode2 mode1;
+        n_eq time1 time2;
+      ]
+      @
+      List.map (fun (i,j) -> n_eq i j) (List.combine idx1 idx2)
+    )
 
   let range i j =
     let rec iter n acc =
@@ -143,17 +153,18 @@ module Make = functor (Gen: BASE_GEN) ->
     let mk_var x = Var (var_make x) in
     let time1 = mk_var (tid1 ^ "time$") in
     let time2 = mk_var (tid2 ^ "time$") in
-    let idx1 = mk_var (tid1 ^ "idx$") in
-    let idx2 = mk_var (tid2 ^ "idx$") in
     let mode1 = mk_var (tid1 ^ "mode$") in
     let mode2 = mk_var (tid2 ^ "mode$") in
+    let dims = ["x"; "y"; "z"] in
+    let idx1 = List.map (fun d -> mk_var (tid1 ^ "idx" ^ d ^ "$")) dims in
+    let idx2 = List.map (fun d -> mk_var (tid2 ^ "idx" ^ d ^ "$")) dims in
 
     let generate_vars =
       let vars = k.proj_kernel_vars in
       let more_vars =
         List.map
           (fun x -> match x with | Var x -> x | _ -> failwith "")
-          [time1; time2; idx1; idx2; mode1; mode2]
+          ([time1; time2; mode1; mode2] @ idx1 @ idx2)
       in
       VarSet.elements vars
         |> List.append more_vars

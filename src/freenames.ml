@@ -23,7 +23,8 @@ let free_names_bexp e fns = fold_bexp VarSet.add e fns
 let free_names_range r = free_names_nexp r.range_upper_bound
 
 let free_names_access a fns =
-  free_names_nexp a.access_index fns |> free_names_bexp a.access_cond
+  List.fold_right free_names_nexp a.access_index fns
+    |> free_names_bexp a.access_cond
 
 let free_names_timed t fns : VarSet.t =
   free_names_nexp t.timed_phase fns |> free_names_access t.timed_data
@@ -36,9 +37,7 @@ let rec free_names_proto p fns =
   | Sync
   | Skip -> fns
   | Assert b -> free_names_bexp b fns
-  | Acc (_, a) ->
-    free_names_nexp a.access_index fns
-      |> free_names_bexp a.access_cond
+  | Acc (_, a) -> free_names_access a fns
   | Seq (p1, p2) ->
     free_names_proto p1 fns
       |> free_names_proto p2

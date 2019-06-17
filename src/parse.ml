@@ -101,9 +101,9 @@ let parse_range = make "range" (fun s ->
 let parse_access = make "access" (fun s ->
   let mk_acc m s =
     match s with
-    | [n1; b] ->
+    | [Sexp.List l; b] ->
       Some {
-        access_index=parse_nexp.run n1;
+        access_index=List.map parse_nexp.run l;
         access_cond=parse_bexp.run b;
         access_mode = m;
       }

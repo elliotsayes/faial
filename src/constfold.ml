@@ -99,7 +99,7 @@ let a_opt a =
   {
     access_mode = a.access_mode;
     access_cond = b_opt a.access_cond;
-    access_index = n_opt a.access_index;
+    access_index = List.map n_opt a.access_index;
   }
 
 let ta_opt ({timed_phase=p; timed_data=d}:access timed) =

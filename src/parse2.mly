@@ -10,6 +10,7 @@
 %token LOCS CONST ASSERT COMMA
 %token LPAREN RPAREN LBRACE RBRACE LBRACK RBRACK
 %token FOREACH
+%token DISTINCT
 
 %left OR
 %left AND
@@ -74,15 +75,20 @@ bexp:
 
 mode: RW { W } | RO { R };
 
+index:
+  | LBRACK n = nexp RBRACK { [n] }
+  | LBRACK n = nexp RBRACK i = index { n :: i }
+
 proto:
   | SYNC { Sync }
+  | DISTINCT i = index { Assert (b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) i)) }
   | ASSERT b = bexp { Assert b }
   | p1 = proto SEMICOLON p2 = proto
     { Seq (p1, p2) }
-  | m = mode x = ident LBRACK n = nexp RBRACK
-    { Acc (x, {access_index=n; access_cond=Bool true; access_mode=m}) }
-  | m = mode x = ident LBRACK n = nexp RBRACK IF b = bexp
-    { Acc (x, {access_index=n; access_cond=b; access_mode=m}) }
+  | m = mode; x = ident; i = index
+    { Acc (x, {access_index=i; access_cond=Bool true; access_mode=m}) }
+  | m = mode; x = ident; i = index; IF b = bexp
+    { Acc (x, {access_index=i; access_cond=b; access_mode=m}) }
   | FOREACH x = ident LT n = nexp LBRACE p = proto RBRACE
     { Loop ({range_var=x; range_upper_bound=n}, p) }
   | p = proto SEMICOLON { p }

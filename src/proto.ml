@@ -132,7 +132,7 @@ type range = {range_var: variable; range_upper_bound: nexp}
 
 type mode = R | W
 
-type access = {access_index: nexp; access_cond: bexp; access_mode: mode}
+type access = {access_index: nexp list; access_cond: bexp; access_mode: mode}
 
 type proto =
 | Skip

@@ -129,7 +129,8 @@ let r_ser r =
   ]
 
 let a_ser a =
-  call (m_ser a.access_mode) [n_ser a.access_index; b_ser a.access_cond]
+  let idx = Sexplib.Sexp.List (List.map n_ser a.access_index) in
+  call (m_ser a.access_mode) [idx; b_ser a.access_cond]
 
 let t_ser t =
   call "timed" [

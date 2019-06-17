@@ -28,11 +28,7 @@ let project_access locals (t:access timed) : (access timed) * (access timed) =
       let si = do_project locals ti in
       {
         timed_phase=Subst.n_subst si n;
-        timed_data={
-          access_index = Subst.n_subst si a.access_index;
-          access_mode = a.access_mode;
-          access_cond = Subst.b_subst si a.access_cond;
-        }
+        timed_data=Subst.a_subst si a;
       }
     in
     mk tid1, mk tid2

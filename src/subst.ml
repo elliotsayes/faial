@@ -32,7 +32,7 @@ let b_subst f b : bexp =
 
 let a_subst f a : access =
   {
-    access_index = n_subst f a.access_index;
+    access_index = List.map (n_subst f) a.access_index;
     access_mode = a.access_mode;
     access_cond = b_subst f a.access_cond;
   }

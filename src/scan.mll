@@ -57,6 +57,7 @@ rule read = parse
   | "foreach" { FOREACH }
   | "if" { IF }
   | "shared" { LOCS }
+  | "distinct" { DISTINCT }
   | "const" { CONST }
   | "assert" { ASSERT }
   | "global" { GLOBAL }
