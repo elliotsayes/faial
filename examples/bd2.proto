@@ -1,0 +1,47 @@
+shared func, count, minVector, maxVector;
+const global MaxCol,
+      local blockIdx_y,
+      local blockIdx_x,
+      local threadIdx_x,
+      global m,
+      global n,
+      local myFunc;
+
+assert 1@threadIdx_x != 2@threadIdx_x || 1@blockIdx_x != 2@blockIdx_x;
+assert blockIdx_y > blockIdx_x;
+assert threadIdx_x < m;
+
+# Handle big sizes
+assert uint8(threadIdx_x);
+assert m == 1024;
+assert uint8(blockIdx_x);
+
+# funcValue = Func(blockIdx.x, threadIdx.x); //func 1
+ro func[blockIdx_x * m + threadIdx_x] if threadIdx_x < m;
+
+# minVector[threadIdx.x] = funcValue;
+rw minVector[blockIdx_x * m + threadIdx_x] if threadIdx_x < m;
+
+# maxVector[threadIdx.x] = funcValue;
+rw maxVector[blockIdx_x * m + threadIdx_x] if threadIdx_x < m;
+
+# funcValue = Func(blockIdx.y + 1, threadIdx.x);
+ro func[(blockIdx_y + 1) * m + threadIdx_x] if threadIdx_x < m;
+
+# minVector[threadIdx.x] = min(minVector[threadIdx.x], funcValue);
+rw minVector[blockIdx_x * m + threadIdx_x] if threadIdx_x < m;
+
+# maxVector[threadIdx.x] = max(maxVector[threadIdx.x], funcValue);
+rw maxVector[blockIdx_x * m + threadIdx_x] if threadIdx_x < m;
+
+sync;
+
+foreach i < n {
+  foreach j < m {
+    # funcValue = Func(myFunc, j);
+    assert myFunc == i + threadIdx_x;
+    ro func[j * m + myFunc] if myFunc < n;
+  }
+  ;
+};
+
