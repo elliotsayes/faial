@@ -70,10 +70,31 @@ module Make = functor (Gen: BASE_GEN) ->
     in
     iter j []
 
-  let pow2 n x : bexp =
-      range 0 n
-      |> List.map (fun i -> n_eq x (Num (1 lsl i)))
-      |> b_or_ex
+  let is_even n =
+    n mod 2 = 0
+
+  let pow base exponent =
+    if exponent < 0 then invalid_arg "exponent can not be negative" else
+    let rec aux accumulator base = function
+      | 0 -> accumulator
+      | 1 -> base * accumulator
+      | e when is_even e -> aux accumulator (base * base) (e / 2)
+      | e -> aux (base * accumulator) (base * base) ((e - 1) / 2) in
+    aux 1 base exponent
+
+  let eq_nums x l : bexp =
+    List.map (fun i -> n_eq x (Num i)) l
+    |> b_or_ex
+
+  let gen_pow base x : bexp =
+    let ub = 0xFFFFFFFF in
+    let rec pows n : int list =
+      let x = pow base n in
+      if x > ub then []
+      else if x == ub then [x]
+      else x :: pows (n + 1)
+    in
+    pows 0 |> eq_nums x
 
   let pred name body =
     let open Sexplib in
@@ -106,8 +127,11 @@ module Make = functor (Gen: BASE_GEN) ->
       b_assert (n_ge (Var var_name) (Num 0));
     ]
 
-  let predicates = [
-    pred "pow2" (pow2 31);
+  let predicates =
+    List.map (fun x ->
+      pred ("pow" ^ string_of_int x) (gen_pow x)
+    ) (range 2 4)
+  |> List.append [
     pred "uint32" (fun x -> n_le x (Num 0xFFFFFFFF));
     pred "uint16" (fun x -> n_le x (Num 0xFFFF));
     pred "uint8" (fun x -> n_le x (Num 0xFF));
