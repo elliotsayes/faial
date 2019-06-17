@@ -1,3 +1,5 @@
+# Source: https://github.com/mingouyang/bandDepth/blob/master/gpuBD2.cu#L15-L47
+
 shared func, count, minVector, maxVector;
 const global MaxCol,
       local blockIdx_y,
