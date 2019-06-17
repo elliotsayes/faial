@@ -11,8 +11,8 @@ assert 1@threadIdx_x != 2@threadIdx_x || 1@blockIdx_x != 2@blockIdx_x;
 assert blockIdx_y > blockIdx_x;
 assert threadIdx_x < m;
 
-# Handle any power of 2; the problem becomes intractable if we allow any m
-assert pow2(m);
+# Handle any power of 2, 3, 4; the problem becomes intractable if we allow any m
+assert pow2(m) || pow3(m) || pow4(m);
 
 # funcValue = Func(blockIdx.x, threadIdx.x); //func 1
 ro func[blockIdx_x * m + threadIdx_x] if threadIdx_x < m;
