@@ -11,6 +11,9 @@ const global MaxCol,
       local id;
 
 assert 1@threadIdx_x != 2@threadIdx_x || 1@blockIdx_x != 2@blockIdx_x;
+
+# assert id == blockIdx_x * m + threadIdx_x;
+# goal distinct [id];
 assert blockIdx_y > blockIdx_x;
 assert threadIdx_x < m;
 
