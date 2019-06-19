@@ -11,6 +11,7 @@
 %token LPAREN RPAREN LBRACE RBRACE LBRACK RBRACK
 %token FOREACH
 %token DISTINCT
+%token PROVE
 
 %left OR
 %left AND
@@ -81,8 +82,10 @@ index:
 
 proto:
   | SYNC { Sync }
-  | DISTINCT i = index { Assert (b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) i)) }
+  | DISTINCT i = index { Assert (distinct i) }
   | ASSERT b = bexp { Assert b }
+  | PROVE b = bexp { Goal b }
+  | PROVE DISTINCT i = index { Goal (distinct i) }
   | p1 = proto SEMICOLON p2 = proto
     { Seq (p1, p2) }
   | m = mode; x = ident; i = index

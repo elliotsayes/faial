@@ -137,10 +137,14 @@ type access = {access_index: nexp list; access_cond: bexp; access_mode: mode}
 type proto =
 | Skip
 | Sync
+| Goal of bexp
 | Assert of bexp
 | Acc of variable * access
 | Seq of proto * proto
 | Loop of range * proto
+
+let distinct idx =
+  b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)
 
 let rec proto_block l =
   match l with

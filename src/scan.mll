@@ -54,6 +54,7 @@ rule read = parse
   | "sync" {SYNC}
   | "rw" {RW}
   | "ro" {RO}
+  | "prove" { PROVE }
   | "foreach" { FOREACH }
   | "if" { IF }
   | "shared" { LOCS }

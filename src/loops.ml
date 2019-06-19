@@ -36,26 +36,44 @@ let normalize_variables (p:proto) =
     | Acc (_, _)
     | Skip
     | Assert _
+    | Goal _
     | Sync -> e, xs
   in
   norm p VarSet.empty |> fst
 
-(** Extracts every variable declaration and how to restrict each variable.*)
+(** Get proof obligations *)
 
-let get_constraints (p:proto) : bexp list =
+type proof = Prove | Assume
+
+let get_proof_obligations (p:proto) : (proof * bexp)  list =
   let rec iter p l =
     match p with
     | Skip
     | Sync
     | Acc _ -> l
-    | Assert b -> b::l
+    | Goal b -> (Prove, b) :: l
+    | Assert b -> (Assume, b) :: l
     | Loop (r, p) ->
       let b = n_lt (Var r.range_var) r.range_upper_bound in
-      iter p (b::l)
+      iter p ((Prove, b)::l)
     | Seq (p1, p2) ->
       iter p2 (iter p1 l)
   in
   iter p []
+
+(** Extracts every variable declaration and how to restrict each variable.*)
+
+let get_constraints p = get_proof_obligations p |> List.split |> snd
+
+let get_proofs p =
+  let ps, bs = get_proof_obligations p |> List.split in
+  let rec iter ps bs =
+    match ps, bs with
+    | Prove :: ps, b :: l -> b :: iter ps l
+    | Assume :: ps, b :: l -> iter ps l
+    | _, _ -> []
+  in
+  iter ps bs
 
 let rec does_sync (p:proto) : bool =
   match p with
@@ -63,6 +81,7 @@ let rec does_sync (p:proto) : bool =
   | Loop _
   | Acc _
   | Assert _
+  | Goal _
     -> false
   | Sync -> true
   | Seq (p1, p2) -> does_sync p1 || does_sync p2
@@ -71,6 +90,7 @@ let rec single_loop_variables (p:proto) (s:VarSet.t) : VarSet.t =
   match p with
   | Acc _
   | Assert _
+  | Goal _
   | Sync
   | Skip -> s
   | Loop (r, p) ->
@@ -99,6 +119,7 @@ let remove_loops (p:Proto.proto)
   let rec trans e  =
     match e with
     | Proto.Skip
+    | Proto.Goal _
     | Proto.Assert _ ->
       Phaseord.Skip
     | Proto.Seq (e1, e2) ->

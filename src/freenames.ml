@@ -36,7 +36,7 @@ let rec free_names_proto p fns =
   match p with
   | Sync
   | Skip -> fns
-  | Assert b -> free_names_bexp b fns
+  | Goal b | Assert b -> free_names_bexp b fns
   | Acc (_, a) -> free_names_access a fns
   | Seq (p1, p2) ->
     free_names_proto p1 fns
@@ -49,6 +49,7 @@ let rec free_names_proto p fns =
 let rec free_locs_proto p fns =
   match p with
   | Assert _
+  | Goal _
   | Sync
   | Skip -> fns
   | Acc (x, _) -> VarSet.add x fns

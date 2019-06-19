@@ -153,6 +153,7 @@ let rec proto_ser p =
   match p with
   | Skip -> Sexp.Atom "skip"
   | Sync -> Sexp.Atom "sync"
+  | Goal b -> unop "goal" (b_ser b)
   | Assert b -> unop "assert" (b_ser b)
   | Acc (x, a) -> binop "loc" (Sexp.Atom x.var_name) (a_ser a)
   | Seq (p1, p2) -> binop "begin" (proto_ser p1) (proto_ser p2)
@@ -170,10 +171,10 @@ let var_set_ser name s =
 let flat_kernel_ser k =
   let open Loops in
   let open Sexplib in
-  Sexp.List [Sexp.Atom "flat";
+  Sexp.List [Sexp.Atom "flat-kernel";
     bexp_list_ser "pre" k.flat_kernel_pre;
-    var_set_ser "single_vars" k.flat_kernel_single_vars;
-    var_set_ser "multi_vars" k.flat_kernel_multi_vars;
+    var_set_ser "global-vars" k.flat_kernel_single_vars;
+    var_set_ser "local-vars" k.flat_kernel_multi_vars;
     serialize_lsteps "steps" k.flat_kernel_steps;
   ]
 
@@ -191,6 +192,6 @@ let proj_ser (k:Spmd2binary.proj_kernel) : Sexplib.Sexp.t =
   List [
     Atom "proj-kernel";
     bexp_list_ser "pre" k.proj_kernel_pre;
-    var_set_ser "fns" k.proj_kernel_vars;
+    var_set_ser "vars" k.proj_kernel_vars;
     List (Atom "steps" :: elems k.proj_kernel_steps);
   ]
