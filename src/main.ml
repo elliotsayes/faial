@@ -78,14 +78,24 @@ let print_errs errs =
 let main_t =
   let use_bv =
     let doc = "Generate bit-vector code." in
-    Arg.(value & flag & info ["b"; "generate-bv"] ~doc)
+    Arg.(value & flag & info ["b"; "bv"] ~doc)
+  in
+
+  let skip_po =
+    let doc = "Skip proof obligations." in
+    Arg.(value & flag & info ["o"; "proof-oblig"] ~doc)
+  in
+
+  let skip_drf =
+    let doc = "Skip DRF proof." in
+    Arg.(value & flag & info ["d"; "drf"] ~doc)
   in
 
   let get_fname =
     let doc = "The path $(docv) of the GPU contract." in
     Arg.(required & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
   in
-  let do_main cmd fname use_bv =
+  let do_main cmd fname use_bv skip_po skip_drf =
     let ic = open_in fname in
     try
       let k = v2_parse fname ic in
@@ -101,8 +111,8 @@ let main_t =
         Loops.flatten_kernel k
         |> Spmd2binary.project_kernel
         |> if use_bv
-            then Genfol.Bv.iter_generated_code
-            else Genfol.Std.iter_generated_code
+            then Genfol.Bv.iter_generated_code (not skip_drf) (not skip_po)
+            else Genfol.Std.iter_generated_code (not skip_drf) (not skip_po)
     with e ->
       close_in_noerr ic;
       raise e
@@ -117,7 +127,7 @@ let main_t =
     let sat = Sat, Arg.info ["3"; "sat"] ~doc in
     Arg.(last & vflag_all [Sat] [flat; proj; sat])
   in
-  Term.(const do_main $ get_cmd $ get_fname $ use_bv)
+  Term.(const do_main $ get_cmd $ get_fname $ use_bv $ skip_po $ skip_drf)
 
 let info =
   let doc = "Verifies a GPU contract" in

@@ -13,7 +13,11 @@ module StdGen : BASE_GEN =
   struct
     let uint_s = Sexplib.Sexp.Atom "Int"
     let b_ser = Serialize.StdBexp.b_ser
-    let preamble = []
+    let preamble = [
+      Serialize.flat_call "set-logic" ["QF_NIA"];
+      Serialize.flat_call "set-option" [":produce-models"; "true"];
+      Serialize.flat_call "set-option" [":interactive-mode"; "true"];
+    ]
   end
 
 module BvGen : BASE_GEN =
@@ -147,6 +151,20 @@ module Make = functor (Gen: BASE_GEN) ->
     pred "uint8" (fun x -> n_le x (Num 0xFF));
   ]
 
+  let prove l =
+    let open Sexplib in
+    List.flatten [
+      [
+        Sexp.List [Sexp.Atom "push"; Sexp.Atom "1";];
+      ];
+      l;
+      [
+        Sexp.List [Sexp.Atom "check-sat"];
+        Sexp.List [Sexp.Atom "get-model"];
+        Sexp.List [Sexp.Atom "pop"; Sexp.Atom "1";];
+      ]
+    ]
+
   let generate_kernel k =
     let open Spmd2binary in
     let open Sexplib in
@@ -171,32 +189,20 @@ module Make = functor (Gen: BASE_GEN) ->
         |> List.map define_uint32
         |> List.flatten
     in
-    let generate_loc b =
-      List.flatten [
-        [
-          Sexp.List [Sexp.Atom "push"];
-        ];
-        [
-          b_assert b;
-          Sexp.List [Sexp.Atom "check-sat"];
-          Sexp.List [Sexp.Atom "get-model"];
-          Sexp.List [Sexp.Atom "pop"]
-        ]
-      ]
-    in
     let gen_steps ss =
       steps_to_bexp ss (time1, idx1, mode1) (time2, idx2, mode2)
-        |> generate_loc
+        |> fun b -> prove [b_assert b]
     in
     (generate_vars, gen_steps)
 
-  let iter_generated_code k =
+  let iter_generated_code prove_drf proof_obl k =
     let open Spmd2binary in
     let print_code =
       List.iter (fun s ->
         Sexplib.Sexp.to_string_hum s |> print_endline;
       )
     in
+    let l_assert l = List.map b_assert l in
     let decls, gen_steps = generate_kernel k in
     print_endline "; Preamble";
     print_code Gen.preamble;
@@ -206,15 +212,25 @@ module Make = functor (Gen: BASE_GEN) ->
     print_endline "; Variables declarations:";
     print_code decls;
     print_endline "";
-    print_endline "; Assumptions:";
-    print_code (List.map b_assert k.proj_kernel_pre);
-    print_endline "";
-    Hashtbl.iter (fun x s ->
-      print_string "; Location: ";
-      print_endline x.var_name;
-      print_code (gen_steps s);
-      print_endline ""
-    ) k.proj_kernel_steps
+    if proof_obl then begin
+      print_endline "; Proof obligations:";
+      List.iteri (fun i b ->
+        Printf.printf "; Proof #%d:\n" (i + 1);
+        print_code (l_assert b |> prove);
+        print_endline ""
+      ) k.proj_kernel_proofs;
+    end;
+    if prove_drf then begin
+      print_endline "; Assumptions:";
+      print_code (List.map b_assert k.proj_kernel_pre);
+      print_endline "";
+      Hashtbl.iter (fun x s ->
+        print_string "; Location: ";
+        print_endline x.var_name;
+        print_code (gen_steps s);
+        print_endline ""
+      ) k.proj_kernel_steps
+    end
 
 end
 
