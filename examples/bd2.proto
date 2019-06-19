@@ -10,20 +10,14 @@ const global MaxCol,
       local myFunc,
       local id;
 
-assert 1@threadIdx_x != 2@threadIdx_x || 1@blockIdx_x != 2@blockIdx_x;
+distinct [threadIdx_x][blockIdx_x];
 
-# assert id == blockIdx_x * m + threadIdx_x;
-# goal distinct [id];
 assert blockIdx_y > blockIdx_x;
 assert threadIdx_x < m;
 
 assert m >= 1;
 assert id == blockIdx_x * m + threadIdx_x;
-
-# If we could this expression, then this kernel becomes trivial
-# assert 1@id != 2@id;
-# Since we cannot assume this, we just constrain m
-assert pow2(m) || pow3(m) || pow4(m);
+prove distinct [id];
 
 # funcValue = Func(blockIdx.x, threadIdx.x); //func 1
 ro func[id] if threadIdx_x < m;

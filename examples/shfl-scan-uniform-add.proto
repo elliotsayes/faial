@@ -16,7 +16,7 @@ const
 assert blockDim >= 1;
 assert blockDim % 32 == 0;
 assert threadIdx < blockDim;
-assert 1@threadIdx != 2@threadIdx || 1@blockIdx != 2@blockIdx;
+distinct [threadIdx][blockIdx];
 
 # We need to further restrict the model for scale
 assert uint8(blockDim);

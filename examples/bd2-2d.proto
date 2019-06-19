@@ -10,8 +10,8 @@ const global MaxCol,
       local myFunc,
       local id;
 
-# assert id == blockIdx_x * m + threadIdx_x;
-# goal distinct [id];
+assert id == blockIdx_x * m + threadIdx_x;
+prove distinct [id];
 
 distinct [blockIdx_x][threadIdx_x];
 
