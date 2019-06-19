@@ -55,7 +55,7 @@ let get_proof_obligations (p:proto) : (proof * bexp)  list =
     | Assert b -> (Assume, b) :: l
     | Loop (r, p) ->
       let b = n_lt (Var r.range_var) r.range_upper_bound in
-      iter p ((Prove, b)::l)
+      iter p ((Assume, b)::l)
     | Seq (p1, p2) ->
       iter p2 (iter p1 l)
   in
@@ -69,7 +69,7 @@ let get_proofs p =
   let ps, bs = get_proof_obligations p |> List.split in
   let rec iter ps bs =
     match ps, bs with
-    | Prove :: ps, b :: l -> b :: iter ps l
+    | Prove :: ps, b :: l -> (b_not b :: l |> List.rev) :: iter ps l
     | Assume :: ps, b :: l -> iter ps l
     | _, _ -> []
   in
@@ -156,6 +156,7 @@ let remove_loops (p:Proto.proto)
 
 type flat_kernel = {
   flat_kernel_pre: bexp list;
+  flat_kernel_proofs: (bexp list) list;
   flat_kernel_steps: (variable * access_t) list;
   flat_kernel_single_vars: VarSet.t;
   flat_kernel_multi_vars: VarSet.t;
@@ -186,6 +187,7 @@ let flatten_kernel (k:kernel) =
   (* 5. Finally, return the flat kernel *)
   {
     flat_kernel_pre = pre;
+    flat_kernel_proofs = get_proofs p;
     flat_kernel_steps = steps;
     flat_kernel_single_vars = single_vars;
     flat_kernel_multi_vars = locals;

@@ -1,14 +1,16 @@
 open Proto
 open Common
 
-let call func args =
-  Sexplib.Sexp.(
-    List ((Atom func)::args)
-  )
+let s_list elems =
+  Sexplib.Sexp.List elems
 
-let flat_call func args =
-  List.map (fun x -> Sexplib.Sexp.Atom x) args
-    |> call func
+let call func args =
+  s_list ((Atom func)::args)
+
+let atoms : string list -> Sexplib.Sexp.t list =
+  List.map (fun x -> Sexplib.Sexp.Atom x)
+
+let flat_call func args = atoms args |> call func
 
 let binop f arg1 arg2 = call f [arg1;arg2]
 let unop f arg = call f [arg]
@@ -139,14 +141,10 @@ let t_ser t =
   ]
 
 let serialize_steps name l =
-  Sexplib.Sexp.(
-    List (Atom name :: (List.map t_ser l))
-  )
+  List.map t_ser l |> call name
 
 let serialize_lsteps name l =
-  Sexplib.Sexp.(
-    List (Atom name :: (List.map (fun (x,o) -> unop x.var_name (t_ser o)) l))
-  )
+  List.map (fun (x,o) -> unop x.var_name (t_ser o)) l |> call name
 
 let rec proto_ser p =
   let open Sexplib in
@@ -159,20 +157,22 @@ let rec proto_ser p =
   | Seq (p1, p2) -> binop "begin" (proto_ser p1) (proto_ser p2)
   | Loop (r, p) -> binop "loop" (r_ser r) (proto_ser p)
 
-let bexp_list_ser name pre =
-  let open Sexplib in
-  Sexp.(List (Atom name :: (List.map b_ser pre)))
+let bexp_list pre = List.map b_ser pre
 
-let var_set_ser name s =
-  let open Sexplib in
-  let l = VarSet.elements s |> List.map (fun x -> Sexp.Atom x.var_name) in
-  Sexp.List (Sexp.Atom name :: l)
+let bexp_list_ser name pre = bexp_list pre |> call name
+
+let var_set_ser name (s:VarSet.t) =
+  VarSet.elements s
+    |> List.map (fun x -> x.var_name)
+    |> atoms
+    |> call name
 
 let flat_kernel_ser k =
   let open Loops in
   let open Sexplib in
   Sexp.List [Sexp.Atom "flat-kernel";
     bexp_list_ser "pre" k.flat_kernel_pre;
+    call "proofs" (List.map (fun x -> bexp_list x |> s_list) k.flat_kernel_proofs);
     var_set_ser "global-vars" k.flat_kernel_single_vars;
     var_set_ser "local-vars" k.flat_kernel_multi_vars;
     serialize_lsteps "steps" k.flat_kernel_steps;

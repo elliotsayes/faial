@@ -111,6 +111,7 @@ let b_and b1 b2 =
 
 let b_not b =
   match b with
+  | BNot b -> b
   | Bool b -> Bool (not b)
   | _ -> BNot b
 
