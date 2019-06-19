@@ -192,6 +192,7 @@ let proj_ser (k:Spmd2binary.proj_kernel) : Sexplib.Sexp.t =
   List [
     Atom "proj-kernel";
     bexp_list_ser "pre" k.proj_kernel_pre;
+    call "proofs" (List.map (fun x -> bexp_list x |> s_list) k.proj_kernel_proofs);
     var_set_ser "vars" k.proj_kernel_vars;
     List (Atom "steps" :: elems k.proj_kernel_steps);
   ]

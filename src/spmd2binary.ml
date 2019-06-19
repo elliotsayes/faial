@@ -84,6 +84,7 @@ type access_2d = access_t list * access_t list
 
 type proj_kernel = {
   proj_kernel_pre: bexp list;
+  proj_kernel_proofs: (bexp list) list;
   proj_kernel_vars: VarSet.t;
   proj_kernel_steps: (variable, access_2d) Hashtbl.t
 }
@@ -110,11 +111,13 @@ let project_kernel (k:Loops.flat_kernel) : proj_kernel =
   (* 1. Variables *)
   let locals = k.flat_kernel_multi_vars in
   (* 2. Pre-conditions *)
-  let pre = k.flat_kernel_pre
-    |> List.map (project_condition locals)
+  let proj_bexps l =
+    List.map (project_condition locals) l
     |> List.flatten
     |> List.filter (fun x -> match x with | Bool true -> false | _ -> true)
   in
+  let pre = proj_bexps k.flat_kernel_pre in
+  let proofs = List.map proj_bexps k.flat_kernel_proofs in
   (* 3. Steps *)
   let steps1, steps2 = project_stream locals k.flat_kernel_steps in
   let steps1, steps2 = Constfold.stream_opt steps1, Constfold.stream_opt steps2 in
@@ -145,6 +148,7 @@ let project_kernel (k:Loops.flat_kernel) : proj_kernel =
   in
   {
     proj_kernel_pre = pre;
+    proj_kernel_proofs = proofs;
     proj_kernel_vars = VarSet.union locals k.flat_kernel_single_vars;
     proj_kernel_steps = result;
   }
