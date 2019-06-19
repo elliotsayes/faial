@@ -5,7 +5,8 @@ if which opam > /dev/null; then
 	menhir=20181113 \
 	sexplib=v0.12.0 \
 	ounit=2.0.8 \
-        cmdliner=1.0.3
+        cmdliner=1.0.3 \
+        ANSITerminal=0.8.1
 else
   >&2 echo "ERROR: Install opam first!"
   exit 1
