@@ -61,6 +61,7 @@ bexp:
   | b1 = bexp; o = brel; b2 = bexp { o b1 b2 }
   | NOT b = bexp { b_not b }
   | p = ID LPAREN x = ident RPAREN { Pred (p, x) }
+  | DISTINCT i = index { distinct i }
 
 %inline nrel:
   | EQ { n_eq }
@@ -82,10 +83,8 @@ index:
 
 proto:
   | SYNC { Sync }
-  | DISTINCT i = index { Assert (distinct i) }
   | ASSERT b = bexp { Assert b }
   | PROVE b = bexp { Goal b }
-  | PROVE DISTINCT i = index { Goal (distinct i) }
   | p1 = proto SEMICOLON p2 = proto
     { Seq (p1, p2) }
   | m = mode; x = ident; i = index

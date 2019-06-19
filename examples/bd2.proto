@@ -10,7 +10,7 @@ const global MaxCol,
       local myFunc,
       local id;
 
-distinct [threadIdx_x][blockIdx_x];
+assert distinct [threadIdx_x][blockIdx_x];
 
 assert blockIdx_y > blockIdx_x;
 assert threadIdx_x < m;

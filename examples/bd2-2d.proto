@@ -13,7 +13,7 @@ const global MaxCol,
 assert id == blockIdx_x * m + threadIdx_x;
 prove distinct [id];
 
-distinct [blockIdx_x][threadIdx_x];
+assert distinct [blockIdx_x][threadIdx_x];
 
 # funcValue = Func(blockIdx.x, threadIdx.x); //func 1
 ro func[blockIdx_x][threadIdx_x] if threadIdx_x < m;

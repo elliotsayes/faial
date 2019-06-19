@@ -16,13 +16,11 @@ const
 assert blockDim >= 1;
 assert blockDim % 32 == 0;
 assert threadIdx < blockDim;
-distinct [threadIdx][blockIdx];
-
-# We need to further restrict the model for scale
-assert uint8(blockDim);
+assert distinct [threadIdx][blockIdx];
 
 assert id == blockIdx * blockDim + threadIdx;
 assert id < len;
+prove distinct[id];
 
 
 # __shared__ data accesses are prefixed with blockIdx
