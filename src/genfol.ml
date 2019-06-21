@@ -226,7 +226,8 @@ module Make = functor (Gen: BASE_GEN) ->
       print_endline "";
       Hashtbl.iter (fun x s ->
         print_string "; Location: ";
-        print_endline x.var_name;
+        print_endline x;
+        print_endline ("(echo \"Location " ^ x ^ "\")");
         print_code (gen_steps s);
         print_endline ""
       ) k.proj_kernel_steps

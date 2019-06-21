@@ -1,8 +1,8 @@
 open Proto
 open Common
 
-let tid1 = "$1$"
-let tid2 = "$2$"
+let tid1 = "_1$"
+let tid2 = "_2$"
 
 let project prefix x = { x with
   var_name = prefix ^ x.var_name;
@@ -73,8 +73,8 @@ let project_condition locals (b:bexp) =
 
 type stream = (variable * access timed) list
 
-let project_stream locals (l:stream) : stream * stream =
-  let on_elem ((l1:stream),(l2:stream)) ((x:variable), (a:access timed)) : stream * stream =
+let project_stream locals (l:stream) =
+  let on_elem (l1,l2) ((x:variable), (a:access timed)) =
     let (a1, a2) = project_access locals a in
     (x,a1)::l1, (x, a2)::l2
   in
@@ -86,7 +86,7 @@ type proj_kernel = {
   proj_kernel_pre: bexp list;
   proj_kernel_proofs: (bexp list) list;
   proj_kernel_vars: VarSet.t;
-  proj_kernel_steps: (variable, access_2d) Hashtbl.t
+  proj_kernel_steps: (string, access_2d) Hashtbl.t
 }
 
 let group_assoc l =
@@ -107,6 +107,9 @@ let group_assoc l =
   iter l;
   groups
 
+let loc_to_str :  (variable *access timed) list -> (string *access timed) list =
+  List.map (fun (x,a) -> x.var_name, a)
+
 let project_kernel (k:Loops.flat_kernel) : proj_kernel =
   (* 1. Variables *)
   let locals = k.flat_kernel_multi_vars in
@@ -120,7 +123,8 @@ let project_kernel (k:Loops.flat_kernel) : proj_kernel =
   let proofs = List.map proj_bexps k.flat_kernel_proofs in
   (* 3. Steps *)
   let steps1, steps2 = project_stream locals k.flat_kernel_steps in
-  let steps1, steps2 = Constfold.stream_opt steps1, Constfold.stream_opt steps2 in
+  let steps1 = Constfold.stream_opt steps1 |> loc_to_str in
+  let steps2 = Constfold.stream_opt steps2 |> loc_to_str in
   let group1 = group_assoc steps1 in
   let group2 = group_assoc steps2 in
   let result = Hashtbl.create (Hashtbl.length group1) in

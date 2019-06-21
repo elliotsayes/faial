@@ -184,7 +184,7 @@ let proj_ser (k:Spmd2binary.proj_kernel) : Sexplib.Sexp.t =
   let open Spmd2binary in
   let elems t = hashtbl_elements t
     |> List.map (fun (k,v) -> List [
-      Atom k.var_name;
+      Atom k;
       serialize_steps "steps1" (fst v);
       serialize_steps "steps2" (snd v);
     ])
