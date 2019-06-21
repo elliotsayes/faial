@@ -35,5 +35,5 @@ foreach s < blockDim.x {
   sync;
 };
 
-ro sdata[0] if tid == 0;
+ro sdata[blockIdx.x][0] if tid == 0;
 rw g_odata[blockIdx.x] if tid == 0;
