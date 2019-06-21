@@ -1,0 +1,37 @@
+#|
+
+Reduction #3
+
+Source: https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf
+
+|#
+
+shared g_idata, g_odata, sdata;
+
+const
+  local threadIdx.x,
+  global blockDim.x,
+  local blockIdx.x,
+  local tid,
+  local i;
+
+assert threadIdx.x < blockDim.x;
+assert i == blockIdx.x*blockDim.x+ threadIdx.x;
+assert distinct [blockIdx.x][threadIdx.x];
+prove distinct[i];
+
+assert tid == threadIdx.x;
+
+ro g_idata[i];
+rw sdata[blockIdx.x][tid];
+sync;
+
+foreach s < blockDim.x {
+  assert pow2(s);
+  ro sdata[blockIdx.x][tid + s] if tid < s;
+  rw sdata[blockIdx.x][tid] if tid < s;
+  sync;
+};
+
+ro sdata[0] if tid == 0;
+rw g_odata[blockIdx.x] if tid == 0;
