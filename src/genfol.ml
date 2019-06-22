@@ -173,7 +173,7 @@ module Make = functor (Gen: BASE_GEN) ->
     let time2 = mk_var (tid2 ^ "time$") in
     let mode1 = mk_var (tid1 ^ "mode$") in
     let mode2 = mk_var (tid2 ^ "mode$") in
-    let dims = ["x"; "y"; "z"] in
+    let dims = ["x"; "y"; "z"; "w"] in
     let idx1 = List.map (fun d -> mk_var (tid1 ^ "idx" ^ d ^ "$")) dims in
     let idx2 = List.map (fun d -> mk_var (tid2 ^ "idx" ^ d ^ "$")) dims in
 
