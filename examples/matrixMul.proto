@@ -1,0 +1,55 @@
+#|
+
+Source: https://github.com/NVIDIA/cuda-samples/blob/master/Samples/matrixMulDrv/matrixMul_kernel.cu
+
+|#
+
+shared C, A, B, As, Bs;
+const
+  global wA,
+  global wB,
+  local bx,
+  local by,
+  local tx,
+  local ty,
+  local aBegin,
+  local aEnd,
+  global aStep,
+  local bBegin,
+  global bStep,
+  global block_size,
+  global bEnd,
+  local b,
+  local c,
+  local d,
+  ;
+
+assert block_size < wA && block_size < wB;
+assert distinct [tx][ty][bx][by];
+assert aBegin == wA * block_size * by;
+assert aEnd == aBegin + wA - 1;
+assert aStep == block_size;
+assert bBegin == block_size * bx;
+assert bStep == block_size * wB;
+assert wA > 1 && block_size > 0 && wB > 1;
+
+foreach a < aEnd + 1 {
+  assert a >= aBegin && (a - aBegin) % aStep == 0;
+  assert b >= bBegin && (b - bBegin) % bStep == 0;
+  rw As[by][bx][ty][tx];
+  rw Bs[by][bx][ty][tx];
+  ro A[a + wA * ty + tx];
+  ro B[b + wB * ty + tx];
+  sync;
+  foreach k < block_size {
+    ro As[ty][k];
+    ro Bs[k][tx];
+  };
+  sync;
+};
+assert tx < wB;
+assert bx < wB;
+assert c == wB * block_size * by + block_size * bx;
+assert d == wB * ty + tx;
+rw C[c + d];
+
