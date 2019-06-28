@@ -29,4 +29,4 @@ foreach index < NUM_ATOMS {
   rw posq[index];           # 46
   rw posqCorrection[index]; # 47
   rw posDelta[index];       # 51
-};
+}

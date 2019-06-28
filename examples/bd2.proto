@@ -45,6 +45,5 @@ foreach i < n {
     assert myFunc == i + threadIdx_x;
     ro func[j * m + myFunc] if myFunc < n;
   }
-  ;
-};
+}
 

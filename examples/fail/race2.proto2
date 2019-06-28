@@ -14,5 +14,5 @@ foreach idx < count {
   # Multiple threads will access position `idx`, hence there is a data-race
   rw x[idx];
   # The synchronization does nothing to solve the race.
-  sync
+  sync;
 }

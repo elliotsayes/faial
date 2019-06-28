@@ -82,18 +82,27 @@ index:
   | LBRACK n = nexp RBRACK i = index { n :: i }
 
 proto:
+  | p = inst SEMICOLON
+    { p }
+  | p1 = inst SEMICOLON p2 = proto
+    { Seq (p1, p2) }
+  | l = loop ; p = proto
+    { Seq (l, p) }
+  | l = loop
+    { l }
+
+loop:
+  | FOREACH x = ident LT n = nexp LBRACE p = proto RBRACE
+    { Loop ({range_var=x; range_upper_bound=n}, p) }
+
+inst:
   | SYNC { Sync }
   | ASSERT b = bexp { Assert b }
   | PROVE b = bexp { Goal b }
-  | p1 = proto SEMICOLON p2 = proto
-    { Seq (p1, p2) }
   | m = mode; x = ident; i = index
     { Acc (x, {access_index=i; access_cond=Bool true; access_mode=m}) }
   | m = mode; x = ident; i = index; IF b = bexp
     { Acc (x, {access_index=i; access_cond=b; access_mode=m}) }
-  | FOREACH x = ident LT n = nexp LBRACE p = proto RBRACE
-    { Loop ({range_var=x; range_upper_bound=n}, p) }
-  | p = proto SEMICOLON { p }
 
 loc_names:
   | { [] }

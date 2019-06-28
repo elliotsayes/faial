@@ -44,9 +44,10 @@ foreach a < aEnd + 1 {
   foreach k < block_size {
     ro As[ty][k];
     ro Bs[k][tx];
-  };
+  }
   sync;
-};
+}
+
 assert tx < wB;
 assert bx < wB;
 assert c == wB * block_size * by + block_size * bx;

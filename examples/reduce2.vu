@@ -33,7 +33,7 @@ foreach s < blockDim.x {
   ro sdata[blockIdx.x][index + s] if index < blockDim.x;
   rw sdata[blockIdx.x][index] if index < blockDim.x;
   sync;
-};
+}
 
 ro sdata[blockIdx.x][0] if tid == 0;
 rw g_odata[blockIdx.x] if tid == 0;

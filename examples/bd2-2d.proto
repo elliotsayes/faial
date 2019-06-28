@@ -40,6 +40,6 @@ foreach i < n {
     # funcValue = Func(myFunc, j);
     assert myFunc == i + threadIdx_x;
     ro func[myFunc][j] if myFunc < n;
-  };
-};
+  }
+}
 
