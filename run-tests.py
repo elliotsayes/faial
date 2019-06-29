@@ -115,15 +115,16 @@ def which(program):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Runs system tests.')
+    parser.add_argument('--timeout', default=3000, type=int, help="Sets the timeout of the solver. Default: %(default)s")
     parser.add_argument('-f', dest="file", metavar='FILE', help='Tries to solve a single file.')
     parser.add_argument('--z3', action='store_true', help='By default uses cvc4, this lets you use z3')
     args = parser.parse_args()
     if args.z3:
-        solver = z3()
+        solver = z3(timeout=args.timeout)
     elif which("cvc4"):
-        solver = cvc4()
+        solver = cvc4(timeout=args.timeout)
     else:
-        solver = z3()
+        solver = z3(timeout=args.timeout)
     if args.file is None:
         run_all_tests(solver=solver)
     else:
