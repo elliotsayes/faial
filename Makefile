@@ -14,7 +14,7 @@ native:
 	cp $(BUILD)/main.native main
 
 test:
-	@$(BUILD)/test_loops.native
+	@./run-tests.py
 
 byte:
 	$(OCB) main.byte
