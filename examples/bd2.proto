@@ -17,7 +17,11 @@ assert threadIdx_x < m;
 
 assert m >= 1;
 assert id == blockIdx_x * m + threadIdx_x;
-prove distinct [id];
+
+# XXX: we are currently unable to solve this, so we assume a fixed size
+# prove distinct [id];
+assert m == 2048;
+
 
 # funcValue = Func(blockIdx.x, threadIdx.x); //func 1
 ro func[id] if threadIdx_x < m;

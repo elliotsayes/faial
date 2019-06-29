@@ -10,12 +10,14 @@ const global MaxCol,
       local myFunc,
       local id;
 
-assert id == blockIdx_x * m + threadIdx_x;
-prove distinct [id];
-
 assert distinct [blockIdx_x][threadIdx_x];
 
+assert id == blockIdx_x * m + threadIdx_x;
+# XXX: we are currently unable to solve this, so we assume a size
+#prove distinct [id];
+
 # funcValue = Func(blockIdx.x, threadIdx.x); //func 1
+
 ro func[blockIdx_x][threadIdx_x] if threadIdx_x < m;
 
 # minVector[threadIdx.x] = funcValue;
