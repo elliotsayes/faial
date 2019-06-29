@@ -19,12 +19,18 @@ const
   global bStep,
   global block_size,
   global bEnd,
+  global gridDim.x,
+  global gridDim.y,
   local b,
   local c,
   local d,
   ;
 
-assert block_size < wA && block_size < wB;
+# Assumption
+assert block_size == 16;
+assert bx < gridDim.x;
+assert by < gridDim.y;
+
 assert distinct [tx][ty][bx][by];
 assert aBegin == wA * block_size * by;
 assert aEnd == aBegin + wA - 1;
@@ -32,6 +38,8 @@ assert aStep == block_size;
 assert bBegin == block_size * bx;
 assert bStep == block_size * wB;
 assert wA > 1 && block_size > 0 && wB > 1;
+assert wA == block_size * gridDim.y;
+assert wB == block_size * gridDim.x;
 
 foreach a < aEnd + 1 {
   assert a >= aBegin && (a - aBegin) % aStep == 0;
@@ -48,9 +56,10 @@ foreach a < aEnd + 1 {
   sync;
 }
 
-assert tx < wB;
-assert bx < wB;
+assert tx < block_size;
+assert ty < block_size;
 assert c == wB * block_size * by + block_size * bx;
 assert d == wB * ty + tx;
+
 rw C[c + d];
 
