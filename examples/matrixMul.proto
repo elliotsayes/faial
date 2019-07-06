@@ -4,6 +4,7 @@ Source: https://github.com/NVIDIA/cuda-samples/blob/master/Samples/matrixMulDrv/
 
 |#
 
+
 shared C, A, B, As, Bs;
 const
   global wA,
@@ -26,12 +27,16 @@ const
   local d,
   ;
 
-# Base assumptions
-assert gridDim.x == 1;
-assert gridDim.y == 1;
+# GPUVerify assumptions
+assert gridDim.x == 20;
+assert gridDim.y == 10;
+assert tx < 32;
+assert ty < 32;
+assert block_size == 32;
+assert wA == 320;
+assert wB == 640;
 
 # Assumption
-assert block_size == 16;
 assert bx < gridDim.x;
 assert by < gridDim.y;
 
