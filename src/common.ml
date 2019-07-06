@@ -17,3 +17,9 @@ let hashtbl_elements t =
   Hashtbl.fold (fun k v accum ->
     (k,v)::accum
   ) t []
+
+let rec zip l1 l2 =
+  match l1, l2 with
+  | [], _ | _, [] -> []
+  | x::l1, y::l2 -> (x,y) :: (zip l1 l2)
+

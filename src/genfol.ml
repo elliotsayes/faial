@@ -39,11 +39,6 @@ module BvGen : BASE_GEN =
     ]
   end
 
-let rec zip l1 l2 =
-  match l1, l2 with
-  | [], _ | _, [] -> []
-  | x::l1, y::l2 -> (x,y) :: (zip l1 l2)
-
 module Make = functor (Gen: BASE_GEN) ->
   struct
 
