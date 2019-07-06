@@ -1,0 +1,36 @@
+# Source: https://github.com/OpenCL/AMD_APP_samples/blob/master/cl/BinomialOption/BinomialOption_Kernels.cl
+#|
+GPUVerify:
+
+  real	2m28.007s
+  user	2m27.433s
+  sys	0m1.103s
+
+|#
+
+shared randArray, output, callA, callB;
+
+const
+  local tid,
+  local bid,
+  global numSteps,
+  ;
+
+assert distinct [tid][bid];
+
+ro randArray[bid];
+sync;
+foreach j < numSteps {
+  assert (j + (numSteps % 2))  % 2 == 0;
+  rw callB[bid][tid] if tid < j;
+  ro callA[bid][tid] if tid < j;
+  ro callA[bid][tid + 1] if tid < j;
+  sync;
+  rw callA[bid][tid] if tid < j - 1;
+  ro callB[bid][tid] if tid < j - 1;
+  ro callB[bid][tid + 1] if tid < j - 1;
+  sync;
+}
+
+ro callA[bid][0] if tid == 0;
+rw output[bid] if tid == 0;

@@ -26,6 +26,10 @@ const
   local d,
   ;
 
+# Base assumptions
+assert gridDim.x == 1;
+assert gridDim.y == 1;
+
 # Assumption
 assert block_size == 16;
 assert bx < gridDim.x;
