@@ -1,0 +1,23 @@
+shared sdata, A, S;
+
+const
+  local threadIdx.x,
+  local blockIdx.x,
+  global blockDim.x,
+  local i,
+  global n
+  ;
+
+assert distinct [threadIdx.x][blockIdx.x];
+
+rw sdata[blockIdx.x][threadIdx.x];
+ro A[i] if i < n;
+sync;
+foreach s < blockDim.x / 2 {
+  assert pow2(s);
+  ro sdata[blockIdx.x][threadIdx.x + s] if threadIdx.x < s;
+  rw sdata[blockIdx.x][threadIdx.x] if threadIdx.x < s;
+  sync;
+}
+ro sdata[blockIdx.x][0] if (threadIdx.x == 0);
+rw S[blockIdx.x] if (threadIdx.x == 0);

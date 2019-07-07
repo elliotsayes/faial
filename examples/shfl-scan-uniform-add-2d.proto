@@ -4,29 +4,15 @@ https://github.com/NVIDIA/cuda-samples/blob/master/Samples/shfl_scan/shfl_scan.c
 
 shared data, partial_sums, buf;
 
-const
-  local blockIdx,
-  local threadIdx,
-  local id,
-  global blockDim,
-  global len,
-  local y;
+const local blockIdx, local threadIdx;
 
 # Standard CUDA restrictions
-assert blockDim >= 1;
-assert blockDim % 32 == 0;
-assert threadIdx < blockDim;
-assert distinct [threadIdx][blockIdx];
-
-assert id == blockIdx * blockDim + threadIdx;
-assert id < len;
-prove distinct[id];
-
+assert distinct [blockIdx][threadIdx];
 
 # __shared__ data accesses are prefixed with blockIdx
 rw buf[blockIdx] if threadIdx == 0;
 ro partial_sums[blockIdx] if threadIdx == 0;
 sync;
-rw data[id];
+rw data[blockIdx][threadIdx];
 # __shared__ data accesses are prefixed with blockIdx
 ro buf[blockIdx];

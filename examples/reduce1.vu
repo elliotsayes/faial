@@ -15,6 +15,9 @@ const
   local tid,
   local i;
 
+# XXX: unneeded assumption
+assert blockDim.x == 512;
+
 assert threadIdx.x < blockDim.x;
 assert i == blockIdx.x*blockDim.x+ threadIdx.x;
 assert distinct [blockIdx.x][threadIdx.x];

@@ -98,7 +98,7 @@ def run_all_tests(solver):
     test("Parsing OK tests", Path("examples"), faial)
     test("Parsing FAIL tests", Path("examples/fail"), faial)
     test("Solving OK tests", Path("examples"), lambda x: faial(x) | solver | ensure_ok())
-    test("Solving FAIL tests", Path("examples"), lambda x: faial(x) | solver | ensure_fail())
+    test("Solving FAIL tests", Path("examples/fail"), lambda x: faial(x) | solver | ensure_fail())
 
 def run_one_test(file, solver):
     subprocess.call(
@@ -117,7 +117,8 @@ def main():
     parser = argparse.ArgumentParser(description='Runs system tests.')
     parser.add_argument('--timeout', default=3000, type=int, help="Sets the timeout of the solver. Default: %(default)s")
     parser.add_argument('-f', dest="file", metavar='FILE', help='Tries to solve a single file.')
-    parser.add_argument('--z3', action='store_true', help='By default uses cvc4, this lets you use z3')
+    parser.add_argument('--cvc4', action="store_false", dest="z3", help="Use CVC4 instead of Z3 (default).")
+    #parser.add_argument('--z3', action='store_true', help='By default uses cvc4, this lets you use z3')
     args = parser.parse_args()
     if args.z3:
         solver = z3(timeout=args.timeout)
