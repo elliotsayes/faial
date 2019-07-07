@@ -1,0 +1,17 @@
+#|
+
+Source:
+https://fmttools.ewi.utwente.nl/redmine/projects/vercors-verifier/wiki/Scp-examplepvl
+
+|#
+
+shared a, b;
+const local tid, global gsize;
+
+assert distinct [tid];
+
+rw a[tid];
+sync;
+ro a[(tid + 1) % gsize];
+rw b[tid];
+

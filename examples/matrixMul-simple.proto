@@ -1,0 +1,57 @@
+#|
+Source: http://selkie.macalester.edu/csinparallel/modules/GPUProgramming/build/html/CUDA2D/CUDA2D.html#an-example-of-matrix-multiplication
+|#
+
+shared Md, Nd, Pd, Mds, Nds;
+const
+    global Width,
+    global blockD,
+    local threadIdx.x,
+    local threadIdx.y,
+    local blockIdx.x,
+    local blockIdx.y,
+    global blockDim.x,
+    global blockDim.y,
+    local x,
+    local y;
+
+assert distinct [threadIdx.x][threadIdx.y][blockIdx.x][blockIdx.y];
+assert threadIdx.x < blockDim.x;
+assert threadIdx.y < blockDim.y;
+
+assert blockDim.x == blockDim.y && blockDim.y == blockD;
+
+# Assumptions
+assert blockD == 512;
+assert Width == 512 * 1024;
+
+# keep track of column index of the Pd element using thread index
+assert x == threadIdx.x + blockIdx.x * blockDim.x; # x is column
+# keep track of row index of the Pd element using thread index
+assert y == threadIdx.y + blockIdx.y * blockDim.y; # y is row
+
+# prove?
+assert x < Width;
+
+# Loop over the Md and Nd block dimension required to compute the Pd element
+foreach m <  Width/blockD {
+
+    # collaboratively loading of Md and Nd blocks into shared memory
+    rw Mds[blockIdx.x][blockIdx.y][threadIdx.y][threadIdx.x];
+    ro Md[y * Width + (m * blockD + threadIdx.x)];
+    rw Nds[blockIdx.x][blockIdx.y][threadIdx.y][threadIdx.x];
+    ro Md[(m * blockD + threadIdx.y) * Width + x];
+    sync;
+
+    # keep track of the running sum
+    foreach k < blockD {
+      ro Mds[blockIdx.x][blockIdx.y][threadIdx.y][k];
+      ro Nds[blockIdx.x][blockIdx.y][k][threadIdx.x];
+    }
+    sync;
+}
+
+# write back to the global memory
+rw Pd[y * Width + x];
+
+

@@ -16,6 +16,11 @@ const
   local jy,
 ;
 
+# XXX: prove without this
+assert blockDim.x == 512;
+# XXX: prove without this
+assert blockDim.y == 512;
+
 assert nx > 0;
 assert ny > 0;
 assert nx == blockDim.x; # * gridDim.x;

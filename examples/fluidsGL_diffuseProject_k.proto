@@ -1,0 +1,48 @@
+# Source: https://github.com/phrb/intro-cuda/blob/master/src/cuda-samples/5_Simulations/fluidsGL/fluidsGL_kernels.cu
+# GPUVerify times out
+
+shared
+  vx, vy;
+
+const
+ global dx,
+ global dy,
+ global lb,
+ local gtidx,
+ local gtidy,
+ local blockIdx.x,
+ local threadIdx.x,
+ local blockIdx.y,
+ local threadIdx.y,
+ global blockDim.y,
+ global blockDim.x,
+ global gridDim.x,
+ global gridDim.y,
+ local fi,
+ local fj;
+
+assert blockIdx.x < gridDim.x;
+assert blockIdx.y < gridDim.y;
+assert threadIdx.x < blockDim.x;
+assert threadIdx.y < blockDim.y;
+assert distinct [threadIdx.x][threadIdx.y][blockIdx.x][blockIdx.y];
+
+assert gtidx == blockIdx.x * blockDim.x + threadIdx.x;
+assert gtidy == blockIdx.y * (lb * blockDim.y) + threadIdx.y * lb;
+# GPUVerify assumptions
+assert gridDim.x == 8;
+assert gridDim.y == 8;
+assert blockDim.x == 64;
+assert blockDim.y == 4;
+assert lb == 16;
+assert dx == 512;
+assert dy == 512;
+assert fj < 1024;
+
+foreach p < lb {
+  assert fi == gtidy + p;
+  assert fj == fi * dx + gtidx;
+  rw vx[fj] if gtidx < dx && fi < dy;
+  rw vy[fj] if gtidx < dx && fi < dy;
+}
+
