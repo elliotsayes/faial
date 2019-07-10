@@ -27,9 +27,6 @@ assert threadIdx.x < blockDim.x;
 assert threadIdx.y < blockDim.y;
 assert distinct [threadIdx.x][threadIdx.y][blockIdx.x][blockIdx.y];
 
-assert gtidx == blockIdx.x * blockDim.x + threadIdx.x;
-assert gtidy == blockIdx.y * (lb * blockDim.y) + threadIdx.y * lb;
-
 # GPUVerify assumptions
 #assert gridDim.x == 8;
 #assert gridDim.y == 8;
@@ -39,6 +36,11 @@ assert lb == 16;
 assert dx == 512;
 #assert dy == 512;
 #assert fj < 1024;
+
+
+
+assert gtidx == blockIdx.x * blockDim.x + threadIdx.x;
+assert gtidy == blockIdx.y * (lb * blockDim.y) + threadIdx.y * lb;
 
 foreach p < lb {
   assert fi == gtidy + p;
