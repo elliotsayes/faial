@@ -113,9 +113,9 @@ let main_t =
         (* -- *)
         |> Smt.kernel_to_proofs (not skip_drf) (not skip_po)
         |> (if use_bv
-           then Genfol.bv_serialize_proofs
-           else Genfol.int_serialize_proofs)
-        |> Genfol.print_code
+           then Gensmtlib2.bv_serialize_proofs
+           else Gensmtlib2.int_serialize_proofs)
+        |> Gensmtlib2.print_code
 
     with e ->
       close_in_noerr ic;
