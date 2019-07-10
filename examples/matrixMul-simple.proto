@@ -34,7 +34,7 @@ assert y == threadIdx.y + blockIdx.y * blockDim.y; # y is row
 assert x < Width;
 
 # Loop over the Md and Nd block dimension required to compute the Pd element
-foreach m <  Width/blockD {
+foreach m < Width/blockD {
 
     # collaboratively loading of Md and Nd blocks into shared memory
     rw Mds[blockIdx.x][blockIdx.y][threadIdx.y][threadIdx.x];
