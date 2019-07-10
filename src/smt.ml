@@ -122,7 +122,7 @@ let generate_kernel k =
   in
   (generate_vars, gen_steps)
 
-let build_proofs prove_drf proof_obl k =
+let kernel_to_proofs prove_drf proof_obl k : proof list =
   let open Spmd2binary in
   let decls, gen_steps = generate_kernel k in
   let mk_p (pre, b) = mk_proof predicates decls pre b in

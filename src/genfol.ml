@@ -39,80 +39,26 @@ module BvGen : BASE_GEN =
     ]
   end
 
+let print_code : Sexplib.Sexp.t list -> unit =
+  List.iter (fun s ->
+    Sexplib.Sexp.to_string_hum s |> print_endline;
+  )
+
 module Make = functor (Gen: BASE_GEN) ->
-  struct
+struct
+  let b_assert b = Serialize.unop "assert" (Gen.b_ser b)
 
-  let mode_to_nexp m =
-    Num (match m with
-    | R -> 0
-    | W -> 1)
+  let l_assert = List.map b_assert
 
-  let access_list_to_bexp elems time idx mode other_mode =
-    List.map (fun elem ->
-      let result = [
-        n_eq time elem.timed_phase;
-        n_eq mode (elem.timed_data.access_mode |> mode_to_nexp);
-        elem.timed_data.access_cond
-      ] @
-      List.map (fun (i, j) -> n_eq i j) (zip idx elem.timed_data.access_index);
-
-      in
-      (if elem.timed_data.access_mode = R
-      then (n_eq other_mode (mode_to_nexp W))::result
-      else result) |> b_and_ex
-    ) elems |> b_or_ex
-
-  let steps_to_bexp (step1, step2) (time1, idx1, mode1) (time2, idx2, mode2) =
-    b_and_ex (
-      [
-        access_list_to_bexp step1 time1 idx1 mode1 mode2;
-        access_list_to_bexp step2 time2 idx2 mode2 mode1;
-        n_eq time1 time2;
-      ]
-      @
-      List.map (fun (i,j) -> n_eq i j) (List.combine idx1 idx2)
-    )
-
-  let range i j =
-    let rec iter n acc =
-      if n < i then acc else iter (n-1) (n :: acc)
-    in
-    iter j []
-
-  let is_even n =
-    n mod 2 = 0
-
-  let pow base exponent =
-    if exponent < 0 then invalid_arg "exponent can not be negative" else
-    let rec aux accumulator base = function
-      | 0 -> accumulator
-      | 1 -> base * accumulator
-      | e when is_even e -> aux accumulator (base * base) (e / 2)
-      | e -> aux (base * accumulator) (base * base) ((e - 1) / 2) in
-    aux 1 base exponent
-
-  let eq_nums x l : bexp =
-    List.map (fun i -> n_eq x (Num i)) l
-    |> b_or_ex
-
-  let gen_pow base x : bexp =
-    let ub = 0xFFFFFFFF in
-    let rec pows n : int list =
-      let x = pow base n in
-      if x > ub then []
-      else if x == ub then [x]
-      else x :: pows (n + 1)
-    in
-    pows 0 |> eq_nums x
-
-  let pred name body =
+  let ser_predicate p =
     let open Sexplib in
+    let open Smt in
     Sexp.List [
       Sexp.Atom "define-fun";
-      Sexp.Atom name;
-      Sexp.List [Serialize.unop "x" Gen.uint_s];
+      Sexp.Atom p.pred_name;
+      Sexp.List [Serialize.unop p.pred_arg Gen.uint_s];
       Sexp.Atom "Bool";
-      body (Var (var_make "x")) |> Gen.b_ser;
+      Gen.b_ser p.pred_body;
     ]
 
   let define_const v ty =
@@ -124,27 +70,12 @@ module Make = functor (Gen: BASE_GEN) ->
       ty;
     ]
 
-  let b_assert b =
-    let open Sexplib in
-    Gen.b_ser b
-      |> fun b -> Sexp.List [Sexp.Atom "assert"; b]
-
   let define_uint32 var_name =
     [
       define_const var_name Gen.uint_s;
       (* x >= 0 *)
       b_assert (n_ge (Var var_name) (Num 0));
     ]
-
-  let predicates =
-    List.map (fun x ->
-      pred ("pow" ^ string_of_int x) (gen_pow x)
-    ) (range 2 4)
-  |> List.append [
-    pred "uint32" (fun x -> n_le x (Num 0xFFFFFFFF));
-    pred "uint16" (fun x -> n_le x (Num 0xFFFF));
-    pred "uint8" (fun x -> n_le x (Num 0xFF));
-  ]
 
   let prove l =
     let open Sexplib in
@@ -160,77 +91,27 @@ module Make = functor (Gen: BASE_GEN) ->
       ]
     ]
 
-  let generate_kernel k =
-    let open Spmd2binary in
-    let open Sexplib in
-    let mk_var x = Var (var_make x) in
-    let time1 = mk_var (tid1 ^ "time$") in
-    let time2 = mk_var (tid2 ^ "time$") in
-    let mode1 = mk_var (tid1 ^ "mode$") in
-    let mode2 = mk_var (tid2 ^ "mode$") in
-    let dims = ["x"; "y"; "z"; "w"] in
-    let idx1 = List.map (fun d -> mk_var (tid1 ^ "idx" ^ d ^ "$")) dims in
-    let idx2 = List.map (fun d -> mk_var (tid2 ^ "idx" ^ d ^ "$")) dims in
+  let serialize_proof p : Sexplib.Sexp.t list =
+    let open Smt in
+    List.(flatten [
+      (* Predicates: *)
+      map ser_predicate p.proof_preds;
+      (* Variable declarations: *)
+      map var_make p.proof_decls |> map define_uint32 |> flatten;
+      (* Preconditions: *)
+      l_assert p.proof_pre;
+      (* Goal of the proof: *)
+      [ b_assert p.proof_goal ];
+    ]) |> prove
 
-    let generate_vars =
-      let vars = k.proj_kernel_vars in
-      let more_vars =
-        List.map
-          (fun x -> match x with | Var x -> x | _ -> failwith "")
-          ([time1; time2; mode1; mode2] @ idx1 @ idx2)
-      in
-      VarSet.elements vars
-        |> List.append more_vars
-        |> List.map define_uint32
-        |> List.flatten
-    in
-    let gen_steps ss =
-      steps_to_bexp ss (time1, idx1, mode1) (time2, idx2, mode2)
-        |> fun b -> prove [b_assert b]
-    in
-    (generate_vars, gen_steps)
-
-  let iter_generated_code prove_drf proof_obl k =
-    let open Spmd2binary in
-    let print_code =
-      List.iter (fun s ->
-        Sexplib.Sexp.to_string_hum s |> print_endline;
-      )
-    in
-    let l_assert l = List.map b_assert l in
-    let decls, gen_steps = generate_kernel k in
-    print_endline "; Preamble";
-    print_code Gen.preamble;
-    print_endline "; Predicates:";
-    print_code predicates;
-    print_endline "";
-    print_endline "; Variables declarations:";
-    print_code decls;
-    print_endline "";
-    if proof_obl then begin
-      print_endline "; Proof obligations:";
-      List.iteri (fun i b ->
-        Printf.printf "; Proof #%d:\n" (i + 1);
-        print_code (l_assert b |> prove);
-        print_endline ""
-      ) k.proj_kernel_proofs;
-    end;
-    if prove_drf then begin
-      print_endline "; Assumptions:";
-      print_code (List.map b_assert k.proj_kernel_pre);
-      print_endline "";
-      Hashtbl.iter (fun x s ->
-        print_string "; Location: ";
-        print_endline x;
-        print_endline ("(echo \"Location " ^ x ^ "\")");
-        print_code (gen_steps s);
-        print_endline ""
-      ) k.proj_kernel_steps
-    end
-
+  let serialize_proofs (ps:Smt.proof list) : Sexplib.Sexp.t list = List.(map serialize_proof ps |> flatten)
 end
 
-module Bv = Make(BvGen)
-module Std = Make(StdGen)
+module Bv2 = Make(BvGen)
+module Std2 = Make(StdGen)
+
+let bv_serialize_proofs : Smt.proof list -> Sexplib.Sexp.t list = Bv2.serialize_proofs
+
+let int_serialize_proofs : Smt.proof list -> Sexplib.Sexp.t list = Std2.serialize_proofs
 
 

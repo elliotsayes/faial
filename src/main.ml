@@ -110,9 +110,13 @@ let main_t =
       | Sat ->
         Loops.flatten_kernel k
         |> Spmd2binary.project_kernel
-        |> if use_bv
-            then Genfol.Bv.iter_generated_code (not skip_drf) (not skip_po)
-            else Genfol.Std.iter_generated_code (not skip_drf) (not skip_po)
+        (* -- *)
+        |> Smt.kernel_to_proofs (not skip_drf) (not skip_po)
+        |> (if use_bv
+           then Genfol.bv_serialize_proofs
+           else Genfol.int_serialize_proofs)
+        |> Genfol.print_code
+
     with e ->
       close_in_noerr ic;
       raise e
