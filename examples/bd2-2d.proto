@@ -13,6 +13,7 @@ const global MaxCol,
 assert distinct [blockIdx_x][threadIdx_x];
 
 assert id == blockIdx_x * m + threadIdx_x;
+assert threadIdx_x < m;
 # XXX: we are currently unable to solve this, so we assume a size
 #prove distinct [id];
 
