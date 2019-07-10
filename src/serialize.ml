@@ -178,10 +178,10 @@ let flat_kernel_ser k =
     serialize_lsteps "steps" k.flat_kernel_steps;
   ]
 
-let proj_ser (k:Spmd2binary.proj_kernel) : Sexplib.Sexp.t =
+let proj_ser (k:Taskproj.proj_kernel) : Sexplib.Sexp.t =
   let open Sexplib in
   let open Sexp in
-  let open Spmd2binary in
+  let open Taskproj in
   let elems t = hashtbl_elements t
     |> List.map (fun (k,v) -> List [
       Atom k;

@@ -105,12 +105,11 @@ let main_t =
         |> print_flat_kernel
       | Project ->
         Loops.flatten_kernel k
-        |> Spmd2binary.project_kernel
+        |> Taskproj.project_kernel
         |> print_proj_kernel
       | Sat ->
         Loops.flatten_kernel k
-        |> Spmd2binary.project_kernel
-        (* -- *)
+        |> Taskproj.project_kernel
         |> Smt.kernel_to_proofs (not skip_drf) (not skip_po)
         |> (if use_bv
            then Gensmtlib2.bv_serialize_proofs

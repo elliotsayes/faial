@@ -99,7 +99,7 @@ let predicates =
   ]
 
 let generate_kernel k =
-  let open Spmd2binary in
+  let open Taskproj in
   let mk_var x = Var (var_make x) in
   let time1 = mk_var (tid1 ^ "time$") in
   let time2 = mk_var (tid2 ^ "time$") in
@@ -123,7 +123,6 @@ let generate_kernel k =
   (generate_vars, gen_steps)
 
 let kernel_to_proofs prove_drf proof_obl k : proof list =
-  let open Spmd2binary in
   let decls, gen_steps = generate_kernel k in
   let mk_p (pre, b) = mk_proof predicates decls pre b in
   let split_pre l : bexp list * bexp =
