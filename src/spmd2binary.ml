@@ -7,14 +7,7 @@ let tid2 = "_2$"
 let project prefix x = { x with
   var_name = prefix ^ x.var_name;
 }
-(*
-let tid1_s = project tid1 tid
-let tid2_s = project tid2 tid
-*)
-(*
-let tid1_t = Var tid1_s
-let tid2_t = Var tid2_s
-*)
+
 let do_project locals prefix =
   fun x ->
     if VarSet.mem x locals
