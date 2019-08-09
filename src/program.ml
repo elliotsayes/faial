@@ -2,6 +2,8 @@ open Proto
 
 type var_type = Location | Index
 
+type locality = Global | Local
+
 type access_expr = {access_index: nexp list; access_mode: mode}
 
 type instruction =
@@ -17,7 +19,7 @@ type range_expr = {range_expr_start: nexp; range_expr_stop: nexp; range_expr_ste
 type program =
 | Inst of instruction
 | Block of (program list)
-| Decl of (variable * nexp option)
+| Decl of (variable * locality * nexp option)
 | If of (bexp * program * program)
 | For of (variable * range_expr * program)
 
@@ -47,15 +49,15 @@ let p_subst f p =
     | Inst (IAcc (x, a)) -> Inst (IAcc (x, Subst.a_subst f a))
     | Block (p::l) ->
       begin match p with
-        | Decl (x, o) when shadows x ->
+        | Decl (x,v, o) when shadows x ->
             (* When there is a shadowing we stop replacing the rest of the block *)
-            Block (Decl (x, on_subst f o)::l)
+            Block (Decl (x,v, on_subst f o)::l)
         | _ ->
           let head = subst p in
           Block (head::(unblock (subst (Block l))))
       end
     | Block [] -> Block []
-    | Decl (x,o) -> Decl (x, on_subst f o)
+    | Decl (x,v,o) -> Decl (x,v, on_subst f o)
     | If (b, p1, p2) -> If (Subst.b_subst f b, subst p1, subst p2)
     | For (x, r, p) ->
         For (x,
@@ -70,7 +72,7 @@ let p_subst f p =
   in
   subst p
 
-let normalize_variables (p:program) =
+let normalize_variables (p:program) xs =
   let rec norm p xs : program * VarSet.t =
     let do_subst x (do_cont:variable -> VarSet.t -> (variable -> nexp option) -> (program -> program * VarSet.t) -> program * VarSet.t) : program * VarSet.t =
       if VarSet.mem x xs then (
@@ -87,18 +89,18 @@ let normalize_variables (p:program) =
     | Inst _ -> (p, xs)
     | Block (p :: l) ->
       begin match p with
-      | Decl (x,n) ->
+      | Decl (x,v,n) ->
         do_subst x (fun new_x new_xs subst do_rec ->
           let p, new_xs = do_rec (Block l) in
-          Block (Decl (new_x, n) :: unblock p), new_xs
+          Block (Decl (new_x,v, n) :: unblock p), new_xs
         )
       | _ ->
         let rest, xs = norm (Block l) xs in
         Block (p :: unblock rest), xs
       end
     | Block [] -> Block [], xs
-    | Decl (x,n) -> do_subst x (fun new_x new_xs subst kont ->
-        Decl (new_x, n), new_xs
+    | Decl (x,v, n) -> do_subst x (fun new_x new_xs subst kont ->
+        Decl (new_x, v, n), new_xs
       )
     | If (b, p1, p2) ->
       let p1, xs = norm p1 xs in
@@ -110,7 +112,7 @@ let normalize_variables (p:program) =
         For (x, r, p), xs
       )
   in
-  norm p VarSet.empty |> fst
+  norm p xs |> fst
 
 let rec reify (p:program) : proto =
   (**
@@ -120,8 +122,8 @@ let rec reify (p:program) : proto =
     3. Convert structured-loops into protocol Foreach
   *)
   match p with
-  | Decl (x,None) -> Skip
-  | Decl (x,Some n) -> Assert (n_eq (Var x) n)
+  | Decl (x,_,None) -> Skip
+  | Decl (x,_,Some n) -> Assert (n_eq (Var x) n)
   | Inst ISync -> Sync
   | Inst (IGoal b) -> Goal b
   | Inst (IAssert b) -> Assert b
@@ -174,10 +176,39 @@ let remove_if (p:program) : program =
   in
   iter (Bool true) p
 
-let compile p =
+let rec get_variable_decls (p:program) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
+  match p with
+  | Inst _ -> (locals,globals)
+  | Block l -> List.fold_right get_variable_decls l (locals,globals)
+  | Decl (x, Local, _) -> VarSet.add x locals, globals
+  | Decl (x, Global, _) -> locals, VarSet.add x globals
+  | If (_, p1, p2) -> get_variable_decls p1 (locals,globals) |> get_variable_decls p2
+  | For (_, _, p) -> get_variable_decls p (locals,globals)
+
+type p_kernel = {
+  (* The shared locations that can be accessed in the kernel. *)
+  p_kernel_locations: VarSet.t;
+  (* The internal variables are used in the code of the kernel.  *)
+  p_kernel_locals: VarSet.t;
+  (* The internal variables are used in the code of the kernel.  *)
+  p_kernel_globals: VarSet.t;
+  (* The code of a kernel performs the actual memory accesses. *)
+  p_kernel_code: program;
+}
+
+let compile (k:p_kernel) : kernel =
+  let locals, globals = k.p_kernel_locals, k.p_kernel_globals in
+  (* Ensures the variable declarations differ from the parameters *)
+  let p = normalize_variables k.p_kernel_code (VarSet.union locals globals) in
+  let locals, globals = get_variable_decls p (locals, globals)  in
   (**
     1. We rename all variables so that they areall different
     2. We remove if statements
     3. We break down for-loops and variable declarations
     *)
-  normalize_variables p |> remove_if |> reify
+  {
+    kernel_locations = k.p_kernel_locations;
+    kernel_local_variables = locals;
+    kernel_global_variables = globals;
+    kernel_code = remove_if p |> reify;
+  }
