@@ -115,6 +115,12 @@ let b_not b =
   | Bool b -> Bool (not b)
   | _ -> BNot b
 
+let b_impl b1 b2 =
+  match b1 with
+  | Bool true -> b2
+  | Bool false -> Bool true
+  | _ -> b_or (b_not b1) b2
+
 let n_neq b1 b2 = b_not (n_eq b1 b2)
 
 let rec b_and_ex l =
@@ -134,6 +140,9 @@ type range = {range_var: variable; range_upper_bound: nexp}
 type mode = R | W
 
 type access = {access_index: nexp list; access_cond: bexp; access_mode: mode}
+
+let access_update_cond a f =
+  {access_index = a.access_index; access_cond = f a.access_cond; access_mode = a.access_mode}
 
 type proto =
 | Skip
