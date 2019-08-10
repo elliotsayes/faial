@@ -315,15 +315,9 @@ let parse_kernel = make "kernel" (fun k ->
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
   choose_one_of [
-    "FunctionDecl", (["inner"], function
-      | [`List l] ->
+    "FunctionDecl", (["body"; "params"], function
+      | [body; `List params] ->
         begin
-          let is_compound b =
-            match get_kind_opt b with
-            | Some "CompoundStmt" -> true
-            | _ -> false
-          in
-          let (cs, params) = List.partition is_compound l in
           let is_param p l =
             match get_kind_opt l, member "isUsed" l, member "type" l with
             | Some "ParmVarDecl", `Bool true, ty -> p ty
@@ -334,13 +328,11 @@ let parse_kernel = make "kernel" (fun k ->
               |> List.map parse_var.run
               |> VarSet.of_list
           in
-          match cs with
-          | [body] -> Some {
-              p_kernel_locations = get_params is_array_type;
-              p_kernel_params = get_params is_int_type;
-              p_kernel_code = parse_program.run body;
-            }
-          | _ -> None
+          Some {
+            p_kernel_locations = get_params is_array_type;
+            p_kernel_params = get_params is_int_type;
+            p_kernel_code = parse_program.run body;
+          }
         end
       | _ -> None
     )
