@@ -23,6 +23,15 @@ type program =
 | If of (bexp * program * program)
 | For of (variable * range_expr * program)
 
+type p_kernel = {
+  (* The shared locations that can be accessed in the kernel. *)
+  p_kernel_locations: VarSet.t;
+  (* The internal variables are used in the code of the kernel.  *)
+  p_kernel_params: VarSet.t;
+  (* The code of a kernel performs the actual memory accesses. *)
+  p_kernel_code: program;
+}
+
 let unblock p =
   match p with
   | Block l -> l
@@ -161,9 +170,9 @@ let rec reify (p:program) : proto =
 let remove_if (p:program) : program =
   let i_remove_if (cnd:bexp) (i:instruction) =
     match i with
-    | IGoal b -> IGoal (b_impl cnd b)
-    | IAssert b -> IAssert (b_impl cnd b)
-    | IAcc (x, a) -> IAcc (x, access_update_cond a (b_and cnd))
+    | IGoal _
+    | IAssert _ -> i
+    | IAcc (x, a) -> IAcc (x, access_update_cond a (b_impl cnd))
     | ISync -> ISync
   in
   let rec iter (cnd:bexp) (p:program) =
@@ -185,19 +194,9 @@ let rec get_variable_decls (p:program) (locals,globals:VarSet.t * VarSet.t) : Va
   | If (_, p1, p2) -> get_variable_decls p1 (locals,globals) |> get_variable_decls p2
   | For (_, _, p) -> get_variable_decls p (locals,globals)
 
-type p_kernel = {
-  (* The shared locations that can be accessed in the kernel. *)
-  p_kernel_locations: VarSet.t;
-  (* The internal variables are used in the code of the kernel.  *)
-  p_kernel_locals: VarSet.t;
-  (* The internal variables are used in the code of the kernel.  *)
-  p_kernel_globals: VarSet.t;
-  (* The code of a kernel performs the actual memory accesses. *)
-  p_kernel_code: program;
-}
-
 let compile (k:p_kernel) : kernel =
-  let locals, globals = k.p_kernel_locals, k.p_kernel_globals in
+  let globals = k.p_kernel_params in
+  let locals = VarSet.empty in
   (* Ensures the variable declarations differ from the parameters *)
   let p = normalize_variables k.p_kernel_code (VarSet.union locals globals) in
   let locals, globals = get_variable_decls p (locals, globals)  in
