@@ -8,12 +8,15 @@ all: native byte
 clean:
 	$(OCB) -clean
 
-native:
+native: build-tests
 	$(OCB) main.native
-	$(OCB) test_loops.native
 	cp $(BUILD)/main.native main
 
-test:
+build-tests:
+	$(OCB) test_loops.native
+	$(OCB) test_common.native
+
+test: build-tests
 	@./run-tests.py
 
 byte:

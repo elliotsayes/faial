@@ -31,8 +31,8 @@ let flatten_opt l =
 let ends_with s suffix =
   let suffix_len = String.length suffix in
   let s_len = String.length s in
-  (s_len = suffix_len && s = suffix) ||
-  (s_len > suffix_len && String.sub s (s_len - suffix_len) (suffix_len - 1) = suffix)
+  (suffix_len = 0) ||
+  (s_len >= suffix_len && String.sub s (s_len - suffix_len) suffix_len = suffix)
 
 let hashtbl_elements t =
   Hashtbl.fold (fun k v accum ->
