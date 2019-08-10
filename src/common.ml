@@ -13,6 +13,27 @@ let join sep elems =
   in
   List.fold_left on_elem "" elems
 
+let enumerate l =
+  let rec iter idx l =
+    match l with
+    | h::t -> (idx,h) :: iter (idx + 1) t
+    | _ -> []
+  in
+  iter 0 l
+
+let opt_to_list = function
+  | Some x -> [x]
+  | None -> []
+
+let flatten_opt l =
+  List.map opt_to_list l |> List.flatten
+
+let ends_with s suffix =
+  let suffix_len = String.length suffix in
+  let s_len = String.length s in
+  (s_len = suffix_len && s = suffix) ||
+  (s_len > suffix_len && String.sub s (s_len - suffix_len) (suffix_len - 1) = suffix)
+
 let hashtbl_elements t =
   Hashtbl.fold (fun k v accum ->
     (k,v)::accum

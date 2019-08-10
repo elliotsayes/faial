@@ -1,13 +1,17 @@
 open Proto
 open Program
-
+open Common
+(*
 exception ParseError of (string list)
-
+*)
 let parse_error (cause:string list) msg data =
-  raise (ParseError (( "Error parsing '" ^ msg ^"': " ^ Yojson.Basic.to_string data)::cause))
+  raise (Parse.ParseError (( "Error parsing '" ^ msg ^"': " ^ Yojson.Basic.to_string data)::cause))
+
+let abort_error msg data =
+  raise (Parse.ParseError [msg ^ "\n" ^ Yojson.Basic.to_string data])
 
 let call msg f data =
-  let o = (try f data with ParseError l -> parse_error l msg data) in
+  let o = (try f data with Parse.ParseError l -> parse_error l msg data) in
   match o with
   | Some m -> m
   | None ->  parse_error [] msg data
@@ -48,22 +52,70 @@ let bind_all l f =
   in
   aux l []
 
-let get_kind (j:Yojson.Basic.t) =
+let member_opt k (j:Yojson.Basic.t) =
   let open Yojson.Basic.Util in
-  j |> member "kind" |> to_string
+  match j with
+  | `Assoc _ -> Some (member k j)
+  | _ -> None
 
 let get_kind_opt (j:Yojson.Basic.t) =
   let open Yojson.Basic.Util in
-  j |> member "kind" |> to_string_option
+  match j with
+  | `Assoc _ ->
+    j |> member "kind" |> to_string_option
+  | _ -> None
 
-let get_fields fields (j:Yojson.Basic.t) =
+let get_kind (j:Yojson.Basic.t) : string =
   let open Yojson.Basic.Util in
-  List.map (fun x -> j |> member x) fields
+  match j with
+  | `Assoc _ ->
+    begin match member "kind" j with
+    | `String k -> k
+    | _ -> abort_error "When getting the AST node kind from a JSON object, expecting the type to be a string, but got:" j
+    end
+  | _ -> abort_error "When getting the AST node kind from a JSON value, expecting a JSON object, but got:" j
 
-let choose_one_of l j =
-  bind (get_kind_opt j) (fun k ->
-    bind (List.assoc_opt k l) (fun (fields, kont) ->
-      kont (get_fields fields j)))
+let get_fields fields (j:Yojson.Basic.t) : Yojson.Basic.t list  =
+  let open Yojson.Basic.Util in
+  let kv = List.map (fun x -> (x, j |> member_opt x)) fields in
+  let missing = List.filter (fun (x,y) -> y = None) kv |> List.split |> fst in
+  if List.length missing > 0 then
+    let fields = join ", " fields in
+    let missing = join ", " missing in
+    abort_error ("Getting fields [" ^ fields ^ "], but object is missing fields [" ^ missing ^ "]") j
+  else
+    List.split kv |> snd |> flatten_opt
+
+type 'a choose_one_of_handler = string list * (Yojson.Basic.t list -> 'a option)
+
+let choose_one_of (l:(string * 'a choose_one_of_handler) list) (j:Yojson.Basic.t) : 'a option =
+  match List.assoc_opt (get_kind j) l with
+  | Some ((fields:string list), kont) -> get_fields fields j |> kont
+  | None ->
+      let keys = List.split l |> fst |> join ", " in
+      abort_error ("Expecting an AST 'kind' in [" ^ keys ^ "], but got:") j
+
+
+let is_array_type o =
+  let open Yojson.Basic in
+  let open Yojson.Basic.Util in
+  match member "qualType" o with
+  | `String x -> ends_with x " *"
+  | _ -> false
+
+let is_int_type o =
+  let open Yojson.Basic in
+  let open Yojson.Basic.Util in
+  match member "qualType" o with
+  | `String "int" -> true
+  | _ -> false
+
+let has_type j ty =
+  let open Yojson.Basic in
+  let open Yojson.Basic.Util in
+  match j with
+  | `Assoc _ -> ty (member "type" j)
+  | _ -> false
 
 let parse_task = function
   | 0 -> Some Task1
@@ -156,7 +208,9 @@ let rec parse_bexp b : bexp option =
 
 let parse_bexp = make "bexp" parse_bexp
 
-let parse_range_kind = make "range kind" (fun s ->
+let parse_range_kind =
+  let open Yojson.Basic in
+  make "range kind" (fun s ->
     match s with
     | `String "+" -> Some Default
     | `String x -> Some (Pred x)
@@ -177,14 +231,26 @@ let parse_range = make "range" (fun s ->
     ] s
   )
 
-let parse_mode = make "mode" (fun j ->
+let parse_mode =
+  let open Yojson.Basic in
+  make "mode" (fun j ->
     match j with
     | `String "ro" -> Some R
     | `String "rw" -> Some W
     | _ -> None
   )
 
-let rec parse_program p =
+let rec parse_program j =
+  let open Yojson.Basic in
+  let open Yojson.Basic.Util in
+  let do_parse_prog k msg =
+    let p = try parse_program k with
+      Parse.ParseError l -> parse_error l msg k
+    in
+    match p with
+    | Some p -> p
+    | None -> abort_error msg k
+  in
   choose_one_of [
     "SyncStmt", ([], fun _ -> Some (Inst ISync));
     "AccessStmt", (["location"; "mode"; "index"], function
@@ -198,15 +264,30 @@ let rec parse_program p =
       | [b] -> Some (Inst (IAssert (parse_bexp.run b)))
       | _ -> None
     );
-    "IfStmt", (["cond"; "thenStmt"; "elseStmt"], function
-      | [cond; then_stmt; else_stmt] ->
-        bind (parse_program then_stmt) (fun then_stmt ->
-          bind (parse_program else_stmt) (fun else_stmt ->
-            Some (If (parse_bexp.run cond, then_stmt, else_stmt))))
+    "IfStmt", (["cond"], function
+      | [cond] ->
+        let get_branch (o:Yojson.Basic.t) k =
+          let msg = "When parsing IfStmt, could not parse branch " ^ k in
+          match member k j with
+            | `Assoc _ as o ->
+              do_parse_prog o k
+            | `Null -> Block []
+            | _ -> abort_error msg j
+        in
+        let then_stmt = get_branch j "thenStmt" in
+        let else_stmt = get_branch j "elseStmt" in
+        Some (If (parse_bexp.run cond, then_stmt, else_stmt))
       | _ -> None
     );
-    "CompoundStmt", (["inner"], fun l ->
-      bind_all (List.map parse_program l) (fun l -> Some (Block l))
+    "CompoundStmt", (["inner"], function
+      | [`List l] ->
+        let on_elem (idx, j) : program =
+          let idx = string_of_int (idx + 1) in
+          let msg = "When parsing CompoundStmt, could not parse #" ^ idx in
+          do_parse_prog j msg
+        in
+        Some (Block (enumerate l |> List.map on_elem))
+      | _ -> None
     );
     "ForStmt", (["var"; "range"; "body"], function
       | [v; r; body] ->
@@ -214,30 +295,21 @@ let rec parse_program p =
           Some (For (parse_var.run v, parse_range.run r, body))
         )
       | _ -> None
+    );
+    "DeclStmt", (["inner"], function
+      | [`List [(`Assoc _ ) as j] ] when get_kind_opt j = Some "VarDecl" && has_type j is_int_type ->
+        let o = match member "inner" j with
+          | `List [e] -> Some (parse_nexp.run e)
+          | _ -> None
+        in
+        Some (Decl (member "name" j |> to_string |> var_make, Local, o))
+      | _ ->
+        (* XXX: Silently ignore any unrecognized declaration*)
+        Some (Block [])
     )
-  ] p
+  ] j
 
 let parse_program = make "program" parse_program
-
-let ends_with s suffix =
-  let suffix_len = String.length suffix in
-  let s_len = String.length s in
-  (s_len = suffix_len && s = suffix) ||
-  (s_len > suffix_len && String.sub s (s_len - suffix_len) (suffix_len - 1) = suffix)
-
-let is_array_type o =
-  let open Yojson.Basic in
-  let open Yojson.Basic.Util in
-  match member "qualType" o with
-  | `String x -> ends_with x " *"
-  | _ -> false
-
-let is_int_type o =
-  let open Yojson.Basic in
-  let open Yojson.Basic.Util in
-  match member "qualType" o with
-  | `String "int" -> true
-  | _ -> false
 
 let parse_kernel = make "kernel" (fun k ->
   let open Yojson.Basic in

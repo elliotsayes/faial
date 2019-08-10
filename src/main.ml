@@ -22,7 +22,10 @@ let v2_parse fname input : kernel =
   | Parse2.Error ->
     let sloc = Sourceloc.of_lexbuf filebuf in
     Printf.fprintf stderr "%a: syntax error\n" Sourceloc.location_print_start sloc;
-    Printf.fprintf stderr "\n%a" Sourceloc.location_print_title sloc;
+    (try
+      Printf.fprintf stderr "\n%a" Sourceloc.location_print_title sloc
+    with
+      Sys_error _ -> ());
     exit (-1)
 
 (** Machine-readable parser: *)
@@ -37,6 +40,18 @@ let sexp_parse input : kernel =
         print_endline x
       ) l;
       exit (-1)
+
+let json_parse ic =
+  try
+    Yojson.Basic.from_channel ic
+      |> Parsejs.parse_kernels.run
+      |> List.map Program.compile
+  with
+  | Parse.ParseError l ->
+    List.iter (fun x ->
+      print_endline x
+    ) l;
+    exit (-1)
 
 let print_flat_kernel k =
   Serialize.flat_kernel_ser k
@@ -53,10 +68,10 @@ type command = Flatten | Project | Sat
 let print_errs errs =
   let open Typecheck in
   let print_err msg loc =
-    Printf.printf "%a: %s\n%a"
-      Sourceloc.location_print_start loc
-      msg
-      Sourceloc.location_print_title loc
+    Printf.printf "%a: %s" Sourceloc.location_print_start loc msg;
+    try
+      (Printf.printf "%a\n" Sourceloc.location_print_title loc)
+    with Sys_error _ -> ()
   in
   let print_vars msg l =
     List.iter (fun x ->
@@ -91,31 +106,44 @@ let main_t =
     Arg.(value & flag & info ["d"; "drf"] ~doc)
   in
 
+  let use_json =
+    let doc = "Parse a JSON file" in
+    Arg.(value & flag & info ["json"] ~doc)
+  in
+
   let get_fname =
     let doc = "The path $(docv) of the GPU contract." in
     Arg.(required & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
   in
-  let do_main cmd fname use_bv skip_po skip_drf =
+
+  let do_main cmd fname use_bv skip_po skip_drf use_json =
+    let c = Program.compile in
+    let c = Parsejs.parse_bexp in
     let ic = open_in fname in
     try
-      let k = v2_parse fname ic in
-      Typecheck.typecheck_kernel k |> print_errs;
-      match cmd with
-      | Flatten -> Loops.flatten_kernel k
-        |> print_flat_kernel
-      | Project ->
-        Loops.flatten_kernel k
-        |> Taskproj.project_kernel
-        |> print_proj_kernel
-      | Sat ->
-        Loops.flatten_kernel k
-        |> Taskproj.project_kernel
-        |> Smt.kernel_to_proofs (not skip_drf) (not skip_po)
-        |> (if use_bv
-           then Gensmtlib2.bv_serialize_proofs
-           else Gensmtlib2.int_serialize_proofs)
-        |> Gensmtlib2.print_code
-
+      let ks = if use_json
+        then json_parse ic
+        else
+          [v2_parse fname ic]
+      in
+      List.iter (fun k ->
+        Typecheck.typecheck_kernel k |> print_errs;
+        match cmd with
+        | Flatten -> Loops.flatten_kernel k
+          |> print_flat_kernel
+        | Project ->
+          Loops.flatten_kernel k
+          |> Taskproj.project_kernel
+          |> print_proj_kernel
+        | Sat ->
+          Loops.flatten_kernel k
+          |> Taskproj.project_kernel
+          |> Smt.kernel_to_proofs (not skip_drf) (not skip_po)
+          |> (if use_bv
+            then Gensmtlib2.bv_serialize_proofs
+            else Gensmtlib2.int_serialize_proofs)
+          |> Gensmtlib2.print_code
+      ) ks
     with e ->
       close_in_noerr ic;
       raise e
@@ -130,7 +158,7 @@ let main_t =
     let sat = Sat, Arg.info ["3"; "sat"] ~doc in
     Arg.(last & vflag_all [Sat] [flat; proj; sat])
   in
-  Term.(const do_main $ get_cmd $ get_fname $ use_bv $ skip_po $ skip_drf)
+  Term.(const do_main $ get_cmd $ get_fname $ use_bv $ skip_po $ skip_drf $ use_json)
 
 let info =
   let doc = "Verifies a GPU contract" in
