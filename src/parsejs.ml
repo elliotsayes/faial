@@ -107,7 +107,10 @@ let is_int_type o =
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
   match member "qualType" o with
-  | `String "int" -> true
+  | `String "int"
+  | `String "const int"
+  | `String "unsigned int"
+  | `String "const unsigned int" -> true
   | _ -> false
 
 let has_type j ty =
