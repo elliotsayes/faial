@@ -190,8 +190,16 @@ let parse_brel = make "brel" (fun m ->
   | _ -> None
 )
 
+let do_call f k msg =
+  try f k with Parse.ParseError l -> parse_error l msg k
+
+let do_parse f k msg =
+  match do_call f k msg with
+  | Some p -> p
+  | None -> abort_error msg k
 
 let rec parse_bexp b : bexp option =
+  let do_parse_bexp = do_parse parse_bexp in
   let open Yojson.Basic in
   choose_one_of [
     binary_operator (fun o n1 n2 ->
@@ -207,6 +215,14 @@ let rec parse_bexp b : bexp option =
         bind (parse_bexp b) (fun b -> Some (BNot b))
       | _ -> None
     );
+    "DistinctExpr", (["args"], function
+      | [`List l] ->
+        let on_elem (idx, n) =
+          let idx = string_of_int (idx + 1) in
+          do_call parse_nexp.run n ("When parsing a DistinctExpr, error parsing argument #" ^ idx)
+        in
+        Some (enumerate l |> List.map on_elem |> Proto.distinct)
+      | _ -> None)
   ] b
 
 let parse_bexp = make "bexp" parse_bexp
@@ -246,14 +262,8 @@ let parse_mode =
 let rec parse_program j =
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
-  let do_parse_prog k msg =
-    let p = try parse_program k with
-      Parse.ParseError l -> parse_error l msg k
-    in
-    match p with
-    | Some p -> p
-    | None -> abort_error msg k
-  in
+  let do_parse_prog = do_parse parse_program in
+
   choose_one_of [
     "SyncStmt", ([], fun _ -> Some (Inst ISync));
     "AccessStmt", (["location"; "mode"; "index"], function
