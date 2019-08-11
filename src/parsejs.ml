@@ -4,11 +4,21 @@ open Common
 (*
 exception ParseError of (string list)
 *)
+
+let pp_js data =
+  let result = Yojson.Basic.to_string data in
+  let size = 300 in
+  let len = String.length result in
+  if len > size then
+    (String.sub result 0 size) ^ " …"
+  else
+    result
+
 let parse_error (cause:string list) msg data =
-  raise (Parse.ParseError (( "Error parsing '" ^ msg ^"': " ^ Yojson.Basic.to_string data)::cause))
+  raise (Parse.ParseError (( "Error parsing '" ^ msg ^"': " ^ pp_js data)::cause))
 
 let abort_error msg data =
-  raise (Parse.ParseError [msg ^ "\n" ^ Yojson.Basic.to_string data])
+  raise (Parse.ParseError [msg ^ "\n" ^ pp_js data])
 
 let call msg f data =
   let o = (try f data with Parse.ParseError l -> parse_error l msg data) in
@@ -34,8 +44,8 @@ let parse_nbin = make "nbin" (fun m ->
   | `String "+" -> Some Plus
   | `String "-" -> Some Minus
   | `String "*"  -> Some Mult
-  | `String "div" -> Some Div
-  | `String "mod" -> Some Mod
+  | `String "/" -> Some Div
+  | `String "%" -> Some Mod
   | _ -> None
 )
 
@@ -302,7 +312,7 @@ let rec parse_program j =
         Some (Block (enumerate l |> List.map on_elem))
       | _ -> None
     );
-    "ForStmt", (["var"; "range"; "body"], function
+    "ForEachStmt", (["var"; "range"; "body"], function
       | [v; r; body] ->
         bind (parse_program body) (fun body ->
           Some (For (parse_var.run v, parse_range.run r, body))
