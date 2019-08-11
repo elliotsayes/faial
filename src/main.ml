@@ -111,15 +111,28 @@ let main_t =
     Arg.(value & flag & info ["json"] ~doc)
   in
 
+  let decls =
+    let doc = "Set the value of certain variables. Formatted as -D<variable>=<value>. For instance, '-DblockDim.x=512'" in
+    Arg.(value & opt_all string [] & info ["D"; "set"] ~docv:"KEYVALS" ~doc)
+  in
+
   let get_fname =
     let doc = "The path $(docv) of the GPU contract." in
     Arg.(required & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
   in
 
-  let do_main cmd fname use_bv skip_po skip_drf use_json =
+  let do_main cmd fname use_bv skip_po skip_drf use_json sets =
     let c = Program.compile in
     let c = Parsejs.parse_bexp in
     let ic = open_in fname in
+    let on_kv x =
+      let kv = String.split_on_char '=' x in
+      let kv = List.map String.trim kv in
+      match kv with
+      | [k; v] -> Some (k, int_of_string v)
+      | _ -> None
+    in
+    let sets = List.map on_kv sets |> flatten_opt in
     try
       let ks = if use_json
         then json_parse ic
@@ -127,6 +140,7 @@ let main_t =
           [v2_parse fname ic]
       in
       List.iter (fun k ->
+        let k = Proto.inject k sets in
         Typecheck.typecheck_kernel k |> print_errs;
         match cmd with
         | Flatten -> Loops.flatten_kernel k
@@ -158,7 +172,7 @@ let main_t =
     let sat = Sat, Arg.info ["3"; "sat"] ~doc in
     Arg.(last & vflag_all [Sat] [flat; proj; sat])
   in
-  Term.(const do_main $ get_cmd $ get_fname $ use_bv $ skip_po $ skip_drf $ use_json)
+  Term.(const do_main $ get_cmd $ get_fname $ use_bv $ skip_po $ skip_drf $ use_json $ decls)
 
 let info =
   let doc = "Verifies a GPU contract" in

@@ -153,15 +153,6 @@ type proto =
 | Seq of proto * proto
 | Loop of range * proto
 
-let distinct idx =
-  b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)
-
-let rec proto_block l =
-  match l with
-  | [] -> Skip
-  | [x] -> x
-  | x::l -> Seq (x, proto_block l)
-
 (** A timed access is prefixed by the phase it was accessed *)
 type 'a timed = {timed_phase: nexp; timed_data: 'a}
 
@@ -179,4 +170,25 @@ type kernel = {
   (* The code of a kernel performs the actual memory accesses. *)
   kernel_code: proto;
 }
+
+let distinct idx =
+  b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)
+
+let rec proto_block l =
+  match l with
+  | [] -> Skip
+  | [x] -> x
+  | x::l -> Seq (x, proto_block l)
+
+let inject k vars =
+  let on_elem p (name, num) =
+    let name = var_make name in
+    let is_in = VarSet.mem name in
+    if is_in k.kernel_global_variables || is_in k.kernel_local_variables then
+      Seq (Assert (n_eq (Var name) (Num num)), p)
+    else p
+  in
+  { k with kernel_code =
+    List.fold_left on_elem k.kernel_code vars }
+
 
