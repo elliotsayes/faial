@@ -29,29 +29,28 @@ let v2_parse fname input : kernel =
     exit (-1)
 
 (** Machine-readable parser: *)
-let sexp_parse input : kernel =
-  let open Sexplib in
-  let s : Sexp.t = Sexp.input_sexp input in
-    try
-      Parse.parse_kernel.run s
-    with
-    | Parse.ParseError l ->
-      List.iter (fun x ->
-        print_endline x
-      ) l;
-      exit (-1)
-
-let json_parse ic =
+let safe_run f =
   try
-    Yojson.Basic.from_channel ic
-      |> Parsejs.parse_kernels.run
-      |> List.map Program.compile
+    f ()
   with
   | Parse.ParseError l ->
     List.iter (fun x ->
-      print_endline x
+      print_endline x;
+      print_endline ""
     ) l;
     exit (-1)
+
+let sexp_parse input : kernel =
+  let open Sexplib in
+  let s : Sexp.t = Sexp.input_sexp input in
+    safe_run (fun () -> Parse.parse_kernel.run s)
+
+let json_parse ic =
+  safe_run (fun () ->
+    Yojson.Basic.from_channel ic
+      |> Parsejs.parse_kernels.run
+      |> List.map Program.compile
+  )
 
 let print_flat_kernel k =
   Serialize.flat_kernel_ser k
