@@ -186,7 +186,7 @@ let parse_nexp = make "nexp" parse_nexp
 let parse_nrel = make "nrel" (fun m ->
   let open Yojson.Basic in
   match m with
-  | `String "=" -> Some NEq
+  | `String "==" -> Some NEq
   | `String "<=" -> Some NLe
   | `String "<"  -> Some NLt
   | _ -> None
