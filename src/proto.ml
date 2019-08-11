@@ -141,9 +141,6 @@ type mode = R | W
 
 type access = {access_index: nexp list; access_cond: bexp; access_mode: mode}
 
-let access_update_cond a f =
-  {access_index = a.access_index; access_cond = f a.access_cond; access_mode = a.access_mode}
-
 type proto =
 | Skip
 | Sync

@@ -170,18 +170,20 @@ let rec reify (p:program) : proto =
 let remove_if (p:program) : program =
   let i_remove_if (cnd:bexp) (i:instruction) =
     match i with
+    | ISync
     | IGoal _
     | IAssert _ -> i
-    | IAcc (x, a) -> IAcc (x, access_update_cond a (b_impl cnd))
-    | ISync -> ISync
+    | IAcc (x, a) -> IAcc (x, {a with access_cond = b_and cnd a.access_cond})
   in
   let rec iter (cnd:bexp) (p:program) =
-    match p with
-    | Inst i -> Inst (i_remove_if cnd i)
-    | Block l -> Block (List.map (iter cnd) l)
-    | Decl _ -> p
-    | If (b, p1, p2) -> Block [iter (b_and cnd b) p1; iter (b_and cnd (b_not b)) p2]
-    | For (x, r, p) -> For (x, r, iter cnd p)
+    if cnd = Bool false then Block []
+    else
+      match p with
+      | Inst i -> Inst (i_remove_if cnd i)
+      | Block l -> Block (List.map (iter cnd) l)
+      | Decl _ -> p
+      | If (b, p1, p2) -> Block [iter (b_and cnd b) p1; iter (b_and cnd (b_not b)) p2]
+      | For (x, r, p) -> For (x, r, iter cnd p)
   in
   iter (Bool true) p
 
