@@ -177,15 +177,3 @@ let rec proto_block l =
   | [x] -> x
   | x::l -> Seq (x, proto_block l)
 
-let inject k vars =
-  let on_elem p (name, num) =
-    let name = var_make name in
-    let is_in = VarSet.mem name in
-    if is_in k.kernel_global_variables || is_in k.kernel_local_variables then
-      Seq (Assert (n_eq (Var name) (Num num)), p)
-    else p
-  in
-  { k with kernel_code =
-    List.fold_left on_elem k.kernel_code vars }
-
-

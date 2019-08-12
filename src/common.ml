@@ -39,6 +39,9 @@ let hashtbl_elements t =
     (k,v)::accum
   ) t []
 
+let hashtbl_update ht kvs =
+  List.iter (fun (k,v) -> Hashtbl.add ht k v) kvs
+
 let rec zip l1 l2 =
   match l1, l2 with
   | [], _ | _, [] -> []

@@ -121,8 +121,6 @@ let main_t =
   in
 
   let do_main cmd fname use_bv skip_po skip_drf use_json sets =
-    let c = Program.compile in
-    let c = Parsejs.parse_bexp in
     let ic = open_in fname in
     let on_kv x =
       let kv = String.split_on_char '=' x in
@@ -139,8 +137,8 @@ let main_t =
           [v2_parse fname ic]
       in
       List.iter (fun k ->
-        let k = Proto.inject k sets in
         Typecheck.typecheck_kernel k |> print_errs;
+        let k = {k with kernel_code = Subst.replace_constants sets k.kernel_code } in
         match cmd with
         | Flatten -> Loops.flatten_kernel k
           |> print_flat_kernel
