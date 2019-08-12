@@ -34,7 +34,7 @@ module Make (S:SUBST) = struct
         end
       | Num _ -> n
       | Proj (t, n) -> Proj (t, subst n)
-      | Bin (o, n1, n2) -> Bin (o, subst n1, subst n2)
+      | Bin (o, n1, n2) -> n_bin o (subst n1) (subst n2)
     in
     subst n
 
@@ -47,9 +47,9 @@ module Make (S:SUBST) = struct
           | _ -> raise (Failure "Subsitution inside predicate returned a non-variable.")
           end
         | Bool _ -> b
-        | NRel (o, n1, n2) -> NRel (o, n_subst s n1, n_subst s n2)
-        | BRel (o, b1, b2) -> BRel (o, subst b1, subst b2)
-        | BNot b -> BNot (subst b)
+        | NRel (o, n1, n2) -> n_rel o (n_subst s n1) (n_subst s n2)
+        | BRel (o, b1, b2) -> b_rel o (subst b1) (subst b2)
+        | BNot b -> b_not (subst b)
     in
     subst b
 

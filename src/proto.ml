@@ -93,11 +93,30 @@ let n_bin o n1 n2 =
   | Num n1, Num n2 -> Num (eval_nbin o n1 n2)
   | _, _ -> Bin (o, n1, n2)
 
-let n_plus = n_bin Plus
-let n_minus = n_bin Minus
+let n_plus n1 n2 =
+  match n1, n2 with
+  | Num 0, n | n, Num 0 -> n
+  | _, _ -> n_bin Plus n1 n2
+
+let n_minus n1 n2 =
+  match n1, n2 with
+  | Num 0, n | n, Num 0 -> n
+  | _, _ -> n_bin Minus n1 n2
+
 let n_mult = n_bin Mult
-let n_div = n_bin Div
-let n_mod = n_bin Mod
+
+let n_div n1 n2 =
+  match n1, n2 with
+  | _, Num 1 -> n1
+  | Num 0, _ -> Num 0
+  | _, Num 0 -> raise (Failure "Division by 0")
+  | _, _ -> n_bin Div n1 n2
+
+let n_mod n1 n2 =
+  match n1, n2 with
+  | _, Num 1 -> Num 0
+  | _, Num 0 -> raise (Failure "Modulo by 0")
+  | _, _ -> n_bin Mod n1 n2
 
 let b_rel o b1 b2 =
   match b1, b2 with
