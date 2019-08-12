@@ -189,6 +189,8 @@ let parse_nrel = make "nrel" (fun m ->
   | `String "==" -> Some NEq
   | `String "<=" -> Some NLe
   | `String "<"  -> Some NLt
+  | `String ">=" -> Some NGe
+  | `String ">"  -> Some NGt
   | _ -> None
 )
 

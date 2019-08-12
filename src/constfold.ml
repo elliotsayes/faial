@@ -12,8 +12,10 @@ let rec norm (b:bexp) : bexp list =
   | BNot (Bool b) -> [Bool (not b)]
   | BNot (BRel (BAnd, b1, b2)) -> norm (b_or (b_not b1) (b_not b2))
   | BNot (BRel (BOr, b1, b2)) -> norm (b_and (b_not b1) (b_not b2))
+  | BNot (NRel (NGt, n1, n2)) -> norm (NRel (NGe, n1, n2))
   | BNot (NRel (NLt, n1, n2)) -> norm (NRel (NLe, n1, n2))
   | BNot (NRel (NLe, n1, n2)) -> norm (NRel (NLt, n1, n2))
+  | BNot (NRel (NGe, n1, n2)) -> norm (NRel (NGt, n1, n2))
   | BNot (BNot b) -> norm b
 
 let rec n_opt (a : nexp) : nexp =

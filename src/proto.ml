@@ -41,7 +41,7 @@ type nexp =
 | Bin of nbin * nexp * nexp
 | Proj of task * nexp
 
-type nrel = NEq | NLe | NLt
+type nrel = NEq | NLe | NLt | NGt | NGe
 
 type brel = BOr | BAnd
 
@@ -64,7 +64,9 @@ let eval_nrel o: int -> int -> bool =
   match o with
   | NEq -> (=)
   | NLe -> (<=)
+  | NGe -> (>=)
   | NLt -> (<)
+  | NGt -> (>)
 
 let eval_brel o : bool -> bool -> bool =
   match o with
@@ -78,11 +80,11 @@ let n_rel o n1 n2 =
 
 let n_lt = n_rel NLt
 
-let n_gt n1 n2 = n_lt n2 n1
+let n_gt = n_rel NGt
 
 let n_le = n_rel NLe
 
-let n_ge n1 n2 = n_le n2 n1
+let n_ge = n_rel NGe
 
 let n_eq = n_rel NEq
 

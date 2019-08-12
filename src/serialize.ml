@@ -85,6 +85,8 @@ module StdBexp : BEXP_SERIALIZER =
       | NEq -> "="
       | NLe -> "<="
       | NLt -> "<"
+      | NGe -> ">="
+      | NGt -> ">"
 
     let rec b_ser (b:bexp) : Sexplib.Sexp.t =
       let open Sexplib in
@@ -105,6 +107,8 @@ module BvBexp : BEXP_SERIALIZER =
       | NEq -> "="
       | NLe -> "bvule"
       | NLt -> "bvult"
+      | NGe -> "bvuge"
+      | NGt -> "bvugt"
 
     let rec b_ser (b:bexp) : Sexplib.Sexp.t =
       let open Sexplib in
