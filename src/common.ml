@@ -42,6 +42,11 @@ let hashtbl_elements t =
 let hashtbl_update ht kvs =
   List.iter (fun (k,v) -> Hashtbl.add ht k v) kvs
 
+let hashtbl_from_list kvs =
+  let ht = Hashtbl.create (List.length kvs) in
+  hashtbl_update ht kvs;
+  ht
+
 let rec zip l1 l2 =
   match l1, l2 with
   | [], _ | _, [] -> []
