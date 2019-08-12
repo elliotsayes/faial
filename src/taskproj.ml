@@ -4,24 +4,34 @@ open Common
 let tid1 = "_1$"
 let tid2 = "_2$"
 
-let project prefix x = { x with
-  var_name = prefix ^ x.var_name;
-}
+let project prefix x = { x with var_name = prefix ^ x.var_name; }
 
-let do_project locals prefix =
-  fun x ->
-    if VarSet.mem x locals
-    then Some (Var (project prefix x))
-    else None
+module SubstProj = struct
+    type t = VarSet.t * string
+
+    let make (locals, prefix) : t = (locals, prefix)
+
+    let find (locals, prefix) x =
+      if VarSet.mem x locals
+      then Some (Var (project prefix x))
+      else None
+
+    let remove (locals, prefix) x : t option =
+      let locals = VarSet.remove x locals in
+      if VarSet.cardinal locals = 0 then None
+      else Some (locals, prefix)
+  end
+
+module ReplaceProj = Subst.Make(SubstProj)
 
 let project_access locals (t:access timed) : (access timed) * (access timed) =
   match t with
   | {timed_phase=n; timed_data=a} ->
     let mk ti =
-      let si = do_project locals ti in
+      let si = SubstProj.make (locals, ti) in
       {
-        timed_phase=Subst.n_subst si n;
-        timed_data=Subst.a_subst si a;
+        timed_phase=ReplaceProj.n_subst si n;
+        timed_data=ReplaceProj.a_subst si a;
       }
     in
     mk tid1, mk tid2
@@ -32,7 +42,8 @@ let apply_proj locals (b:bexp) =
   let rec do_n_project (n:nexp) =
     let do_proj ti n =
       let n = do_n_project n in
-      Subst.n_subst (do_project locals ti) n
+      let si = SubstProj.make (locals, ti) in
+      ReplaceProj.n_subst si n
     in
     match n with
     | Var _
@@ -61,7 +72,8 @@ let project_condition locals (b:bexp) =
   if VarSet.is_empty locs_in_b then
     [b]
   else
-    let do_subst ti = Subst.b_subst (do_project locals ti) in
+    let si ti = SubstProj.make (locals, ti) in
+    let do_subst ti = ReplaceProj.b_subst (si ti) in
     [do_subst tid1 b; do_subst tid2 b]
 
 type stream = (variable * access timed) list

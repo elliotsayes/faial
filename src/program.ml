@@ -39,59 +39,70 @@ let unblock p =
 
 (** Variable normalization: Makes all variable declarations distinct. *)
 
-let on_subst f o =
-  match o with
-  | Some n -> Some (Subst.n_subst f n)
-  | None -> None
+module SubstMake(S:Subst.SUBST) = struct
+  module M = Subst.Make(S)
 
-let p_subst f p =
-  let shadows x =
-    match f x with
-    | Some _ -> true
-    | None -> false
-  in
-  let rec subst p =
-    match p with
-    | Inst ISync -> Inst ISync
-    | Inst (IGoal b) -> Inst (IGoal (Subst.b_subst f b))
-    | Inst (IAssert b) -> Inst (IAssert (Subst.b_subst f b))
-    | Inst (IAcc (x, a)) -> Inst (IAcc (x, Subst.a_subst f a))
-    | Block (p::l) ->
-      begin match p with
-        | Decl (x,v, o) when shadows x ->
+  let program_subst (s:S.t) p : program =
+    let on_subst s o =
+      match o with
+      | Some n -> Some (M.n_subst s n)
+      | None -> None
+    in
+
+    let rec subst s p =
+      match p with
+      | Inst ISync -> Inst ISync
+      | Inst (IGoal b) -> Inst (IGoal (M.b_subst s b))
+      | Inst (IAssert b) -> Inst (IAssert (M.b_subst s b))
+      | Inst (IAcc (x, a)) -> Inst (IAcc (x, M.a_subst s a))
+      | Block (p::l) ->
+        begin match p with
+          | Decl (x,v, o) ->
             (* When there is a shadowing we stop replacing the rest of the block *)
-            Block (Decl (x,v, on_subst f o)::l)
-        | _ ->
-          let head = subst p in
-          Block (head::(unblock (subst (Block l))))
-      end
-    | Block [] -> Block []
-    | Decl (x,v,o) -> Decl (x,v, on_subst f o)
-    | If (b, p1, p2) -> If (Subst.b_subst f b, subst p1, subst p2)
-    | For (x, r, p) ->
+            let h = Decl (x,v, on_subst s o) in
+            let l = M.add s x (function
+              | Some s -> subst s (Block l) |> unblock
+              | None -> l
+            ) in
+            Block (h::l)
+          | _ ->
+            let h = subst s p in
+            let l = subst s (Block l) |> unblock in
+            Block (h::l)
+        end
+      | Block [] -> Block []
+      | Decl (x,v,o) -> Decl (x,v, on_subst s o)
+      | If (b, p1, p2) -> If (M.b_subst s b, subst s p1, subst s p2)
+      | For (x, r, p) ->
         For (x,
           {
-            range_expr_start = Subst.n_subst f r.range_expr_start;
-            range_expr_step = Subst.n_subst f r.range_expr_step;
-            range_expr_stop = Subst.n_subst f r.range_expr_stop;
+            range_expr_start = M.n_subst s r.range_expr_start;
+            range_expr_step = M.n_subst s r.range_expr_step;
+            range_expr_stop = M.n_subst s r.range_expr_stop;
             range_expr_kind = r.range_expr_kind;
           },
-          if shadows x then p else subst p
+          M.add s x (function
+          | Some s -> subst s p
+          | None -> p
+          )
         )
-  in
-  subst p
+    in
+    subst s p
+  end
+
+module ReplacePair = SubstMake(Subst.SubstPair)
 
 let normalize_variables (p:program) xs =
   let rec norm p xs : program * VarSet.t =
-    let do_subst x (do_cont:variable -> VarSet.t -> (variable -> nexp option) -> (program -> program * VarSet.t) -> program * VarSet.t) : program * VarSet.t =
+    let do_subst x do_cont : program * VarSet.t =
       if VarSet.mem x xs then (
         let new_x : variable = Loops.generate_fresh_name x xs in
         let new_xs = VarSet.add new_x xs in
-        let subst = Subst.replace_by (x, Var new_x) in
-        do_cont new_x new_xs subst (fun p -> norm (p_subst subst p) new_xs)
+        let si = Subst.SubstPair.make (x, Var new_x) in
+        do_cont new_x new_xs (fun (p:program) -> norm (ReplacePair.program_subst si p) new_xs)
       ) else (
         let new_xs = VarSet.add x xs in
-        do_cont x new_xs (fun x -> None) (fun p -> norm p new_xs)
+        do_cont x new_xs (fun p -> norm p new_xs)
       )
     in
     match p with
@@ -99,7 +110,7 @@ let normalize_variables (p:program) xs =
     | Block (p :: l) ->
       begin match p with
       | Decl (x,v,n) ->
-        do_subst x (fun new_x new_xs subst do_rec ->
+        do_subst x (fun new_x new_xs do_rec ->
           let p, new_xs = do_rec (Block l) in
           Block (Decl (new_x,v, n) :: unblock p), new_xs
         )
@@ -108,7 +119,7 @@ let normalize_variables (p:program) xs =
         Block (p :: unblock rest), xs
       end
     | Block [] -> Block [], xs
-    | Decl (x,v, n) -> do_subst x (fun new_x new_xs subst kont ->
+    | Decl (x,v, n) -> do_subst x (fun new_x new_xs kont ->
         Decl (new_x, v, n), new_xs
       )
     | If (b, p1, p2) ->
@@ -116,7 +127,7 @@ let normalize_variables (p:program) xs =
       let p2, xs = norm p2 xs in
       If (b, p1, p2), xs
     | For (x, r, p) ->
-      do_subst x (fun new_x new_xs subst kont ->
+      do_subst x (fun new_x new_xs kont ->
         let p, xs = kont p in
         For (x, r, p), xs
       )

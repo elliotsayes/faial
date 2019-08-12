@@ -22,8 +22,8 @@ let normalize_variables (p:proto) =
       if VarSet.mem x xs then (
         let new_x : variable = generate_fresh_name x xs in
         let new_xs = VarSet.add new_x xs in
-        let do_subst = Subst.replace_by (x, Var new_x) in
-        let (e, new_xs) = norm (Subst.p_subst do_subst e) new_xs in
+        let do_subst = Subst.SubstPair.make (x, Var new_x) in
+        let (e, new_xs) = norm (Subst.ReplacePair.p_subst do_subst e) new_xs in
         Loop ({range_var=new_x; range_upper_bound=ub}, e), new_xs
       ) else (
         let (e, new_xs) = norm e (VarSet.add x xs) in
