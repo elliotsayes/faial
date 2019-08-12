@@ -171,14 +171,24 @@ let var_set_ser name (s:VarSet.t) =
     |> atoms
     |> call name
 
+let kernel_ser k =
+  let open Sexplib in
+  Sexp.List [
+    Sexp.Atom "kernel";
+    var_set_ser "locations" k.kernel_locations;
+    var_set_ser "locals" k.kernel_local_variables;
+    var_set_ser "globals" k.kernel_global_variables;
+    proto_ser k.kernel_code;
+  ]
+
 let flat_kernel_ser k =
   let open Loops in
   let open Sexplib in
   Sexp.List [Sexp.Atom "flat-kernel";
     bexp_list_ser "pre" k.flat_kernel_pre;
     call "proofs" (List.map (fun x -> bexp_list x |> s_list) k.flat_kernel_proofs);
-    var_set_ser "global-vars" k.flat_kernel_single_vars;
-    var_set_ser "local-vars" k.flat_kernel_multi_vars;
+    var_set_ser "globals" k.flat_kernel_single_vars;
+    var_set_ser "locals" k.flat_kernel_multi_vars;
     serialize_lsteps "steps" k.flat_kernel_steps;
   ]
 

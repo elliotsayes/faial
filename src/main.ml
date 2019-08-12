@@ -52,6 +52,11 @@ let json_parse ic =
       |> List.map Program.compile
   )
 
+let print_kernel k =
+  Serialize.kernel_ser k
+    |> Sexplib.Sexp.to_string_hum
+    |> print_endline
+
 let print_flat_kernel k =
   Serialize.flat_kernel_ser k
     |> Sexplib.Sexp.to_string_hum
@@ -62,7 +67,7 @@ let print_proj_kernel t =
     |> Sexplib.Sexp.to_string_hum
     |> print_endline
 
-type command = Flatten | Project | Sat
+type command = Flatten | Project | Sat | Typecheck
 
 let print_errs errs =
   let open Typecheck in
@@ -138,22 +143,26 @@ let main_t =
       in
       List.iter (fun k ->
         Typecheck.typecheck_kernel k |> print_errs;
-        let k = {k with kernel_code = Subst.replace_constants sets k.kernel_code } in
-        match cmd with
-        | Flatten -> Loops.flatten_kernel k
-          |> print_flat_kernel
-        | Project ->
-          Loops.flatten_kernel k
-          |> Taskproj.project_kernel
-          |> print_proj_kernel
-        | Sat ->
-          Loops.flatten_kernel k
-          |> Taskproj.project_kernel
-          |> Smt.kernel_to_proofs (not skip_drf) (not skip_po)
-          |> (if use_bv
-            then Gensmtlib2.bv_serialize_proofs
-            else Gensmtlib2.int_serialize_proofs)
-          |> Gensmtlib2.print_code
+        let k = Subst.replace_constants sets k in
+        if cmd = Typecheck then
+          print_kernel k
+        else begin
+          let k = Loops.flatten_kernel k in
+          if cmd = Flatten then
+            print_flat_kernel k
+          else begin
+            let k = Taskproj.project_kernel k in
+            if cmd = Project then
+              print_proj_kernel k
+            else begin
+              Smt.kernel_to_proofs (not skip_drf) (not skip_po) k
+              |> (if use_bv
+                then Gensmtlib2.bv_serialize_proofs
+                else Gensmtlib2.int_serialize_proofs)
+              |> Gensmtlib2.print_code
+            end
+          end
+        end
       ) ks
     with e ->
       close_in_noerr ic;
@@ -161,13 +170,15 @@ let main_t =
   in
   let get_cmd =
     (* Override the codegeneration (for debugging only). *)
+    let doc = "Step 0: Replace key-values and typecheck the kernel." in
+    let tc = Typecheck, Arg.info ["0"; "check"] ~doc in
     let doc = "Step 1: remove loops and merge assertions." in
     let flat = Flatten, Arg.info ["1"; "flat"] ~doc in
     let doc = "Step 2: project into two tasks." in
     let proj = Project, Arg.info ["2"; "proj"] ~doc in
     let doc = "Step 3: generate Z3." in
     let sat = Sat, Arg.info ["3"; "sat"] ~doc in
-    Arg.(last & vflag_all [Sat] [flat; proj; sat])
+    Arg.(last & vflag_all [Sat] [tc; flat; proj; sat])
   in
   Term.(const do_main $ get_cmd $ get_fname $ use_bv $ skip_po $ skip_drf $ use_json $ decls)
 
