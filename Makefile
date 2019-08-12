@@ -17,6 +17,10 @@ build-tests:
 	$(OCB) test_common.native
 
 test: build-tests
+	$(BUILD)/test_loops.native
+	$(BUILD)/test_common.native
+
+sys-test: build-tests
 	@./run-tests.py
 
 byte:
