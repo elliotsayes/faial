@@ -67,15 +67,14 @@ let replace_by (x, v) y = if var_equal x y then Some v else None
 (** Substitute using an association list. *)
 
 let assoc_replace kvs : variable -> nexp option =
-  let ht = Hashtbl.create (List.length kvs) in
-  Common.hashtbl_update ht kvs;
-  Hashtbl.find_opt ht
+  let do_find = Hashtbl.find_opt (Common.hashtbl_from_list kvs) in
+  (fun k -> do_find k.var_name)
 
 (** Replace variables by constants. *)
 
 let replace_constants (kvs:(string*int) list) k : kernel =
-  let kvs = List.map (fun (x,n) -> (var_make x), Num n) kvs in
-  let keys = List.split kvs |> fst |> VarSet.of_list in
+  let kvs = List.map (fun (x,n) -> x, Num n) kvs in
+  let keys = List.split kvs |> fst |> List.map var_make |> VarSet.of_list in
   { k with
     kernel_code = p_subst (assoc_replace kvs) k.kernel_code;
     kernel_global_variables = VarSet.diff k.kernel_global_variables keys;
