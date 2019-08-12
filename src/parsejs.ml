@@ -1,9 +1,6 @@
 open Proto
 open Program
 open Common
-(*
-exception ParseError of (string list)
-*)
 
 let pp_js data =
   let result = Yojson.Basic.to_string data in
@@ -211,7 +208,6 @@ let do_parse f k msg =
   | None -> abort_error msg k
 
 let rec parse_bexp b : bexp option =
-  let do_parse_bexp = do_parse parse_bexp in
   let open Yojson.Basic in
   choose_one_of [
     binary_operator (fun o n1 n2 ->
