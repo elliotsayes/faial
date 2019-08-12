@@ -162,7 +162,7 @@ let rec parse_nexp n : nexp option =
     binary_operator (fun o n1 n2 ->
       bind (parse_nexp n1) (fun n1 ->
         bind (parse_nexp n2) (fun n2 ->
-            Some (Bin (parse_nbin.run o, n1, n2))
+            Some (n_bin (parse_nbin.run o) n1 n2)
           ))
     );
     "IntegerLiteral", (["value"], function
@@ -211,12 +211,12 @@ let rec parse_bexp b : bexp option =
   let open Yojson.Basic in
   choose_one_of [
     binary_operator (fun o n1 n2 ->
-      Some (NRel (parse_nrel.run o, parse_nexp.run n1, parse_nexp.run n2))
+      Some (n_rel (parse_nrel.run o) (parse_nexp.run n1) (parse_nexp.run n2))
     );
     binary_operator (fun o b1 b2 ->
         bind (parse_bexp b1) (fun b1 ->
           bind (parse_bexp b2) (fun b2 ->
-            Some (BRel (parse_brel.run o, b1, b2))))
+            Some (b_rel (parse_brel.run o) b1 b2)))
     );
     "UnaryOperator", (["subExpr"; "opcode"], function
       | [b; `String "!"] ->

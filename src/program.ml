@@ -157,22 +157,22 @@ let rec reify (p:program) : proto =
       | Default ->
         proto_block [
           (* assert index >= INIT; *)
-          Assert (n_ge index r.range_expr_start);
+          p_assert (n_ge index r.range_expr_start);
           (*  assert (index - INIT) % STRIDE == 0; *)
-          Assert (n_eq (n_mod (n_minus index r.range_expr_start) r.range_expr_step) (Num 0));
+          p_assert (n_eq (n_mod (n_minus index r.range_expr_start) r.range_expr_step) (Num 0));
           (* assert STRIDE > 0; *)
-          Assert (n_gt r.range_expr_step (Num 0));
+          p_assert (n_gt r.range_expr_step (Num 0));
           (* Ensure the lower bound is smaller than the upper bound *)
-          Assert (n_le r.range_expr_start r.range_expr_stop);
+          p_assert (n_le r.range_expr_start r.range_expr_stop);
           (* The rest of the body *)
           p
         ]
       | Pred name ->
         proto_block [
-          Assert (n_ge index r.range_expr_start);
-          Assert (Pred (name, x));
+          p_assert (n_ge index r.range_expr_start);
+          p_assert (Pred (name, x));
           (* Ensure the lower bound is smaller than the upper bound *)
-          Assert (n_le r.range_expr_start r.range_expr_stop);
+          p_assert (n_le r.range_expr_start r.range_expr_stop);
           p
         ]
     end in

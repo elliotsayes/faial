@@ -99,17 +99,22 @@ let n_mult = n_bin Mult
 let n_div = n_bin Div
 let n_mod = n_bin Mod
 
+let b_rel o b1 b2 =
+  match b1, b2 with
+  | Bool b1, Bool b2 -> Bool (eval_brel o b1 b2)
+  | _, _ -> BRel (o, b1, b2)
+
 let b_or b1 b2 =
   match b1, b2 with
   | Bool true, _ | _, Bool true -> Bool true
   | Bool false, b | b, Bool false -> b
-  | _, _ -> BRel (BOr, b1, b2)
+  | _, _ -> b_rel BOr b1 b2
 
 let b_and b1 b2 =
   match b1, b2 with
   | Bool true, b | b, Bool true -> b
   | Bool false, _ | _, Bool false -> Bool false
-  | _, _ -> BRel (BAnd, b1, b2)
+  | _, _ -> b_rel BAnd b1 b2
 
 let b_not b =
   match b with
