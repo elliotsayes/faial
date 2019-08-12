@@ -135,7 +135,7 @@ let rec reify (p:program) : proto =
   | Decl (x,_,Some n) -> Assert (n_eq (Var x) n)
   | Inst ISync -> Sync
   | Inst (IGoal b) -> Goal b
-  | Inst (IAssert b) -> Assert b
+  | Inst (IAssert b) -> p_assert b
   | Inst (IAcc (x,y)) -> Acc (x,y)
   | Block l -> proto_block (List.map reify l)
   | If _ -> raise (Failure "Call remove_if first!")

@@ -173,9 +173,19 @@ type kernel = {
 let distinct idx =
   b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)
 
+let p_assert b =
+  match b with
+  | Bool true -> Skip
+  | _ -> Assert b
+
+let p_seq p1 p2 =
+  match p1 with
+  | Skip -> p2
+  | _ -> Seq (p1, p2)
+
 let rec proto_block l =
   match l with
   | [] -> Skip
   | [x] -> x
-  | x::l -> Seq (x, proto_block l)
+  | x::l -> p_seq x (proto_block l)
 
