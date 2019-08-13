@@ -180,16 +180,18 @@ let rec parse_nexp n : nexp option =
 
 let parse_nexp = make "nexp" parse_nexp
 
-let parse_nrel = make "nrel" (fun m ->
+let parse_nrel_opt m =
   let open Yojson.Basic in
   match m with
   | `String "==" -> Some NEq
+  | `String "!=" -> Some NNeq
   | `String "<=" -> Some NLe
   | `String "<"  -> Some NLt
   | `String ">=" -> Some NGe
   | `String ">"  -> Some NGt
   | _ -> None
-)
+
+let parse_nrel = make "nrel" parse_nrel_opt
 
 let parse_brel = make "brel" (fun m ->
   let open Yojson.Basic in
@@ -210,17 +212,17 @@ let do_parse f k msg =
 let rec parse_bexp b : bexp option =
   let open Yojson.Basic in
   choose_one_of [
-    binary_operator (fun o n1 n2 ->
-      Some (n_rel (parse_nrel.run o) (parse_nexp.run n1) (parse_nexp.run n2))
-    );
-    binary_operator (fun o b1 b2 ->
-        bind (parse_bexp b1) (fun b1 ->
-          bind (parse_bexp b2) (fun b2 ->
-            Some (b_rel (parse_brel.run o) b1 b2)))
+    binary_operator (fun o e1 e2 ->
+        match parse_nrel_opt o with
+        | Some n -> Some (n_rel n (parse_nexp.run e1) (parse_nexp.run e2))
+        | None ->
+          bind (parse_bexp e1) (fun b1 ->
+            bind (parse_bexp e2) (fun b2 ->
+              Some (b_rel (parse_brel.run o) b1 b2)))
     );
     "UnaryOperator", (["subExpr"; "opcode"], function
       | [b; `String "!"] ->
-        bind (parse_bexp b) (fun b -> Some (BNot b))
+        bind (parse_bexp b) (fun b -> Some (b_not b))
       | _ -> None
     );
     "DistinctExpr", (["args"], function

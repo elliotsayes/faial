@@ -5,17 +5,18 @@ let rec norm (b:bexp) : bexp list =
   | Pred _
   | BNot (Pred _)
   | BRel (BOr, _, _)
-  | BNot (NRel (NEq, _, _))
   | Bool _
   | NRel _ -> [b]
   | BRel (BAnd, b1, b2) -> List.append (norm b1) (norm b2)
   | BNot (Bool b) -> [Bool (not b)]
   | BNot (BRel (BAnd, b1, b2)) -> norm (b_or (b_not b1) (b_not b2))
   | BNot (BRel (BOr, b1, b2)) -> norm (b_and (b_not b1) (b_not b2))
-  | BNot (NRel (NGt, n1, n2)) -> norm (NRel (NGe, n1, n2))
-  | BNot (NRel (NLt, n1, n2)) -> norm (NRel (NLe, n1, n2))
-  | BNot (NRel (NLe, n1, n2)) -> norm (NRel (NLt, n1, n2))
-  | BNot (NRel (NGe, n1, n2)) -> norm (NRel (NGt, n1, n2))
+  | BNot (NRel (NEq, n1, n2)) -> norm (n_neq n1 n2)
+  | BNot (NRel (NNeq, n1, n2)) -> norm (n_eq n1 n2)
+  | BNot (NRel (NGt, n1, n2)) -> norm (n_ge n1 n2)
+  | BNot (NRel (NLt, n1, n2)) -> norm (n_le n1 n2)
+  | BNot (NRel (NLe, n1, n2)) -> norm (n_lt n1 n2)
+  | BNot (NRel (NGe, n1, n2)) -> norm (n_gt n1 n2)
   | BNot (BNot b) -> norm b
 
 let rec n_opt (a : nexp) : nexp =

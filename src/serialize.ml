@@ -80,20 +80,21 @@ end
 
 module StdBexp : BEXP_SERIALIZER =
   struct
-    let nrel_to_string (r:nrel) =
+    let rec nrel_ser (r:nrel) =
       match r with
-      | NEq -> "="
-      | NLe -> "<="
-      | NLt -> "<"
-      | NGe -> ">="
-      | NGt -> ">"
+      | NEq -> binop "="
+      | NLe -> binop "<="
+      | NLt -> binop "<"
+      | NGe -> binop ">="
+      | NGt -> binop ">"
+      | NNeq -> fun n1 n2 -> unop "not" (nrel_ser NEq n1 n2)
 
     let rec b_ser (b:bexp) : Sexplib.Sexp.t =
       let open Sexplib in
       match b with
       | Bool b -> Sexp.Atom (if b then "true" else "false")
       | NRel (b, a1, a2) ->
-        binop (nrel_to_string b) (StdNexp.n_ser a1) (StdNexp.n_ser a2)
+        nrel_ser b (StdNexp.n_ser a1) (StdNexp.n_ser a2)
       | BRel (b, b1, b2) ->
         binop (brel_to_string b) (b_ser b1) (b_ser b2)
       | BNot b -> unop "not" (b_ser b)
@@ -102,20 +103,21 @@ module StdBexp : BEXP_SERIALIZER =
 
 module BvBexp : BEXP_SERIALIZER =
   struct
-    let nrel_to_string (r:nrel) =
+    let rec nrel_ser (r:nrel) =
       match r with
-      | NEq -> "="
-      | NLe -> "bvule"
-      | NLt -> "bvult"
-      | NGe -> "bvuge"
-      | NGt -> "bvugt"
+      | NEq -> binop "="
+      | NLe -> binop "bvule"
+      | NLt -> binop "bvult"
+      | NGe -> binop "bvuge"
+      | NGt -> binop "bvugt"
+      | NNeq -> fun n1 n2 -> unop "not" (nrel_ser NEq n1 n2)
 
     let rec b_ser (b:bexp) : Sexplib.Sexp.t =
       let open Sexplib in
       match b with
       | Bool b -> Sexp.Atom (if b then "true" else "false")
       | NRel (b, a1, a2) ->
-        binop (nrel_to_string b) (BvNexp.n_ser a1) (BvNexp.n_ser a2)
+        nrel_ser b (BvNexp.n_ser a1) (BvNexp.n_ser a2)
       | BRel (b, b1, b2) ->
         binop (brel_to_string b) (b_ser b1) (b_ser b2)
       | BNot b -> unop "not" (b_ser b)

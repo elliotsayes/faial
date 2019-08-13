@@ -41,7 +41,7 @@ type nexp =
 | Bin of nbin * nexp * nexp
 | Proj of task * nexp
 
-type nrel = NEq | NLe | NLt | NGt | NGe
+type nrel = NEq | NNeq | NLe | NLt | NGt | NGe
 
 type brel = BOr | BAnd
 
@@ -63,6 +63,7 @@ let eval_nbin (o:nbin) : int -> int -> int =
 let eval_nrel o: int -> int -> bool =
   match o with
   | NEq -> (=)
+  | NNeq -> (<>)
   | NLe -> (<=)
   | NGe -> (>=)
   | NLt -> (<)
@@ -87,6 +88,8 @@ let n_le = n_rel NLe
 let n_ge = n_rel NGe
 
 let n_eq = n_rel NEq
+
+let n_neq = n_rel NNeq
 
 let n_bin o n1 n2 =
   match n1, n2 with
@@ -138,6 +141,8 @@ let b_and b1 b2 =
 let b_not b =
   match b with
   | BNot b -> b
+  | NRel (NEq, n1, n2) -> NRel (NNeq, n1, n2)
+  | NRel (NNeq, n1, n2) -> NRel (NEq, n1, n2)
   | Bool b -> Bool (not b)
   | _ -> BNot b
 
@@ -203,8 +208,8 @@ let p_assert b =
   | _ -> Assert b
 
 let p_seq p1 p2 =
-  match p1 with
-  | Skip -> p2
+  match p1, p2 with
+  | Skip, p | p, Skip -> p
   | _ -> Seq (p1, p2)
 
 let rec proto_block l =

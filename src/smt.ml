@@ -1,4 +1,5 @@
 open Proto
+open Common
 
 type pred = {
   pred_name: string;
@@ -28,6 +29,20 @@ let mode_to_nexp m =
   Num (match m with
   | R -> 0
   | W -> 1)
+
+let rec get_predicates (b:bexp) (preds:StringSet.t) =
+  match b with
+  | Pred (x, _) -> StringSet.add x preds
+  | BRel (_, b1, b2) -> get_predicates b1 preds |> get_predicates b2
+  | BNot b -> get_predicates b preds
+  | NRel (_, _, _)
+  | Bool _ -> preds
+
+let opt_proof (p:proof) =
+  let preds = List.fold_right get_predicates p.proof_pre StringSet.empty
+      |> get_predicates p.proof_goal in
+  { p with
+    proof_preds = List.filter (fun x -> StringSet.mem x.pred_name preds)  p.proof_preds }
 
 let access_list_to_bexp elems time idx mode other_mode =
   List.map (fun elem ->
@@ -145,3 +160,4 @@ let kernel_to_proofs prove_drf proof_obl k : proof list =
       )
     else []
   ]
+  |> List.map opt_proof
