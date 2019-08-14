@@ -269,6 +269,14 @@ let parse_mode =
     | _ -> None
   )
 
+let is_var o =
+  let k = get_kind_opt o in
+  k = Some "VarDecl" || k = Some "ParmVarDecl"
+
+let j_to_var j =
+  let open Yojson.Basic.Util in
+  member "name" j |> to_string |> var_make
+
 let rec parse_program j =
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
@@ -320,16 +328,21 @@ let rec parse_program j =
       | _ -> None
     );
     "DeclStmt", (["inner"], function
-      | [`List [(`Assoc _ ) as j] ] when get_kind_opt j = Some "VarDecl" && has_type j is_int_type ->
+      | [`List [(`Assoc _ ) as j] ] when is_var j && has_type j is_int_type ->
         let o = match member "inner" j with
           | `List [e] -> Some (parse_nexp.run e)
           | _ -> None
         in
-        Some (Decl (member "name" j |> to_string |> var_make, Local, o))
+        Some (Decl (j_to_var j, Local, o))
       | _ ->
         (* XXX: Silently ignore any unrecognized declaration*)
         Some (Block [])
-    )
+    );
+    "BinaryOperator", (["lhs"; "rhs"; "type"; "opcode"], function
+      | [lhs; rhs; ty; `String "="] when is_var lhs && is_int_type ty ->
+         Some (Decl (j_to_var lhs, Local, Some (parse_nexp.run rhs)))
+      | _ -> None
+    );
   ] j
 
 let parse_program = make "program" parse_program
