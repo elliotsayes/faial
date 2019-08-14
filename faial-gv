@@ -74,9 +74,11 @@ def serialize(data):
   return " ".join(result)
 
 def main():
-  with open(sys.argv[1], "rb") as fp:
-    print(serialize(parse(fp)[1]))
-    #print(sys.argv[1], file=sys.stderr)
+  for fname in sys.argv[1:]:
+    with open(fname, "rb") as fp:
+      data = parse(fp)
+      if data is not None:
+        print(serialize(data[1]))
 
 if __name__ == '__main__':
   main()
