@@ -32,8 +32,8 @@ FIELDS = ["x", "y", "z"]
 
 def parse_args(line):
   parser = argparse.ArgumentParser()
-  parser.add_argument("--blockDim")
-  parser.add_argument("--gridDim")
+  parser.add_argument("--blockDim", default=[])
+  parser.add_argument("--gridDim", default=[])
   parser.add_argument("--warp-sync", type=int)
   parser.add_argument("--no-inline", action="store_true")
   parser.add_argument("--only-intra-group", action="store_true")
