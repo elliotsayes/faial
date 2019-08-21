@@ -1,0 +1,47 @@
+#!/bin/bash
+
+FILE="$1"
+PARSE_LOG="parse.log"
+INFER_LOG="infer.log"
+FAIAL_LOG="faial.log"
+shift
+
+# Setup temporary file
+TMP1=$(tempfile)
+TMP2=$(tempfile)
+TMP3=$(tempfile)
+
+cleanup(){
+  rm -f "${TMP2}" "${TMP1}" "${TMP3}";
+}
+
+trap "{ cleanup; }" EXIT
+
+do_abort() {
+  cleanup
+  kill 0
+}
+
+cu-to-json "$FILE" --extra-arg=-ferror-limit=1 > "${TMP1}" 2> "${TMP2}" || (
+  >&2 echo "cu-to-json $FILE"
+  echo "-------------------------------------------------------------------" >> "${PARSE_LOG}";
+  cat "ERROR: ${TMP2}" >> "$PARSE_LOG";
+  do_abort;
+)
+
+faial-infer "${TMP1}" -t json > "${TMP2}" 2> "${TMP3}" || (
+  >&2 echo "faial-infer $FILE"
+  echo "-------------------------------------------------------------------" >> "${INFER_LOG}";
+  echo "ERROR: $FILE" >> "${INFER_LOG}";
+  cat "${TMP3}" >> "${INFER_LOG}";
+  do_abort;
+)
+main --json "${TMP2}" $(faial-gv "$FILE") > "${TMP1}" || (
+  >&2 echo "faial $FILE"
+  echo "-------------------------------------------------------------------" >> "${FAIAL_LOG}";
+  echo "ERROR: $FILE" >> "${FAIAL_LOG}";
+  cat "${TMP1}" >> "${FAIAL_LOG}";
+  do_abort
+)
+echo "${FILE}"
+cleanup
