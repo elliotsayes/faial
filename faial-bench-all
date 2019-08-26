@@ -1,0 +1,26 @@
+#!/bin/bash
+
+trap "exit 255" SIGINT SIGTERM
+
+PARSE_LOG="parse.log"
+INFER_LOG="infer.log"
+FAIAL_LOG="faial.log"
+
+> "${PARSE_LOG}"
+> "${INFER_LOG}"
+> "${FAIAL_LOG}"
+
+while read fname
+do
+  case "${fname}" in
+    *.cu)
+      faial-bench "${fname}" \
+        && echo "OK: ${fname}"
+      ;;
+    *)
+      >&2 echo "SKIP: ${fname}"
+      ;;
+  esac
+done < "$1"
+
+

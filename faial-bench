@@ -44,5 +44,4 @@ if ! main --json "${TMP2}" $(faial-gv "$FILE") > "${TMP1}"; then
   exit 3
 fi
 
-echo "${FILE}"
 cleanup
