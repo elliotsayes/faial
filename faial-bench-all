@@ -6,9 +6,18 @@ PARSE_LOG="parse.log"
 INFER_LOG="infer.log"
 FAIAL_LOG="faial.log"
 
-> "${PARSE_LOG}"
-> "${INFER_LOG}"
-> "${FAIAL_LOG}"
+if [ -f "${PARSE_LOG}" ]; then
+  >&2 echo -e "Remove log file first:\n\n\trm -f '${PARSE_LOG}'\n"
+  exit 1
+fi
+if [ -f "${INFER_LOG}" ]; then
+  >&2 echo -e "Remove log file first:\n\n\trm -f '${INFER_LOG}'\n"
+  exit 1
+fi
+if [ -f  "${FAIAL_LOG}" ]; then
+  >&2 echo -e "Remove log file first:\n\n\trm -f '${FAIAL_LOG}'\n"
+  exit 1
+fi
 
 while read fname
 do
@@ -22,5 +31,5 @@ do
       ;;
   esac
 done < "$1"
-
+exit 0
 
