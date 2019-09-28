@@ -225,6 +225,14 @@ let rec parse_bexp b : bexp option =
         bind (parse_bexp b) (fun b -> Some (b_not b))
       | _ -> None
     );
+    "PredicateExpr", (["subExpr"; "opcode"], function
+      | [n; `String opcode] ->
+        begin match parse_nexp.run n with
+        | Var x -> Some (Pred (opcode, x))
+        | _ -> None
+        end
+      | _ -> None
+    );
     "DistinctExpr", (["args"], function
       | [`List l] ->
         let on_elem (idx, n) =
