@@ -2,13 +2,24 @@
 
 A modeling language to specify and debug GPU programs.
 
-# Setup
+## Installation
 
-The following command will install all dependencies needed to build the project.
+### 1. Setup
+
+**Run this once.** The following command will install all dependencies needed to build the project.
 
 ```bash
 ./configure.sh
 ```
+
+### 2. Build
+
+**Run this to build the binary.**
+
+```bash
+$ make
+```
+
 
 ## External dependencies
 
@@ -16,11 +27,6 @@ The following command will install all dependencies needed to build the project.
 * [opam](https://opam.ocaml.org/)
 * [bash](https://www.gnu.org/software/bash/)
 
-# Build
-
-```bash
-$ make
-```
 
 # Usage
 
