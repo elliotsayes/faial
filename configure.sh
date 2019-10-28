@@ -7,8 +7,7 @@ if which opam > /dev/null; then
         ounit=2.0.8 \
         cmdliner=1.0.3 \
         ANSITerminal=0.8.1 \
-        yojson=1.7.0 \
-        z3
+        yojson=1.7.0
 else
     >&2 echo "ERROR: Install opam first!"
     exit 1
