@@ -23,3 +23,4 @@ test:
     - cd "$CI_PROJECT_DIR"
     - make
     - make test
+    - ./run-tests.py
