@@ -14,7 +14,6 @@ before_script:
   - sudo apk add libffi libffi-dev
   - opam repo add opam https://opam.ocaml.org
   - opam depext -y conf-m4.1
-  - opam install coq.$COQ_VERSION
   - opam install ocamlbuild.$OCB_VERSION
   - eval $(opam config env)
   - ./configure.sh
@@ -24,6 +23,3 @@ test:
     - cd "$CI_PROJECT_DIR"
     - make
     - make test
-
-
-
