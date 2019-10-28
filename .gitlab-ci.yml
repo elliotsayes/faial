@@ -23,4 +23,5 @@ test:
     - cd "$CI_PROJECT_DIR"
     - make
     - make test
+    - ./run-tests.py -f examples/fail/race1.proto2
     - ./run-tests.py
