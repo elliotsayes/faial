@@ -44,7 +44,17 @@ module Make (S:SUBST) = struct
         | Pred (p,x) ->
           begin match S.find s x with
           | Some (Var v) -> Pred (p, v)
-          | _ -> raise (Failure "Subsitution inside predicate returned a non-variable.")
+          | Some x ->
+            begin let x = match x with
+              | Num x -> string_of_int x
+              | Bin _ -> "binop"
+              | Proj _ -> "proj"
+              | Var _ -> "impossible!"
+              in
+              let msg = "Subsitution inside predicate " ^ p ^ " returned a non-variable: " ^ x in
+              raise (Failure msg)
+            end
+          | None -> b (* return b unchanged *)
           end
         | Bool _ -> b
         | NRel (o, n1, n2) -> n_rel o (n_subst s n1) (n_subst s n2)
