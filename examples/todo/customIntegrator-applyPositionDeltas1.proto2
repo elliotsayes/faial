@@ -16,13 +16,12 @@ assert 1@blockIdx != 2@blockIdx
 assert blockDim >= 1;
 assert gridDim >= 1;
 # USE_MIXED_PRECISION = true
-# If we assume this, then it always works.
-assert blockDim == 512;
 
 # This is a pre-condition of this kernel
 assert NUM_ATOMS <= blockDim;
 
 foreach index < NUM_ATOMS {
+  # TODO: make posq bi-dimensional and show projection
   assert index >= blockIdx*blockDim + threadIdx;
   assert (index - blockIdx*blockDim + threadIdx) % (blockDim*gridDim) == 0;
   ro posq[index];           # 36
