@@ -16,6 +16,8 @@ assert 1@blockIdx != 2@blockIdx
 assert blockDim >= 1;
 assert gridDim >= 1;
 # USE_MIXED_PRECISION = true
+# If we assume this, then it always works.
+assert blockDim == 512;
 
 # This is a pre-condition of this kernel
 assert NUM_ATOMS <= blockDim;
