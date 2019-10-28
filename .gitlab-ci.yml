@@ -11,7 +11,7 @@ cache:
     - ${HOME}/.opam
 
 before_script:
-  - sudo apk add libffi libffi-dev
+  - sudo apk --no-cache add --update python3 python3-dev py-pip build-base libffi libffi-dev
   - opam repo add opam https://opam.ocaml.org
   - opam depext -y conf-m4.1
   - opam install ocamlbuild.$OCB_VERSION
