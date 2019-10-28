@@ -1,5 +1,5 @@
 ---
-image: ocaml/opam2:alpine-3.10-ocaml-4.07
+image: registry.gitlab.com/cogumbreiro/faial/faial-dev:1
 
 variables:
   OPAMYES: "yes"
@@ -10,17 +10,18 @@ cache:
   paths:
     - ${HOME}/.opam
 
-before_script:
-  - sudo apk --no-cache add --update python3 python3-dev py-pip build-base libffi libffi-dev gmp-dev
-  - opam repo add opam https://opam.ocaml.org
-  - opam depext -y conf-m4.1
-  - opam install ocamlbuild.$OCB_VERSION
-  - eval $(opam config env)
-  - ./configure.sh
+#before_script:
+#  - sudo apk --no-cache add --update python3 python3-dev py-pip build-base libffi libffi-dev gmp-dev
+#  - opam repo add opam https://opam.ocaml.org
+#  - opam depext -y conf-m4.1
+#  - opam install ocamlbuild.$OCB_VERSION
+#  - eval $(opam config env)
+#  - ./configure.sh
 
 test:
   script:
     - cd "$CI_PROJECT_DIR"
+    - eval $(opam config env)
     - make
     - make test
     - ./run-tests.py -f examples/fail/race1.proto2
