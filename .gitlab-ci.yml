@@ -16,5 +16,5 @@ test:
     - eval $(opam config env)
     - make
     - make test
-    - ./run-tests.py -f examples/fail/race1.proto2
+    - ./run-tests.py -f examples/customIntegrator-applyPositionDeltas1.proto2
     - ./run-tests.py
