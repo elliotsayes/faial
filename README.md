@@ -20,6 +20,8 @@ A modeling language to specify and debug GPU programs.
 $ make
 ```
 
+### [Download `main` for Linux x86-64bits](https://gitlab.com/cogumbreiro/faial/-/jobs/artifacts/master/download?job=build-dist)
+
 
 ## External dependencies
 
