@@ -1,20 +1,19 @@
 ---
 image: registry.gitlab.com/cogumbreiro/faial/faial-dev:1
 
-variables:
-  OPAMYES: "yes"
-  OCB_VERSION: 0.14.0 # ensure the OCB version matches that of ./configure.sh
-
-cache:
-  key: ${OCB_VERSION}
-  paths:
-    - ${HOME}/.opam
-
 test:
   script:
     - cd "$CI_PROJECT_DIR"
     - eval $(opam config env)
     - make
     - make test
-    - ./run-tests.py -f examples/customIntegrator-applyPositionDeltas1.proto2
     - ./run-tests.py
+
+build-dist:
+  script:
+    - cd "$CI_PROJECT_DIR"
+    - eval $(opam config env)
+    - make
+
+  artifacts:
+    paths: [build/main]
