@@ -16,4 +16,5 @@ build-dist:
     - make
 
   artifacts:
-    paths: [build/main]
+    paths:
+      - main
