@@ -163,8 +163,13 @@ def ensure_fail():
 
 def test(label, path, cmd, verbose=False):
     print(label + ": ", end="")
-    if len(each_test(path, cmd, verbose=verbose)) > 0:
-        sys.exit(1)
+    try:
+      if len(each_test(path, cmd, verbose=verbose)) > 0:
+          sys.exit(1)
+    except FileNotFoundError as e:
+          print()
+          print(e, file=sys.stderr)
+          sys.exit(1)
 
 def run_all_tests(solver, verbose=False):
     test("Parsing OK tests", Path("examples"), faial, verbose=verbose)
