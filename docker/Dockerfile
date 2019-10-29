@@ -11,6 +11,7 @@ RUN sudo apk --no-cache add --update \
     && \
     opam repo add opam https://opam.ocaml.org && \
     opam depext -y conf-m4.1
-ADD configure.sh /
+ADD configure.sh requirements.txt /
 RUN eval $(opam config env) && \
-    /configure.sh
+    /configure.sh && \
+    sudo pip3 install -r /requirements.txt
