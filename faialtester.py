@@ -6,15 +6,17 @@ import subprocess
 import time
 import psutil
 import csv
-
+import os
 
 ARGUMENTS =[
     "--time-as-csv",
 ]
 
 def get_time(kernel_dir):
-    faial_cmd = ["check-drf",kernel_dir[1:-1]]
-    #print(faial_cmd)
+    kernel_dir = os.getcwd() + kernel_dir[1:-1]
+    kernel_dir.replace("gpuverify-cav2014experiments","edited-gpuverify-cav2014experiments")
+    print("FAIAL DIRECTORY: ",kernel_dir)
+    faial_cmd = ["check-drf",kernel_dir]
     start=time.time()
     subprocess.call(faial_cmd,stdout=subprocess.DEVNULL)
     end=time.time()
@@ -23,15 +25,18 @@ def get_time(kernel_dir):
 def main(arg):
     parser = argparse.ArgumentParser(description="Frontend script to run Faial on CAV2014 dataset.")
     parser.add_argument('--from-file',type=str, required=True)
+    parser.add_argument('--csv-file',type=str, default = "Faial_TimeMem.csv")
+
     args = parser.parse_args()
 
     text_file = open(args.from_file, "r")
 
-    with open("Faial_TimeMem.csv", "w+") as output_file:
+    with open(args.csv_file, "w+") as output_file:
         output_file = csv.writer(output_file, delimiter=',')
+        output_file.writerow(['kernel','total'])
         for line in text_file:
             current_time = get_time(line)
-            output_file.writerow([line,current_time])
+            output_file.writerow([line[1:-1],current_time])
 
     text_file.close()
 
