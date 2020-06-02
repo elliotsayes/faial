@@ -15,10 +15,12 @@ native: build-tests
 build-tests:
 	$(OCB) test_loops.native
 	$(OCB) test_common.native
+	$(OCB) Test.native
 
 test: build-tests
 	$(BUILD)/test_loops.native
 	$(BUILD)/test_common.native
+	$(BUILD)/Test.native
 
 sys-test: build-tests
 	@./run-tests.py
