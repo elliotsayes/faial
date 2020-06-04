@@ -1,6 +1,7 @@
 type 'a expr =
 | Value of 'a
 | Decr of 'a expr
+| Variable of string
 
 type 'a bexpr =
 | True
@@ -23,6 +24,7 @@ let rec expr_to_string f (e: 'a expr) =
   match e with
   | Value n -> f n
   | Decr e -> expr_to_string f e ^ " - 1"
+  | Variable x -> x
 (* Boolean Expressions *)
 let rec bexpr_to_string f (e: 'a bexpr) =
   match e with
@@ -30,13 +32,21 @@ let rec bexpr_to_string f (e: 'a bexpr) =
   | And (e1,e2) -> bexpr_to_string f e1 ^ " & " ^ bexpr_to_string f e2
   | GtZero e -> expr_to_string f e ^ " > 0"
 
+let rec subst (name: string) (value: 'a expr) (e:'a expr) =
+  match e with
+  | Variable x ->
+    if x=name then value
+    else e
+  | Decr x -> Decr (subst name value x)
+  | Value x -> e
+
 let rec eval_expr f (e:'a expr) :int =
   match e with
   | Value n -> f n
   | Decr e -> (eval_expr f e) - 1
+  | Variable x -> failwith "Eval Expr"
 
 let rec expr_to_bexpr (e:'a expr) = GtZero e
-
 
 
 
