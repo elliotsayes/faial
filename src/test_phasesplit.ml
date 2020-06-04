@@ -1,15 +1,26 @@
-open S
+open Phasesplit
 
-let sexample1 : int SLang.t =
-  let open SLang in
+module IntExpr = struct
+  type t = int
+
+  let to_string =  string_of_int
+  let to_int (x:t) : int  = x
+  let to_expr (x:int) : t expr = Value x
+end
+
+module S = SLang(IntExpr)
+module T = TLang(IntExpr)
+
+let sexample1 : S.t =
+  let open S in
   [Loop (Value 3,
-          [Codeline (Value 1,[]);Sync;Codeline (Value 2,[]);Sync;Codeline (Value 3,[])]
+          [Codeline (Value 1,True);Sync;Codeline (Value 2,True);Sync;Codeline (Value 3,True)]
         )]
 
-let sexample2 : int SLang.t =
-  let open SLang in
-  [Codeline (Value 1,[]);(Loop (Value 4,
-          [Codeline (Value 2,[]);Codeline (Value 3,[]);Sync;Codeline (Value 4,[])]
+let sexample2 : S.t =
+  let open S in
+  [Codeline (Value 1,True);(Loop (Value 4,
+          [Codeline (Value 2,True);Codeline (Value 3,True);Sync;Codeline (Value 4,True)]
         ))]
 
 
@@ -31,11 +42,11 @@ let sexample5 : SLang.t =
           [Codeline 2;Codeline 3;Codeline 4]
         ))]
 *)
-let sexample6 : int SLang.t =
-  let open SLang in
-  [Codeline (Value (-1),[]);(Loop (Value 6,
+let sexample6 : S.t =
+  let open S in
+  [Codeline (Value (-1),True);(Loop (Value 6,
           sexample1
-        ));Codeline (Value 5,[])]
+        ));Codeline (Value 5,True)]
 (*
 let sexample6' : SLang.t =
   let open SLang in
@@ -51,7 +62,7 @@ let sexample6' : SLang.t =
 let sexample7 : SLang.t =
   let open SLang in
   [Codeline 1; Sync;
-    Loop (2,
+    Loop (2,Test
       [Loop (3,[
         Loop (4,[Codeline 2;Sync;Codeline 3])
         ]); Codeline 4
@@ -97,21 +108,21 @@ let rec list_equal a b =
     else
       false
 
-let print_compare_output (ex: int SLang.t) =
-  print_endline ("----------------\nSLang:\n----------------\n"^(SLang.to_string string_of_int ex));
-  print_endline ("----------------\nTLang:\n----------------\n"^(TLang.to_string string_of_int (SLang.translate ex)))
+let print_compare_output (ex: S.t) =
+  print_endline ("----------------\nSLang:\n----------------\n"^(S.to_string ex));
+  print_endline ("----------------\nTLang:\n----------------\n"^(T.to_string (S.translate ex)))
 
-let print_compare_trace (ex:int SLang.t) =
+let print_compare_trace (ex:S.t) =
 (*
   print_endline ("----------------\nSLang:\n----------------");
   print_list_list (SLang.run ex);
   print_endline ("\n----------------\nTLang:\n----------------");
   print_list_list (TLang.run (SLang.translate ex))
 *)
-  if (list_equal (SLang.run (fun x-> x) ex) (TLang.run (fun x-> x) (SLang.translate ex)))=true
+  if (list_equal (S.run ex) (T.run (S.translate ex)))=true
   then print_endline "Traces are equal." else print_endline "Traces are NOT equal!"
 
 (*-------------- Tests ----------------------------------------------------*)
 
-let aa = print_compare_output sexample1
+let aa = print_compare_output sexample6
 (*let aa = (TLang.run (SLang.translate sexample6))*)
