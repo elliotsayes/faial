@@ -13,13 +13,13 @@ module T = TLang(IntExpr)
 
 let sexample1 : S.t =
   let open S in
-  [Loop (Value 3,
+  [Loop (Value 0, Value 3,
           [Codeline (Value 1,True);Sync;Codeline (Value 2,True);Sync;Codeline (Value 3,True)]
         )]
 
 let sexample2 : S.t =
   let open S in
-  [Codeline (Value 1,True);(Loop (Value 4,
+  [Codeline (Value 1,True);(Loop (Value 1, Value 3,
           [Codeline (Value 2,True);Codeline (Value 3,True);Sync;Codeline (Value 4,True)]
         ))]
 
@@ -44,7 +44,7 @@ let sexample5 : SLang.t =
 *)
 let sexample6 : S.t =
   let open S in
-  [Codeline (Value (-1),True);(Loop (Value 6,
+  [Codeline (Value (-1),True);(Loop (Value 0, Value 6,
           sexample1
         ));Codeline (Value 5,True)]
 (*
@@ -124,5 +124,5 @@ let print_compare_trace (ex:S.t) =
 
 (*-------------- Tests ----------------------------------------------------*)
 
-let aa = print_compare_output sexample6
+let aa = print_compare_trace sexample6
 (*let aa = (TLang.run (SLang.translate sexample6))*)

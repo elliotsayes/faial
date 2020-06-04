@@ -1,12 +1,13 @@
 type 'a expr =
 | Value of 'a
+| Incr of 'a expr
 | Decr of 'a expr
 | Variable of string
 
 type 'a bexpr =
 | True
 | And of 'a bexpr * 'a bexpr
-| GtZero of 'a expr
+| LessThan of 'a expr * 'a expr
 
 module type EXPR =
   sig
@@ -23,6 +24,7 @@ module type EXPR =
 let rec expr_to_string f (e: 'a expr) =
   match e with
   | Value n -> f n
+  | Incr e -> expr_to_string f e ^ " + 1"
   | Decr e -> expr_to_string f e ^ " - 1"
   | Variable x -> x
 (* Boolean Expressions *)
@@ -30,23 +32,25 @@ let rec bexpr_to_string f (e: 'a bexpr) =
   match e with
   | True -> "True"
   | And (e1,e2) -> bexpr_to_string f e1 ^ " & " ^ bexpr_to_string f e2
-  | GtZero e -> expr_to_string f e ^ " > 0"
+  | LessThan (e1,e2) -> expr_to_string f e1 ^ " < " ^ expr_to_string f e2
 
 let rec subst (name: string) (value: 'a expr) (e:'a expr) =
   match e with
   | Variable x ->
     if x=name then value
     else e
+  | Incr x -> Incr (subst name value x)
   | Decr x -> Decr (subst name value x)
   | Value x -> e
 
 let rec eval_expr f (e:'a expr) :int =
   match e with
   | Value n -> f n
+  | Incr e -> (eval_expr f e) + 1
   | Decr e -> (eval_expr f e) - 1
   | Variable x -> failwith "Eval Expr"
 
-let rec expr_to_bexpr (e:'a expr) = GtZero e
+let rec expr_to_bexpr (e1:'a expr) (e2:'a expr) = LessThan (e1,e2)
 
 
 
@@ -58,11 +62,11 @@ module TLang (E:EXPR) = struct
   }
 
   type unsync_instruction =
-  | Loop of (E.t expr) * (unsync_instruction list)
+  | Loop of (E.t expr) * (E.t expr) * (unsync_instruction list)
   | Access of access
 
   type instruction =
-  | Loop of (E.t expr) * (instruction list)
+  | Loop of (E.t expr) * (E.t expr) * (instruction list)
   | Phased of (unsync_instruction list)
 
   type t = instruction list
@@ -71,21 +75,15 @@ module TLang (E:EXPR) = struct
     let rec to_string_indent (s:t) indent =
       let rec ui_to_string l indent =
         let rec uts_aux l accum indent =
-          let rec list_to_string li =
-            match li with
-            | [] -> ""
-            | li::[] -> (expr_to_string E.to_string li)
-            | li::lis -> (expr_to_string E.to_string li)^","^(list_to_string lis)
-          in
           match l with
           | [] -> accum
           | (Access ac)::xs -> uts_aux xs (accum^String.make (indent*2) ' '^"Access "^(expr_to_string E.to_string ac.ac_codelines)^" if ["^(bexpr_to_string E.to_string ac.ac_conditions)^"];\n") indent
-          | (Loop (n,body))::xs -> uts_aux xs (accum^String.make (indent*2) ' '^"Loop " ^ (expr_to_string E.to_string n) ^ " {\n" ^ (uts_aux body "" (indent+1)) ^ String.make (indent*2) ' '^"}\n") indent
+          | (Loop (lb,ub,body))::xs -> uts_aux xs (accum^String.make (indent*2) ' '^"Loop [" ^ (expr_to_string E.to_string lb) ^ ", " ^ (expr_to_string E.to_string ub) ^ ") {\n" ^ (uts_aux body "" (indent+1)) ^ String.make (indent*2) ' '^"}\n") indent
         in
         uts_aux l "" indent
       in
       match s with
-      | (Loop (n,t1))::l -> String.make (indent*2) ' '^"Loop " ^ (expr_to_string E.to_string n) ^ " {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^"}\n" ^ (to_string_indent l indent)
+      | (Loop (lb,ub,t1))::l -> String.make (indent*2) ' '^"Loop [" ^ (expr_to_string E.to_string lb) ^ ", " ^ (expr_to_string E.to_string ub) ^ ") {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^"}\n" ^ (to_string_indent l indent)
       | (Phased ui_list)::l -> String.make (indent*2) ' '^"Phased " ^ "{\n" ^ (ui_to_string ui_list (indent+1)) ^ String.make (indent*2) ' '^"}\n" ^ (to_string_indent l indent)
       | [] -> ""
     in
@@ -105,18 +103,20 @@ module TLang (E:EXPR) = struct
     let rec run_aux (s:t) accum =
       match s with
       | (Phased n)::l -> run_aux l ((extract_unsync n [])::accum)
-      | (Loop (e,t1))::l ->
-        let n = eval_expr E.to_int e in
-        if n > 0 then run_aux (t1@(Loop (Decr (E.to_expr n),t1))::l) accum
+      | (Loop (lb,ub,t1))::l ->
+        let i = eval_expr E.to_int lb in
+        let j = eval_expr E.to_int ub in
+        if i < j then run_aux (t1@(Loop (Incr (E.to_expr i),ub,t1))::l) accum
         else run_aux l accum
       | [] -> accum
 
     and extract_unsync (x:(unsync_instruction) list) accum =
       match x with
       | (Access acc)::xs -> extract_unsync xs ((acc.ac_codelines)::accum)
-      | (Loop (e,t))::xs ->
-        let n = eval_expr E.to_int e in
-        if n > 0 then extract_unsync (t@(Loop (Decr (E.to_expr n),t))::xs) accum
+      | (Loop (lb,ub,t))::xs ->
+        let i = eval_expr E.to_int lb in
+        let j = eval_expr E.to_int ub in
+        if i < j then extract_unsync (t@(Loop (Incr (E.to_expr i),ub,t))::xs) accum
         else extract_unsync xs accum
       | [] -> List.rev accum
 
@@ -135,7 +135,7 @@ module SLang (E:EXPR) = struct
   type instruction =
   | Codeline of (E.t expr) * (E.t bexpr)
   | Sync
-  | Loop of (E.t expr) * ((instruction) list)
+  | Loop of (E.t expr) * (E.t expr) * ((instruction) list)
 
   type t = (instruction) list
 
@@ -146,7 +146,7 @@ module SLang (E:EXPR) = struct
       in
       match s with
       | Sync::l ->  String.make (indent*2) ' '^"Sync;\n" ^ (to_string_indent l indent)
-      | (Loop (n,t1))::l ->  String.make (indent*2) ' '^"Loop " ^ (expr_to_string E.to_string n) ^ " (\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^ ")\n" ^ (to_string_indent l indent)
+      | (Loop (lb,ub,t1))::l ->  String.make (indent*2) ' '^"Loop [" ^ (expr_to_string E.to_string lb) ^ ", " ^ (expr_to_string E.to_string ub) ^ ") {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^ "}\n" ^ (to_string_indent l indent)
       | (Codeline (n,c))::l ->  String.make (indent*2) ' '^"Codeline " ^ (list_to_string n c) ^ ";\n" ^ (to_string_indent l indent)
       | [] -> ""
     in
@@ -155,9 +155,10 @@ module SLang (E:EXPR) = struct
   let rec run (s:t) =
     let rec run_aux (s:t) (accum,phase) =
       match s with
-      | (Loop (e,t1))::l ->
-          let n = eval_expr E.to_int e in
-          if n > 0 then run_aux (t1@(Loop (Decr (E.to_expr n),t1))::l) (accum,phase)
+      | (Loop (lb,ub,t1))::l ->
+          let i = eval_expr E.to_int lb in
+          let j = eval_expr E.to_int ub in
+          if i < j then run_aux (t1@(Loop (Incr (E.to_expr i),ub,t1))::l) (accum,phase)
           else run_aux l (accum,phase)
       | (Codeline (n,c))::l -> run_aux l (accum,n::phase)
       | Sync::l -> run_aux l (phase::accum,[])
@@ -176,22 +177,21 @@ module SLang (E:EXPR) = struct
       | (Codeline (n',c'))::xs ->
           (Codeline (n',And (c',n)))::(injectCondition xs n)
       | (Sync)::xs -> (Sync)::(injectCondition xs n)
-      | (Loop (n',b))::xs ->
-          (Loop (n',injectCondition b (And (expr_to_bexpr n',n))))::(injectCondition xs n)
+      | (Loop (lb,ub,b))::xs ->
+          (Loop (lb,ub,injectCondition b (And (LessThan (lb,ub),n))))::(injectCondition xs n)
     in
 
     let rec normalize1 s =
       match s with
       | Sync -> (Some [Sync],[])
       | Codeline (n,c) -> (None, [Codeline (n,c)])
-      | Loop (n,body) ->
+      | Loop (lb,ub,body) ->
           (match normalize body with
             | (Some p1, p2) ->
-              let p1' = injectCondition p1 (expr_to_bexpr n) in
-              let p2' = injectCondition p2 (expr_to_bexpr n) in
-              ( Some (p1'@[Loop (Decr n,p2@p1)]) , p2')
+              let p1' = injectCondition p1 (LessThan (lb,ub)) in
+              let p2' = injectCondition p2 (LessThan (lb,ub)) in
+              ( Some (p1'@[Loop (Incr lb,ub,p2@p1)]) , p2')
             | (None, _) -> (None, [s])
-            (*| _ -> (None,[])  (* To remove non-exhaustive match warning *)*)
           )
     and normalize (s:t) =
       match s with
@@ -210,7 +210,7 @@ module SLang (E:EXPR) = struct
       match s with
       | (Sync)::l -> translate_aux l (accum@[(T.Phased phase)]) []
       | (Codeline (n,c))::l -> translate_aux l accum (phase@[(T.Access (T.accessCreate n c))])
-      | (Loop (n,t))::l -> translate_aux l (accum@[T.Loop (n,(translate_aux t [] []))]) []
+      | (Loop (lb,ub,t))::l -> translate_aux l (accum@[T.Loop (lb,ub,(translate_aux t [] []))]) []
       | [] -> accum
     in
 
