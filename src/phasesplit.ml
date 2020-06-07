@@ -62,11 +62,11 @@ module TLang (E:EXPR) = struct
   }
 
   type unsync_instruction =
-  | Loop of (E.t expr) * (E.t expr) * (unsync_instruction list)
+  | Loop of (E.t expr) * (E.t expr) * (E.t expr) * (unsync_instruction list)
   | Access of access
 
   type instruction =
-  | Loop of (E.t expr) * (E.t expr) * (instruction list)
+  | Loop of (E.t expr) * (E.t expr) * (E.t expr) * (instruction list)
   | Phased of (unsync_instruction list)
 
   type t = instruction list
@@ -78,12 +78,12 @@ module TLang (E:EXPR) = struct
           match l with
           | [] -> accum
           | (Access ac)::xs -> uts_aux xs (accum^String.make (indent*2) ' '^"Access "^(expr_to_string E.to_string ac.ac_codelines)^" if ["^(bexpr_to_string E.to_string ac.ac_conditions)^"];\n") indent
-          | (Loop (lb,ub,body))::xs -> uts_aux xs (accum^String.make (indent*2) ' '^"Loop [" ^ (expr_to_string E.to_string lb) ^ ", " ^ (expr_to_string E.to_string ub) ^ ") {\n" ^ (uts_aux body "" (indent+1)) ^ String.make (indent*2) ' '^"}\n") indent
+          | (Loop (var,lb,ub,body))::xs -> uts_aux xs (accum^String.make (indent*2) ' '^"For " ^ (expr_to_string E.to_string var) ^ " in [" ^ (expr_to_string E.to_string lb) ^ ", " ^ (expr_to_string E.to_string ub) ^ ") {\n" ^ (uts_aux body "" (indent+1)) ^ String.make (indent*2) ' '^"}\n") indent
         in
         uts_aux l "" indent
       in
       match s with
-      | (Loop (lb,ub,t1))::l -> String.make (indent*2) ' '^"Loop [" ^ (expr_to_string E.to_string lb) ^ ", " ^ (expr_to_string E.to_string ub) ^ ") {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^"}\n" ^ (to_string_indent l indent)
+      | (Loop (var,lb,ub,t1))::l -> String.make (indent*2) ' '^"For " ^ (expr_to_string E.to_string var) ^ " in [" ^ (expr_to_string E.to_string lb) ^ ", " ^ (expr_to_string E.to_string ub) ^ ") {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^"}\n" ^ (to_string_indent l indent)
       | (Phased ui_list)::l -> String.make (indent*2) ' '^"Phased " ^ "{\n" ^ (ui_to_string ui_list (indent+1)) ^ String.make (indent*2) ' '^"}\n" ^ (to_string_indent l indent)
       | [] -> ""
     in
@@ -103,20 +103,21 @@ module TLang (E:EXPR) = struct
     let rec run_aux (s:t) accum =
       match s with
       | (Phased n)::l -> run_aux l ((extract_unsync n [])::accum)
-      | (Loop (lb,ub,t1))::l ->
+      | (Loop (var,lb,ub,t1))::l ->
         let i = eval_expr E.to_int lb in
         let j = eval_expr E.to_int ub in
-        if i < j then run_aux (t1@(Loop (Incr (E.to_expr i),ub,t1))::l) accum
+        if i < j then run_aux (t1@(Loop (var,Incr (E.to_expr i),ub,t1))::l) accum
         else run_aux l accum
       | [] -> accum
 
     and extract_unsync (x:(unsync_instruction) list) accum =
       match x with
-      | (Access acc)::xs -> extract_unsync xs ((acc.ac_codelines)::accum)
-      | (Loop (lb,ub,t))::xs ->
+      | (Access acc)::xs ->
+        extract_unsync xs ((acc.ac_codelines)::accum)
+      | (Loop (var,lb,ub,t))::xs ->
         let i = eval_expr E.to_int lb in
         let j = eval_expr E.to_int ub in
-        if i < j then extract_unsync (t@(Loop (Incr (E.to_expr i),ub,t))::xs) accum
+        if i < j then extract_unsync (t@(Loop (var,Incr (E.to_expr i),ub,t))::xs) accum
         else extract_unsync xs accum
       | [] -> List.rev accum
 
@@ -135,7 +136,7 @@ module SLang (E:EXPR) = struct
   type instruction =
   | Codeline of (E.t expr) * (E.t bexpr)
   | Sync
-  | Loop of (E.t expr) * (E.t expr) * ((instruction) list)
+  | Loop of (E.t expr) * (E.t expr) * (E.t expr) * ((instruction) list)
 
   type t = (instruction) list
 
@@ -146,7 +147,7 @@ module SLang (E:EXPR) = struct
       in
       match s with
       | Sync::l ->  String.make (indent*2) ' '^"Sync;\n" ^ (to_string_indent l indent)
-      | (Loop (lb,ub,t1))::l ->  String.make (indent*2) ' '^"Loop [" ^ (expr_to_string E.to_string lb) ^ ", " ^ (expr_to_string E.to_string ub) ^ ") {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^ "}\n" ^ (to_string_indent l indent)
+      | (Loop (var,lb,ub,t1))::l ->  String.make (indent*2) ' '^"For " ^ (expr_to_string E.to_string var) ^ " in [" ^ (expr_to_string E.to_string lb) ^ ", " ^ (expr_to_string E.to_string ub) ^ ") {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^ "}\n" ^ (to_string_indent l indent)
       | (Codeline (n,c))::l ->  String.make (indent*2) ' '^"Codeline " ^ (list_to_string n c) ^ ";\n" ^ (to_string_indent l indent)
       | [] -> ""
     in
@@ -155,10 +156,10 @@ module SLang (E:EXPR) = struct
   let rec run (s:t) =
     let rec run_aux (s:t) (accum,phase) =
       match s with
-      | (Loop (lb,ub,t1))::l ->
+      | (Loop (var,lb,ub,t1))::l ->
           let i = eval_expr E.to_int lb in
           let j = eval_expr E.to_int ub in
-          if i < j then run_aux (t1@(Loop (Incr (E.to_expr i),ub,t1))::l) (accum,phase)
+          if i < j then run_aux (t1@(Loop (var,Incr (E.to_expr i),ub,t1))::l) (accum,phase)
           else run_aux l (accum,phase)
       | (Codeline (n,c))::l -> run_aux l (accum,n::phase)
       | Sync::l -> run_aux l (phase::accum,[])
@@ -171,26 +172,27 @@ module SLang (E:EXPR) = struct
 
 
   let rec translate (s:t) =
-    let rec injectCondition s n =
+    let rec injectCondition s n f =
       match s with
       | [] -> []
       | (Codeline (n',c'))::xs ->
-          (Codeline (n',And (c',n)))::(injectCondition xs n)
-      | (Sync)::xs -> (Sync)::(injectCondition xs n)
-      | (Loop (lb,ub,b))::xs ->
-          (Loop (lb,ub,injectCondition b (And (LessThan (lb,ub),n))))::(injectCondition xs n)
+          (* let n'' = f n' in *)
+          (Codeline (n',And (c',n)))::(injectCondition xs n f)
+      | (Sync)::xs -> (Sync)::(injectCondition xs n f)
+      | (Loop (var,lb,ub,b))::xs ->
+          (Loop (var,lb,ub,injectCondition b (And (LessThan (lb,ub),n)) f))::(injectCondition xs n f)
     in
 
     let rec normalize1 s =
       match s with
       | Sync -> (Some [Sync],[])
       | Codeline (n,c) -> (None, [Codeline (n,c)])
-      | Loop (lb,ub,body) ->
+      | Loop (var,lb,ub,body) ->
           (match normalize body with
             | (Some p1, p2) ->
-              let p1' = injectCondition p1 (LessThan (lb,ub)) in
-              let p2' = injectCondition p2 (LessThan (lb,ub)) in
-              ( Some (p1'@[Loop (Incr lb,ub,p2@p1)]) , p2')
+              let p1' = injectCondition p1 (LessThan (lb,ub)) (subst (expr_to_string E.to_string var) lb) in
+              let p2' = injectCondition p2 (LessThan (lb,ub)) (subst (expr_to_string E.to_string var) (Decr ub)) in
+              ( Some (p1'@[Loop (var,Incr lb,ub,p2@p1)]) , p2')
             | (None, _) -> (None, [s])
           )
     and normalize (s:t) =
@@ -210,7 +212,7 @@ module SLang (E:EXPR) = struct
       match s with
       | (Sync)::l -> translate_aux l (accum@[(T.Phased phase)]) []
       | (Codeline (n,c))::l -> translate_aux l accum (phase@[(T.Access (T.accessCreate n c))])
-      | (Loop (lb,ub,t))::l -> translate_aux l (accum@[T.Loop (lb,ub,(translate_aux t [] []))]) []
+      | (Loop (var,lb,ub,t))::l -> translate_aux l (accum@[T.Loop (var,lb,ub,(translate_aux t [] []))]) []
       | [] -> accum
     in
 

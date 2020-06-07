@@ -13,13 +13,13 @@ module T = TLang(IntExpr)
 
 let sexample1 : S.t =
   let open S in
-  [Loop (Value 0, Value 3,
-          [Codeline (Value 1,True);Sync;Codeline (Value 2,True);Sync;Codeline (Value 3,True)]
+  [Loop (Variable "x",Value 0, Value 3,
+          [Codeline (Variable "x",True);Sync;Codeline (Variable "y",True);Sync;Codeline (Value 3,True)]
         )]
 
 let sexample2 : S.t =
   let open S in
-  [Codeline (Value 1,True);(Loop (Value 1, Value 3,
+  [Codeline (Value 1,True);(Loop (Variable "x",Value 1, Value 3,
           [Codeline (Value 2,True);Codeline (Value 3,True);Sync;Codeline (Value 4,True)]
         ))]
 
@@ -44,7 +44,7 @@ let sexample5 : SLang.t =
 *)
 let sexample6 : S.t =
   let open S in
-  [Codeline (Value (-1),True);(Loop (Value 0, Value 6,
+  [Codeline (Value (-1),True);(Loop (Variable "y",Value 0, Value 2,
           sexample1
         ));Codeline (Value 5,True)]
 (*
@@ -86,7 +86,7 @@ let texample1 : TLang.t =
 
 (* Print Lists *)
 let print_list l =
-  let l = List.map string_of_int l in
+  let l = List.map (expr_to_string IntExpr.to_string) l in
   List.fold_left (fun x a -> x^", "^a) "" l |> print_endline
 
 let print_list_list =
@@ -113,16 +113,16 @@ let print_compare_output (ex: S.t) =
   print_endline ("----------------\nTLang:\n----------------\n"^(T.to_string (S.translate ex)))
 
 let print_compare_trace (ex:S.t) =
-(*
+
   print_endline ("----------------\nSLang:\n----------------");
-  print_list_list (SLang.run ex);
+  print_list_list (S.run ex);
   print_endline ("\n----------------\nTLang:\n----------------");
-  print_list_list (TLang.run (SLang.translate ex))
-*)
+  print_list_list (T.run (S.translate ex));
+
   if (list_equal (S.run ex) (T.run (S.translate ex)))=true
   then print_endline "Traces are equal." else print_endline "Traces are NOT equal!"
 
 (*-------------- Tests ----------------------------------------------------*)
 
-let aa = print_compare_trace sexample6
+let aa = print_compare_output sexample1
 (*let aa = (TLang.run (SLang.translate sexample6))*)
