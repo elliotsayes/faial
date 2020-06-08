@@ -14,7 +14,7 @@ module type EXPR =
     type t
     (* Stringify *)
     val to_string: t -> string
-    (* Identity *)
+    (* Convert to int *)
     val to_int: t -> int
     (* Evaluate the expression *)
     val to_expr: int -> t expr
@@ -176,8 +176,8 @@ module SLang (E:EXPR) = struct
       match s with
       | [] -> []
       | (Codeline (n',c'))::xs ->
-          (* let n'' = f n' in *)
-          (Codeline (n',And (c',n)))::(injectCondition xs n f)
+          let n'' = f n' in
+          (Codeline (n'',And (c',n)))::(injectCondition xs n f)
       | (Sync)::xs -> (Sync)::(injectCondition xs n f)
       | (Loop (var,lb,ub,b))::xs ->
           (Loop (var,lb,ub,injectCondition b (And (LessThan (lb,ub),n)) f))::(injectCondition xs n f)
@@ -192,6 +192,7 @@ module SLang (E:EXPR) = struct
             | (Some p1, p2) ->
               let p1' = injectCondition p1 (LessThan (lb,ub)) (subst (expr_to_string E.to_string var) lb) in
               let p2' = injectCondition p2 (LessThan (lb,ub)) (subst (expr_to_string E.to_string var) (Decr ub)) in
+
               ( Some (p1'@[Loop (var,Incr lb,ub,p2@p1)]) , p2')
             | (None, _) -> (None, [s])
           )

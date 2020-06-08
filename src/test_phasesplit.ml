@@ -13,7 +13,7 @@ module T = TLang(IntExpr)
 
 let sexample1 : S.t =
   let open S in
-  [Loop (Variable "x",Value 0, Value 3,
+  [Loop (Variable "x",Incr (Value 0), Value 3,
           [Codeline (Variable "x",True);Sync;Codeline (Variable "y",True);Sync;Codeline (Value 3,True)]
         )]
 
