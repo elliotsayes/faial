@@ -5,11 +5,12 @@ module IntExpr = struct
 
   let to_string =  string_of_int
   let to_int (x:t) : int  = x
-  let to_expr (x:int) : t expr = Value x
+  let to_expr (x:int) : t nexpr = Value x
 end
 
 module S = SLang(IntExpr)
 module T = TLang(IntExpr)
+module U = ULang(IntExpr)
 
 let sexample1 : S.t =
   let open S in
@@ -110,7 +111,8 @@ let rec list_equal a b =
 
 let print_compare_output (ex: S.t) =
   print_endline ("----------------\nSLang:\n----------------\n"^(S.to_string ex));
-  print_endline ("----------------\nTLang:\n----------------\n"^(T.to_string (S.translate ex)))
+  print_endline ("----------------\nTLang:\n----------------\n"^(T.to_string (S.translate ex)));
+  print_endline ("----------------\nULang:\n----------------\n"^(U.to_string (U.translate (S.translate ex))))
 
 let print_compare_trace (ex:S.t) =
 
@@ -124,5 +126,5 @@ let print_compare_trace (ex:S.t) =
 
 (*-------------- Tests ----------------------------------------------------*)
 
-let aa = print_compare_output sexample1
+let aa = print_compare_output sexample6
 (*let aa = (TLang.run (SLang.translate sexample6))*)
