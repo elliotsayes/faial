@@ -8,30 +8,41 @@ module IntExpr = struct
   let to_expr (x:int) : t nexpr = Value x
 end
 
-module S = SLang(IntExpr)
-module T = TLang(IntExpr)
-module U = ULang(IntExpr)
+module A = ALang(IntExpr)
+module P = PLang(IntExpr)
+module C = CLang(IntExpr)
+module L = LLang(IntExpr)
+module H = HLang(IntExpr)
 
-let sexample1 : S.t =
-  let open S in
-  [Loop (Variable "x",Incr (Value 0), Value 3,
+let sexample1 : A.t =
+  let open A in
+  [Loop ("x",createRange (Value 0) (Value 2),
           [Codeline (Variable "x",True);Sync;Codeline (Variable "y",True);Sync;Codeline (Value 3,True)]
         )]
 
-let sexample2 : S.t =
-  let open S in
-  [Codeline (Value 1,True);(Loop (Variable "x",Value 1, Value 3,
+let sexample2 : A.t =
+  let open A in
+  [Codeline (Value 1,True);(Loop ("x",createRange (Value 1) (Value 4),
           [Codeline (Value 2,True);Codeline (Value 3,True);Sync;Codeline (Value 4,True)]
         ))]
 
+(* variable in p2 *)
+let sexample3 : A.t =
+  let open A in
+  [Loop ("x",createRange (Value 0) (Value 2),
+          [Codeline (Value 3,True);Sync;Codeline (Variable "y",True);Sync;Codeline (Variable "x",True)]
+        )]
 
+let sexample4 : A.t =
+  let open A in
+  [Loop ("x",createRange (Value 0) (Value 2),
+          [Codeline (Variable "x",True);Sync;Codeline (Variable "x",True);Sync;Codeline (Variable "x",True)]
+        )]
 
+let sexample5 : A.t =
+  let open A in
+  [Codeline (Value 1,True); Codeline (Value 2,True)]
 (*
-let sexample3 : SLang.t =
-  (* from SLang import * *)
-  let open SLang in
-  [Codeline 0;Loop (3, [Codeline 1;Sync;Codeline 2;Sync;Codeline 3]);Codeline 4]
-
 let sexample4 : SLang.t =
   let open SLang in
   [Codeline 0;Loop (4,[Sync;Codeline 1;Codeline 2]);Codeline 3]
@@ -43,9 +54,9 @@ let sexample5 : SLang.t =
           [Codeline 2;Codeline 3;Codeline 4]
         ))]
 *)
-let sexample6 : S.t =
-  let open S in
-  [Codeline (Value (-1),True);(Loop (Variable "y",Value 0, Value 2,
+let sexample6 : A.t =
+  let open A in
+  [Codeline (Value (-1),True);(Loop ("y",createRange (Value 0) (Value 2),
           sexample1
         ));Codeline (Value 5,True)]
 (*
@@ -109,22 +120,28 @@ let rec list_equal a b =
     else
       false
 
-let print_compare_output (ex: S.t) =
-  print_endline ("----------------\nSLang:\n----------------\n"^(S.to_string ex));
-  print_endline ("----------------\nTLang:\n----------------\n"^(T.to_string (S.translate ex)));
-  print_endline ("----------------\nULang:\n----------------\n"^(U.to_string (U.translate (S.translate ex))))
+let print_compare_output (ex: A.t) =
+  print_endline ("----------------\nALang:\n----------------\n"^(A.to_string ex));
+  print_endline ("----------------\nPLang:\n----------------\n"^(P.to_string (A.translate ex)));
+  print_endline ("----------------\nCLang:\n----------------\n"^(C.to_string (C.translate (A.translate ex))));
+  print_endline ("----------------\nHLang:\n----------------\n"^(H.to_string (H.translate (C.translate (A.translate ex)))))
 
-let print_compare_trace (ex:S.t) =
 
-  print_endline ("----------------\nSLang:\n----------------");
-  print_list_list (S.run ex);
-  print_endline ("\n----------------\nTLang:\n----------------");
-  print_list_list (T.run (S.translate ex));
+let print_compare_trace (ex:A.t) =
+  let source_L = A.run ex in
+  (* translation of A -> P -> C -> L -> H *)
+  let target_L = (H.run (H.translate (C.translate (A.translate ex)))) in
+  print_endline ("----------------\nALang:\n----------------");
+  print_list_list source_L;
+  
+  print_endline ("\n----------------\nHLang:\n----------------");
+  print_list_list target_L;
 
-  if (list_equal (S.run ex) (T.run (S.translate ex)))=true
-  then print_endline "Traces are equal." else print_endline "Traces are NOT equal!"
+
+  if (list_equal source_L target_L)=true
+  then print_endline "\nTraces are equal." else print_endline "\nTraces are NOT equal!"
 
 (*-------------- Tests ----------------------------------------------------*)
 
-let aa = print_compare_output sexample6
+let aa = print_compare_trace sexample2
 (*let aa = (TLang.run (SLang.translate sexample6))*)
