@@ -317,7 +317,7 @@ module HLang (E:EXPR) = struct
   type slice =
   (* should it be L.unsync_instruction list ?? *)
   | Unsync of (L.unsync_instruction)
-  | Decl of (string) * (E.t range) * (slice list)
+  | Global of (string) * (E.t range) * (slice list)
 
   type t = slice list
 
@@ -325,7 +325,7 @@ module HLang (E:EXPR) = struct
   let rec to_string (s:t) =
     let rec to_string_indent (s:t) indent =
       match s with
-      | (Decl (var,r,t1))::l -> String.make (indent*2) ' '^"Decl "
+      | (Global (var,r,t1))::l -> String.make (indent*2) ' '^"Global "
           ^ var ^ " in [" ^ (expr_to_string E.to_string r.r_lowerbound)
           ^ ", " ^ (expr_to_string E.to_string r.r_upperbound) ^ ") {\n"
           ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^"}\n"
@@ -342,10 +342,10 @@ module HLang (E:EXPR) = struct
   let rec h_subst (name:string) (value: 'a nexpr) (s:(slice) list) :(slice) list =
     match s with
     | (Unsync ui)::ss -> (Unsync (List.hd (L.l_subst name value [ui])))::(h_subst name value ss)
-    | (Decl (v,r,b))::ss ->
+    | (Global (v,r,b))::ss ->
         let r' = createRange (subst name value r.r_lowerbound) (subst name value r.r_upperbound) in
         let b' = h_subst name value b in
-        (Decl (v,r',b'))::(h_subst name value ss)
+        (Global (v,r',b'))::(h_subst name value ss)
     | [] -> []
 
   let rec run (s:t) =
@@ -355,12 +355,12 @@ module HLang (E:EXPR) = struct
       in
       match s with
       | (Unsync u)::ss -> run_aux ss ((run_L u)::accum)
-      | (Decl (v,r,b))::ss ->
+      | (Global (v,r,b))::ss ->
           let i = eval_expr E.to_int r.r_lowerbound in
           let j = eval_expr E.to_int r.r_upperbound in
           let r' = createRange (Incr ((E.to_expr i))) r.r_upperbound in
           let subbed_b  = h_subst v (E.to_expr i) b in
-          if i < j then run_aux (subbed_b@(Decl (v,r',b))::ss) accum
+          if i < j then run_aux (subbed_b@(Global (v,r',b))::ss) accum
           else run_aux ss accum
       | [] -> accum
     in
@@ -372,7 +372,7 @@ module HLang (E:EXPR) = struct
     match s with
     | (C.Unsync ui)::uis ->
         (Unsync (L.translate ui (Number 2)))::(translate uis)
-    | (C.Decl (v,r,b))::uis -> (Decl (v,r,(translate b)))::(translate uis)
+    | (C.Decl (v,r,b))::uis -> (Global (v,r,(translate b)))::(translate uis)
     | [] -> []
 
 end
