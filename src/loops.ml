@@ -168,14 +168,14 @@ let flatten_kernel (k:kernel) =
   (* 2. Extract single-valued variables, as these are not split into two *)
   let single_vars = single_loop_variables p VarSet.empty in
   let single_vars = VarSet.union single_vars k.kernel_global_variables in
-  (* 2. Flatten out loops, extracting only the accesses *)
+  (* 3. Flatten out loops, extracting only the accesses *)
   let steps = remove_loops p in
-  (* 3. Get all constrains defined in the code *)
+  (* 4. Get all constrains defined in the code *)
   let pre = get_constraints p
     |> List.map Constfold.norm
     |> List.flatten
   in
-  (* 4. Extract all local variables *)
+  (* 5. Extract all local variables *)
   let locals : VarSet.t =
     Freenames.(
       k.kernel_local_variables
@@ -184,7 +184,7 @@ let flatten_kernel (k:kernel) =
     )
   in
   let locals = VarSet.diff locals single_vars in
-  (* 5. Finally, return the flat kernel *)
+  (* 6. Finally, return the flat kernel *)
   {
     flat_kernel_pre = pre;
     flat_kernel_proofs = get_proofs p;
@@ -192,4 +192,3 @@ let flatten_kernel (k:kernel) =
     flat_kernel_single_vars = single_vars;
     flat_kernel_multi_vars = locals;
   }
-
