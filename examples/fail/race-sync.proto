@@ -1,0 +1,10 @@
+# We declare exactly one shared location, named x
+shared x;
+const global ub;
+distinct [tid];
+
+foreach idx < ub {
+  rw x[tid];
+  sync;
+  rw x[tid+1];
+}
