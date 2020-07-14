@@ -59,6 +59,29 @@ module PLang = struct
 
   type t = instruction list
 
+  let rec ser_u_1 p =
+    let open Sexplib in
+    match p with
+    | Access (x,a) -> call "loc" [Sexp.Atom x.var_name; a_ser a]
+    | Loop (r, l) -> binop "loop" (r_ser r) (ser_u l)
+  and ser_u l =
+    let open Sexplib in
+    Sexp.List (List.map ser_u_1 l)
+
+  let rec ser_i_1 p =
+    let open Sexplib in
+    match p with
+    | Phased l -> unop "phased" (ser_u l)
+    | Loop (r, l) -> binop "loop" (r_ser r) (ser_i l)
+  and ser_i l =
+    let open Sexplib in
+    Sexp.List (List.map ser_i_1 l)
+
+  let print_lang k =
+    ser_i k
+      |> Sexplib.Sexp.to_string_hum
+      |> print_endline
+
   let rec p_subst (name:string) (value: nexp) (s:(instruction) list) :(instruction) list =
     let rec p_subst_unsync (name:string) (value: nexp) (s:(unsync_instruction) list) :(unsync_instruction) list =
       match s with
@@ -128,6 +151,20 @@ module CLang = struct
   | Decl of range * (slice list)
 
   type t = slice list
+
+  let rec ser_1 p =
+    let open Sexplib in
+    match p with
+    | Unsync l -> call "unsync" [P.ser_u l]
+    | Decl (r, l) -> binop "decl" (r_ser r) (ser l)
+  and ser l =
+    let open Sexplib in
+    Sexp.List (List.map ser_1 l)
+
+  let print_lang k =
+    ser k
+      |> Sexplib.Sexp.to_string_hum
+      |> print_endline
 
   (* Represents phases(P) and white triangle (separation part) *)
   let rec translate (s:P.t) : t =
@@ -296,22 +333,21 @@ module ALang = struct
   | Loop of range * ((instruction) list)
 
   type t = (instruction) list
-(*
-  let rec to_string (s:t) =
-    let rec to_string_indent (s:t) indent =
-      let rec list_to_string (n:nexp) c =
-        (n_ser n) ^ ", if [" ^ (bn_ser c) ^ "]"
-      in
-      match s with
-      | Sync::l ->  String.make (indent*2) ' '^"Sync;\n" ^ (to_string_indent l indent)
-      | (Loop (var,r,t1))::l ->  String.make (indent*2) ' '^"For " ^ var ^ " in [" ^ (n_ser r.r_lowerbound) ^ ", " ^ (n_ser r.r_upperbound) ^ ") {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^ "}\n" ^ (to_string_indent l indent)
-      | (Codeline (n,c))::l ->  String.make (indent*2) ' '^"Codeline " ^ (list_to_string n c) ^ ";\n" ^ (to_string_indent l indent)
-      | [] -> ""
-    in
-    to_string_indent s 0
-*)
 
+  let rec ser_1 p =
+    let open Sexplib in
+    match p with
+    | Access (x,a) -> call "loc" [Sexp.Atom x.var_name; a_ser a]
+    | Loop (r, l) -> binop "loop" (r_ser r) (ser l)
+    | Sync -> Sexp.Atom "sync"
+  and ser l =
+    let open Sexplib in
+    Sexp.List (List.map ser_1 l)
 
+  let print_lang k =
+    ser k
+      |> Sexplib.Sexp.to_string_hum
+      |> print_endline
 
   let rec a_subst (name: string) (value: nexp) (s:(instruction) list) :(instruction) list =
     match s with
