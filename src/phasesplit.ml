@@ -1,161 +1,95 @@
-type 'a nexpr =
-| Value of 'a
-| Incr of 'a nexpr
-| Decr of 'a nexpr
-| Variable of string
-| Number of int
+open Proto
+open Common
+open Phaseord
+open Serialize
 
-type 'a bexpr =
-| True
-| And of 'a bexpr * 'a bexpr
-| LessThan of 'a nexpr * 'a nexpr
-
-type 'a range = {
-  r_lowerbound: 'a nexpr;
-  r_upperbound: 'a nexpr;
+type range = {
+  r_var: variable;
+  r_lowerbound: nexp;
+  r_upperbound: nexp;
 }
 
-let createRange low upp =
-  {r_lowerbound=low;r_upperbound=upp}
+let r_ser r =
+  call "range" [
+    Sexplib.Sexp.Atom r.r_var.var_name;
+    n_ser r.r_lowerbound;
+    n_ser r.r_upperbound;
+  ]
 
-type 'a aexpr = {
-  ac_codelines: 'a nexpr;
-  ac_conditions: 'a bexpr;
-}
+let createRange var low upp =
+  {r_var=var;r_lowerbound=low;r_upperbound=upp}
 
-let createAccess (codl:'a nexpr) (cndl:'a bexpr) =
-  {ac_codelines=codl;ac_conditions=cndl}
+let proto_to_range (r:Proto.range) : range =
+  createRange (r.range_var) (Num 0) (r.range_upper_bound)
 
-let getCodelines (ac:'a aexpr) =
-  ac.ac_codelines
+let createAccess (codl:nexp list) (cndl:bexp) (m:mode)=
+  {access_index=codl;access_cond=cndl;access_mode=m}
 
-let getConditions (ac:'a aexpr) =
-  ac.ac_conditions
-
-
-
-module type EXPR =
-  sig
-    type t
-    (* Stringify *)
-    val to_string: t -> string
-    (* Convert to int *)
-    val to_int: t -> int
-    (* Evaluate the expression *)
-    val to_expr: int -> t nexpr
-  end
-
-(* Expressions *)
-let rec expr_to_string f (e: 'a nexpr) =
+let rec nsubst (name: string) (value: nexp) (e:nexp) =
   match e with
-  | Value n -> f n
-  | Incr e -> expr_to_string f e ^ " + 1"
-  | Decr e -> expr_to_string f e ^ " - 1"
-  | Variable x -> x
-  | Number x -> string_of_int x
-
-(* Boolean Expressions *)
-let rec bexpr_to_string f (e: 'a bexpr) =
-  match e with
-  | True -> "True"
-  | And (e1,e2) -> bexpr_to_string f e1 ^ " & " ^ bexpr_to_string f e2
-  | LessThan (e1,e2) -> expr_to_string f e1 ^ " < " ^ expr_to_string f e2
-
-let rec subst (name: string) (value: 'a nexpr) (e:'a nexpr) =
-  match e with
-  | Variable x ->
-    if x=name then value
+  | Var x ->
+    if (x.var_name)=name then value
     else e
-  | Incr x -> Incr (subst name value x)
-  | Decr x -> Decr (subst name value x)
-  | Value x -> e
-  | Number x -> e
+  | Bin (x,e1,e2) -> Bin (x,nsubst name value e1,nsubst name value e2)
+  | Proj (t,e1) -> Proj (t,nsubst name value e1)
+  | Num x -> e
 
-let rec boolean_subst (name: string) (value: 'a nexpr) (e:'a bexpr) =
+let rec bsubst (name: string) (value: nexp) (e:bexp) =
   match e with
-  | True -> e
-  | And (e1,e2) -> (And (boolean_subst name value e1,boolean_subst name value e2))
-  | LessThan (e1,e2) -> (LessThan (subst name value e1,subst name value e2))
-
-let rec eval_expr f (e:'a nexpr) :int =
-  match e with
-  | Value n -> f n
-  | Incr e -> (eval_expr f e) + 1
-  | Decr e -> (eval_expr f e) - 1
-  | Variable x -> failwith "Eval Expr: free variable."
-  | Number x -> x
-
-let rec expr_to_bexpr (e1:'a nexpr) (e2:'a nexpr) = LessThan (e1,e2)
-
+  | Bool b -> e
+  | NRel (x,e1,e2) -> NRel (x,nsubst name value e1, nsubst name value e2)
+  | BRel (x,e1,e2) -> BRel (x,bsubst name value e1, bsubst name value e2)
+  | BNot e -> BNot (bsubst name value e)
+  | Pred (s,v) -> e
 
 
 (* ------------------
   LANGUAGE P
   A->P->C->L->H
 ------------------  *)
-module PLang (E:EXPR) = struct
-
-
+module PLang = struct
 
   type unsync_instruction =
-  | Loop of string * (E.t range) * (unsync_instruction list)
-  | Access of (E.t aexpr)
+  | Loop of range * (unsync_instruction list)
+  | Access of variable * access
 
   type instruction =
-  | Loop of string * (E.t range) * (instruction list)
+  | Loop of range * (instruction list)
   | Phased of (unsync_instruction list)
 
   type t = instruction list
 
-  let rec to_string (s:t) =
-    let rec to_string_indent (s:t) indent =
-      let rec ui_to_string l indent =
-        let rec uts_aux l accum indent =
-          match l with
-          | [] -> accum
-          | (Access ac)::xs -> uts_aux xs (accum^String.make (indent*2) ' '^"Access "^(expr_to_string E.to_string ac.ac_codelines)^" if ["^(bexpr_to_string E.to_string ac.ac_conditions)^"];\n") indent
-          | (Loop (var,r,body))::xs -> uts_aux xs (accum^String.make (indent*2) ' '^"For " ^ var ^ " in [" ^ (expr_to_string E.to_string r.r_lowerbound) ^ ", " ^ (expr_to_string E.to_string r.r_upperbound) ^ ") {\n" ^ (uts_aux body "" (indent+1)) ^ String.make (indent*2) ' '^"}\n") indent
-        in
-        uts_aux l "" indent
-      in
+  let rec p_subst (name:string) (value: nexp) (s:(instruction) list) :(instruction) list =
+    let rec p_subst_unsync (name:string) (value: nexp) (s:(unsync_instruction) list) :(unsync_instruction) list =
       match s with
-      | (Loop (var,r,t1))::l -> String.make (indent*2) ' '^"For " ^ var ^ " in [" ^ (expr_to_string E.to_string r.r_lowerbound) ^ ", " ^ (expr_to_string E.to_string r.r_upperbound) ^ ") {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^"}\n" ^ (to_string_indent l indent)
-      | (Phased ui_list)::l -> String.make (indent*2) ' '^"Phased " ^ "{\n" ^ (ui_to_string ui_list (indent+1)) ^ String.make (indent*2) ' '^"}\n" ^ (to_string_indent l indent)
-      | [] -> ""
-    in
-    to_string_indent s 0
-
-  let rec p_subst (name:string) (value: 'a nexpr) (s:(instruction) list) :(instruction) list =
-    let rec p_subst_unsync (name:string) (value: 'a nexpr) (s:(unsync_instruction) list) :(unsync_instruction) list =
-      match s with
-      | (Loop (v,r,b))::ss ->
-        let r' = createRange (subst name value r.r_lowerbound) (subst name value r.r_upperbound) in
+      | (Loop (r,b))::ss ->
+        let r' = createRange (r.r_var) (nsubst name value r.r_lowerbound) (nsubst name value r.r_upperbound) in
         let b' = p_subst_unsync name value b in
-        (Loop (v,r',b'))::(p_subst_unsync name value ss)
-      | (Access a)::ss ->
-        let a1 = subst name value a.ac_codelines in
-        let a2 = boolean_subst name value a.ac_conditions in
-        (Access (createAccess a1 a2))::(p_subst_unsync name value ss)
+        (Loop (r',b'))::(p_subst_unsync name value ss)
+      | (Access (x,a))::ss ->
+        let a1 = List.map (nsubst name value) a.access_index in
+        let a2 = bsubst name value a.access_cond in
+        (Access (x,(createAccess a1 a2 a.access_mode)))::(p_subst_unsync name value ss)
       | [] -> []
     in
     match s with
-    | (Loop (v,r,b))::ss ->
-        let r' = createRange (subst name value r.r_lowerbound) (subst name value r.r_upperbound) in
+    | (Loop (r,b))::ss ->
+        let r' = createRange (r.r_var) (nsubst name value r.r_lowerbound) (nsubst name value r.r_upperbound) in
         let b' = p_subst name value b in
-        (Loop (v,r',b'))::(p_subst name value ss)
+        (Loop (r',b'))::(p_subst name value ss)
     | (Phased u)::ss ->
         (Phased (p_subst_unsync name value u))::(p_subst name value ss)
     | [] -> []
-
+(*
   let rec run (s:t) =
     let rec run_aux (s:t) accum =
       match s with
       | (Phased n)::l -> run_aux l ((extract_unsync n [])::accum)
-      | (Loop (var,r,t1))::l ->
+      | (Loop (r,t1))::l ->
         let i = eval_expr E.to_int r.r_lowerbound in
         let j = eval_expr E.to_int r.r_upperbound in
         let r' = createRange (Incr (E.to_expr i)) r.r_upperbound in
-        let subbed_t1  = p_subst var (E.to_expr i) t1 in
+        let subbed_t1  = p_subst r.r_var (E.to_expr i) t1 in
         if i < j then run_aux (subbed_t1@(Loop (var,r',t1))::l) accum
         else run_aux l accum
       | [] -> accum
@@ -163,7 +97,7 @@ module PLang (E:EXPR) = struct
     and extract_unsync (x:(unsync_instruction) list) accum =
       match x with
       | (Access acc)::xs ->
-        let n' = eval_expr E.to_int acc.ac_codelines in
+        let n' = eval_expr E.to_int acc.access_index in
         extract_unsync xs ((E.to_expr n')::accum)
       | (Loop (var,r,t))::xs ->
         let i = eval_expr E.to_int r.r_lowerbound in
@@ -177,7 +111,7 @@ module PLang (E:EXPR) = struct
     let accum = run_aux s [] in
     let ret = List.rev accum in
     ret
-
+*)
 end
 
 
@@ -185,39 +119,22 @@ end
   LANGUAGE C
   A->P->C->L->H
 ------------------  *)
-module CLang (E:EXPR) = struct
+module CLang = struct
 
-  module P = PLang(E)
+  module P = PLang
 
   type slice =
   | Unsync of (P.unsync_instruction list)
-  | Decl of (string) * (E.t range) * (slice list)
+  | Decl of range * (slice list)
 
   type t = slice list
 
-  let rec to_string (s:t) =
-    let rec to_string_indent (s:t) indent =
-      let rec ui_to_string l indent =
-        let rec uts_aux l accum indent =
-          match l with
-          | [] -> accum
-          | (P.Access ac)::xs -> uts_aux xs (accum^String.make (indent*2) ' '^"Access "^(expr_to_string E.to_string ac.ac_codelines)^" if ["^(bexpr_to_string E.to_string ac.ac_conditions)^"];\n") indent
-          | (P.Loop (var,r,body))::xs -> uts_aux xs (accum^String.make (indent*2) ' '^"For " ^ var ^ " in [" ^ (expr_to_string E.to_string r.r_lowerbound) ^ ", " ^ (expr_to_string E.to_string r.r_upperbound) ^ ") {\n" ^ (uts_aux body "" (indent+1)) ^ String.make (indent*2) ' '^"}\n") indent
-        in
-        uts_aux l "" indent
-      in
-      match s with
-      | (Decl (var,r,t1))::l -> String.make (indent*2) ' '^"Decl " ^ var ^ " in [" ^ (expr_to_string E.to_string r.r_lowerbound) ^ ", " ^ (expr_to_string E.to_string r.r_upperbound) ^ ") {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^"}\n" ^ (to_string_indent l indent)
-      | (Unsync ui_list)::l -> String.make (indent*2) ' '^"Unsync " ^ "{\n" ^ (ui_to_string ui_list (indent+1)) ^ String.make (indent*2) ' '^"}\n" ^ (to_string_indent l indent)
-      | [] -> ""
-    in
-    to_string_indent s 0
   (* Represents phases(P) and white triangle (separation part) *)
-  let rec translate s =
+  let rec translate (s:P.t) : t =
     match s with
     | (P.Phased x)::xs -> (Unsync x)::(translate xs)
-    | (P.Loop (v,r,b))::xs ->
-      let decl = List.map (fun x -> (Decl (v,r,[x]))) (translate b) in
+    | (P.Loop (r,b))::xs ->
+      let decl = List.map (fun x -> (Decl (r,[x]))) (translate b) in
       decl@(translate xs)
     | [] -> []
 
@@ -226,58 +143,49 @@ end
 (* ------------------
   LANGUAGE L
 ------------------  *)
-module LLang (E:EXPR) = struct
+module LLang = struct
 
-  module P = PLang(E)
-  module C = CLang(E)
+  module P = PLang
+  module C = CLang
 
   type unsync_instruction =
-  | Decl of (string) * (E.t range) * (unsync_instruction list)
-  | Access of (E.t aexpr) * (E.t nexpr)
+  | Decl of range * (unsync_instruction list)
+  | Access of variable * access * nexp
 
-  let rec to_string (s:(unsync_instruction) list) indent =
-    let rec to_string_indent_1 (s:unsync_instruction) indent =
-      match s with
-      | (Decl (var,r,t1)) ->
-          let indentation = String.make (indent*2) ' ' in
-          let lb = (expr_to_string E.to_string r.r_lowerbound) in
-          let ub = (expr_to_string E.to_string r.r_upperbound) in
-          indentation ^ "Decl "
-          ^ var ^ " in [" ^ lb ^ ", " ^ ub ^ ") {\n"
-          ^ (to_string_indent t1 (indent+1)) ^ indentation ^"}\n"
-      | (Access (ac,index)) ->
-          String.make (indent*2) ' '
-          ^"Access "^(expr_to_string E.to_string ac.ac_codelines)
-          ^" if ["^(bexpr_to_string E.to_string ac.ac_conditions)
-          ^"] , tid: " ^ (expr_to_string E.to_string index) ^ ";\n"
 
-    and to_string_indent (s:(unsync_instruction) list) indent =
-      match s with
-      | h::l ->
-          (to_string_indent_1 h indent) ^ (to_string_indent l indent)
-      | [] -> ""
-    in
-    to_string_indent s indent
+  let rec ser_1 p =
+    let open Sexplib in
+    match p with
+    | Access (x,a,n) -> call "loc" [Sexp.Atom x.var_name; a_ser a; n_ser n]
+    | Decl (r, l) -> binop "decl" (r_ser r) (ser l)
+  and ser l =
+    let open Sexplib in
+    Sexp.List (List.map ser_1 l)
 
-  let rec l_subst (name: string) (value: 'a nexpr) (s:(unsync_instruction) list) :(unsync_instruction) list =
+  let print_lang k =
+    ser k
+      |> Sexplib.Sexp.to_string_hum
+      |> print_endline
+
+  let rec l_subst (name: string) (value: nexp) (s:(unsync_instruction) list) :(unsync_instruction) list =
     match s with
-    | (Decl (v,r,b))::ss ->
-      let r' = createRange (subst name value r.r_lowerbound) (subst name value r.r_upperbound) in
+    | (Decl (r,b))::ss ->
+      let r' = createRange r.r_var (nsubst name value r.r_lowerbound) (nsubst name value r.r_upperbound) in
       let b' = l_subst name value b in
-      (Decl (v,r',b'))::(l_subst name value ss)
-    | (Access (e1,e2))::ss ->
-      let n = subst name value e1.ac_codelines in
-      let b = boolean_subst name value e1.ac_conditions in
-      (Access ((createAccess n b),(subst name value e2)))::(l_subst name value ss)
+      (Decl (r',b'))::(l_subst name value ss)
+    | (Access (x,e1,e2))::ss ->
+      let n = List.map (nsubst name value) e1.access_index in
+      let b = bsubst name value e1.access_cond in
+      (Access (x,(createAccess n b e1.access_mode),(nsubst name value e2)))::(l_subst name value ss)
     | [] -> []
 
   let rec project (s:(P.unsync_instruction) list) :(unsync_instruction) list =
     match s with
-    | (P.Access a)::ss ->
-      (Access (a, Variable "$TID"))::(project ss)
-    | (P.Loop (var,r,b))::ss -> (Decl (var,r,(project b)))::(project ss)
+    | (P.Access (x,a))::ss ->
+      (Access (x,a, Var (var_make "$TID")))::(project ss)
+    | (P.Loop (r,b))::ss -> (Decl (r,(project b)))::(project ss)
     | [] -> []
-
+(*
   let rec run (s:(unsync_instruction) list) tid =
     match s with
     | (Decl (v,r,b))::ss ->
@@ -291,17 +199,17 @@ module LLang (E:EXPR) = struct
         (* matches index to tid *)
         if i=tid then
         (
-          let a' = (eval_expr E.to_int a.ac_codelines) in
+          let a' = (eval_expr E.to_int a.access_index) in
           (E.to_expr a')::(run ss tid)
         )
         else run ss tid
     | [] -> []
-
-  let rec translate (d:(P.unsync_instruction) list) (tid_count: E.t nexpr) =
-    Decl ("$T1",createRange (Number 1) tid_count,
-      (l_subst "$TID" (Variable "$T1") (project d))
-        @[Decl ("$T2",createRange (Number 0) (Variable "$T1"),
-          l_subst "$TID" (Variable "$T2") (project d)
+*)
+  let rec translate (d:(P.unsync_instruction) list) (tid_count: nexp) =
+    Decl (createRange (var_make "$T1") (Num 1) tid_count,
+      (l_subst "$TID" (Var (var_make "$T1")) (project d))
+        @[Decl (createRange (var_make "$T2") (Num 0) (Var (var_make "$T1")),
+          l_subst "$TID" (Var (var_make "$T2")) (project d)
             )
           ]
         )
@@ -310,44 +218,40 @@ end
 (* ------------------
   LANGUAGE H
 ------------------  *)
-module HLang (E:EXPR) = struct
-  module L = LLang(E)
-  module C = CLang(E)
+module HLang = struct
+  module L = LLang
+  module C = CLang
 
   type slice =
   (* should it be L.unsync_instruction list ?? *)
   | Unsync of (L.unsync_instruction)
-  | Global of (string) * (E.t range) * (slice list)
+  | Global of range * (slice list)
 
   type t = slice list
 
+  let rec ser_1 p =
+    let open Sexplib in
+    match p with
+    | Unsync u -> unop "unsync" (L.ser_1 u)
+    | Global (r, l) -> binop "global" (r_ser r) (ser l)
+  and ser l =
+    let open Sexplib in
+    Sexp.List (List.map ser_1 l)
 
-  let rec to_string (s:t) =
-    let rec to_string_indent (s:t) indent =
-      match s with
-      | (Global (var,r,t1))::l -> String.make (indent*2) ' '^"Global "
-          ^ var ^ " in [" ^ (expr_to_string E.to_string r.r_lowerbound)
-          ^ ", " ^ (expr_to_string E.to_string r.r_upperbound) ^ ") {\n"
-          ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^"}\n"
-          ^ (to_string_indent l indent)
+  let print_lang k =
+    ser k
+      |> Sexplib.Sexp.to_string_hum
+      |> print_endline
 
-      | (Unsync ui)::l -> String.make (indent*2) ' '^"Unsync {\n"
-          ^(L.to_string [ui] (indent+1)) ^ String.make (indent*2) ' '^"}\n"
-          ^ (to_string_indent l indent)
-
-      | [] -> ""
-    in
-    to_string_indent s 0
-
-  let rec h_subst (name:string) (value: 'a nexpr) (s:(slice) list) :(slice) list =
+  let rec h_subst (name:string) (value: nexp) (s:(slice) list) :(slice) list =
     match s with
     | (Unsync ui)::ss -> (Unsync (List.hd (L.l_subst name value [ui])))::(h_subst name value ss)
-    | (Global (v,r,b))::ss ->
-        let r' = createRange (subst name value r.r_lowerbound) (subst name value r.r_upperbound) in
+    | (Global (r,b))::ss ->
+        let r' = createRange r.r_var (nsubst name value r.r_lowerbound) (nsubst name value r.r_upperbound) in
         let b' = h_subst name value b in
-        (Global (v,r',b'))::(h_subst name value ss)
+        (Global (r',b'))::(h_subst name value ss)
     | [] -> []
-
+(*
   let rec run (s:t) =
     let rec run_aux (s:t) accum =
       let rec run_L (s:L.unsync_instruction) =
@@ -367,12 +271,12 @@ module HLang (E:EXPR) = struct
     let accum = run_aux s [] in
     let ret = List.rev accum in
     ret
-
-  let rec translate (s:(C.t)) :t =
+*)
+  let rec translate (s:C.t) : t =
     match s with
     | (C.Unsync ui)::uis ->
-        (Unsync (L.translate ui (Number 2)))::(translate uis)
-    | (C.Decl (v,r,b))::uis -> (Global (v,r,(translate b)))::(translate uis)
+        (Unsync (L.translate ui (Num 2)))::(translate uis)
+    | (C.Decl (r,b))::uis -> (Global (r,(translate b)))::(translate uis)
     | [] -> []
 
 end
@@ -382,43 +286,46 @@ end
   source language.
 ------------------  *)
 
-module ALang (E:EXPR) = struct
+module ALang = struct
 
-  module P = PLang(E)
+  module P = PLang
 
   type instruction =
-  | Codeline of (E.t nexpr) * (E.t bexpr)
+  | Access of variable * access
   | Sync
-  | Loop of string * (E.t range) * ((instruction) list)
+  | Loop of range * ((instruction) list)
 
   type t = (instruction) list
-
+(*
   let rec to_string (s:t) =
     let rec to_string_indent (s:t) indent =
-      let rec list_to_string (n:(E.t nexpr)) c =
-        (expr_to_string E.to_string n) ^ ", if [" ^ (bexpr_to_string E.to_string c) ^ "]"
+      let rec list_to_string (n:nexp) c =
+        (n_ser n) ^ ", if [" ^ (bn_ser c) ^ "]"
       in
       match s with
       | Sync::l ->  String.make (indent*2) ' '^"Sync;\n" ^ (to_string_indent l indent)
-      | (Loop (var,r,t1))::l ->  String.make (indent*2) ' '^"For " ^ var ^ " in [" ^ (expr_to_string E.to_string r.r_lowerbound) ^ ", " ^ (expr_to_string E.to_string r.r_upperbound) ^ ") {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^ "}\n" ^ (to_string_indent l indent)
+      | (Loop (var,r,t1))::l ->  String.make (indent*2) ' '^"For " ^ var ^ " in [" ^ (n_ser r.r_lowerbound) ^ ", " ^ (n_ser r.r_upperbound) ^ ") {\n" ^ (to_string_indent t1 (indent+1)) ^ String.make (indent*2) ' '^ "}\n" ^ (to_string_indent l indent)
       | (Codeline (n,c))::l ->  String.make (indent*2) ' '^"Codeline " ^ (list_to_string n c) ^ ";\n" ^ (to_string_indent l indent)
       | [] -> ""
     in
     to_string_indent s 0
+*)
 
-  let rec a_subst (name: string) (value: 'a nexpr) (s:(instruction) list) :(instruction) list =
+
+
+  let rec a_subst (name: string) (value: nexp) (s:(instruction) list) :(instruction) list =
     match s with
-    | (Loop (v,r,b))::ss ->
-        let r' = createRange (subst name value r.r_lowerbound) (subst name value r.r_upperbound) in
+    | (Loop (r,b))::ss ->
+        let r' = createRange r.r_var (nsubst name value r.r_lowerbound) (nsubst name value r.r_upperbound) in
         let b' = a_subst name value b in
-        (Loop (v,r',b'))::(a_subst name value ss)
-    | (Codeline (n,b))::ss ->
-        let n' = subst name value n in
-        let b' = boolean_subst name value b in
-        (Codeline (n',b'))::(a_subst name value ss)
+        (Loop (r',b'))::(a_subst name value ss)
+    | (Access (x,a))::ss ->
+        let n' = List.map (nsubst name value) a.access_index in
+        let b' = bsubst name value a.access_cond in
+        (Access (x,createAccess n' b' a.access_mode))::(a_subst name value ss)
     | Sync::ss -> (Sync)::(a_subst name value ss)
     | [] -> []
-
+(*
   let rec run (s:t) =
     let rec run_aux (s:t) (accum,phase) =
       match s with
@@ -443,33 +350,38 @@ module ALang (E:EXPR) = struct
     let ret = phase::accum in
     let ret = List.rev ret in
     List.map List.rev ret
+*)
 
 (* Represents norms(P) *)
   let rec translate (s:t) =
     (* This is U+ operator *)
-    let rec injectCondition s n f =
+    let rec inlineCondition s n f =
       match s with
       | [] -> []
-      | (Codeline (n',c'))::xs ->
-          let n'' = f n' in
-          (Codeline (n'',And (c',n)))::(injectCondition xs n f)
-      | (Sync)::xs -> (Sync)::(injectCondition xs n f)
-      | (Loop (var,r,b))::xs ->
-          (Loop (var,r,injectCondition b (And (LessThan (r.r_lowerbound,r.r_upperbound),n)) f))::(injectCondition xs n f)
+      | (Access (x,a))::xs ->
+          let n' = List.map f a.access_index in
+          let a' = createAccess n' (BRel (BAnd,a.access_cond,n)) a.access_mode in
+          (Access (x,a'))::(inlineCondition xs n f)
+      | (Sync)::xs -> (Sync)::(inlineCondition xs n f)
+      | (Loop (r,b))::xs ->
+          let n' = (BRel (BAnd,NRel (NLt,r.r_lowerbound,r.r_upperbound),n)) in
+          (Loop (r,inlineCondition b n' f))::(inlineCondition xs n f)
     in
     (* Rule of black triangle, called normalization *)
     let rec normalize1 s =
       match s with
       | Sync -> (Some [Sync],[])
-      | Codeline (n,c) -> (None, [Codeline (n,c)])
-      | Loop (var,r,body) ->
+      | Access (x,a) -> (None, [Access (x,a)])
+      | Loop (r,body) ->
           (match normalize body with
             | (Some p1, p2) ->
-              let p1' = injectCondition p1 (LessThan (r.r_lowerbound,r.r_upperbound)) (subst var r.r_lowerbound) in
-              let p2' = injectCondition p2 (LessThan (r.r_lowerbound,r.r_upperbound)) (subst var (Decr r.r_upperbound)) in
-              let subbed_p1 = a_subst var (Incr (Variable var)) p1 in
-              let r' = createRange r.r_lowerbound (Decr r.r_upperbound) in
-              ( Some (p1'@[Loop (var,r',p2@subbed_p1)]) , p2')
+              let dec_ub = Bin (Minus,r.r_upperbound,Num 1) in
+              let p1' = inlineCondition p1 (NRel (NLt,r.r_lowerbound,r.r_upperbound)) (nsubst (r.r_var.var_name) r.r_lowerbound) in
+              let p2' = inlineCondition p2 (NRel (NLt,r.r_lowerbound,r.r_upperbound)) (nsubst (r.r_var.var_name) dec_ub) in
+              let inc_var = Bin (Plus,Var r.r_var,Num 1) in
+              let subbed_p1 = a_subst (r.r_var.var_name) inc_var p1 in
+              let r' = createRange r.r_var r.r_lowerbound dec_ub in
+              ( Some (p1'@[Loop (r',p2@subbed_p1)]) , p2')
             | (None, _) -> (None, [s])
           )
     (* Rule of black triangle, called normalization *)
@@ -489,8 +401,8 @@ module ALang (E:EXPR) = struct
     let rec translate_aux (s:t) accum phase  =
       match s with
       | (Sync)::l -> translate_aux l (accum@[(P.Phased phase)]) []
-      | (Codeline (n,c))::l -> translate_aux l accum (phase@[(P.Access (createAccess n c))])
-      | (Loop (var,r,t))::l -> translate_aux l (accum@[P.Loop (var,r,(translate_aux t [] []))]) []
+      | (Access (x,a))::l -> translate_aux l accum (phase@[(P.Access (x,a))])
+      | (Loop (r,t))::l -> translate_aux l (accum@[P.Loop (r,(translate_aux t [] []))]) []
       | [] -> accum
     in
 
@@ -498,4 +410,24 @@ module ALang (E:EXPR) = struct
     match before with
     | None -> (translate_aux (after@[Sync]) [] [])
     | (Some b) -> (translate_aux ((b@after)@[Sync]) [] [])
+end
+
+module ProtoLang = struct
+
+  module A = ALang
+
+  let rec translate s : A.t =
+    match s with
+    | Proto.Skip
+    | Proto.Goal _
+    | Proto.Assert _ ->
+      []
+    | Proto.Seq (e1, e2) ->
+        (translate e1) @ (translate e2)
+    | Proto.Sync -> [A.Sync]
+    | Proto.Acc (x,a) -> [A.Access (x,a)]
+    | Proto.Loop ({range_var = var; range_upper_bound = ub}, e) ->
+        let r' = createRange var (Num 0) ub in
+        [A.Loop (r', translate e)]
+
 end

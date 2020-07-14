@@ -1,5 +1,6 @@
 open Phasesplit
-
+open Proto
+(*
 module IntExpr = struct
   type t = int
 
@@ -133,7 +134,7 @@ let print_compare_trace (ex:A.t) =
   let target_L = (H.run (H.translate (C.translate (A.translate ex)))) in
   print_endline ("----------------\nALang:\n----------------");
   print_list_list source_L;
-  
+
   print_endline ("\n----------------\nHLang:\n----------------");
   print_list_list target_L;
 
@@ -145,3 +146,4 @@ let print_compare_trace (ex:A.t) =
 
 let aa = print_compare_trace sexample2
 (*let aa = (TLang.run (SLang.translate sexample6))*)
+*)
