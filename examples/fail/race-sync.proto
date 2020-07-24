@@ -1,7 +1,7 @@
 # We declare exactly one shared location, named x
 shared x;
 const global ub;
-distinct [tid];
+# distinct [tid];
 
 foreach idx < ub {
   rw x[tid];

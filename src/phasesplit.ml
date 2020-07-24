@@ -2,6 +2,7 @@ open Proto
 open Common
 open Phaseord
 open Serialize
+open Loops
 
 type range = {
   r_var: variable;
@@ -316,6 +317,34 @@ module HLang = struct
     | (C.Decl (r,b))::uis -> (Global (r,(translate b)))::(translate uis)
     | [] -> []
 
+(*
+  type flat_kernel = {
+    flat_kernel_pre: bexp list;
+    flat_kernel_proofs: (bexp list) list;
+    flat_kernel_steps: (variable * access_t) list;
+    flat_kernel_single_vars: VarSet.t;
+    flat_kernel_multi_vars: VarSet.t;
+  }
+
+  let flatten_kernel (s:slice list) =
+    let p = Loops.normalize_variables ... in
+    match s with
+    | (Unsync u)::ss ->
+    | (Global (v,r,b))::ss ->
+    | [] -> []
+
+  let extract_steps e =
+    let rec iter e accum  =
+      let upper_bound e = iter e (Num 0, []) |> fst in
+      match e with
+      | (Unsync u)::rest -> iter rest (u::accum)
+      | (Global (r,b))::rest ->
+        (* TODO *)
+      | [] -> accum
+    in
+    iter e (Num 0, []) |> snd |> List.rev
+*)
+
 end
 
 (* ------------------
@@ -446,6 +475,8 @@ module ALang = struct
     match before with
     | None -> (translate_aux (after@[Sync]) [] [])
     | (Some b) -> (translate_aux ((b@after)@[Sync]) [] [])
+
+
 end
 
 module ProtoLang = struct

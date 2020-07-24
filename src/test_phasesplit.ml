@@ -1,20 +1,38 @@
 open Phasesplit
 open Proto
+
+module Pr = ProtoLang
+module A = ALang
+module P = PLang
+module C = CLang
+module L = LLang
+module H = HLang
+
+
+let sexample1 : Proto.proto =
+  let open Proto in
+  let r1 = {range_var=var_make "idx";range_upper_bound=(Var (var_make "ub"))} in
+  let tid = var_make "tid" in
+  let x = var_make "x" in
+  let ac1 = {access_index=[Var tid];access_cond=Bool true;access_mode=W} in
+  let ac2 = {access_index=[Bin (Plus,Var tid,Num 1)];access_cond=Bool true;access_mode=W} in
+  (Loop (r1,
+    (Seq (Acc (x,ac1),
+      (Seq (Sync,
+        (Acc (x,ac2)
+        ))
+      ))
+    )
+  ))
+
+let sexample2 : Proto.proto =
+  let open Proto in
+  let x = var_make "x" in
+  let ac = {access_index=[Num 1];access_cond=Bool true;access_mode=W} in
+  (Seq (Acc (x,ac),Sync))
+
+
 (*
-module IntExpr = struct
-  type t = int
-
-  let to_string =  string_of_int
-  let to_int (x:t) : int  = x
-  let to_expr (x:int) : t nexpr = Value x
-end
-
-module A = ALang(IntExpr)
-module P = PLang(IntExpr)
-module C = CLang(IntExpr)
-module L = LLang(IntExpr)
-module H = HLang(IntExpr)
-
 let sexample1 : A.t =
   let open A in
   [Loop ("x",createRange (Value 0) (Value 2),
@@ -94,9 +112,9 @@ let texample1 : TLang.t =
   let open TLang in
   [Phased {ph_codelines=[1;2;3];ph_conditions=[]};Phased {ph_codelines=[4;5];ph_conditions=[]}]
 *)
-
+*)
 (*-------------- Helper Functions ---------------------------------------*)
-
+(*
 (* Print Lists *)
 let print_list l =
   let l = List.map (expr_to_string IntExpr.to_string) l in
@@ -120,14 +138,19 @@ let rec list_equal a b =
       true && (list_equal xs ys)
     else
       false
+*)
+let print_compare_output (p: Proto.proto) =
+  let ex = Pr.translate p in
+  print_endline "----------------\nALang:\n----------------\n";
+  (A.print_lang ex);
+  print_endline "----------------\nPLang:\n----------------\n";
+  (P.print_lang (A.translate ex));
+  print_endline "----------------\nCLang:\n----------------\n";
+  (C.print_lang (C.translate (A.translate ex)));
+  print_endline "----------------\nHLang:\n----------------\n";
+  (H.print_lang (H.translate (C.translate (A.translate ex))))
 
-let print_compare_output (ex: A.t) =
-  print_endline ("----------------\nALang:\n----------------\n"^(A.to_string ex));
-  print_endline ("----------------\nPLang:\n----------------\n"^(P.to_string (A.translate ex)));
-  print_endline ("----------------\nCLang:\n----------------\n"^(C.to_string (C.translate (A.translate ex))));
-  print_endline ("----------------\nHLang:\n----------------\n"^(H.to_string (H.translate (C.translate (A.translate ex)))))
-
-
+(*
 let print_compare_trace (ex:A.t) =
   let source_L = A.run ex in
   (* translation of A -> P -> C -> L -> H *)
@@ -141,9 +164,8 @@ let print_compare_trace (ex:A.t) =
 
   if (list_equal source_L target_L)=true
   then print_endline "\nTraces are equal." else print_endline "\nTraces are NOT equal!"
-
+*)
 (*-------------- Tests ----------------------------------------------------*)
 
-let aa = print_compare_trace sexample2
+let aa = print_compare_output sexample2
 (*let aa = (TLang.run (SLang.translate sexample6))*)
-*)

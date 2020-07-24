@@ -69,19 +69,7 @@ let print_proj_kernel t =
     |> Sexplib.Sexp.to_string_hum
     |> print_endline
 
-let print_kernel_A k =
-  ALang.print_lang k
-
-let print_kernel_P k =
-  PLang.print_lang k
-
-let print_kernel_C k =
-  CLang.print_lang k
-
-let print_kernel_H k =
-  HLang.print_lang k
-
-type command = ProtoLang | ALang | PLang | CLang | HLang | Sat | Typecheck
+type command = Flatten | Project | Sat | Typecheck
 
 let print_errs errs =
   let open Typecheck in
@@ -161,22 +149,19 @@ let main_t =
         if cmd = Typecheck then
           print_kernel k
         else begin
-          let k = Phasesplit.ProtoLang.translate k.kernel_code in
-          if cmd = ALang then
-            print_kernel_A k
+          let k = Loops.flatten_kernel k in
+          if cmd = Flatten then
+            print_flat_kernel k
           else begin
-            let k = Phasesplit.ALang.translate k in
-            if cmd = PLang then
-              print_kernel_P k
+            let k = Taskproj.project_kernel k in
+            if cmd = Project then
+              print_proj_kernel k
             else begin
-              let k = Phasesplit.CLang.translate k in
-              if cmd = CLang then
-                print_kernel_C k
-              else begin
-                let k = Phasesplit.HLang.translate k in
-                if cmd = HLang then
-                  print_kernel_H k
-              end
+              Smt.kernel_to_proofs (not skip_drf) (not skip_po) k
+              |> (if use_bv
+                then Gensmtlib2.bv_serialize_proofs
+                else Gensmtlib2.int_serialize_proofs)
+              |> Gensmtlib2.print_code
             end
           end
         end
@@ -189,17 +174,13 @@ let main_t =
     (* Override the codegeneration (for debugging only). *)
     let doc = "Step 0: Replace key-values and typecheck the kernel." in
     let tc = Typecheck, Arg.info ["0"; "check"] ~doc in
-    let doc = "Step 1: Unroll loops, inline conditions" in
-    let k1 = ALang, Arg.info ["1"; "alang"] ~doc in
-    let doc = "Step 2: Split instructions into phases" in
-    let k2 = PLang, Arg.info ["2"; "plang"] ~doc in
-    let doc = "Step 3: Change loops into Variable Declarations" in
-    let k3 = CLang, Arg.info ["3"; "clang"] ~doc in
-    let doc = "Step 4: Change loops into Variable Declarations" in
-    let k4 = HLang, Arg.info ["4"; "hlang"] ~doc in
-    let doc = "Step 5: generate Z3." in
-    let sat = Sat, Arg.info ["5"; "sat"] ~doc in
-    Arg.(last & vflag_all [Sat] [tc; k1; k2; k3; k4; sat])
+    let doc = "Step 1: remove loops and merge assertions." in
+    let flat = Flatten, Arg.info ["1"; "flat"] ~doc in
+    let doc = "Step 2: project into two tasks." in
+    let proj = Project, Arg.info ["2"; "proj"] ~doc in
+    let doc = "Step 3: generate Z3." in
+    let sat = Sat, Arg.info ["3"; "sat"] ~doc in
+    Arg.(last & vflag_all [Sat] [tc; flat; proj; sat])
   in
   Term.(const do_main $ get_cmd $ get_fname $ use_bv $ skip_po $ skip_drf $ use_json $ decls)
 
