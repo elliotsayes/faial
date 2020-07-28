@@ -91,14 +91,23 @@ module Make (S:SUBST) = struct
   and i_list_subst (f:'a -> 'a) (s:S.t) : ('a  base_inst) list -> ('a  base_inst) list =
     List.map (i_subst f s)
 
+  let acc_inst_subst (s:S.t) : acc_inst -> acc_inst =
+    function
+      | Goal b -> Goal (b_subst s b)
+      | Assert b -> Assert (b_subst s b)
+      | Acc (x, a) -> Acc (x, a_subst s a)
+
   let p_subst (s:S.t) : prog -> prog =
     i_list_subst (function
-      | Unsync (Goal b) -> Unsync (Goal (b_subst s b))
-      | Unsync (Assert b) -> Unsync (Assert (b_subst s b))
+      | Unsync e -> Unsync (acc_inst_subst s e)
       | Sync -> Sync
-      | Unsync (Acc (x, a)) -> Unsync (Acc (x, a_subst s a))
     ) s
 
+  let u_subst (s:S.t) : u_prog -> u_prog =
+    i_list_subst (acc_inst_subst s) s
+
+  let s_subst (s:S.t) : s_prog -> s_prog =
+    i_list_subst (u_subst s) s
 end
 
 module SubstPair =

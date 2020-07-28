@@ -191,17 +191,12 @@ type acc_or_sync_inst =
   | Unsync of acc_inst
 
 type inst = acc_or_sync_inst base_inst
-
-type u_inst = acc_inst base_inst
-
-type s_inst = u_inst base_inst
-
-(* Programs *)
-
 type prog = inst list
 
+type u_inst = acc_inst base_inst
 type u_prog = u_inst list
 
+type s_inst = u_prog base_inst
 type s_prog = s_inst list
 
 type kernel = {
