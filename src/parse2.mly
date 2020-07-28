@@ -12,7 +12,7 @@
 %token FOREACH UNTIL IN
 %token DISTINCT
 %token PROVE
-%token THEN ELSE
+%token ELSE
 
 %left OR
 %left AND
@@ -84,7 +84,7 @@ index:
 
 prog:
   | s = stmt; p = prog
-    { s :: p }
+    { s @ p }
   | { [] }
 
 %inline range:
@@ -93,25 +93,25 @@ prog:
 
 expr:
   | SYNC { Base Sync }
-  | ASSERT b = bexp { Assert b }
-  | PROVE b = bexp { Goal b }
+  | ASSERT b = bexp { Base (Unsync (Assert b)) }
+  | PROVE b = bexp { Base (Unsync (Goal b)) }
   | m = mode; x = ident; i = index
-    { Base (Acc (x, {access_index=i; access_mode=m})) }
+    { Base (Unsync (Acc (x, {access_index=i; access_mode=m}))) }
 
 stmt:
   | e = expr SEMICOLON
-    { e }
+    { [e] }
   | IF LPAREN b = bexp RPAREN p = block
-    { Cond (b, p, []) }
+    { [Cond (b, p)] }
   | IF LPAREN b = bexp RPAREN p = block ELSE q = block
-    { Cond (b, p, q) }
+    { [Cond (b, p); Cond(BNot b, q)] }
   | FOREACH LPAREN r = range RPAREN p = block
-    { Loop (r, p) }
+    { [Loop (r, p)] }
 
 block:
   | LBRACE p = prog RBRACE { p }
   | LBRACE RBRACE { [] }
-  | s = stmt { [s] }
+  | s = stmt { s }
   | SEMICOLON { [] }
 
 loc_names:

@@ -28,14 +28,10 @@ let normalize_variables (p:prog) =
         let (p, new_xs) = norm p (VarSet.add r.range_var xs) in
         Loop (r, p), new_xs
       )
-    | Cond (b, p, q) ->
+    | Cond (b, p) ->
       let (p, xs) = norm p xs in
-      let (q, xs) = norm q xs in
-      (Cond (b, p, q), xs)
-    | Base (Acc (_, _))
-    | Assert _
-    | Goal _
-    | Base Sync -> i, xs
+      (Cond (b, p), xs)
+    | Base _ -> i, xs
   and norm p xs =
     match p with
     | [] -> ([], xs)

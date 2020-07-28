@@ -78,12 +78,9 @@ module Make (S:SUBST) = struct
   let rec i_subst (f:'a -> 'a) (s:S.t) (i:'a  base_inst) : 'a  base_inst =
     match i with
     | Base b -> Base (f b)
-    | Goal b -> Goal (b_subst s b)
-    | Assert b -> Assert (b_subst s b)
-    | Cond (b, p1, p2) -> Cond (
+    | Cond (b, p1) -> Cond (
         b_subst s b,
-        i_list_subst f s p1,
-        i_list_subst f s p2
+        i_list_subst f s p1
       )
     | Loop (r, p) ->
       let r = r_subst s r in
@@ -96,8 +93,10 @@ module Make (S:SUBST) = struct
 
   let p_subst (s:S.t) : prog -> prog =
     i_list_subst (function
+      | Unsync (Goal b) -> Unsync (Goal (b_subst s b))
+      | Unsync (Assert b) -> Unsync (Assert (b_subst s b))
       | Sync -> Sync
-      | Acc (x, a) -> Acc (x, a_subst s a)
+      | Unsync (Acc (x, a)) -> Unsync (Acc (x, a_subst s a))
     ) s
 
 end

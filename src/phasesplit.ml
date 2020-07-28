@@ -356,8 +356,9 @@ module ALang = struct
       |> Sexplib.Sexp.to_string_hum
       |> print_endline
 
-(* Represents norms(P) *)
-  let rec translate (s:Proto.prog) : P.t =
+  (* Represents norms(P) *)
+  (*
+  let rec translate_ng (s:Proto.prog) : s_prog =
     let open Proto in
     (* Rule of black triangle, called normalization *)
     let merge o1 o2 =
@@ -367,7 +368,13 @@ module ALang = struct
       | (Some p1,p2),(None, q2) -> (Some p1,(p2@q2))
       | (Some p1,p2),(Some q1, q2) -> (Some (p1@p2@q1),q2)
     in
-    let rec normalize1 : inst -> Proto.prog option * Proto.prog =
+    let prepend (u:u_prog) : s_prog -> Proto.s_prog =
+      function
+      | Base u' :: l -> Base (u @ u') :: l
+      | Cond (b, p, q) :: l -> Cond (b, prepend u p, prepend u q) :: l
+      | Loop (r, p) :: l -> Base u :: Loop (r, p) :: l
+      | [] -> fail_with "Unexpected input"
+    let rec normalize1 : inst -> Proto.s_prog option * Proto.u_prog =
       function
       | Base Sync -> (Some [Base Sync],[])
       | Base (Acc (x,e)) -> (None, [Base (Acc (x,e))])
@@ -415,6 +422,67 @@ module ALang = struct
       match s with
       | (Base Sync)::l -> translate_aux l (accum@[(P.Phased phase)]) []
       | (Base (Acc (x,a)))::l -> translate_aux l accum (phase@[(P.Access (x,a))])
+      | (Loop (r,t))::l ->
+        translate_aux l (accum@[P.Loop (r,translate_aux t [] [])]) []
+      | [] -> accum@[P.Phased phase]
+    in
+
+    let p:Proto.prog = match normalize s with
+    | None, x -> x
+    | (Some b, after) -> b@after
+    in
+    translate_aux p [] []
+  *)
+  let rec translate (s:Proto.prog) : P.t =
+    let open Proto in
+    (* Rule of black triangle, called normalization *)
+    let merge o1 o2 =
+      match o1, o2 with
+      | (None,p2),(None,q2) -> (None, (p2@q2))
+      | (None,p2),(Some q1, q2) -> (Some (p2@q1),q2)
+      | (Some p1,p2),(None, q2) -> (Some p1,(p2@q2))
+      | (Some p1,p2),(Some q1, q2) -> (Some (p1@p2@q1),q2)
+    in
+    let rec normalize1 : inst -> Proto.prog option * Proto.prog =
+      function
+      | Base Sync -> (Some [Base Sync],[])
+      | Base (Unsync (Acc (x,e))) -> (None, [Base (Unsync (Acc (x,e)))])
+      | Cond (b, p) ->
+        begin
+          match normalize p with
+          (* There is no synchronized part, so we only return 1 conditional *)
+          | (None, p) -> (None, [Cond (b, p)])
+          (* Duplicate the condition, one synchronized and the other unsync *)
+          | (Some p, p') -> (Some [Cond (b, p)], [Cond (b, p')])
+        end
+      | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub} as r,body) as s ->
+          begin match normalize body with
+            | (Some p1, p2) ->
+              let dec_ub = Bin (Minus, ub, Num 1) in
+              let p1' = Cond (
+                NRel (NLt, lb, ub),
+                ReplacePair.p_subst (x, lb) p1
+              ) in
+              let p2' = Cond (
+                NRel (NLt, lb, ub),
+                ReplacePair.p_subst (x, dec_ub) p2
+              ) in
+              let inc_var = Bin (Plus,Var x,Num 1) in
+              let subbed_p1 = ReplacePair.p_subst (x, inc_var) p1 in
+              let r' = { r with range_upper_bound = dec_ub } in
+              (Some [p1';Loop (r',p2@subbed_p1)] , [p2'])
+            | (None, _) -> (None, [s])
+          end
+    (* Rule of black triangle, called normalization *)
+    and normalize: Proto.prog -> Proto.prog option * Proto.prog = function
+      | [] -> (None,[])
+      | x::xs -> merge (normalize1 x) (normalize xs)
+    in
+
+    let rec translate_aux (s:prog) (accum:P.t) (phase:P.unsync_instruction list)  =
+      match s with
+      | (Base Sync)::l -> translate_aux l (accum@[(P.Phased phase)]) []
+      | (Base (Unsync (Acc (x,a))))::l -> translate_aux l accum (phase@[(P.Access (x,a))])
       | (Loop (r,t))::l ->
         translate_aux l (accum@[P.Loop (r,translate_aux t [] [])]) []
       | [] -> accum@[P.Phased phase]

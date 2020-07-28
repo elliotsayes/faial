@@ -142,13 +142,13 @@ let rec reify (p:program) : prog =
   *)
   match p with
   | Decl (x,_,None) -> []
-  | Decl (x,_,Some n) -> [Assert (n_eq (Var x) n)]
+  | Decl (x,_,Some n) -> [Base (Unsync (Assert (n_eq (Var x) n)))]
   | Inst ISync -> [Base Sync]
-  | Inst (IGoal b) -> [Goal b]
-  | Inst (IAssert b) -> p_assert b
-  | Inst (IAcc (x,y)) -> [Base (Acc (x,y))]
+  | Inst (IGoal b) -> [Base (Unsync (Goal b))]
+  | Inst (IAssert b) -> [Base (Unsync (Assert b))]
+  | Inst (IAcc (x,y)) -> [Base (Unsync (Acc (x,y)))]
   | Block l -> List.map reify l |> List.flatten
-  | If (b,p,q) -> [Cond (b,reify p, reify q)]
+  | If (b,p,q) -> [Cond (b,reify p);Cond(BNot b, reify q)]
   | For (x, r, p) ->
     let index = Var x in
     let body:prog = begin match r.range_expr_kind with

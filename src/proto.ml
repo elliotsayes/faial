@@ -178,20 +178,21 @@ type access = {access_index: nexp list; access_mode: mode}
 
 type 'a  base_inst =
   | Base of 'a
-  | Cond of bexp * ('a  base_inst) list * ('a  base_inst) list
-  | Goal of bexp
-  | Assert of bexp
+  | Cond of bexp * ('a  base_inst) list
   | Loop of range * ('a  base_inst) list
 
-type l_access = variable * access
+type acc_inst =
+  | Goal of bexp
+  | Assert of bexp
+  | Acc of (variable * access)
 
-type acc_or_sync =
-  | Acc of l_access
+type acc_or_sync_inst =
   | Sync
+  | Unsync of acc_inst
 
-type inst = acc_or_sync base_inst
+type inst = acc_or_sync_inst base_inst
 
-type u_inst = l_access base_inst
+type u_inst = acc_inst base_inst
 
 type s_inst = u_inst base_inst
 
@@ -220,7 +221,7 @@ let distinct idx =
 let p_assert b =
   match b with
   | Bool true -> []
-  | _ -> [Assert b]
+  | _ -> [Base (Unsync (Assert b))]
 (*
 let p_seq p1 p2 =
   match p1, p2 with

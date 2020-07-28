@@ -145,12 +145,9 @@ let rec base_inst_ser (f:'a -> Sexplib.Sexp.t) : 'a base_inst -> Sexplib.Sexp.t 
   let open Sexplib in
   function
   | Base a -> f a
-  | Goal b -> unop "goal" (b_ser b)
-  | Assert b -> unop "assert" (b_ser b)
-  | Cond (b, p1, p2) -> call "if" [
+  | Cond (b, p1) -> call "if" [
       b_ser b;
       base_inst_list_ser f p1;
-      base_inst_list_ser f p2
     ]
   | Loop (r, p) -> binop "loop" (r_ser r) (base_inst_list_ser f p)
 and base_inst_list_ser (f:'a -> Sexplib.Sexp.t) (p:('a base_inst) list) : Sexplib.Sexp.t =
@@ -161,8 +158,10 @@ let proto_ser : prog -> Sexplib.Sexp.t =
   let open Sexplib in
   base_inst_list_ser
     (function
+      | Unsync (Goal b) -> unop "goal" (b_ser b)
+      | Unsync (Assert b) -> unop "assert" (b_ser b)
       | Sync -> Sexp.Atom "sync"
-      | Acc (x, a) -> binop "loc" (Sexp.Atom x.var_name) (a_ser a))
+      | Unsync (Acc (x, a)) -> binop "loc" (Sexp.Atom x.var_name) (a_ser a))
 
 let bexp_list pre = List.map b_ser pre
 

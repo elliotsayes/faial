@@ -32,12 +32,13 @@ let free_names_list f l fns =
 let rec free_names_inst (i:inst) (fns:VarSet.t) : VarSet.t =
   match i with
   | Base Sync -> fns
-  | Goal b | Assert b -> free_names_bexp b fns
-  | Base (Acc (_, a)) -> free_names_access a fns
-  | Cond (b, p1, p2) ->
+  | Base (Unsync (Goal b))
+  | Base (Unsync (Assert b))
+    -> free_names_bexp b fns
+  | Base (Unsync (Acc (_, a))) -> free_names_access a fns
+  | Cond (b, p1) ->
     free_names_bexp b fns
     |> free_names_proto p1
-    |> free_names_proto p2
   | Loop (r, p) ->
     free_names_proto p fns
     |> VarSet.remove r.range_var
@@ -48,12 +49,14 @@ and free_names_proto (p:prog) (fns:VarSet.t) : VarSet.t =
 
 let rec free_locs_inst (i:inst) (fns:VarSet.t) =
   match i with
-  | Assert _
-  | Goal _
-  | Base Sync -> fns
-  | Base (Acc (x, _)) -> VarSet.add x fns
-  | Cond (_, p1, p2) -> free_locs_proto p1 fns |> free_locs_proto p2
-  | Loop (_, p) -> free_locs_proto p fns
+  | Base (Unsync (Assert _))
+  | Base (Unsync (Goal _))
+  | Base Sync
+    -> fns
+  | Base (Unsync (Acc (x, _))) -> VarSet.add x fns
+  | Cond (_, p)
+  | Loop (_, p)
+    -> free_locs_proto p fns
 
 and free_locs_proto p (fns:VarSet.t) =
   free_names_list free_locs_inst p fns
