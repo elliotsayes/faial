@@ -2,30 +2,7 @@ open Proto
 open Common
 open Phaseord
 open Serialize
-
-let rec nsubst (name: string) (value: nexp) (e:nexp) =
-  match e with
-  | Var x ->
-    if (x.var_name)=name then value
-    else e
-  | Bin (x,e1,e2) -> Bin (x,nsubst name value e1,nsubst name value e2)
-  | Proj (t,e1) -> Proj (t,nsubst name value e1)
-  | Num x -> e
-
-let rec bsubst (name: string) (value: nexp) (e:bexp) =
-  match e with
-  | Bool b -> e
-  | NRel (x,e1,e2) -> NRel (x,nsubst name value e1, nsubst name value e2)
-  | BRel (x,e1,e2) -> BRel (x,bsubst name value e1, bsubst name value e2)
-  | BNot e -> BNot (bsubst name value e)
-  | Pred (s,v) -> e
-
-let r_subst (name:string) (value: nexp) (r:range) =
-  { r with
-    range_lower_bound = nsubst name value r.range_lower_bound;
-    range_upper_bound = nsubst name value r.range_upper_bound
-  }
-
+open Subst
 
 (* ------------------
   LANGUAGE P
@@ -67,25 +44,21 @@ module PLang = struct
       |> Sexplib.Sexp.to_string_hum
       |> print_endline
 
-  let rec p_subst (name:string) (value: nexp) (s:(instruction) list) :(instruction) list =
-    let rec p_subst_unsync (name:string) (value: nexp) (s:(unsync_instruction) list) :(unsync_instruction) list =
+  let rec p_subst (kv:variable*nexp) (s:instruction list) : instruction list =
+    let rec p_subst_unsync (kv:variable*nexp) (s:unsync_instruction list) : unsync_instruction list =
       match s with
-      | (Loop (r,b))::ss ->
-        (Loop (r_subst name value r,p_subst_unsync name value b))::
-        (p_subst_unsync name value ss)
-      | (Access (x,a))::ss ->
-        let a' = { a with
-          access_index = List.map (nsubst name value) a.access_index
-        } in
-        (Access (x,a'))::(p_subst_unsync name value ss)
+      | (Loop (r, b))::ss ->
+        (Loop (ReplacePair.r_subst kv r, p_subst_unsync kv b))::
+        (p_subst_unsync kv ss)
+      | (Access (x, a))::ss ->
+        (Access (x, ReplacePair.a_subst kv a))::(p_subst_unsync kv ss)
       | [] -> []
     in
     match s with
-    | (Loop (r,b))::ss ->
-        (Loop (r_subst name value r, p_subst name value b))::
-        (p_subst name value ss)
+    | (Loop (r, b))::ss ->
+      (Loop (ReplacePair.r_subst kv r, p_subst kv b))::(p_subst kv ss)
     | (Phased u)::ss ->
-        (Phased (p_subst_unsync name value u))::(p_subst name value ss)
+      (Phased (p_subst_unsync kv u))::(p_subst kv ss)
     | [] -> []
 (*
   let rec run (s:t) =
@@ -179,6 +152,7 @@ module LLang = struct
     match p with
     | Access (x,a, t) -> call "loc" [Sexp.Atom x.var_name; a_ser a; t_ser t]
     | Decl (r, l) -> binop "decl" (r_ser r) (ser l)
+
   and ser l =
     let open Sexplib in
     Sexp.List (List.map ser_1 l)
@@ -188,17 +162,15 @@ module LLang = struct
       |> Sexplib.Sexp.to_string_hum
       |> print_endline
 
-  let rec l_subst (name: string) (value: nexp): unsync_instruction list -> unsync_instruction list =
-    List.map (l_subst_inst name value)
-  and l_subst_inst (name: string) (value: nexp) : unsync_instruction -> unsync_instruction =
+  let rec l_subst (kv: variable * nexp) : unsync_instruction list -> unsync_instruction list =
+    List.map (l_subst_inst kv)
+  and l_subst_inst (kv: variable * nexp) : unsync_instruction -> unsync_instruction =
     function
     | Decl (r, b) ->
-      Decl (r_subst name value r, l_subst name value b)
-    | Access (x, a, t) ->
-      let a' = { a with
-        access_index = List.map (nsubst name value) a.access_index
-      } in
-      Access (x, a', t)
+      let r = ReplacePair.r_subst kv r in
+      let shadows = var_equal r.range_var (fst kv) in
+      Decl (r, if shadows then b else l_subst kv b)
+    | Access (x, a, t) -> Access (x, ReplacePair.a_subst kv a, t)
 
   let rec project (t:task) : P.unsync_instruction list -> unsync_instruction list =
     List.map (project_inst t)
@@ -238,12 +210,16 @@ module LLang = struct
       range_upper_bound = Var (var_make "$T1")
     } in
     Decl (r1,
-      (l_subst "$TID" (Var (var_make "$T1")) (project Task1 d))
-        @[Decl (r2,
-          l_subst "$TID" (Var (var_make "$T2")) (project Task2 d)
-            )
-          ]
+      (l_subst (var_make "$TID", Var (var_make "$T1"))
+        (project Task1 d)
+      )@
+      [
+        Decl (r2,
+          l_subst (var_make "$TID", Var (var_make "$T2"))
+          (project Task2 d)
         )
+      ]
+    )
 
 end
 (* ------------------
@@ -274,12 +250,14 @@ module HLang = struct
       |> Sexplib.Sexp.to_string_hum
       |> print_endline
 
-  let rec h_subst (name:string) (value: nexp) (s:(slice) list) :(slice) list =
+  let rec h_subst (kv:variable*nexp) (s:(slice) list) :(slice) list =
     match s with
-    | (Unsync ui)::ss -> (Unsync (List.hd (L.l_subst name value [ui])))::(h_subst name value ss)
+    | (Unsync ui)::ss -> (Unsync (List.hd (L.l_subst kv [ui])))::(h_subst kv ss)
     | (Global (r, b))::ss ->
-        (Global (r_subst name value r, h_subst name value b))::
-        (h_subst name value ss)
+        let r = ReplacePair.r_subst kv r in
+        let shadows = var_equal r.range_var (fst kv) in
+        (Global (r, if shadows then b else h_subst kv b))::
+        (h_subst kv ss)
     | [] -> []
 (*
   let rec run (s:t) =
@@ -372,21 +350,20 @@ module ALang = struct
       |> Sexplib.Sexp.to_string_hum
       |> print_endline
 
-  let rec a_subst (name: string) (value: nexp): t -> t =
-    List.map (a_subst_inst name value)
-  and a_subst_inst (name: string) (value: nexp) (i:instruction) : instruction =
+  let rec a_subst (kv: variable * nexp): t -> t =
+    List.map (a_subst_inst kv)
+  and a_subst_inst (kv: variable * nexp) (i:instruction) : instruction =
     match i with
-    | Loop (r,b) -> Loop (r_subst name value r, a_subst name value b)
-    | Access (x,a) ->
-      let a' = { a with
-        access_index = List.map (nsubst name value) a.access_index
-      } in
-      Access (x,a')
+    | Loop (r,b) ->
+      let r = ReplacePair.r_subst kv r in
+      let shadows = var_equal r.range_var (fst kv) in
+      Loop (r, if shadows then b else a_subst kv b)
+    | Access (x,a) -> Access (x,ReplacePair.a_subst kv a)
     | Cond (b, p, q) ->
       Cond (
-        bsubst name value b,
-        a_subst name value p,
-        a_subst name value q
+        ReplacePair.b_subst kv b,
+        a_subst kv p,
+        a_subst kv q
       )
     | Sync -> Sync
 (*
@@ -429,16 +406,16 @@ module ALang = struct
               let dec_ub = Bin (Minus, ub, Num 1) in
               let p1' = Cond (
                 NRel (NLt, lb, ub),
-                a_subst x.var_name lb p1,
+                a_subst (x, lb) p1,
                 []
               ) in
               let p2' = Cond (
                 NRel (NLt, lb, ub),
-                a_subst x.var_name dec_ub p2,
+                a_subst (x, dec_ub) p2,
                 []
               ) in
               let inc_var = Bin (Plus,Var x,Num 1) in
-              let subbed_p1 = a_subst (x.var_name) inc_var p1 in
+              let subbed_p1 = a_subst (x, inc_var) p1 in
               let r' = { r with range_upper_bound = dec_ub } in
               ( Some ([p1';Loop (r',p2@subbed_p1)]) , [p2'])
             | (None, _) -> (None, [s])
