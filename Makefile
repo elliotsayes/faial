@@ -1,4 +1,4 @@
-OCB_FLAGS   = -use-ocamlfind -use-menhir -I src -no-links
+OCB_FLAGS   = -use-ocamlfind -use-menhir -I src -no-links -ignore loops
 OCB = ocamlbuild $(OCB_FLAGS)
 
 BUILD = _build/src

@@ -59,9 +59,6 @@ let print_kernel k =
     |> Sexplib.Sexp.to_string_hum
     |> print_endline
 
-let print_kernel_A k =
-  ALang.print_lang k
-
 let print_kernel_P k =
   PLang.print_lang k
 
@@ -151,22 +148,17 @@ let main_t =
         if cmd = Typecheck then
           print_kernel k
         else begin
-          let k = Phasesplit.ProtoLang.translate k.kernel_code in
-          if cmd = ALang then
-            print_kernel_A k
+          let k = Phasesplit.ALang.translate k.kernel_code in
+          if cmd = PLang then
+            print_kernel_P k
           else begin
-            let k = Phasesplit.ALang.translate k in
-            if cmd = PLang then
-              print_kernel_P k
+            let k = Phasesplit.CLang.translate k in
+            if cmd = CLang then
+              print_kernel_C k
             else begin
-              let k = Phasesplit.CLang.translate k in
-              if cmd = CLang then
-                print_kernel_C k
-              else begin
-                let k = Phasesplit.HLang.translate k in
-                if cmd = HLang then
-                  print_kernel_H k
-              end
+              let k = Phasesplit.HLang.translate k in
+              if cmd = HLang then
+                print_kernel_H k
             end
           end
         end
