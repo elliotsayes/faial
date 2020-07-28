@@ -390,14 +390,9 @@ let prog_to_s_prog (s:Proto.prog) : s_prog =
    conditional or a variable declaration (loop), and in which case,
    we must ensure we preserve that structure. *)
 
-type phase =
-  | Phase of u_prog
-  | Pre of bexp * phase
-  | Global of range * phase
-
-let rec s_prog_to_phase_list (s: s_prog) : phase list  =
-  List.map s_inst_to_phase_list s |> List.flatten
-and s_inst_to_phase_list : s_inst -> phase list =
+let rec s_prog_to_phase_list (l: ('a base_inst) list) : ('a phase) list  =
+  List.map s_inst_to_phase_list l |> List.flatten
+and s_inst_to_phase_list : 'a base_inst -> ('a phase) list =
   function
   | Base p -> [Phase p]
   | Loop (r, l) ->
@@ -412,6 +407,23 @@ and s_inst_to_phase_list : s_inst -> phase list =
     |> List.map (fun p ->
       Pre (b, p)
     )
+
+(* ---------------- THIRD STAGE OF TRANSLATION ---------------------- *)
+
+let project_prog (t:task) : u_prog -> y_prog =
+  base_prog_map
+    (function
+    | Goal b -> Goal b
+    | Assert b -> Assert b
+    | Acc (x, e) -> Acc (x, e, t)
+    )
+
+let project_phase (t:task) : u_prog phase -> y_prog phase =
+  phase_map (project_prog t)
+
+let project : (u_prog phase) list -> (y_prog phase * y_prog phase) list =
+  List.map (fun p -> (project_phase Task1 p, project_phase Task2 p))
+
 
 
 module ALang = struct

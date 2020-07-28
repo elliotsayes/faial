@@ -181,23 +181,70 @@ type 'a  base_inst =
   | Cond of bexp * ('a  base_inst) list
   | Loop of range * ('a  base_inst) list
 
-type acc_inst =
+(* Changes the base of a base instruction *)
+let rec base_inst_map (f: 'a -> 'b) : 'a base_inst -> 'b base_inst =
+  function
+  | Base a -> Base (f a)
+  | Cond (b, l) -> Cond (b, List.map (base_inst_map f) l)
+  | Loop (r, l) -> Loop (r, List.map (base_inst_map f) l)
+
+(* A base program is a list of base instructions *)
+type 'a base_prog = ('a base_inst) list
+
+(* Change the base of a program *)
+let base_prog_map (f: 'a -> 'b) : 'a base_prog -> 'b base_prog =
+  List.map (base_inst_map f)
+
+(* Regular access expression *)
+type expr_acc = (variable * access)
+
+(* Symbolic access expression *)
+type sym_acc = (variable * access * task)
+
+(* A simple instruction *)
+type 'a a_inst =
   | Goal of bexp
   | Assert of bexp
-  | Acc of (variable * access)
+  | Acc of 'a
 
+(* A simple instruction with regular accesses *)
+type acc_inst = expr_acc a_inst
+
+(* A simple instruction with symbolic accesses *)
+type sym_acc_inst = sym_acc a_inst
+
+(* In a regular program the base is either a barrier or an unsync *)
 type acc_or_sync_inst =
   | Sync
   | Unsync of acc_inst
 
+(* The source instruction uses the base defined above *)
 type inst = acc_or_sync_inst base_inst
+(* The source program *)
 type prog = inst list
 
+(* The unsynchronized fragment *)
 type u_inst = acc_inst base_inst
 type u_prog = u_inst list
 
+(* The synchronized fragment (phased) *)
 type s_inst = u_prog base_inst
 type s_prog = s_inst list
+
+(* The unsynchronized and symbolic fragment *)
+type y_inst = sym_acc_inst base_inst
+type y_prog = y_inst list
+
+type 'a phase =
+  | Phase of 'a
+  | Pre of bexp * 'a phase
+  | Global of range * 'a phase
+
+let rec phase_map (f:'a -> 'b) : 'a phase -> 'b phase =
+  function
+  | Phase a -> Phase (f a)
+  | Pre (b, p) -> Pre (b, phase_map f p)
+  | Global (r, p) -> Global (r, phase_map f p)
 
 type kernel = {
   (* The shared locations that can be accessed in the kernel. *)
@@ -217,16 +264,3 @@ let p_assert b =
   match b with
   | Bool true -> []
   | _ -> [Base (Unsync (Assert b))]
-(*
-let p_seq p1 p2 =
-  match p1, p2 with
-  | Skip, p | p, Skip -> p
-  | _ -> Seq (p1, p2)
-*)
-(*
-let rec proto_block l =
-  match l with
-  | [] -> Skip
-  | [x] -> x
-  | x::l -> p_seq x (proto_block l)
-*)
