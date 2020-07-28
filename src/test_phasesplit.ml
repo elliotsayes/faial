@@ -1,7 +1,6 @@
 open Phasesplit
 open Proto
 
-module Pr = ProtoLang
 module A = ALang
 module P = PLang
 module C = CLang
@@ -9,27 +8,31 @@ module L = LLang
 module H = HLang
 
 
-let sexample1 : Proto.proto =
+let sexample1 : Proto.prog =
   let open Proto in
-  let r1 = {range_var=var_make "idx";range_upper_bound=(Var (var_make "ub"))} in
   let tid = var_make "tid" in
   let x = var_make "x" in
-  let ac1 = {access_index=[Var tid];access_cond=Bool true;access_mode=W} in
-  let ac2 = {access_index=[Bin (Plus,Var tid,Num 1)];access_cond=Bool true;access_mode=W} in
-  (Loop (r1,
-    (Seq (Acc (x,ac1),
-      (Seq (Sync,
-        (Acc (x,ac2)
-        ))
-      ))
-    )
-  ))
+  let ac1 = {access_index=[Var tid];access_mode=W} in
+  let ac2 = {access_index=[Bin (Plus,Var tid,Num 1)];access_mode=W} in
+  [Loop (
+    {
+      range_var=var_make "idx";
+      range_lower_bound=(Var (var_make "lb"));
+      range_upper_bound=(Var (var_make "ub"))
+    }
+    ,
+    [
+      Acc (x,ac1);
+      Sync;
+      Acc (x,ac2);
+    ]
+  )]
 
-let sexample2 : Proto.proto =
+let sexample2 : Proto.prog =
   let open Proto in
   let x = var_make "x" in
-  let ac = {access_index=[Num 1];access_cond=Bool true;access_mode=W} in
-  (Seq (Acc (x,ac),Sync))
+  let ac = {access_index=[Num 1];access_mode=W} in
+  [Acc (x,ac); Sync]
 
 
 (*
@@ -139,16 +142,18 @@ let rec list_equal a b =
     else
       false
 *)
-let print_compare_output (p: Proto.proto) =
-  let ex = Pr.translate p in
+let print_compare_output (p: Proto.prog) =
   print_endline "----------------\nALang:\n----------------\n";
-  (A.print_lang ex);
+  A.print_lang p;
   print_endline "----------------\nPLang:\n----------------\n";
-  (P.print_lang (A.translate ex));
+  let p = A.translate p in
+  P.print_lang p;
   print_endline "----------------\nCLang:\n----------------\n";
-  (C.print_lang (C.translate (A.translate ex)));
+  let p = C.translate p in
+  C.print_lang p;
   print_endline "----------------\nHLang:\n----------------\n";
-  (H.print_lang (H.translate (C.translate (A.translate ex))))
+  let p = H.translate p in
+  H.print_lang p
 
 (*
 let print_compare_trace (ex:A.t) =

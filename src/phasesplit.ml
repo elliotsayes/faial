@@ -351,6 +351,10 @@ module ALang = struct
     let ret = List.rev ret in
     List.map List.rev ret
 *)
+  let print_lang (p:Proto.prog) =
+    Serialize.proto_ser p
+      |> Sexplib.Sexp.to_string_hum
+      |> print_endline
 
 (* Represents norms(P) *)
   let rec translate (s:Proto.prog) : P.t =

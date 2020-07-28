@@ -11,14 +11,16 @@ clean:
 native: build-tests
 	$(OCB) main.native
 	cp $(BUILD)/main.native main
+	$(OCB) main_old.native
+	cp $(BUILD)/main_old.native main-old
 
 build-tests:
-	$(OCB) test_loops.native
+#	$(OCB) test_loops.native
 	$(OCB) test_common.native
 	$(OCB) test_phasesplit.native
 
 test: build-tests
-	$(BUILD)/test_loops.native
+#	$(BUILD)/test_loops.native
 	$(BUILD)/test_common.native
 	$(BUILD)/test_phasesplit.native
 
