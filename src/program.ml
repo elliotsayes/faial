@@ -164,7 +164,7 @@ let rec reify (p:program) : prog =
         range_var = x;
         range_lower_bound = r.range_expr_start;
         range_upper_bound = r.range_expr_stop
-      }, 
+      },
           (* Ensure the lower bound is smaller than the upper bound *)
           p_assert (n_le r.range_expr_start r.range_expr_stop) @
           body @
