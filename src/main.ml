@@ -59,16 +59,6 @@ let print_kernel k =
     |> Sexplib.Sexp.to_string_hum
     |> print_endline
 
-let print_flat_kernel k =
-  Serialize.flat_kernel_ser k
-    |> Sexplib.Sexp.to_string_hum
-    |> print_endline
-
-let print_proj_kernel t =
-  Serialize.proj_ser t
-    |> Sexplib.Sexp.to_string_hum
-    |> print_endline
-
 let print_kernel_A k =
   ALang.print_lang k
 

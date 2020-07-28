@@ -2,29 +2,6 @@ open Proto
 open Common
 open Phaseord
 open Serialize
-open Loops
-
-type range = {
-  r_var: variable;
-  r_lowerbound: nexp;
-  r_upperbound: nexp;
-}
-
-let r_ser r =
-  call "range" [
-    Sexplib.Sexp.Atom r.r_var.var_name;
-    n_ser r.r_lowerbound;
-    n_ser r.r_upperbound;
-  ]
-
-let createRange var low upp =
-  {r_var=var;r_lowerbound=low;r_upperbound=upp}
-
-let proto_to_range (r:Proto.range) : range =
-  createRange (r.range_var) (Num 0) (r.range_upper_bound)
-
-let createAccess (codl:nexp list) (cndl:bexp) (m:mode)=
-  {access_index=codl;access_cond=cndl;access_mode=m}
 
 let rec nsubst (name: string) (value: nexp) (e:nexp) =
   match e with
@@ -42,6 +19,12 @@ let rec bsubst (name: string) (value: nexp) (e:bexp) =
   | BRel (x,e1,e2) -> BRel (x,bsubst name value e1, bsubst name value e2)
   | BNot e -> BNot (bsubst name value e)
   | Pred (s,v) -> e
+
+let r_subst (name:string) (value: nexp) (r:range) =
+  { r with
+    range_lower_bound = nsubst name value r.range_lower_bound;
+    range_upper_bound = nsubst name value r.range_upper_bound
+  }
 
 
 (* ------------------
@@ -65,6 +48,7 @@ module PLang = struct
     match p with
     | Access (x,a) -> call "loc" [Sexp.Atom x.var_name; a_ser a]
     | Loop (r, l) -> binop "loop" (r_ser r) (ser_u l)
+
   and ser_u l =
     let open Sexplib in
     Sexp.List (List.map ser_u_1 l)
@@ -87,20 +71,19 @@ module PLang = struct
     let rec p_subst_unsync (name:string) (value: nexp) (s:(unsync_instruction) list) :(unsync_instruction) list =
       match s with
       | (Loop (r,b))::ss ->
-        let r' = createRange (r.r_var) (nsubst name value r.r_lowerbound) (nsubst name value r.r_upperbound) in
-        let b' = p_subst_unsync name value b in
-        (Loop (r',b'))::(p_subst_unsync name value ss)
+        (Loop (r_subst name value r,p_subst_unsync name value b))::
+        (p_subst_unsync name value ss)
       | (Access (x,a))::ss ->
-        let a1 = List.map (nsubst name value) a.access_index in
-        let a2 = bsubst name value a.access_cond in
-        (Access (x,(createAccess a1 a2 a.access_mode)))::(p_subst_unsync name value ss)
+        let a' = { a with
+          access_index = List.map (nsubst name value) a.access_index
+        } in
+        (Access (x,a'))::(p_subst_unsync name value ss)
       | [] -> []
     in
     match s with
     | (Loop (r,b))::ss ->
-        let r' = createRange (r.r_var) (nsubst name value r.r_lowerbound) (nsubst name value r.r_upperbound) in
-        let b' = p_subst name value b in
-        (Loop (r',b'))::(p_subst name value ss)
+        (Loop (r_subst name value r, p_subst name value b))::
+        (p_subst name value ss)
     | (Phased u)::ss ->
         (Phased (p_subst_unsync name value u))::(p_subst name value ss)
     | [] -> []
@@ -188,13 +171,13 @@ module LLang = struct
 
   type unsync_instruction =
   | Decl of range * (unsync_instruction list)
-  | Access of variable * access * nexp
+  | Access of variable * access * task
 
 
   let rec ser_1 p =
     let open Sexplib in
     match p with
-    | Access (x,a,n) -> call "loc" [Sexp.Atom x.var_name; a_ser a; n_ser n]
+    | Access (x,a, t) -> call "loc" [Sexp.Atom x.var_name; a_ser a; t_ser t]
     | Decl (r, l) -> binop "decl" (r_ser r) (ser l)
   and ser l =
     let open Sexplib in
@@ -205,24 +188,24 @@ module LLang = struct
       |> Sexplib.Sexp.to_string_hum
       |> print_endline
 
-  let rec l_subst (name: string) (value: nexp) (s:(unsync_instruction) list) :(unsync_instruction) list =
-    match s with
-    | (Decl (r,b))::ss ->
-      let r' = createRange r.r_var (nsubst name value r.r_lowerbound) (nsubst name value r.r_upperbound) in
-      let b' = l_subst name value b in
-      (Decl (r',b'))::(l_subst name value ss)
-    | (Access (x,e1,e2))::ss ->
-      let n = List.map (nsubst name value) e1.access_index in
-      let b = bsubst name value e1.access_cond in
-      (Access (x,(createAccess n b e1.access_mode),(nsubst name value e2)))::(l_subst name value ss)
-    | [] -> []
+  let rec l_subst (name: string) (value: nexp): unsync_instruction list -> unsync_instruction list =
+    List.map (l_subst_inst name value)
+  and l_subst_inst (name: string) (value: nexp) : unsync_instruction -> unsync_instruction =
+    function
+    | Decl (r, b) ->
+      Decl (r_subst name value r, l_subst name value b)
+    | Access (x, a, t) ->
+      let a' = { a with
+        access_index = List.map (nsubst name value) a.access_index
+      } in
+      Access (x, a', t)
 
-  let rec project (s:(P.unsync_instruction) list) :(unsync_instruction) list =
-    match s with
-    | (P.Access (x,a))::ss ->
-      (Access (x,a, Var (var_make "$TID")))::(project ss)
-    | (P.Loop (r,b))::ss -> (Decl (r,(project b)))::(project ss)
-    | [] -> []
+  let rec project (t:task) : P.unsync_instruction list -> unsync_instruction list =
+    List.map (project_inst t)
+  and project_inst (t:task) : P.unsync_instruction -> unsync_instruction =
+    function
+    | P.Access (x, a) -> Access (x, a, t)
+    | P.Loop (r, b) -> Decl (r, (project t b))
 (*
   let rec run (s:(unsync_instruction) list) tid =
     match s with
@@ -244,10 +227,20 @@ module LLang = struct
     | [] -> []
 *)
   let rec translate (d:(P.unsync_instruction) list) (tid_count: nexp) =
-    Decl (createRange (var_make "$T1") (Num 1) tid_count,
-      (l_subst "$TID" (Var (var_make "$T1")) (project d))
-        @[Decl (createRange (var_make "$T2") (Num 0) (Var (var_make "$T1")),
-          l_subst "$TID" (Var (var_make "$T2")) (project d)
+    let r1 = {
+      range_var = var_make "$T1";
+      range_lower_bound=Num 1;
+      range_upper_bound=tid_count
+    } in
+    let r2 = {
+      range_var = var_make "$T2";
+      range_lower_bound = Num 0;
+      range_upper_bound = Var (var_make "$T1")
+    } in
+    Decl (r1,
+      (l_subst "$TID" (Var (var_make "$T1")) (project Task1 d))
+        @[Decl (r2,
+          l_subst "$TID" (Var (var_make "$T2")) (project Task2 d)
             )
           ]
         )
@@ -284,10 +277,9 @@ module HLang = struct
   let rec h_subst (name:string) (value: nexp) (s:(slice) list) :(slice) list =
     match s with
     | (Unsync ui)::ss -> (Unsync (List.hd (L.l_subst name value [ui])))::(h_subst name value ss)
-    | (Global (r,b))::ss ->
-        let r' = createRange r.r_var (nsubst name value r.r_lowerbound) (nsubst name value r.r_upperbound) in
-        let b' = h_subst name value b in
-        (Global (r',b'))::(h_subst name value ss)
+    | (Global (r, b))::ss ->
+        (Global (r_subst name value r, h_subst name value b))::
+        (h_subst name value ss)
     | [] -> []
 (*
   let rec run (s:t) =
@@ -359,14 +351,16 @@ module ALang = struct
   type instruction =
   | Access of variable * access
   | Sync
-  | Loop of range * ((instruction) list)
+  | Cond of bexp * instruction list * instruction list
+  | Loop of range * instruction list
 
-  type t = (instruction) list
+  type t = instruction list
 
   let rec ser_1 p =
     let open Sexplib in
     match p with
-    | Access (x,a) -> call "loc" [Sexp.Atom x.var_name; a_ser a]
+    | Access (x, a) -> call "loc" [Sexp.Atom x.var_name; a_ser a]
+    | Cond (b, p, q) -> call "if" [ser p; ser q]
     | Loop (r, l) -> binop "loop" (r_ser r) (ser l)
     | Sync -> Sexp.Atom "sync"
   and ser l =
@@ -378,18 +372,23 @@ module ALang = struct
       |> Sexplib.Sexp.to_string_hum
       |> print_endline
 
-  let rec a_subst (name: string) (value: nexp) (s:(instruction) list) :(instruction) list =
-    match s with
-    | (Loop (r,b))::ss ->
-        let r' = createRange r.r_var (nsubst name value r.r_lowerbound) (nsubst name value r.r_upperbound) in
-        let b' = a_subst name value b in
-        (Loop (r',b'))::(a_subst name value ss)
-    | (Access (x,a))::ss ->
-        let n' = List.map (nsubst name value) a.access_index in
-        let b' = bsubst name value a.access_cond in
-        (Access (x,createAccess n' b' a.access_mode))::(a_subst name value ss)
-    | Sync::ss -> (Sync)::(a_subst name value ss)
-    | [] -> []
+  let rec a_subst (name: string) (value: nexp): t -> t =
+    List.map (a_subst_inst name value)
+  and a_subst_inst (name: string) (value: nexp) (i:instruction) : instruction =
+    match i with
+    | Loop (r,b) -> Loop (r_subst name value r, a_subst name value b)
+    | Access (x,a) ->
+      let a' = { a with
+        access_index = List.map (nsubst name value) a.access_index
+      } in
+      Access (x,a')
+    | Cond (b, p, q) ->
+      Cond (
+        bsubst name value b,
+        a_subst name value p,
+        a_subst name value q
+      )
+    | Sync -> Sync
 (*
   let rec run (s:t) =
     let rec run_aux (s:t) (accum,phase) =
@@ -419,34 +418,29 @@ module ALang = struct
 
 (* Represents norms(P) *)
   let rec translate (s:t) =
-    (* This is U+ operator *)
-    let rec inlineCondition s n f =
-      match s with
-      | [] -> []
-      | (Access (x,a))::xs ->
-          let n' = List.map f a.access_index in
-          let a' = createAccess n' (BRel (BAnd,a.access_cond,n)) a.access_mode in
-          (Access (x,a'))::(inlineCondition xs n f)
-      | (Sync)::xs -> (Sync)::(inlineCondition xs n f)
-      | (Loop (r,b))::xs ->
-          let n' = (BRel (BAnd,NRel (NLt,r.r_lowerbound,r.r_upperbound),n)) in
-          (Loop (r,inlineCondition b n' f))::(inlineCondition xs n f)
-    in
     (* Rule of black triangle, called normalization *)
     let rec normalize1 s =
       match s with
       | Sync -> (Some [Sync],[])
       | Access (x,a) -> (None, [Access (x,a)])
-      | Loop (r,body) ->
+      | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub} as r,body) ->
           (match normalize body with
             | (Some p1, p2) ->
-              let dec_ub = Bin (Minus,r.r_upperbound,Num 1) in
-              let p1' = inlineCondition p1 (NRel (NLt,r.r_lowerbound,r.r_upperbound)) (nsubst (r.r_var.var_name) r.r_lowerbound) in
-              let p2' = inlineCondition p2 (NRel (NLt,r.r_lowerbound,r.r_upperbound)) (nsubst (r.r_var.var_name) dec_ub) in
-              let inc_var = Bin (Plus,Var r.r_var,Num 1) in
-              let subbed_p1 = a_subst (r.r_var.var_name) inc_var p1 in
-              let r' = createRange r.r_var r.r_lowerbound dec_ub in
-              ( Some (p1'@[Loop (r',p2@subbed_p1)]) , p2')
+              let dec_ub = Bin (Minus, ub, Num 1) in
+              let p1' = Cond (
+                NRel (NLt, lb, ub),
+                a_subst x.var_name lb p1,
+                []
+              ) in
+              let p2' = Cond (
+                NRel (NLt, lb, ub),
+                a_subst x.var_name dec_ub p2,
+                []
+              ) in
+              let inc_var = Bin (Plus,Var x,Num 1) in
+              let subbed_p1 = a_subst (x.var_name) inc_var p1 in
+              let r' = { r with range_upper_bound = dec_ub } in
+              ( Some ([p1';Loop (r',p2@subbed_p1)]) , [p2'])
             | (None, _) -> (None, [s])
           )
     (* Rule of black triangle, called normalization *)
@@ -483,18 +477,16 @@ module ProtoLang = struct
 
   module A = ALang
 
-  let rec translate s : A.t =
-    match s with
-    | Proto.Skip
+  let rec translate (s:Proto.prog) : A.t =
+    List.map translate_inst s |> List.flatten
+
+  and translate_inst : inst -> A.t =
+    function
     | Proto.Goal _
-    | Proto.Assert _ ->
-      []
-    | Proto.Seq (e1, e2) ->
-        (translate e1) @ (translate e2)
+    | Proto.Assert _ -> []
     | Proto.Sync -> [A.Sync]
+    | Proto.Cond (b, p, q) -> [Cond (b, translate p, translate q)]
     | Proto.Acc (x,a) -> [A.Access (x,a)]
-    | Proto.Loop ({range_var = var; range_upper_bound = ub}, e) ->
-        let r' = createRange var (Num 0) ub in
-        [A.Loop (r', translate e)]
+    | Proto.Loop (r, e) -> [A.Loop (r, translate e)]
 
 end
