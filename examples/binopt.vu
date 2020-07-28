@@ -22,15 +22,20 @@ ro randArray[bid];
 sync;
 foreach j < numSteps {
   assert (j + (numSteps % 2))  % 2 == 0;
-  rw callB[bid][tid] if tid < j;
-  ro callA[bid][tid] if tid < j;
-  ro callA[bid][tid + 1] if tid < j;
+  if (tid < j) {
+    rw callB[bid][tid];
+    ro callA[bid][tid];
+    ro callA[bid][tid + 1];
+  }
   sync;
-  rw callA[bid][tid] if tid < j - 1;
-  ro callB[bid][tid] if tid < j - 1;
-  ro callB[bid][tid + 1] if tid < j - 1;
+  if (tid < j - 1) {
+    rw callA[bid][tid];
+    ro callB[bid][tid];
+    ro callB[bid][tid + 1];
+  }
   sync;
 }
-
-ro callA[bid][0] if tid == 0;
-rw output[bid] if tid == 0;
+if (tid == 0) {
+  ro callA[bid][0];
+  rw output[bid];
+}

@@ -133,35 +133,27 @@ let m_ser m = match m with
 let r_ser r =
   call "range" [
     Sexplib.Sexp.Atom r.range_var.var_name;
+    n_ser r.range_lower_bound;
     n_ser r.range_upper_bound;
   ]
 
 let a_ser a =
   let idx = Sexplib.Sexp.List (List.map n_ser a.access_index) in
-  call (m_ser a.access_mode) [idx; b_ser a.access_cond]
+  call (m_ser a.access_mode) [idx]
 
-let t_ser t =
-  call "timed" [
-    n_ser t.timed_phase;
-    a_ser t.timed_data
-  ]
-
-let serialize_steps name l =
-  List.map t_ser l |> call name
-
-let serialize_lsteps name l =
-  List.map (fun (x,o) -> unop x.var_name (t_ser o)) l |> call name
-
-let rec proto_ser p =
+let rec inst_ser (i:inst) =
   let open Sexplib in
-  match p with
-  | Skip -> Sexp.Atom "skip"
+  match i with
   | Sync -> Sexp.Atom "sync"
   | Goal b -> unop "goal" (b_ser b)
   | Assert b -> unop "assert" (b_ser b)
   | Acc (x, a) -> binop "loc" (Sexp.Atom x.var_name) (a_ser a)
-  | Seq (p1, p2) -> binop "begin" (proto_ser p1) (proto_ser p2)
+  | Cond (b, p1, p2) -> call "if" [b_ser b; proto_ser p1; proto_ser p2]
   | Loop (r, p) -> binop "loop" (r_ser r) (proto_ser p)
+
+and proto_ser (p:prog) =
+  let open Sexplib in
+  Sexp.List (List.map inst_ser p)
 
 let bexp_list pre = List.map b_ser pre
 
@@ -182,7 +174,7 @@ let kernel_ser k =
     var_set_ser "globals" k.kernel_global_variables;
     proto_ser k.kernel_code;
   ]
-
+(*
 let flat_kernel_ser k =
   let open Loops in
   let open Sexplib in
@@ -212,3 +204,4 @@ let proj_ser (k:Taskproj.proj_kernel) : Sexplib.Sexp.t =
     var_set_ser "vars" k.proj_kernel_vars;
     List (Atom "steps" :: elems k.proj_kernel_steps);
   ]
+*)

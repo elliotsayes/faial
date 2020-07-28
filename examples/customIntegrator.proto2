@@ -40,20 +40,22 @@ const
 # That is: no two threads have the same tid.
 assert distinct [tid];
 
-foreach index < SUM_BUFFER_SIZE {
-  assert index >= tid;
+foreach (index in tid .. SUM_BUFFER_SIZE) {
   assert (index - tid) % blockDim_x == 0;
   ro sumBuffer[index];
 }
 
 rw tempBuffer[tid];
-foreach i < WORK_GROUP_SIZE {
+foreach (i in 0 .. WORK_GROUP_SIZE) {
   assert i >= 1;
   assert pow2(i);
   sync;
-  ro tempBuffer[tid + i]  if (tid%(i*2) == 0 && tid+i < WORK_GROUP_SIZE);
-  rw tempBuffer[tid] if (tid%(i*2) == 0 && tid+i < WORK_GROUP_SIZE);
+  if (tid%(i*2) == 0 && tid+i < WORK_GROUP_SIZE) {
+    ro tempBuffer[tid + i];
+    rw tempBuffer[tid];
+  }
 }
-
-ro tempBuffer[0] if tid == 0;
-rw result[0] if tid == 0;
+if (tid == 0) {
+  ro tempBuffer[0];
+  rw result[0];
+}

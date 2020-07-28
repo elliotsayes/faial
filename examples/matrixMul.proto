@@ -50,7 +50,7 @@ assert wA > 1 && block_size > 0 && wB > 1;
 assert wA == block_size * gridDim.y;
 assert wB == block_size * gridDim.x;
 
-foreach a < aEnd + 1 {
+foreach (a in 0 .. aEnd + 1) {
   assert a >= aBegin && (a - aBegin) % aStep == 0;
   assert b >= bBegin && (b - bBegin) % bStep == 0;
   rw As[by][bx][ty][tx];
@@ -58,7 +58,7 @@ foreach a < aEnd + 1 {
   ro A[a + wA * ty + tx];
   ro B[b + wB * ty + tx];
   sync;
-  foreach k < block_size {
+  foreach (k in 0.. block_size) {
     ro As[ty][k];
     ro Bs[k][tx];
   }
@@ -71,4 +71,3 @@ assert c == wB * block_size * by + block_size * bx;
 assert d == wB * ty + tx;
 
 rw C[c + d];
-

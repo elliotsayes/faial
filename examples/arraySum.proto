@@ -11,13 +11,19 @@ const
 assert distinct [threadIdx.x][blockIdx.x];
 
 rw sdata[blockIdx.x][threadIdx.x];
-ro A[i] if i < n;
+if (i < n) ro A[i];
 sync;
-foreach s < blockDim.x / 2 {
+foreach (s in 0 .. blockDim.x / 2) {
   assert pow2(s);
-  ro sdata[blockIdx.x][threadIdx.x + s] if threadIdx.x < s;
-  rw sdata[blockIdx.x][threadIdx.x] if threadIdx.x < s;
+  if (threadIdx.x < s) {
+    ro sdata[blockIdx.x][threadIdx.x + s];
+    rw sdata[blockIdx.x][threadIdx.x];
+  }
   sync;
 }
-ro sdata[blockIdx.x][0] if (threadIdx.x == 0);
-rw S[blockIdx.x] if (threadIdx.x == 0);
+if (threadIdx.x == 0) {
+  ro sdata[blockIdx.x][0];
+  rw S[blockIdx.x];
+} else {
+    assert false;
+}

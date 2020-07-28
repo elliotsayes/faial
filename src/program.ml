@@ -96,7 +96,7 @@ let normalize_variables (p:program) xs =
   let rec norm p xs : program * VarSet.t =
     let do_subst x do_cont : program * VarSet.t =
       if VarSet.mem x xs then (
-        let new_x : variable = Loops.generate_fresh_name x xs in
+        let new_x : variable = Bindings.generate_fresh_name x xs in
         let new_xs = VarSet.add new_x xs in
         let si = Subst.SubstPair.make (x, Var new_x) in
         do_cont new_x new_xs (fun (p:program) -> norm (ReplacePair.program_subst si p) new_xs)
@@ -134,69 +134,41 @@ let normalize_variables (p:program) xs =
   in
   norm p xs |> fst
 
-let rec reify (p:program) : proto =
+let rec reify (p:program) : prog =
   (**
     Breaks down syntactic sugar:
     1. Converts declarations into asserts
-    2. Converts blocks into seqs
-    3. Convert structured-loops into protocol Foreach
+    2. Convert structured-loops into protocol Foreach
   *)
   match p with
-  | Decl (x,_,None) -> Skip
-  | Decl (x,_,Some n) -> Assert (n_eq (Var x) n)
-  | Inst ISync -> Sync
-  | Inst (IGoal b) -> Goal b
+  | Decl (x,_,None) -> []
+  | Decl (x,_,Some n) -> [Assert (n_eq (Var x) n)]
+  | Inst ISync -> [Sync]
+  | Inst (IGoal b) -> [Goal b]
   | Inst (IAssert b) -> p_assert b
-  | Inst (IAcc (x,y)) -> Acc (x,y)
-  | Block l -> proto_block (List.map reify l)
-  | If _ -> raise (Failure "Call remove_if first!")
+  | Inst (IAcc (x,y)) -> [Acc (x,y)]
+  | Block l -> List.map reify l |> List.flatten
+  | If (b,p,q) -> [Cond (b,reify p, reify q)]
   | For (x, r, p) ->
     let index = Var x in
-    let p = reify p in
-    let body = begin match r.range_expr_kind with
+    let body:prog = begin match r.range_expr_kind with
       | Default ->
-        proto_block [
-          (* assert index >= INIT; *)
-          p_assert (n_ge index r.range_expr_start);
           (*  assert (index - INIT) % STRIDE == 0; *)
-          p_assert (n_eq (n_mod (n_minus index r.range_expr_start) r.range_expr_step) (Num 0));
+          p_assert (n_eq (n_mod (n_minus index r.range_expr_start) r.range_expr_step) (Num 0)) @
           (* assert STRIDE > 0; *)
-          p_assert (n_gt r.range_expr_step (Num 0));
-          (* Ensure the lower bound is smaller than the upper bound *)
-          p_assert (n_le r.range_expr_start r.range_expr_stop);
-          (* The rest of the body *)
-          p
-        ]
+          p_assert (n_gt r.range_expr_step (Num 0))
       | Pred name ->
-        proto_block [
-          p_assert (n_ge index r.range_expr_start);
-          p_assert (Pred (name, x));
-          (* Ensure the lower bound is smaller than the upper bound *)
-          p_assert (n_le r.range_expr_start r.range_expr_stop);
-          p
-        ]
+        p_assert (Pred (name, x))
     end in
-    Loop ({range_var = x; range_upper_bound = r.range_expr_stop}, body)
-
-let remove_if (p:program) : program =
-  let i_remove_if (cnd:bexp) (i:instruction) =
-    match i with
-    | ISync
-    | IGoal _
-    | IAssert _ -> i
-    | IAcc (x, a) -> IAcc (x, {a with access_cond = b_and cnd a.access_cond})
-  in
-  let rec iter (cnd:bexp) (p:program) =
-    if cnd = Bool false then Block []
-    else
-      match p with
-      | Inst i -> Inst (i_remove_if cnd i)
-      | Block l -> Block (List.map (iter cnd) l)
-      | Decl _ -> p
-      | If (b, p1, p2) -> Block [iter (b_and cnd b) p1; iter (b_and cnd (b_not b)) p2]
-      | For (x, r, p) -> For (x, r, iter cnd p)
-  in
-  iter (Bool true) p
+    [Loop ({
+        range_var = x;
+        range_lower_bound = r.range_expr_start;
+        range_upper_bound = r.range_expr_stop
+      }, 
+          (* Ensure the lower bound is smaller than the upper bound *)
+          p_assert (n_le r.range_expr_start r.range_expr_stop) @
+          body @
+          reify p)]
 
 let rec get_variable_decls (p:program) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
   match p with
@@ -214,13 +186,12 @@ let compile (k:p_kernel) : kernel =
   let p = normalize_variables k.p_kernel_code (VarSet.union locals globals) in
   let locals, globals = get_variable_decls p (locals, globals)  in
   (**
-    1. We rename all variables so that they areall different
-    2. We remove if statements
-    3. We break down for-loops and variable declarations
+    1. We rename all variables so that they are all different
+    2. We break down for-loops and variable declarations
     *)
   {
     kernel_locations = k.p_kernel_locations;
     kernel_local_variables = locals;
     kernel_global_variables = globals;
-    kernel_code = remove_if p |> reify;
+    kernel_code = reify p;
   }

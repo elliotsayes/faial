@@ -90,10 +90,11 @@ let parse_bexp = make "bexp" parse_bexp
 
 let parse_range = make "range" (fun s ->
   match s with
-  | Sexp.List [Sexp.Atom "range"; Sexp.Atom x; n] ->
+  | Sexp.List [Sexp.Atom "range"; Sexp.Atom x; lb; ub] ->
     Some {
       range_var = var_make x;
-      range_upper_bound = parse_nexp.run n;
+      range_lower_bound = parse_nexp.run lb;
+      range_upper_bound = parse_nexp.run ub;
     }
   | _ -> None
 )
@@ -101,10 +102,9 @@ let parse_range = make "range" (fun s ->
 let parse_access = make "access" (fun s ->
   let mk_acc m s =
     match s with
-    | [Sexp.List l; b] ->
+    | [Sexp.List l] ->
       Some {
         access_index=List.map parse_nexp.run l;
-        access_cond=parse_bexp.run b;
         access_mode = m;
       }
     | _ -> None
@@ -115,36 +115,37 @@ let parse_access = make "access" (fun s ->
   | _ -> None
 )
 
-let rec parse_proto s =
+let rec parse_inst s : inst option =
   match s with
-  | Sexp.Atom "skip" -> Some Skip
   | Sexp.Atom "sync" -> Some Sync
-  | Sexp.List [Sexp.Atom "begin"] -> Some Skip
-  | Sexp.List (Sexp.Atom "begin" :: p :: l) ->
-    bind (parse_proto p) (fun p1 ->
-      bind (parse_proto (Sexp.List (Sexp.Atom "begin" :: l))) (fun p2 ->
-        Some (Seq (p1, p2))
-      )
-    )
+  | Sexp.List [Sexp.Atom "if"; b; p; q] ->
+    bind (parse_proto p) (fun p ->
+      bind (parse_proto q) (fun q ->
+        Some (Cond (parse_bexp.run b, p, q))))
+  | Sexp.List [Sexp.Atom "goal"; b] -> Some (Goal (parse_bexp.run b))
+  | Sexp.List [Sexp.Atom "assert"; b] -> Some (Assert (parse_bexp.run b))
+  | Sexp.List [Sexp.Atom "loc"; Sexp.Atom x; a] ->
+    Some (Acc (var_make x, parse_access.run a))
   | Sexp.List [Sexp.Atom "loop"; r; p] ->
     bind (parse_proto p) (fun p ->
       Some (Loop (parse_range.run r, p))
     )
-  | Sexp.List [Sexp.Atom "loc"; Sexp.Atom x; a] ->
-    Some (Acc (var_make x, parse_access.run a))
+  | _ -> None
+and parse_inst_list l : prog option =
+  match l with
+  | i::p ->
+    bind (parse_inst i) (fun i ->
+      bind (parse_inst_list p) (fun p ->
+        Some (i::p)
+      )
+    )
+  | [] -> Some []
+and parse_proto s : prog option =
+  match s with
+  | Sexp.List l -> parse_inst_list l
   | _ -> None
 
 let parse_proto = make "proto" parse_proto
-
-let parse_timed = make "timed" (fun s ->
-  match s with
-  | Sexp.List [Sexp.Atom "timed"; n; a] ->
-    Some {
-      timed_phase = parse_nexp.run n;
-      timed_data = parse_access.run a;
-    }
-  | _ -> None
-)
 
 let parse_string_list l =
   List.mapi (fun idx elem ->
@@ -169,18 +170,5 @@ let parse_kernel = make "kernel" (fun s->
       kernel_global_variables = parse_string_list gs |> List.map var_make |> VarSet.of_list;
       kernel_code = parse_proto.run p;
     }
-  | _ -> None
-)
-
-let parse_step = make "step" (fun s ->
-  match s with
-  | Sexp.List [Sexp.Atom x; o] ->
-    Some (x, parse_timed.run o)
-  | _ -> None
-)
-
-let parse_stream = make "stream" (fun s ->
-  match s with
-  | Sexp.List l -> Some (List.map parse_step.run l)
   | _ -> None
 )

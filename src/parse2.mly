@@ -8,10 +8,11 @@
 %token GLOBAL
 %token SYNC RW RO IF
 %token LOCS CONST ASSERT COMMA
-%token LPAREN RPAREN LBRACE RBRACE LBRACK RBRACK
-%token FOREACH
+%token LPAREN RPAREN LBRACK RBRACK LBRACE RBRACE
+%token FOREACH UNTIL IN
 %token DISTINCT
 %token PROVE
+%token THEN ELSE
 
 %left OR
 %left AND
@@ -81,28 +82,37 @@ index:
   | LBRACK n = nexp RBRACK { [n] }
   | LBRACK n = nexp RBRACK i = index { n :: i }
 
-proto:
-  | p = inst SEMICOLON
-    { p }
-  | p1 = inst SEMICOLON p2 = proto
-    { Seq (p1, p2) }
-  | l = loop ; p = proto
-    { Seq (l, p) }
-  | l = loop
-    { l }
+prog:
+  | s = stmt; p = prog
+    { s :: p }
+  | { [] }
 
-loop:
-  | FOREACH x = ident LT n = nexp LBRACE p = proto RBRACE
-    { Loop ({range_var=x; range_upper_bound=n}, p) }
+%inline range:
+  | x = ident IN lb = nexp UNTIL ub = nexp
+   { {range_var=x; range_lower_bound=lb; range_upper_bound=ub} }
 
-inst:
+expr:
   | SYNC { Sync }
   | ASSERT b = bexp { Assert b }
   | PROVE b = bexp { Goal b }
   | m = mode; x = ident; i = index
-    { Acc (x, {access_index=i; access_cond=Bool true; access_mode=m}) }
-  | m = mode; x = ident; i = index; IF b = bexp
-    { Acc (x, {access_index=i; access_cond=b; access_mode=m}) }
+    { Acc (x, {access_index=i; access_mode=m}) }
+
+stmt:
+  | e = expr SEMICOLON
+    { e }
+  | IF LPAREN b = bexp RPAREN p = block
+    { Cond (b, p, []) }
+  | IF LPAREN b = bexp RPAREN p = block ELSE q = block
+    { Cond (b, p, q) }
+  | FOREACH LPAREN r = range RPAREN p = block
+    { Loop (r, p) }
+
+block:
+  | LBRACE p = prog RBRACE { p }
+  | LBRACE RBRACE { [] }
+  | s = stmt { [s] }
+  | SEMICOLON { [] }
 
 loc_names:
   | { [] }
@@ -125,7 +135,7 @@ const:
 kernel:
   | l1 = locs
     l2 = loption(const)
-    p = proto {
+    p = prog {
       let ls, gs = List.partition (fun (x,_) -> x = Local) l2 in
       let ls = List.map snd ls in
       let gs = List.map snd gs in
@@ -138,7 +148,7 @@ kernel:
     }
   | l2 = loption(const)
     l1 = locs
-    p = proto {
+    p = prog {
       let ls, gs = List.partition (fun (x,_) -> x = Local) l2 in
       let ls = List.map snd ls in
       let gs = List.map snd gs in

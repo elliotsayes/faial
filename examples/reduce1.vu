@@ -29,12 +29,15 @@ ro g_idata[i];
 rw sdata[blockIdx.x][tid];
 sync;
 
-foreach s < blockDim.x {
+foreach (s in 0.. blockDim.x) {
   assert pow2(s);
-  ro sdata[blockIdx.x][tid + s] if tid % (2 * s) == 0;
-  rw sdata[blockIdx.x][tid] if tid % (2 * s) == 0;
+  if (tid % (2 * s) == 0) {
+    ro sdata[blockIdx.x][tid + s];
+    rw sdata[blockIdx.x][tid];
+  }
   sync;
 }
-
-ro sdata[blockIdx.x][0] if tid == 0;
-rw g_odata[blockIdx.x] if tid == 0;
+if (tid == 0) {
+  ro sdata[blockIdx.x][0];
+  rw g_odata[blockIdx.x];
+}

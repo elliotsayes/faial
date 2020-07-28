@@ -57,12 +57,15 @@ rule read = parse
   | "prove" { PROVE }
   | "foreach" { FOREACH }
   | "if" { IF }
+  | "else" { ELSE }
+  | "in" { IN }
   | "shared" { LOCS }
   | "distinct" { DISTINCT }
   | "const" { CONST }
   | "assert" { ASSERT }
   | "global" { GLOBAL }
   | "local" { LOCAL }
+  | ".." { UNTIL }
   | ',' { COMMA }
   | '[' { LBRACK }
   | ']' { RBRACK }

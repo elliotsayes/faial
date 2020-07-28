@@ -19,30 +19,30 @@ assert threadIdx_x < m;
 
 # funcValue = Func(blockIdx.x, threadIdx.x); //func 1
 
-ro func[blockIdx_x][threadIdx_x] if threadIdx_x < m;
+if (threadIdx_x < m) {
+    ro func[blockIdx_x][threadIdx_x];
 
-# minVector[threadIdx.x] = funcValue;
-rw minVector[blockIdx_x][threadIdx_x] if threadIdx_x < m;
+    # minVector[threadIdx.x] = funcValue;
+    rw minVector[blockIdx_x][threadIdx_x];
 
-# maxVector[threadIdx.x] = funcValue;
-rw maxVector[blockIdx_x][threadIdx_x] if threadIdx_x < m;
+    # maxVector[threadIdx.x] = funcValue;
+    rw maxVector[blockIdx_x][threadIdx_x];
 
-# funcValue = Func(blockIdx.y + 1, threadIdx.x);
-ro func[blockIdx_y + 1][threadIdx_x] if threadIdx_x < m;
+    # funcValue = Func(blockIdx.y + 1, threadIdx.x);
+    ro func[blockIdx_y + 1][threadIdx_x];
 
-# minVector[threadIdx.x] = min(minVector[threadIdx.x], funcValue);
-rw minVector[blockIdx_x][threadIdx_x] if threadIdx_x < m;
+    # minVector[threadIdx.x] = min(minVector[threadIdx.x], funcValue);
+    rw minVector[blockIdx_x][threadIdx_x];
 
-# maxVector[threadIdx.x] = max(maxVector[threadIdx.x], funcValue);
-rw maxVector[blockIdx_x][threadIdx_x] if threadIdx_x < m;
-
+    # maxVector[threadIdx.x] = max(maxVector[threadIdx.x], funcValue);
+    rw maxVector[blockIdx_x][threadIdx_x];
+}
 sync;
 
-foreach i < n {
-  foreach j < m {
+foreach (i in 0 .. n) {
+  foreach (j in 0 .. m) {
     # funcValue = Func(myFunc, j);
     assert myFunc == i + threadIdx_x;
-    ro func[myFunc][j] if myFunc < n;
+    if (myFunc < n) ro func[myFunc][j];
   }
 }
-

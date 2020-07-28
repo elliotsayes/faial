@@ -10,12 +10,12 @@ module type SUBST =
   end
 
 module Make (S:SUBST) = struct
-  let shadows (s:S.t) x =
+  let shadows (s:S.t) (x:variable) : bool =
     match S.find s x with
     | Some _ -> true
     | None -> false
 
-  let add (s:S.t) x cont =
+  let add (s:S.t) (x:variable) (cont: S.t option -> 'a) : 'a  =
     if shadows s x then
       match S.remove s x with
       | Some s -> cont (Some s)
@@ -23,7 +23,7 @@ module Make (S:SUBST) = struct
     else
       cont (Some s)
 
-  let n_subst (s:S.t) n : nexp =
+  let n_subst (s:S.t) (n:nexp) : nexp =
     let rec subst n =
       match n with
       | Var x ->
@@ -38,7 +38,7 @@ module Make (S:SUBST) = struct
     in
     subst n
 
-  let b_subst (s:S.t) b : bexp =
+  let b_subst (s:S.t) (b:bexp) : bexp =
     let rec subst b =
       match b with
         | Pred (p,x) ->
@@ -63,30 +63,33 @@ module Make (S:SUBST) = struct
     in
     subst b
 
-  let a_subst (s:S.t) a : access =
+  let a_subst (s:S.t) (a:access) : access =
     {
       access_index = List.map (n_subst s) a.access_index;
       access_mode = a.access_mode;
-      access_cond = b_subst s a.access_cond;
     }
 
-  let p_subst f p =
-    let rec subst f p =
-      match p with
-      | Skip -> Skip
-      | Sync -> Sync
-      | Goal b -> Goal (b_subst f b)
-      | Assert b -> Assert (b_subst f b)
-      | Acc (x, a) -> Acc (x, a_subst f a)
-      | Seq (p1, p2) -> Seq (subst f p1, subst f p2)
-      | Loop (r, p) ->
-        let r = { r with range_upper_bound = n_subst f r.range_upper_bound } in
-        add f r.range_var (function
-          | Some f -> Loop(r, subst f p)
-          | None -> Loop (r, p)
-        )
-    in
-    subst f p
+  let r_subst (s:S.t) (r:range) : range =
+    { r with
+      range_lower_bound = n_subst s r.range_lower_bound;
+      range_upper_bound = n_subst s r.range_upper_bound
+    }
+
+  let rec i_subst (s:S.t) (i:inst) : inst =
+    match i with
+    | Sync -> Sync
+    | Goal b -> Goal (b_subst s b)
+    | Assert b -> Assert (b_subst s b)
+    | Acc (x, a) -> Acc (x, a_subst s a)
+    | Cond (b, p1, p2) -> Cond (b_subst s b, p_subst s p1, p_subst s p2)
+    | Loop (r, p) ->
+      let r = r_subst s r in
+      add s r.range_var (function
+        | Some s -> Loop (r, p_subst s p)
+        | None -> Loop (r, p)
+      )
+  and p_subst (s:S.t) (p:prog) : prog =
+    List.map (i_subst s) p
 end
 
 module SubstPair =

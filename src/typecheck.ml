@@ -25,11 +25,11 @@ let typecheck_kernel (k:kernel) =
     in
     handle ctr errs (iter (VarSet.of_list l) l)
   in
-  let undef_vars (vars:VarSet.t) (p:proto) errs : type_error list =
+  let undef_vars (vars:VarSet.t) (p:prog) errs : type_error list =
     VarSet.diff (Freenames.free_names_proto p VarSet.empty) vars
       |> handle (fun l -> UndefinedVars l) errs
   in
-  let undef_locs (locs:VarSet.t) (p:proto) errs =
+  let undef_locs (locs:VarSet.t) (p:prog) errs =
     VarSet.diff (Freenames.free_locs_proto p locs) locs
       |> handle (fun l -> UndefinedLocs l) errs
   in

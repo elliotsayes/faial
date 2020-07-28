@@ -296,7 +296,6 @@ let rec parse_program j =
       | [`String loc; m; `List idx] -> Some (Inst (IAcc (var_make loc, {
           access_index = List.map parse_nexp.run idx;
           access_mode = parse_mode.run m;
-          access_cond = Bool true
         })))
       | _ -> None);
     "AssertStmt", (["cond"], function

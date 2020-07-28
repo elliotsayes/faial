@@ -1,7 +1,6 @@
 open Proto
 open Common
 open Cmdliner
-open Phasesplit
 
 (** Prints the nth-line of a file (starts at base 0) *)
 let nth_line filename n =
@@ -58,7 +57,7 @@ let print_kernel k =
   Serialize.kernel_ser k
     |> Sexplib.Sexp.to_string_hum
     |> print_endline
-
+(*
 let print_flat_kernel k =
   Serialize.flat_kernel_ser k
     |> Sexplib.Sexp.to_string_hum
@@ -68,7 +67,7 @@ let print_proj_kernel t =
   Serialize.proj_ser t
     |> Sexplib.Sexp.to_string_hum
     |> print_endline
-
+*)
 type command = Flatten | Project | Sat | Typecheck
 
 let print_errs errs =
@@ -149,6 +148,8 @@ let main_t =
         if cmd = Typecheck then
           print_kernel k
         else begin
+          print_kernel k
+          (*
           let k = Loops.flatten_kernel k in
           if cmd = Flatten then
             print_flat_kernel k
@@ -164,6 +165,7 @@ let main_t =
               |> Gensmtlib2.print_code
             end
           end
+          *)
         end
       ) ks
     with e ->

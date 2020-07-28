@@ -39,10 +39,11 @@ assert dx == 512;
 assert dy == 512;
 assert fj < 1024;
 
-foreach p < lb {
+foreach (p in 0 .. lb) {
   assert fi == gtidy + p;
   assert fj == fi * dx + gtidx;
-  rw vx[fj] if gtidx < dx && fi < dy;
-  rw vy[fj] if gtidx < dx && fi < dy;
+  if (gtidx < dx && fi < dy) {
+    rw vx[fj];
+    rw vy[fj];
+  }
 }
-

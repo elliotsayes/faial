@@ -1,46 +1,6 @@
 open Proto
 open Common
 
-(** Given a variable and a set of known variables, returns
-    a fresh variable name. *)
-
-let generate_fresh_name (x:variable) (xs:VarSet.t) : variable =
-  let rec do_fresh_name x n =
-    let new_x = {x with var_name = x.var_name ^ string_of_int n } in
-    if VarSet.mem new_x xs
-    then do_fresh_name x (n + 1)
-    else new_x
-  in
-  if VarSet.mem x xs then do_fresh_name x 1 else x
-
-(** Loop normalization: Makes all loop variables distinct. *)
-
-let normalize_variables (p:proto) =
-  let rec norm e xs =
-    match e with
-    | Loop ({range_var=x; range_upper_bound=ub}, e) ->
-      if VarSet.mem x xs then (
-        let new_x : variable = generate_fresh_name x xs in
-        let new_xs = VarSet.add new_x xs in
-        let do_subst = Subst.SubstPair.make (x, Var new_x) in
-        let (e, new_xs) = norm (Subst.ReplacePair.p_subst do_subst e) new_xs in
-        Loop ({range_var=new_x; range_upper_bound=ub}, e), new_xs
-      ) else (
-        let (e, new_xs) = norm e (VarSet.add x xs) in
-        Loop ({range_var=x;range_upper_bound=ub}, e), new_xs
-      )
-    | Seq (e1, e2) ->
-      let (e1, xs) = norm e1 xs in
-      let (e2, xs) = norm e2 xs in
-      Seq (e1, e2), xs
-    | Acc (_, _)
-    | Skip
-    | Assert _
-    | Goal _
-    | Sync -> e, xs
-  in
-  norm p VarSet.empty |> fst
-
 (** Get proof obligations *)
 
 type proof = Prove | Assume

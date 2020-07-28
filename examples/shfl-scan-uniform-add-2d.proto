@@ -10,8 +10,10 @@ const local blockIdx, local threadIdx;
 assert distinct [blockIdx][threadIdx];
 
 # __shared__ data accesses are prefixed with blockIdx
-rw buf[blockIdx] if threadIdx == 0;
-ro partial_sums[blockIdx] if threadIdx == 0;
+if (threadIdx == 0) {
+  rw buf[blockIdx];
+  ro partial_sums[blockIdx];
+}
 sync;
 rw data[blockIdx][threadIdx];
 # __shared__ data accesses are prefixed with blockIdx

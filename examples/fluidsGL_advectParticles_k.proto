@@ -42,10 +42,11 @@ assert dx == 512;
 assert gtidx == blockIdx.x * blockDim.x + threadIdx.x;
 assert gtidy == blockIdx.y * (lb * blockDim.y) + threadIdx.y * lb;
 
-foreach p < lb {
+foreach (p in 0 .. lb) {
   assert fi == gtidy + p;
   assert fj == fi * dx + gtidx;
-  ro part[fj] if gtidx < dx && fi < dy;
-  rw part[fj] if gtidx < dx && fi < dy;
+  if (gtidx < dx && fi < dy) {
+    ro part[fj];
+    rw part[fj];
+  }
 }
-

@@ -20,40 +20,40 @@ let free_names_nexp e (fns:VarSet.t) = fold_nexp VarSet.add e fns
 
 let free_names_bexp e fns = fold_bexp VarSet.add e fns
 
-let free_names_range r = free_names_nexp r.range_upper_bound
+let free_names_range (r:range) (fns:VarSet.t) : VarSet.t =
+  free_names_nexp r.range_lower_bound fns |> free_names_nexp r.range_upper_bound
 
 let free_names_access a fns =
   List.fold_right free_names_nexp a.access_index fns
-    |> free_names_bexp a.access_cond
-
-let free_names_timed t fns : VarSet.t =
-  free_names_nexp t.timed_phase fns |> free_names_access t.timed_data
 
 let free_names_list f l fns =
   List.fold_right f l fns
 
-let rec free_names_proto p fns =
-  match p with
-  | Sync
-  | Skip -> fns
+let rec free_names_inst (i:inst) (fns:VarSet.t) : VarSet.t =
+  match i with
+  | Sync -> fns
   | Goal b | Assert b -> free_names_bexp b fns
   | Acc (_, a) -> free_names_access a fns
-  | Seq (p1, p2) ->
-    free_names_proto p1 fns
-      |> free_names_proto p2
+  | Cond (b, p1, p2) ->
+    free_names_bexp b fns
+    |> free_names_proto p1
+    |> free_names_proto p2
   | Loop (r, p) ->
     free_names_proto p fns
-      |> VarSet.remove r.range_var
-      |> VarSet.union (free_names_nexp r.range_upper_bound fns)
+    |> VarSet.remove r.range_var
+    |> VarSet.union (free_names_nexp r.range_upper_bound fns)
 
-let rec free_locs_proto p fns =
-  match p with
+and free_names_proto (p:prog) (fns:VarSet.t) : VarSet.t =
+  free_names_list free_names_inst p fns
+
+let rec free_locs_inst (i:inst) (fns:VarSet.t) =
+  match i with
   | Assert _
   | Goal _
-  | Sync
-  | Skip -> fns
+  | Sync -> fns
   | Acc (x, _) -> VarSet.add x fns
-  | Seq (p1, p2) ->
-    free_locs_proto p1 fns
-      |> free_locs_proto p2
+  | Cond (_, p1, p2) -> free_locs_proto p1 fns |> free_locs_proto p2
   | Loop (_, p) -> free_locs_proto p fns
+
+and free_locs_proto p (fns:VarSet.t) =
+  free_names_list free_locs_inst p fns

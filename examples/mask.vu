@@ -20,6 +20,6 @@ shared a;
 const local threadIdx.x, global n;
 assert distinct [threadIdx.x];
 rw a[threadIdx.x];
-foreach i < n {
+foreach (i in 0.. n) {
   rw a[threadIdx.x];
 }

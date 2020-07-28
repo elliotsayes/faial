@@ -34,7 +34,7 @@ assert y == threadIdx.y + blockIdx.y * blockDim.y; # y is row
 assert x < Width;
 
 # Loop over the Md and Nd block dimension required to compute the Pd element
-foreach m < Width/blockD {
+foreach (m in 0 .. Width/blockD) {
 
     # collaboratively loading of Md and Nd blocks into shared memory
     rw Mds[blockIdx.x][blockIdx.y][threadIdx.y][threadIdx.x];
@@ -44,7 +44,7 @@ foreach m < Width/blockD {
     sync;
 
     # keep track of the running sum
-    foreach k < blockD {
+    foreach (k in 0.. blockD) {
       ro Mds[blockIdx.x][blockIdx.y][threadIdx.y][k];
       ro Nds[blockIdx.x][blockIdx.y][k][threadIdx.x];
     }
@@ -53,5 +53,3 @@ foreach m < Width/blockD {
 
 # write back to the global memory
 rw Pd[y * Width + x];
-
-

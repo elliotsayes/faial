@@ -24,30 +24,29 @@ assert m == 2048;
 
 
 # funcValue = Func(blockIdx.x, threadIdx.x); //func 1
-ro func[id] if threadIdx_x < m;
+if (threadIdx_x < m) {
+    ro func[id];
 
-# minVector[threadIdx.x] = funcValue;
-rw minVector[id] if threadIdx_x < m;
+    # minVector[threadIdx.x] = funcValue;
+    rw minVector[id];
 
-# maxVector[threadIdx.x] = funcValue;
-rw maxVector[id] if threadIdx_x < m;
+    # maxVector[threadIdx.x] = funcValue;
+    rw maxVector[id];
 
-# funcValue = Func(blockIdx.y + 1, threadIdx.x);
-ro func[id + m] if threadIdx_x < m;
+    # funcValue = Func(blockIdx.y + 1, threadIdx.x);
+    ro func[id + m];
 
-# minVector[threadIdx.x] = min(minVector[threadIdx.x], funcValue);
-rw minVector[id] if threadIdx_x < m;
+    # minVector[threadIdx.x] = min(minVector[threadIdx.x], funcValue);
+    rw minVector[id];
 
-# maxVector[threadIdx.x] = max(maxVector[threadIdx.x], funcValue);
-rw maxVector[id] if threadIdx_x < m;
-
+    # maxVector[threadIdx.x] = max(maxVector[threadIdx.x], funcValue);
+    rw maxVector[id];
+}
 sync;
 
-foreach i < n {
-  foreach j < m {
+foreach (i in 0.. n)
+  foreach (j in 0.. m) {
     # funcValue = Func(myFunc, j);
     assert myFunc == i + threadIdx_x;
-    ro func[j * m + myFunc] if myFunc < n;
+    if (myFunc < n) ro func[j * m + myFunc];
   }
-}
-

@@ -18,7 +18,7 @@ let var_equal (x:variable) (y:variable) = String.equal x.var_name y.var_name
 
 module VarOT = struct
   type t = variable
-  let compare = fun x y -> Pervasives.compare x.var_name y.var_name
+  let compare = fun x y -> Stdlib.compare x.var_name y.var_name
 end
 
 module VarSet = Set.Make(VarOT)
@@ -166,27 +166,25 @@ let rec b_or_ex l =
   | [x] -> x
   | x::l -> b_or x (b_or_ex l)
 
-type range = {range_var: variable; range_upper_bound: nexp}
+type range = {
+  range_var: variable;
+  range_lower_bound: nexp;
+  range_upper_bound: nexp
+}
 
 type mode = R | W
 
-type access = {access_index: nexp list; access_cond: bexp; access_mode: mode}
+type access = {access_index: nexp list; access_mode: mode}
 
-type proto =
-| Skip
+type inst =
 | Sync
+| Cond of bexp * inst list * inst list
 | Goal of bexp
 | Assert of bexp
 | Acc of variable * access
-| Seq of proto * proto
-| Loop of range * proto
+| Loop of range * inst list
 
-(** A timed access is prefixed by the phase it was accessed *)
-type 'a timed = {timed_phase: nexp; timed_data: 'a}
-
-type access_t = access timed
-
-type step_list = (string * access_t) list
+type prog = inst list
 
 type kernel = {
   (* The shared locations that can be accessed in the kernel. *)
@@ -196,7 +194,7 @@ type kernel = {
   (* The internal variables are used in the code of the kernel.  *)
   kernel_local_variables: VarSet.t;
   (* The code of a kernel performs the actual memory accesses. *)
-  kernel_code: proto;
+  kernel_code: prog;
 }
 
 let distinct idx =
@@ -204,17 +202,18 @@ let distinct idx =
 
 let p_assert b =
   match b with
-  | Bool true -> Skip
-  | _ -> Assert b
-
+  | Bool true -> []
+  | _ -> [Assert b]
+(*
 let p_seq p1 p2 =
   match p1, p2 with
   | Skip, p | p, Skip -> p
   | _ -> Seq (p1, p2)
-
+*)
+(*
 let rec proto_block l =
   match l with
   | [] -> Skip
   | [x] -> x
   | x::l -> p_seq x (proto_block l)
-
+*)

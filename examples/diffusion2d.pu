@@ -45,8 +45,8 @@ assert jy < ny;
 prove distinct [j];
 
 ro f[j];
-ro f[j - 1] if (jx != 0);
-ro f[j+1] if (jx != nx - 1);
-ro f[j-nx] if (jy != 0);
-ro f[j+nx] if (jy != ny - 1);
+if (jx != 0) ro f[j - 1];
+if (jx != nx - 1) ro f[j+1];
+if (jy != 0) ro f[j-nx];
+if (jy != ny - 1) ro f[j+nx];
 rw fn[j];
