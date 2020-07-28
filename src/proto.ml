@@ -176,15 +176,32 @@ type mode = R | W
 
 type access = {access_index: nexp list; access_mode: mode}
 
-type inst =
-| Sync
-| Cond of bexp * inst list * inst list
-| Goal of bexp
-| Assert of bexp
-| Acc of variable * access
-| Loop of range * inst list
+type 'a  base_inst =
+  | Base of 'a
+  | Cond of bexp * ('a  base_inst) list * ('a  base_inst) list
+  | Goal of bexp
+  | Assert of bexp
+  | Loop of range * ('a  base_inst) list
+
+type l_access = variable * access
+
+type acc_or_sync =
+  | Acc of l_access
+  | Sync
+
+type inst = acc_or_sync base_inst
+
+type u_inst = l_access base_inst
+
+type s_inst = u_inst base_inst
+
+(* Programs *)
 
 type prog = inst list
+
+type u_prog = u_inst list
+
+type s_prog = s_inst list
 
 type kernel = {
   (* The shared locations that can be accessed in the kernel. *)

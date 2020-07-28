@@ -141,19 +141,28 @@ let a_ser a =
   let idx = Sexplib.Sexp.List (List.map n_ser a.access_index) in
   call (m_ser a.access_mode) [idx]
 
-let rec inst_ser (i:inst) =
+let rec base_inst_ser (f:'a -> Sexplib.Sexp.t) : 'a base_inst -> Sexplib.Sexp.t =
   let open Sexplib in
-  match i with
-  | Sync -> Sexp.Atom "sync"
+  function
+  | Base a -> f a
   | Goal b -> unop "goal" (b_ser b)
   | Assert b -> unop "assert" (b_ser b)
-  | Acc (x, a) -> binop "loc" (Sexp.Atom x.var_name) (a_ser a)
-  | Cond (b, p1, p2) -> call "if" [b_ser b; proto_ser p1; proto_ser p2]
-  | Loop (r, p) -> binop "loop" (r_ser r) (proto_ser p)
-
-and proto_ser (p:prog) =
+  | Cond (b, p1, p2) -> call "if" [
+      b_ser b;
+      base_inst_list_ser f p1;
+      base_inst_list_ser f p2
+    ]
+  | Loop (r, p) -> binop "loop" (r_ser r) (base_inst_list_ser f p)
+and base_inst_list_ser (f:'a -> Sexplib.Sexp.t) (p:('a base_inst) list) : Sexplib.Sexp.t =
   let open Sexplib in
-  Sexp.List (List.map inst_ser p)
+  Sexp.List (List.map (base_inst_ser f) p)
+
+let proto_ser : prog -> Sexplib.Sexp.t =
+  let open Sexplib in
+  base_inst_list_ser
+    (function
+      | Sync -> Sexp.Atom "sync"
+      | Acc (x, a) -> binop "loc" (Sexp.Atom x.var_name) (a_ser a))
 
 let bexp_list pre = List.map b_ser pre
 

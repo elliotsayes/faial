@@ -32,10 +32,10 @@ let normalize_variables (p:prog) =
       let (p, xs) = norm p xs in
       let (q, xs) = norm q xs in
       (Cond (b, p, q), xs)
-    | Acc (_, _)
+    | Base (Acc (_, _))
     | Assert _
     | Goal _
-    | Sync -> i, xs
+    | Base Sync -> i, xs
   and norm p xs =
     match p with
     | [] -> ([], xs)

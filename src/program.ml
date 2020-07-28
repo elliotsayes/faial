@@ -143,10 +143,10 @@ let rec reify (p:program) : prog =
   match p with
   | Decl (x,_,None) -> []
   | Decl (x,_,Some n) -> [Assert (n_eq (Var x) n)]
-  | Inst ISync -> [Sync]
+  | Inst ISync -> [Base Sync]
   | Inst (IGoal b) -> [Goal b]
   | Inst (IAssert b) -> p_assert b
-  | Inst (IAcc (x,y)) -> [Acc (x,y)]
+  | Inst (IAcc (x,y)) -> [Base (Acc (x,y))]
   | Block l -> List.map reify l |> List.flatten
   | If (b,p,q) -> [Cond (b,reify p, reify q)]
   | For (x, r, p) ->

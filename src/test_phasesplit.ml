@@ -22,9 +22,9 @@ let sexample1 : Proto.prog =
     }
     ,
     [
-      Acc (x,ac1);
-      Sync;
-      Acc (x,ac2);
+      Base (Acc (x,ac1));
+      Base Sync;
+      Base (Acc (x,ac2));
     ]
   )]
 
@@ -32,7 +32,7 @@ let sexample2 : Proto.prog =
   let open Proto in
   let x = var_make "x" in
   let ac = {access_index=[Num 1];access_mode=W} in
-  [Acc (x,ac); Sync]
+  [Base (Acc (x,ac)); Base Sync]
 
 
 (*

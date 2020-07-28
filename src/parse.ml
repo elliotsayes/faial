@@ -117,7 +117,7 @@ let parse_access = make "access" (fun s ->
 
 let rec parse_inst s : inst option =
   match s with
-  | Sexp.Atom "sync" -> Some Sync
+  | Sexp.Atom "sync" -> Some (Base Sync)
   | Sexp.List [Sexp.Atom "if"; b; p; q] ->
     bind (parse_proto p) (fun p ->
       bind (parse_proto q) (fun q ->
@@ -125,7 +125,7 @@ let rec parse_inst s : inst option =
   | Sexp.List [Sexp.Atom "goal"; b] -> Some (Goal (parse_bexp.run b))
   | Sexp.List [Sexp.Atom "assert"; b] -> Some (Assert (parse_bexp.run b))
   | Sexp.List [Sexp.Atom "loc"; Sexp.Atom x; a] ->
-    Some (Acc (var_make x, parse_access.run a))
+    Some (Base (Acc (var_make x, parse_access.run a)))
   | Sexp.List [Sexp.Atom "loop"; r; p] ->
     bind (parse_proto p) (fun p ->
       Some (Loop (parse_range.run r, p))

@@ -75,21 +75,31 @@ module Make (S:SUBST) = struct
       range_upper_bound = n_subst s r.range_upper_bound
     }
 
-  let rec i_subst (s:S.t) (i:inst) : inst =
+  let rec i_subst (f:'a -> 'a) (s:S.t) (i:'a  base_inst) : 'a  base_inst =
     match i with
-    | Sync -> Sync
+    | Base b -> Base (f b)
     | Goal b -> Goal (b_subst s b)
     | Assert b -> Assert (b_subst s b)
-    | Acc (x, a) -> Acc (x, a_subst s a)
-    | Cond (b, p1, p2) -> Cond (b_subst s b, p_subst s p1, p_subst s p2)
+    | Cond (b, p1, p2) -> Cond (
+        b_subst s b,
+        i_list_subst f s p1,
+        i_list_subst f s p2
+      )
     | Loop (r, p) ->
       let r = r_subst s r in
       add s r.range_var (function
-        | Some s -> Loop (r, p_subst s p)
+        | Some s -> Loop (r, i_list_subst f s p)
         | None -> Loop (r, p)
       )
-  and p_subst (s:S.t) (p:prog) : prog =
-    List.map (i_subst s) p
+  and i_list_subst (f:'a -> 'a) (s:S.t) : ('a  base_inst) list -> ('a  base_inst) list =
+    List.map (i_subst f s)
+
+  let p_subst (s:S.t) : prog -> prog =
+    i_list_subst (function
+      | Sync -> Sync
+      | Acc (x, a) -> Acc (x, a_subst s a)
+    ) s
+
 end
 
 module SubstPair =

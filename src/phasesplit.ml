@@ -367,12 +367,26 @@ module ALang = struct
       | (Some p1,p2),(None, q2) -> (Some p1,(p2@q2))
       | (Some p1,p2),(Some q1, q2) -> (Some (p1@p2@q1),q2)
     in
-    let rec normalize1 s =
-      match s with
-      | Sync -> (Some [Sync],[])
-      | Acc (x,e) -> (None, [Acc (x,e)])
-      | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub} as r,body) ->
-          (match normalize body with
+    let rec normalize1 : inst -> Proto.prog option * Proto.prog =
+      function
+      | Base Sync -> (Some [Base Sync],[])
+      | Base (Acc (x,e)) -> (None, [Base (Acc (x,e))])
+      | Cond (b, p, q) ->
+        begin
+          match normalize p, normalize q with
+          (* There is no synchronized part, so we only return 1 conditional *)
+          | (None, p), (None, q) -> (None, [Cond (b, p, q)])
+          (* Duplicate the condition, one synchronized and the other unsync *)
+          | (op, p'), (oq, q') ->
+            let from_opt = function
+              | Some x -> x
+              | None -> []
+            in
+            (Some [Cond (b, from_opt op, from_opt oq)],
+                  [Cond (b, p', q')])
+        end
+      | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub} as r,body) as s ->
+          begin match normalize body with
             | (Some p1, p2) ->
               let dec_ub = Bin (Minus, ub, Num 1) in
               let p1' = Cond (
@@ -388,20 +402,21 @@ module ALang = struct
               let inc_var = Bin (Plus,Var x,Num 1) in
               let subbed_p1 = ReplacePair.p_subst (x, inc_var) p1 in
               let r' = { r with range_upper_bound = dec_ub } in
-              ( Some ([p1';Loop (r',p2@subbed_p1)]) , [p2'])
+              (Some [p1';Loop (r',p2@subbed_p1)] , [p2'])
             | (None, _) -> (None, [s])
-          )
+          end
     (* Rule of black triangle, called normalization *)
     and normalize: Proto.prog -> Proto.prog option * Proto.prog = function
-    | [] -> (None,[])
-    | x::xs -> merge (normalize1 x) (normalize xs)
+      | [] -> (None,[])
+      | x::xs -> merge (normalize1 x) (normalize xs)
     in
 
     let rec translate_aux (s:prog) (accum:P.t) (phase:P.unsync_instruction list)  =
       match s with
-      | Sync::l -> translate_aux l (accum@[(P.Phased phase)]) []
-      | (Acc (x,a))::l -> translate_aux l accum (phase@[(P.Access (x,a))])
-      | (Loop (r,t))::l -> translate_aux l (accum@[P.Loop (r,translate_aux t [] [])]) []
+      | (Base Sync)::l -> translate_aux l (accum@[(P.Phased phase)]) []
+      | (Base (Acc (x,a)))::l -> translate_aux l accum (phase@[(P.Access (x,a))])
+      | (Loop (r,t))::l ->
+        translate_aux l (accum@[P.Loop (r,translate_aux t [] [])]) []
       | [] -> accum@[P.Phased phase]
     in
 

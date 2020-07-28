@@ -92,11 +92,11 @@ prog:
    { {range_var=x; range_lower_bound=lb; range_upper_bound=ub} }
 
 expr:
-  | SYNC { Sync }
+  | SYNC { Base Sync }
   | ASSERT b = bexp { Assert b }
   | PROVE b = bexp { Goal b }
   | m = mode; x = ident; i = index
-    { Acc (x, {access_index=i; access_mode=m}) }
+    { Base (Acc (x, {access_index=i; access_mode=m})) }
 
 stmt:
   | e = expr SEMICOLON
