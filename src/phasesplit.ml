@@ -11,9 +11,9 @@ open Subst
 let rec prepend (u:u_prog) : s_prog -> Proto.s_prog =
   function
     | Base u' :: l -> Base (u @ u') :: l
-    | Cond (b, p) :: l -> Cond (b, prepend u p) :: l
-    | Loop (_, _) :: _ -> failwith "Unexpected input: expecting a normalized program"
-    | [] -> failwith "Unexpected input: expecting a normalized program"
+    | Cond (b, p) :: l -> Cond (b, prepend u p) :: (* condionally prepend u if not b ? *) prepend u l
+    | Loop (_, _) :: _ as l -> l
+    | [] -> []
 
 let seq (p:s_prog option * u_prog) (q:s_prog option * u_prog) : s_prog option * u_prog =
   match p, q with
@@ -35,7 +35,7 @@ let rec normalize1 : inst -> s_prog option * u_prog =
       (* Duplicate the condition, one synchronized and the other unsync *)
       | (Some p, p') -> (Some [Cond (b, p)], [Cond (b, p')])
     end
-  | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub} as r,body) ->
+  | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub} as r, body) ->
       begin match normalize body with
         | (Some p1, p2) ->
           let dec_ub = Bin (Minus, ub, Num 1) in
@@ -51,7 +51,7 @@ let rec normalize1 : inst -> s_prog option * u_prog =
           let subbed_p1 = ReplacePair.s_subst (x, inc_var) p1 in
           let r' = { r with range_upper_bound = dec_ub } in
           (Some [p1';Loop (r',prepend p2 subbed_p1)] , [p2'])
-        | (None, u) -> (None, u)
+        | (None, u) -> (None, [Loop (r, u)])
       end
 (* Typesafe normalization of programs *)
 and normalize: Proto.prog -> s_prog option * u_prog = function
