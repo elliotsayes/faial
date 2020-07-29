@@ -7,7 +7,7 @@
 %token LOCAL
 %token GLOBAL
 %token SYNC RW RO IF
-%token LOCS CONST ASSERT COMMA
+%token LOCS CONST COMMA
 %token LPAREN RPAREN LBRACK RBRACK LBRACE RBRACE
 %token FOREACH UNTIL IN
 %token DISTINCT
@@ -93,7 +93,6 @@ prog:
 
 expr:
   | SYNC { Base Sync }
-  | ASSERT b = bexp { Base (Unsync (Assert b)) }
   | PROVE b = bexp { Base (Unsync (Goal b)) }
   | m = mode; x = ident; i = index
     { Base (Unsync (Acc (x, {access_index=i; access_mode=m}))) }

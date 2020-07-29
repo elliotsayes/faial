@@ -94,7 +94,6 @@ module Make (S:SUBST) = struct
   let acc_inst_subst (s:S.t) : acc_inst -> acc_inst =
     function
       | Goal b -> Goal (b_subst s b)
-      | Assert b -> Assert (b_subst s b)
       | Acc (x, a) -> Acc (x, a_subst s a)
 
   let p_subst (s:S.t) : prog -> prog =

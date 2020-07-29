@@ -62,7 +62,6 @@ rule read = parse
   | "shared" { LOCS }
   | "distinct" { DISTINCT }
   | "const" { CONST }
-  | "assert" { ASSERT }
   | "global" { GLOBAL }
   | "local" { LOCAL }
   | ".." { UNTIL }

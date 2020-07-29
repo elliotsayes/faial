@@ -55,14 +55,14 @@ let rec normalize1 : inst -> s_prog option * u_prog =
       end
 (* Typesafe normalization of programs *)
 and normalize: Proto.prog -> s_prog option * u_prog = function
-  | [] -> (None,[])
+  | [] -> (None, [])
   | x::xs -> seq (normalize1 x) (normalize xs)
 
 (* Takes a program with Syncs and generates a program with phased blocks *)
 let prog_to_s_prog (s:Proto.prog) : s_prog =
   match normalize s with
   | None, x -> [Base x]
-  | (Some b, after) -> b@ [Base after]
+  | (Some b, after) -> b @ [Base after]
 
 
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
@@ -97,7 +97,6 @@ let project_prog (t:task) : u_prog -> y_prog =
   base_prog_map
     (function
     | Goal b -> Goal b
-    | Assert b -> Assert b
     | Acc (x, e) -> Acc (x, e, t)
     )
 

@@ -173,7 +173,6 @@ let acc_sym_ser (x, a, t) : Sexplib.Sexp.t =
 let a_inst_ser (f: 'a -> Sexplib.Sexp.t) : 'a a_inst -> Sexplib.Sexp.t =
   function
     | Goal b -> unop "goal" (b_ser b)
-    | Assert b -> unop "assert" (b_ser b)
     | Acc a -> f a
 
 let acc_inst_ser : acc_inst -> Sexplib.Sexp.t =

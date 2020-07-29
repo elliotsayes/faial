@@ -204,7 +204,6 @@ type sym_acc = (variable * access * task)
 (* A simple instruction *)
 type 'a a_inst =
   | Goal of bexp
-  | Assert of bexp
   | Acc of 'a
 
 (* A simple instruction with regular accesses *)
@@ -259,8 +258,3 @@ type kernel = {
 
 let distinct idx =
   b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)
-
-let p_assert b =
-  match b with
-  | Bool true -> []
-  | _ -> [Base (Unsync (Assert b))]

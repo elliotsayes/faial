@@ -141,34 +141,39 @@ let rec reify (p:program) : prog =
     2. Convert structured-loops into protocol Foreach
   *)
   match p with
-  | Decl (x,_,None) -> []
-  | Decl (x,_,Some n) -> [Base (Unsync (Assert (n_eq (Var x) n)))]
+  | Decl (_,_,_) -> [] (* Only handled inside a block *)
+  | Inst (IAssert _) -> [] (* Only handled inside a block *)
   | Inst ISync -> [Base Sync]
   | Inst (IGoal b) -> [Base (Unsync (Goal b))]
-  | Inst (IAssert b) -> [Base (Unsync (Assert b))]
   | Inst (IAcc (x,y)) -> [Base (Unsync (Acc (x,y)))]
-  | Block l -> List.map reify l |> List.flatten
+  | Block [] -> []
+  | Block (Inst (IAssert b)::l) -> [Cond (b, reify (Block l))]
+  | Block (Decl (x,_,Some n)::l) -> [Cond (n_eq (Var x) n, reify (Block l))]
+  | Block (i::l) -> reify i @ reify (Block l)
   | If (b,p,q) -> [Cond (b,reify p);Cond(BNot b, reify q)]
   | For (x, r, p) ->
     let index = Var x in
-    let body:prog = begin match r.range_expr_kind with
+    let pre:bexp = begin match r.range_expr_kind with
       | Default ->
-          (*  assert (index - INIT) % STRIDE == 0; *)
-          p_assert (n_eq (n_mod (n_minus index r.range_expr_start) r.range_expr_step) (Num 0)) @
-          (* assert STRIDE > 0; *)
-          p_assert (n_gt r.range_expr_step (Num 0))
+          b_and
+            (*  assert (index - INIT) % STRIDE == 0; *)
+            (n_eq (n_mod (n_minus index r.range_expr_start) r.range_expr_step) (Num 0))
+            (* ensure that the bound is correct *)
+            (n_gt r.range_expr_step (Num 0))
       | Pred name ->
-        p_assert (Pred (name, x))
+          Pred (name, x)
     end in
     [Loop ({
         range_var = x;
         range_lower_bound = r.range_expr_start;
         range_upper_bound = r.range_expr_stop
       },
-          (* Ensure the lower bound is smaller than the upper bound *)
-          p_assert (n_le r.range_expr_start r.range_expr_stop) @
-          body @
-          reify p)]
+      (* Ensure the lower bound is smaller than the upper bound *)
+      [Cond (
+        b_and pre (n_le r.range_expr_start r.range_expr_stop),
+        reify p
+      )]
+    )]
 
 let rec get_variable_decls (p:program) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
   match p with
