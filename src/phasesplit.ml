@@ -390,9 +390,7 @@ let prog_to_s_prog (s:Proto.prog) : s_prog =
    conditional or a variable declaration (loop), and in which case,
    we must ensure we preserve that structure. *)
 
-let rec s_prog_to_phase_list (l: ('a base_inst) list) : ('a phase) list  =
-  List.map s_inst_to_phase_list l |> List.flatten
-and s_inst_to_phase_list : 'a base_inst -> ('a phase) list =
+let rec s_inst_to_phase_list : 'a base_inst -> ('a phase) list =
   function
   | Base p -> [Phase p]
   | Loop (r, l) ->
@@ -408,6 +406,9 @@ and s_inst_to_phase_list : 'a base_inst -> ('a phase) list =
       Pre (b, p)
     )
 
+let s_prog_to_phase_list (l: ('a base_inst) list) : ('a phase) list  =
+  List.map s_inst_to_phase_list l |> List.flatten
+
 (* ---------------- THIRD STAGE OF TRANSLATION ---------------------- *)
 
 let project_prog (t:task) : u_prog -> y_prog =
@@ -421,7 +422,7 @@ let project_prog (t:task) : u_prog -> y_prog =
 let project_phase (t:task) : u_prog phase -> y_prog phase =
   phase_map (project_prog t)
 
-let project : (u_prog phase) list -> (y_prog phase * y_prog phase) list =
+let project_phase_list : (u_prog phase) list -> (y_prog phase * y_prog phase) list =
   List.map (fun p -> (project_phase Task1 p, project_phase Task2 p))
 
 
@@ -456,7 +457,7 @@ module ALang = struct
     List.map List.rev ret
 *)
   let print_lang (p:Proto.prog) =
-    Serialize.proto_ser p
+    Serialize.prog_ser p
       |> Sexplib.Sexp.to_string_hum
       |> print_endline
 

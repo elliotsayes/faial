@@ -15,6 +15,9 @@ let flat_call func args = atoms args |> call func
 let binop f arg1 arg2 = call f [arg1;arg2]
 let unop f arg = call f [arg]
 
+let s_map (f: 'a -> Sexplib.Sexp.t) (l: 'a list) : Sexplib.Sexp.t =
+  List.map f l |> s_list
+
 module type NEXP_SERIALIZER = sig
   val n_ser: nexp -> Sexplib.Sexp.t
 end
@@ -147,21 +150,69 @@ let rec base_inst_ser (f:'a -> Sexplib.Sexp.t) : 'a base_inst -> Sexplib.Sexp.t 
   | Base a -> f a
   | Cond (b, p1) -> call "if" [
       b_ser b;
-      base_inst_list_ser f p1;
+      base_prog_ser f p1;
     ]
-  | Loop (r, p) -> binop "loop" (r_ser r) (base_inst_list_ser f p)
-and base_inst_list_ser (f:'a -> Sexplib.Sexp.t) (p:('a base_inst) list) : Sexplib.Sexp.t =
+  | Loop (r, p) -> binop "loop" (r_ser r) (base_prog_ser f p)
+
+and base_prog_ser (f:'a -> Sexplib.Sexp.t) (p:('a base_inst) list) : Sexplib.Sexp.t =
   let open Sexplib in
   Sexp.List (List.map (base_inst_ser f) p)
 
-let proto_ser : prog -> Sexplib.Sexp.t =
+let expr_acc_ser (x, a) : Sexplib.Sexp.t =
   let open Sexplib in
-  base_inst_list_ser
-    (function
-      | Unsync (Goal b) -> unop "goal" (b_ser b)
-      | Unsync (Assert b) -> unop "assert" (b_ser b)
-      | Sync -> Sexp.Atom "sync"
-      | Unsync (Acc (x, a)) -> binop "loc" (Sexp.Atom x.var_name) (a_ser a))
+  call "loc" [Sexp.Atom x.var_name; a_ser a]
+
+let acc_sym_ser (x, a, t) : Sexplib.Sexp.t =
+  let open Sexplib in
+  call "loc" [Sexp.Atom x.var_name; a_ser a; t_ser t]
+
+let a_inst_ser (f: 'a -> Sexplib.Sexp.t) : 'a a_inst -> Sexplib.Sexp.t =
+  function
+    | Goal b -> unop "goal" (b_ser b)
+    | Assert b -> unop "assert" (b_ser b)
+    | Acc a -> f a
+
+let acc_inst_ser : acc_inst -> Sexplib.Sexp.t =
+  a_inst_ser expr_acc_ser
+
+let sym_acc_inst_ser : sym_acc_inst -> Sexplib.Sexp.t =
+  a_inst_ser acc_sym_ser
+
+let sync_unsync_ser : sync_unsync -> Sexplib.Sexp.t =
+  let open Sexplib in
+  function
+    | Sync -> Sexp.Atom "sync"
+    | Unsync a -> acc_inst_ser a
+
+let inst_ser : inst -> Sexplib.Sexp.t =
+  base_inst_ser sync_unsync_ser
+
+let prog_ser : prog -> Sexplib.Sexp.t =
+  s_map inst_ser
+
+let u_inst_ser : u_inst -> Sexplib.Sexp.t =
+  base_inst_ser acc_inst_ser
+
+let u_prog_ser : u_prog -> Sexplib.Sexp.t =
+  s_map u_inst_ser
+
+let s_inst_ser : s_inst -> Sexplib.Sexp.t =
+  base_inst_ser u_prog_ser
+
+let s_prog_ser : s_prog -> Sexplib.Sexp.t =
+  s_map s_inst_ser
+
+let y_inst_ser : y_inst -> Sexplib.Sexp.t =
+  base_inst_ser sym_acc_inst_ser
+
+let y_prog_ser : y_prog -> Sexplib.Sexp.t =
+  s_map y_inst_ser
+
+let rec phase_ser (f: 'a -> Sexplib.Sexp.t) : 'a phase -> Sexplib.Sexp.t =
+  function
+  | Phase p -> f p
+  | Pre (b, p) -> binop "pre" (b_ser b) (phase_ser f p)
+  | Global (r, p) -> binop "global" (r_ser r) (phase_ser f p)
 
 let bexp_list pre = List.map b_ser pre
 
@@ -180,7 +231,7 @@ let kernel_ser k =
     var_set_ser "locations" k.kernel_locations;
     var_set_ser "locals" k.kernel_local_variables;
     var_set_ser "globals" k.kernel_global_variables;
-    proto_ser k.kernel_code;
+    prog_ser k.kernel_code;
   ]
 (*
 let flat_kernel_ser k =

@@ -214,12 +214,12 @@ type acc_inst = expr_acc a_inst
 type sym_acc_inst = sym_acc a_inst
 
 (* In a regular program the base is either a barrier or an unsync *)
-type acc_or_sync_inst =
+type sync_unsync =
   | Sync
   | Unsync of acc_inst
 
 (* The source instruction uses the base defined above *)
-type inst = acc_or_sync_inst base_inst
+type inst = sync_unsync base_inst
 (* The source program *)
 type prog = inst list
 
