@@ -1,12 +1,12 @@
 open Phasesplit
 open Proto
-
+(*
 module A = ALang
 module P = PLang
 module C = CLang
 module L = LLang
 module H = HLang
-
+*)
 
 let sexample1 : Proto.prog =
   let open Proto in
@@ -142,18 +142,20 @@ let rec list_equal a b =
     else
       false
 *)
+
 let print_compare_output (p: Proto.prog) =
+  let open Serialize in
   print_endline "----------------\nALang:\n----------------\n";
-  A.print_lang p;
+  prog_ser p |> s_print;
   print_endline "----------------\nPLang:\n----------------\n";
-  let p = A.translate p in
-  P.print_lang p;
+  let p = prog_to_s_prog p in
+  s_prog_ser p |> s_print;
   print_endline "----------------\nCLang:\n----------------\n";
-  let p = C.translate p in
-  C.print_lang p;
+  let p = s_prog_to_phase_list p in
+  u_phase_list_ser p |> s_print;
   print_endline "----------------\nHLang:\n----------------\n";
-  let p = H.translate p in
-  H.print_lang p
+  let p = project_phase_list p in
+  y_phase_list_ser p |> s_print
 
 (*
 let print_compare_trace (ex:A.t) =

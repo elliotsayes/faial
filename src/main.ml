@@ -55,20 +55,26 @@ let json_parse ic =
   )
 
 let print_kernel k =
-  Serialize.kernel_ser k
-    |> Sexplib.Sexp.to_string_hum
-    |> print_endline
+  let open Serialize in
+  print_endline "; proto";
+  kernel_ser k |> s_print
 
-let print_kernel_P k =
-  PLang.print_lang k
+let print_kernel_P p =
+  let open Serialize in
+  print_endline "; phased";
+  s_prog_ser p |> s_print
 
-let print_kernel_C k =
-  CLang.print_lang k
+let print_kernel_C p =
+  let open Serialize in
+  print_endline "; conc";
+  u_phase_list_ser p |> s_print
 
-let print_kernel_H k =
-  HLang.print_lang k
+let print_kernel_H p =
+  let open Serialize in
+  print_endline "; symbolic hist";
+  y_phase_list_ser p |> s_print
 
-type command = ProtoLang | ALang | PLang | CLang | HLang | Sat | Typecheck
+type command = ALang | PLang | CLang | HLang | Sat | Typecheck
 
 let print_errs errs =
   let open Typecheck in
@@ -126,6 +132,11 @@ let main_t =
     Arg.(required & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
   in
 
+  let halt_when b f k : unit =
+    if b then (f k; raise Exit)
+    else ()
+  in
+
   let do_main cmd fname use_bv skip_po skip_drf use_json sets =
     let ic = open_in fname in
     let on_kv x =
@@ -145,25 +156,18 @@ let main_t =
       List.iter (fun k ->
         Typecheck.typecheck_kernel k |> print_errs;
         let k = Subst.replace_constants sets k in
-        if cmd = Typecheck then
-          print_kernel k
-        else begin
-          let k = Phasesplit.ALang.translate k.kernel_code in
-          if cmd = PLang then
-            print_kernel_P k
-          else begin
-            let k = Phasesplit.CLang.translate k in
-            if cmd = CLang then
-              print_kernel_C k
-            else begin
-              let k = Phasesplit.HLang.translate k in
-              if cmd = HLang then
-                print_kernel_H k
-            end
-          end
-        end
+        halt_when (cmd = Typecheck) print_kernel k;
+        let k = Phasesplit.prog_to_s_prog k.kernel_code in
+        halt_when (cmd = PLang) print_kernel_P k;
+        let k = Phasesplit.s_prog_to_phase_list k in
+        halt_when (cmd = PLang) print_kernel_C k;
+        let k = Phasesplit.project_phase_list k in
+        halt_when (cmd = CLang) print_kernel_H k
       ) ks
-    with e ->
+    with
+      | Exit -> ()
+      | e ->
+      print_endline "error!";
       close_in_noerr ic;
       raise e
   in
@@ -172,11 +176,11 @@ let main_t =
     let doc = "Step 0: Replace key-values and typecheck the kernel." in
     let tc = Typecheck, Arg.info ["0"; "check"] ~doc in
     let doc = "Step 1: Unroll loops, inline conditions" in
-    let k1 = ALang, Arg.info ["1"; "alang"] ~doc in
+    let k1 = PLang, Arg.info ["1"; "alang"] ~doc in
     let doc = "Step 2: Split instructions into phases" in
-    let k2 = PLang, Arg.info ["2"; "plang"] ~doc in
+    let k2 = CLang, Arg.info ["2"; "plang"] ~doc in
     let doc = "Step 3: Change loops into Variable Declarations" in
-    let k3 = CLang, Arg.info ["3"; "clang"] ~doc in
+    let k3 = HLang, Arg.info ["3"; "clang"] ~doc in
     let doc = "Step 4: Change loops into Variable Declarations" in
     let k4 = HLang, Arg.info ["4"; "hlang"] ~doc in
     let doc = "Step 5: generate Z3." in

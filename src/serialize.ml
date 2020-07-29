@@ -18,6 +18,10 @@ let unop f arg = call f [arg]
 let s_map (f: 'a -> Sexplib.Sexp.t) (l: 'a list) : Sexplib.Sexp.t =
   List.map f l |> s_list
 
+let s_print (s:Sexplib.Sexp.t) : unit =
+  Sexplib.Sexp.to_string_hum s
+  |> print_endline
+
 module type NEXP_SERIALIZER = sig
   val n_ser: nexp -> Sexplib.Sexp.t
 end
@@ -25,8 +29,8 @@ end
 let t_ser t =
   let open Sexplib in
   Sexp.Atom (match t with
-    | Task1 -> "1"
-    | Task2 -> "2")
+    | Task1 -> "$T1"
+    | Task2 -> "$T2")
 
 module StdNexp : NEXP_SERIALIZER = struct
   let nbin_to_string (m:nbin) : string =
@@ -213,6 +217,15 @@ let rec phase_ser (f: 'a -> Sexplib.Sexp.t) : 'a phase -> Sexplib.Sexp.t =
   | Phase p -> f p
   | Pre (b, p) -> binop "pre" (b_ser b) (phase_ser f p)
   | Global (r, p) -> binop "global" (r_ser r) (phase_ser f p)
+
+let u_phase_list_ser : (u_prog phase) list -> Sexplib.Sexp.t =
+  s_map (phase_ser u_prog_ser)
+
+let y_phase_ser : y_prog phase -> Sexplib.Sexp.t =
+  phase_ser y_prog_ser
+
+let y_phase_list_ser : (y_prog phase * y_prog phase) list -> Sexplib.Sexp.t =
+  s_map (fun (x,y) -> s_list [y_phase_ser x; y_phase_ser y])
 
 let bexp_list pre = List.map b_ser pre
 
