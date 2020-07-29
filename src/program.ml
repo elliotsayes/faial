@@ -184,7 +184,7 @@ let rec get_variable_decls (p:program) (locals,globals:VarSet.t * VarSet.t) : Va
   | If (_, p1, p2) -> get_variable_decls p1 (locals,globals) |> get_variable_decls p2
   | For (_, _, p) -> get_variable_decls p (locals,globals)
 
-let compile (k:p_kernel) : kernel =
+let compile (k:p_kernel) : prog kernel =
   let globals = k.p_kernel_params in
   let locals = VarSet.empty in
   (* Ensures the variable declarations differ from the parameters *)

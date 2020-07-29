@@ -30,7 +30,7 @@
 
 %}
 
-%start <Proto.kernel> main
+%start <Proto.prog Proto.kernel> main
 %%
 main : p = kernel EOF { p };
 

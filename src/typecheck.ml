@@ -7,7 +7,7 @@ type type_error =
 | UndefinedLocs of variable list
 | UndefinedVars of variable list
 
-let typecheck_kernel (k:kernel) =
+let typecheck_kernel (k:prog kernel) =
   let handle ctr errs l =
     if not (VarSet.is_empty l)
     then (VarSet.elements l |> ctr)::errs

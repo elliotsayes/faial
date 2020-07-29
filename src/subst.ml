@@ -144,7 +144,7 @@ module ReplaceAssoc =  Make(SubstAssoc)
 
 (** Replace variables by constants. *)
 
-let replace_constants (kvs:(string*int) list) k : kernel =
+let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =
   let kvs = List.map (fun (x,n) -> x, Num n) kvs in
   let keys = List.split kvs |> fst |> List.map var_make |> VarSet.of_list in
   let kvs = SubstAssoc.make kvs in

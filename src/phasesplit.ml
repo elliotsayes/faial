@@ -65,6 +65,9 @@ let prog_to_s_prog (s:Proto.prog) : s_prog =
   | (Some b, after) -> b @ [Base after]
 
 
+let kernel_to_s_kernel k =
+  { k with kernel_code = prog_to_s_prog k.kernel_code }
+
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
 
 (* A synchronized-program has multiple goals to prove, so want to flatten

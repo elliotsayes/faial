@@ -245,7 +245,7 @@ let rec phase_map (f:'a -> 'b) : 'a phase -> 'b phase =
   | Pre (b, p) -> Pre (b, phase_map f p)
   | Global (r, p) -> Global (r, phase_map f p)
 
-type kernel = {
+type 'a kernel = {
   (* The shared locations that can be accessed in the kernel. *)
   kernel_locations: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
@@ -253,7 +253,7 @@ type kernel = {
   (* The internal variables are used in the code of the kernel.  *)
   kernel_local_variables: VarSet.t;
   (* The code of a kernel performs the actual memory accesses. *)
-  kernel_code: prog;
+  kernel_code: 'a;
 }
 
 let distinct (idx:variable list) : bexp =
