@@ -170,10 +170,8 @@ let rec parse_nexp n : nexp option =
       | _ -> None
     );
     "ProjExpr", (["task"; "child"], function
-      | [`Int n; c] ->
-        bind (parse_task n) (fun t ->
-          bind (parse_nexp c) (fun c ->
-            Some (Proj (t, c))))
+      | [`Int n; `String x] ->
+        bind (parse_task n) (fun t -> Some (Proj (t, var_make x)))
       | _ -> None
     )
   ] n
@@ -237,7 +235,7 @@ let rec parse_bexp b : bexp option =
       | [`List l] ->
         let on_elem (idx, n) =
           let idx = string_of_int (idx + 1) in
-          do_call parse_nexp.run n ("When parsing a DistinctExpr, error parsing argument #" ^ idx)
+          do_call parse_var.run n ("When parsing a DistinctExpr, error parsing argument #" ^ idx)
         in
         Some (enumerate l |> List.map on_elem |> Proto.distinct)
       | _ -> None)

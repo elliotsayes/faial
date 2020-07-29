@@ -4,7 +4,7 @@ open Common
 let rec fold_nexp f e a =
   match e with
   | Num _ -> a
-  | Proj (_, n) -> fold_nexp f n a
+  | Proj (_, x) -> f x a
   | Var x -> f x a
   | Bin (_, e1, e2) -> fold_nexp f e1 a |> fold_nexp f e2
 

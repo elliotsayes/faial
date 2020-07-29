@@ -46,8 +46,8 @@ nexp:
   | x = ident { Var x }
   | LPAREN n = nexp RPAREN { n }
   | n1 = nexp ; o = nbin ; n2 = nexp { o n1 n2 }
-  | ONE AT n = nexp { Proj(Task1, n) }
-  | TWO AT n = nexp { Proj(Task2, n) }
+  | ONE AT x = ident { Proj(Task1, x) }
+  | TWO AT x = ident { Proj(Task2, x) }
 
 %inline nbin:
   | PLUS { n_plus }
@@ -62,7 +62,7 @@ bexp:
   | b1 = bexp; o = brel; b2 = bexp { o b1 b2 }
   | NOT b = bexp { b_not b }
   | p = ID LPAREN x = ident RPAREN { Pred (p, x) }
-  | DISTINCT i = index { distinct i }
+  | DISTINCT i = vars { distinct i }
 
 %inline nrel:
   | EQ { n_eq }
@@ -77,6 +77,10 @@ bexp:
   | AND { b_and }
 
 mode: RW { W } | RO { R };
+
+vars:
+  | LBRACK n = ident RBRACK { [n] }
+  | LBRACK n = ident RBRACK i = vars { n :: i }
 
 index:
   | LBRACK n = nexp RBRACK { [n] }

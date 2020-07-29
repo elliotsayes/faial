@@ -93,18 +93,55 @@ let s_prog_to_phase_list (l: ('a base_inst) list) : ('a phase) list  =
 
 (* ---------------- THIRD STAGE OF TRANSLATION ---------------------- *)
 
-let project_prog (t:task) : u_prog -> y_prog =
-  base_prog_map
-    (function
-    | Goal b -> Goal b
-    | Acc (x, e) -> Acc (x, e, t)
+type locals_t = (string, nexp) Hashtbl.t
+
+let locals_create (t:task) (vars:VarSet.t) : locals_t =
+  let on_each (x:variable) : (string * nexp) = (x.var_name, Proj (t, x)) in
+  List.map on_each (VarSet.elements vars)
+  |> hashtbl_from_list
+
+let locals_add (t:task) (ls:locals_t) (x:variable) : locals_t =
+  let new_ls = Hashtbl.copy ls in
+  Hashtbl.replace new_ls x.var_name (Proj (t, x));
+  new_ls
+
+let locals_n_subst (ls:locals_t) : nexp -> nexp =
+  ReplaceAssoc.n_subst ls
+
+let locals_b_subst (ls:locals_t) : bexp -> bexp =
+  ReplaceAssoc.b_subst ls
+
+let locals_a_subst (ls:locals_t) : access -> access =
+  ReplaceAssoc.a_subst ls
+
+let rec project_inst (t:task) (locals:locals_t) : u_inst -> y_inst =
+  function
+  | Base (Goal b) -> Base (Goal (locals_b_subst locals b))
+  | Base (Acc (x, e)) ->
+    Base (
+      Acc (
+        x,
+        locals_a_subst locals e,
+        t
+      )
     )
+  | Cond (b, l) ->
+    Cond (
+      locals_b_subst locals b,
+      List.map (project_inst t locals) l
+    )
+  | Loop (r, l) ->
+    let new_locals = locals_add t locals r.range_var in
+    Loop (r, List.map (project_inst t new_locals) l)
 
-let project_phase (t:task) : u_prog phase -> y_prog phase =
-  phase_map (project_prog t)
+let project_prog (t:task) (locals:locals_t) : u_prog -> y_prog =
+  List.map (project_inst t locals)
 
-let project_phase_list : (u_prog phase) list -> (y_prog phase * y_prog phase) list =
-  List.map (fun p -> (project_phase Task1 p, project_phase Task2 p))
+let project_phase (t:task) (locals:locals_t) : u_prog phase -> y_prog phase =
+  phase_map (project_prog t locals)
+
+let project_phase_list (locals:locals_t) : (u_prog phase) list -> (y_prog phase * y_prog phase) list =
+  List.map (fun p -> (project_phase Task1 locals p, project_phase Task2 locals p))
 
 (*
   let rec run (s:t) =

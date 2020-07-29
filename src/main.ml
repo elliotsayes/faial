@@ -160,9 +160,11 @@ let main_t =
         let k = Phasesplit.prog_to_s_prog k.kernel_code in
         halt_when (cmd = PLang) print_kernel_P k;
         let k = Phasesplit.s_prog_to_phase_list k in
-        halt_when (cmd = PLang) print_kernel_C k;
+        halt_when (cmd = PLang) print_kernel_C k
+        (*
         let k = Phasesplit.project_phase_list k in
         halt_when (cmd = CLang) print_kernel_H k
+        *)
       ) ks
     with
       | Exit -> ()

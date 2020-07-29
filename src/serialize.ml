@@ -44,7 +44,7 @@ module StdNexp : NEXP_SERIALIZER = struct
   let rec n_ser (a:nexp) : Sexplib.Sexp.t =
     let open Sexplib in
     match a with
-    | Proj (t, n) -> binop "proj" (t_ser t) (n_ser n)
+    | Proj (t, x) -> binop "proj" (t_ser t) (Sexp.Atom x.var_name)
     | Num n -> Sexp.Atom (string_of_int n)
     | Var x -> Sexp.Atom x.var_name
     | Bin (b, a1, a2) ->
@@ -63,7 +63,7 @@ module BvNexp : NEXP_SERIALIZER = struct
   let rec n_ser (a:nexp) : Sexplib.Sexp.t =
     let open Sexplib in
     match a with
-    | Proj (t, n) -> binop "proj" (t_ser t) (n_ser n)
+    | Proj (t, x) -> binop "proj" (t_ser t) (Sexp.Atom x.var_name)
     | Num n -> Sexp.List [
         Sexp.Atom "_";
         Sexp.Atom ("bv" ^ (string_of_int n));

@@ -39,7 +39,7 @@ type nexp =
 | Var of variable
 | Num of int
 | Bin of nbin * nexp * nexp
-| Proj of task * nexp
+| Proj of task * variable
 
 type nrel = NEq | NNeq | NLe | NLt | NGt | NGe
 
@@ -256,5 +256,5 @@ type kernel = {
   kernel_code: prog;
 }
 
-let distinct idx =
+let distinct (idx:variable list) : bexp =
   b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)

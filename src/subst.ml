@@ -30,10 +30,19 @@ module Make (S:SUBST) = struct
         begin
           match S.find s x with
           | Some v -> v
-          | _ -> n
+          | None -> n
         end
       | Num _ -> n
-      | Proj (t, n) -> Proj (t, subst n)
+      | Proj (t, x) ->
+        begin
+          match S.find s x with
+          | Some (Var y) -> Proj (t, y)
+          | Some n -> failwith (
+              "Expecting substitution of variable '" ^ x.var_name ^
+              "' by another variable in projection, but got something else"
+            )
+          | None -> Proj (t, x)
+        end
       | Bin (o, n1, n2) -> n_bin o (subst n1) (subst n2)
     in
     subst n
@@ -64,9 +73,8 @@ module Make (S:SUBST) = struct
     subst b
 
   let a_subst (s:S.t) (a:access) : access =
-    {
-      access_index = List.map (n_subst s) a.access_index;
-      access_mode = a.access_mode;
+    { a with
+      access_index = List.map (n_subst s) a.access_index
     }
 
   let r_subst (s:S.t) (r:range) : range =

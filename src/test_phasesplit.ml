@@ -152,10 +152,7 @@ let print_compare_output (p: Proto.prog) =
   s_prog_ser p |> s_print;
   print_endline "----------------\nCLang:\n----------------\n";
   let p = s_prog_to_phase_list p in
-  u_phase_list_ser p |> s_print;
-  print_endline "----------------\nHLang:\n----------------\n";
-  let p = project_phase_list p in
-  y_phase_list_ser p |> s_print
+  u_phase_list_ser p |> s_print
 
 (*
 let print_compare_trace (ex:A.t) =
