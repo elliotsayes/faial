@@ -8,22 +8,23 @@ const
   global n
   ;
 
-assert distinct [threadIdx.x][blockIdx.x];
+if (distinct [threadIdx.x][blockIdx.x]) {
 
 rw sdata[blockIdx.x][threadIdx.x];
 if (i < n) ro A[i];
 sync;
 foreach (s in 0 .. blockDim.x / 2) {
-  assert pow2(s);
+#  if (pow2(s)) {
   if (threadIdx.x < s) {
     ro sdata[blockIdx.x][threadIdx.x + s];
     rw sdata[blockIdx.x][threadIdx.x];
   }
   sync;
+#  }
 }
 if (threadIdx.x == 0) {
   ro sdata[blockIdx.x][0];
   rw S[blockIdx.x];
-} else {
-    assert false;
+}
+
 }

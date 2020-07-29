@@ -10,7 +10,8 @@ const local tid;
 
 # We declare that the projection 1 of `tid` differs from the projection 2 of
 # `tid`, that is to say that any two tasks will have different values of `tid`.
-assert distinct [tid];
+if (distinct [tid]) {
 
-# Each task writes to a distinct index of the array `x`, hence there is no race.
-rw x[tid];
+  # Each task writes to a distinct index of the array `x`, hence there is no race.
+  rw x[tid];
+}
