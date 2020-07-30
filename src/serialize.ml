@@ -230,14 +230,24 @@ let var_set_ser name (s:VarSet.t) =
     |> atoms
     |> call name
 
-let kernel_ser k =
+let kernel_ser (f:'a -> Sexplib.Sexp.t) (k:'a kernel) =
   let open Sexplib in
   Sexp.List [
     Sexp.Atom "kernel";
     var_set_ser "locations" k.kernel_locations;
     var_set_ser "locals" k.kernel_local_variables;
     var_set_ser "globals" k.kernel_global_variables;
-    prog_ser k.kernel_code;
+    f k.kernel_code;
+  ]
+
+let l_kernel_ser (k: l_kernel) =
+  let open Sexplib in
+  Sexp.List [
+    Sexp.Atom "kernel";
+    unop "location" (Sexp.Atom k.l_kernel_location.var_name);
+    var_set_ser "locals" k.l_kernel_local_variables;
+    var_set_ser "globals" k.l_kernel_global_variables;
+    unop "code" (phase_ser l_prog_ser k.l_kernel_code);
   ]
 (*
 let flat_kernel_ser k =

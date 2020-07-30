@@ -68,112 +68,14 @@ let prog_to_s_prog (s:Proto.prog) : s_prog =
   | (Some b, after) -> b @ [Base after]
 
 
-let kernel_to_s_kernel (k: Proto.prog kernel) : s_prog kernel =
+let translate (k: Proto.prog kernel) : s_prog kernel =
   { k with kernel_code = prog_to_s_prog k.kernel_code }
 
-(* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
+let print_kernel (k:s_prog kernel) =
+  let open Serialize in
+  print_endline "; phased";
+  kernel_ser s_prog_ser k |> s_print
 
-(* A synchronized-program has multiple goals to prove, so want to flatten
-   each phased block into a list. Phased blocks may be nested inside a
-   conditional or a variable declaration (loop), and in which case,
-   we must ensure we preserve that structure. *)
-
-let rec inst_to_phase_stream : 'a base_inst -> ('a phase) Stream.t =
-  function
-  | Base p -> Stream.of_list [Phase p]
-  | Loop (r, l) ->
-    prog_to_phase_stream l
-    |> stream_map (fun p ->
-      Global (r, p)
-    )
-  | Cond (b, l) ->
-    prog_to_phase_stream l
-    |> stream_map (fun p ->
-      Pre (b, p)
-    )
-
-and prog_to_phase_stream (l: ('a base_inst) list) : ('a phase) Stream.t =
-  List.fold_left
-    (fun s i -> inst_to_phase_stream i |> stream_seq s)
-    (stream_make None)
-    l
-
-let s_kernel_to_p_kernel (k : s_prog kernel) : u_prog phase kernel Stream.t  =
-  Streamutil.stream_map (fun p ->
-      { k with kernel_code = p }
-    )
-    (prog_to_phase_stream k.kernel_code)
-
-(* ------------------------ THIRD STAGE OF TRANSLATION ---------------------- *)
-
-let rec filter_loc_inst (x:variable) (i:u_inst) : l_inst option =
-  match i with
-  | Base (Goal b) -> None
-  | Base (Acc (y, e)) ->
-    begin
-      if var_equal x y then
-        Some (Base e)
-      else
-        None
-    end
-  | Cond (b, l) ->
-    begin
-      let l = filter_loc_prog x l in
-      match l with
-      | Some l -> Some (Cond (b, l))
-      | None -> None
-    end
-  | Loop (r, l) ->
-    begin
-      let l = filter_loc_prog x l in
-      match l with
-      | Some l -> Some (Loop (r, l))
-      | None -> None
-    end
-and filter_loc_prog (x:variable) (l:u_prog) : l_prog option =
-  let l = List.map (filter_loc_inst x) l |> flatten_opt in
-  match l with
-  | [] -> None
-  | _ -> Some l
-
-let rec filter_loc_phase (x:variable) (p:u_prog phase) : l_prog phase option =
-  match p with
-  | Phase l ->
-    begin match filter_loc_prog x l with
-    | Some l -> Some (Phase l)
-    | None -> None
-    end
-  | Pre (b, p) ->
-    begin match filter_loc_phase x p with
-    | Some p -> Some (Pre (b, p))
-    | None -> None
-    end
-  | Global (r, p) ->
-    begin match filter_loc_phase x p with
-    | Some p -> Some (Global (r, p))
-    | None -> None
-    end
-
-let p_kernel_to_l_kernel_list (k:u_prog phase kernel) : l_kernel list =
-  VarSet.elements k.kernel_locations
-  |> Common.map_opt (fun x ->
-    match filter_loc_phase x k.kernel_code with
-    | Some p -> Some {
-        l_kernel_location = x;
-        l_kernel_global_variables = k.kernel_global_variables;
-        l_kernel_local_variables = k.kernel_local_variables;
-        l_kernel_code = p;
-      }
-    | None -> None
-  )
-
-let stream_p_kernel_to_l_kernel (stream:u_prog phase kernel Stream.t) : l_kernel Stream.t =
-  let open Streamutil in
-  stream
-  |> stream_map (fun x ->
-    p_kernel_to_l_kernel_list x |> Stream.of_list
-  )
-  |> stream_concat
 
 (*
   let rec run (s:t) =

@@ -11,8 +11,6 @@ clean:
 native: build-tests
 	$(OCB) main.native
 	cp $(BUILD)/main.native main
-	$(OCB) main_old.native
-	cp $(BUILD)/main_old.native main-old
 
 build-tests:
 #	$(OCB) test_loops.native

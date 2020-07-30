@@ -54,32 +54,11 @@ let json_parse ic =
       |> List.map Program.compile
   )
 
-let print_kernel k =
+let print_kernel (k:prog kernel) : unit =
   let open Serialize in
   print_endline "; proto";
-  kernel_ser k |> s_print
+  kernel_ser prog_ser k |> s_print
 
-let print_kernel_P p =
-  let open Serialize in
-  print_endline "; phased";
-  s_prog_ser p |> s_print
-
-let print_kernel_C p =
-  let open Serialize in
-  print_endline "; conc";
-  let count = ref 0 in
-  Stream.iter (fun x ->
-    let curr = !count + 1 in
-    count := curr;
-    print_endline ("; phase " ^ (string_of_int curr));
-    u_phase_ser x |> s_print
-  ) p;
-  print_endline "; end of conc"
-
-let print_kernel_H p =
-  let open Serialize in
-  print_endline "; symbolic hist" (*;
-  _phase_list_ser p |> s_print*)
 
 type command = ALang | PLang | CLang | HLang | Sat | Typecheck
 
@@ -164,14 +143,12 @@ let main_t =
         Typecheck.typecheck_kernel k |> print_errs;
         let k = Subst.replace_constants sets k in
         halt_when (cmd = Typecheck) print_kernel k;
-        let k = Phasesplit.prog_to_s_prog k.kernel_code in
-        halt_when (cmd = ALang) print_kernel_P k;
-        let k = Phasesplit.prog_to_phase_stream k in
-        halt_when (cmd = CLang) print_kernel_C k
-        (*
-        let k = Phasesplit.project_phase_list k in
-        halt_when (cmd = CLang) print_kernel_H k
-        *)
+        let ks = Phasesplit.translate k in
+        halt_when (cmd = ALang) Phasesplit.print_kernel ks;
+        let ks = Streamphase.translate ks in
+        halt_when (cmd = PLang) Streamphase.print_kernels ks;
+        let ks = Locsplit.translate ks in
+        halt_when (cmd = CLang) Locsplit.print_kernels ks
       ) ks
     with
       | Exit -> ()
@@ -184,12 +161,12 @@ let main_t =
     (* Override the codegeneration (for debugging only). *)
     let doc = "Step 0: Replace key-values and typecheck the kernel." in
     let tc = Typecheck, Arg.info ["0"; "check"] ~doc in
-    let doc = "Step 1: Unroll loops, inline conditions" in
+    let doc = "Step 1: Structure syncs" in
     let k1 = ALang, Arg.info ["1"; "a"] ~doc in
-    let doc = "Step 2: Split instructions into phases" in
-    let k2 = CLang, Arg.info ["2"; "c"] ~doc in
-    let doc = "Step 3: Change loops into Variable Declarations" in
-    let k3 = PLang, Arg.info ["3"; "p"] ~doc in
+    let doc = "Step 2: Split phases" in
+    let k2 = PLang, Arg.info ["2"; "p"] ~doc in
+    let doc = "Step 3: Split per location" in
+    let k3 = CLang, Arg.info ["3"; "c"] ~doc in
     let doc = "Step 4: Change loops into Variable Declarations" in
     let k4 = HLang, Arg.info ["4"; "h"] ~doc in
     let doc = "Step 5: generate Z3." in
