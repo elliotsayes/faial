@@ -68,7 +68,7 @@ let prog_to_s_prog (s:Proto.prog) : s_prog =
   | (Some b, after) -> b @ [Base after]
 
 
-let kernel_to_s_kernel k =
+let kernel_to_s_kernel (k: Proto.prog kernel) : s_prog kernel =
   { k with kernel_code = prog_to_s_prog k.kernel_code }
 
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
@@ -97,6 +97,14 @@ and prog_to_phase_stream (l: ('a base_inst) list) : ('a phase) Stream.t =
     (fun s i -> inst_to_phase_stream i |> stream_seq s)
     (stream_make None)
     l
+
+let s_kernel_to_p_kernel (k : s_prog kernel) : (u_prog phase kernel) Stream.t  =
+  Streamutil.stream_map (fun p ->
+      { k with kernel_code = p }
+    )
+    (prog_to_phase_stream k.kernel_code)
+
+(* ------------------------ THIRD STAGE OF TRANSLATION ---------------------- *)
 
 let rec filter_loc_inst (x:variable) (i:u_inst) : l_inst option =
   match i with
@@ -127,6 +135,37 @@ and filter_loc_prog (x:variable) (l:u_prog) : l_prog option =
   match l with
   | [] -> None
   | _ -> Some l
+
+let rec filter_loc_phase (x:variable) (p:u_prog phase) : l_prog phase option =
+  match p with
+  | Phase l ->
+    begin match filter_loc_prog x l with
+    | Some l -> Some (Phase l)
+    | None -> None
+    end
+  | Pre (b, p) ->
+    begin match filter_loc_phase x p with
+    | Some p -> Some (Pre (b, p))
+    | None -> None
+    end
+  | Global (r, p) ->
+    begin match filter_loc_phase x p with
+    | Some p -> Some (Global (r, p))
+    | None -> None
+    end
+
+let p_kernel_to_l_kernel_list (k:u_prog phase kernel) : l_kernel list =
+  VarSet.elements k.kernel_locations
+  |> Common.map_opt (fun x ->
+    match filter_loc_phase x k.kernel_code with
+    | Some p -> Some {
+        l_kernel_location = x;
+        l_kernel_global_variables = k.kernel_global_variables;
+        l_kernel_local_variables = k.kernel_local_variables;
+        l_kernel_code = p;
+      }
+    | None -> None
+  )
 
 
 (*

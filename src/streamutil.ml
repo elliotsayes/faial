@@ -37,6 +37,16 @@ let stream_filter p stream =
     with Stream.Failure -> None in
   Stream.from next
 
+let stream_map_opt (f:'a -> 'b option) (stream: 'a Stream.t) : 'b Stream.t =
+  stream_map f stream
+  |> stream_filter (function
+    | Some _ -> true
+    | None -> false
+  )
+  |> stream_map (function
+    | Some x -> x
+    | None -> failwith "unexpected"
+  )
 
 let stream_seq stream1 stream2 =
   let pop s =

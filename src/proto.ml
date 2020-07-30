@@ -250,5 +250,17 @@ type 'a kernel = {
   kernel_code: 'a;
 }
 
+type l_kernel = {
+  (* The shared location that can be accessed in the kernel. *)
+  l_kernel_location: variable;
+  (* The internal variables are used in the code of the kernel.  *)
+  l_kernel_global_variables: VarSet.t;
+  (* The internal variables are used in the code of the kernel.  *)
+  l_kernel_local_variables: VarSet.t;
+  (* The code of a kernel performs the actual memory accesses. *)
+  l_kernel_code: l_prog phase
+}
+
+
 let distinct (idx:variable list) : bexp =
   b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)

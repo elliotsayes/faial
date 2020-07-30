@@ -1,6 +1,6 @@
 module StringOT = struct
   type t = string
-  let compare = Pervasives.compare
+  let compare = Stdlib.compare
 end
 
 module StringSet = Set.Make(StringOT)
@@ -28,6 +28,9 @@ let opt_to_list = function
 let flatten_opt l =
   List.map opt_to_list l |> List.flatten
 
+let map_opt f l =
+  List.map f l |> flatten_opt
+
 let ends_with s suffix =
   let suffix_len = String.length suffix in
   let s_len = String.length s in
@@ -51,4 +54,3 @@ let rec zip l1 l2 =
   match l1, l2 with
   | [], _ | _, [] -> []
   | x::l1, y::l2 -> (x,y) :: (zip l1 l2)
-
