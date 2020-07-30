@@ -3,6 +3,7 @@ open Common
 open Phaseord
 open Serialize
 open Subst
+open Streamutil
 
 (* ---------------- FIST STAGE OF TRANSLATION ---------------------- *)
 
@@ -11,7 +12,9 @@ open Subst
 let rec prepend (u:u_prog) : s_prog -> Proto.s_prog =
   function
     | Base u' :: l -> Base (u @ u') :: l
-    | Cond (b, p) :: l -> Cond (b, prepend u p) :: (* condionally prepend u if not b ? *) prepend u l
+    | Cond (b, p) :: l ->
+      Cond (b, prepend u p) ::
+      prepend u l
     | Loop (_, _) :: _ as l -> l
     | [] -> []
 
@@ -75,76 +78,56 @@ let kernel_to_s_kernel k =
    conditional or a variable declaration (loop), and in which case,
    we must ensure we preserve that structure. *)
 
-let rec s_inst_to_phase_list : 'a base_inst -> ('a phase) list =
+let rec inst_to_phase_stream : 'a base_inst -> ('a phase) Stream.t =
   function
-  | Base p -> [Phase p]
+  | Base p -> Stream.of_list [Phase p]
   | Loop (r, l) ->
-    List.map s_inst_to_phase_list l
-    |> List.flatten
-    |> List.map (fun p ->
+    prog_to_phase_stream l
+    |> stream_map (fun p ->
       Global (r, p)
     )
   | Cond (b, l) ->
-    List.map s_inst_to_phase_list l
-    |> List.flatten
-    |> List.map (fun p ->
+    prog_to_phase_stream l
+    |> stream_map (fun p ->
       Pre (b, p)
     )
 
-let s_prog_to_phase_list (l: ('a base_inst) list) : ('a phase) list  =
-  List.map s_inst_to_phase_list l |> List.flatten
+and prog_to_phase_stream (l: ('a base_inst) list) : ('a phase) Stream.t =
+  List.fold_left
+    (fun s i -> inst_to_phase_stream i |> stream_seq s)
+    (stream_make None)
+    l
 
-(* ---------------- THIRD STAGE OF TRANSLATION ---------------------- *)
-
-type locals_t = (string, nexp) Hashtbl.t
-
-let locals_create (t:task) (vars:VarSet.t) : locals_t =
-  let on_each (x:variable) : (string * nexp) = (x.var_name, Proj (t, x)) in
-  List.map on_each (VarSet.elements vars)
-  |> hashtbl_from_list
-
-let locals_add (t:task) (ls:locals_t) (x:variable) : locals_t =
-  let new_ls = Hashtbl.copy ls in
-  Hashtbl.replace new_ls x.var_name (Proj (t, x));
-  new_ls
-
-let locals_n_subst (ls:locals_t) : nexp -> nexp =
-  ReplaceAssoc.n_subst ls
-
-let locals_b_subst (ls:locals_t) : bexp -> bexp =
-  ReplaceAssoc.b_subst ls
-
-let locals_a_subst (ls:locals_t) : access -> access =
-  ReplaceAssoc.a_subst ls
-
-let rec project_inst (t:task) (locals:locals_t) : u_inst -> y_inst =
-  function
-  | Base (Goal b) -> Base (Goal (locals_b_subst locals b))
-  | Base (Acc (x, e)) ->
-    Base (
-      Acc (
-        x,
-        locals_a_subst locals e,
-        t
-      )
-    )
+let rec filter_loc_inst (x:variable) (i:u_inst) : l_inst option =
+  match i with
+  | Base (Goal b) -> None
+  | Base (Acc (y, e)) ->
+    begin
+      if var_equal x y then
+        Some (Base e)
+      else
+        None
+    end
   | Cond (b, l) ->
-    Cond (
-      locals_b_subst locals b,
-      List.map (project_inst t locals) l
-    )
+    begin
+      let l = filter_loc_prog x l in
+      match l with
+      | Some l -> Some (Cond (b, l))
+      | None -> None
+    end
   | Loop (r, l) ->
-    let new_locals = locals_add t locals r.range_var in
-    Loop (r, List.map (project_inst t new_locals) l)
+    begin
+      let l = filter_loc_prog x l in
+      match l with
+      | Some l -> Some (Loop (r, l))
+      | None -> None
+    end
+and filter_loc_prog (x:variable) (l:u_prog) : l_prog option =
+  let l = List.map (filter_loc_inst x) l |> flatten_opt in
+  match l with
+  | [] -> None
+  | _ -> Some l
 
-let project_prog (t:task) (locals:locals_t) : u_prog -> y_prog =
-  List.map (project_inst t locals)
-
-let project_phase (t:task) (locals:locals_t) : u_prog phase -> y_prog phase =
-  phase_map (project_prog t locals)
-
-let project_phase_list (locals:locals_t) : (u_prog phase) list -> (y_prog phase * y_prog phase) list =
-  List.map (fun p -> (project_phase Task1 locals p, project_phase Task2 locals p))
 
 (*
   let rec run (s:t) =

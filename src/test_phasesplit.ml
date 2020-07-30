@@ -151,8 +151,8 @@ let print_compare_output (p: Proto.prog) =
   let p = prog_to_s_prog p in
   s_prog_ser p |> s_print;
   print_endline "----------------\nCLang:\n----------------\n";
-  let p = s_prog_to_phase_list p in
-  u_phase_list_ser p |> s_print
+  let p = prog_to_phase_stream p in
+  Stream.iter (fun x -> u_phase_ser x |> s_print) p
 
 (*
 let print_compare_trace (ex:A.t) =

@@ -198,9 +198,6 @@ let base_prog_map (f: 'a -> 'b) : 'a base_prog -> 'b base_prog =
 (* Regular access expression *)
 type expr_acc = (variable * access)
 
-(* Symbolic access expression *)
-type sym_acc = (variable * access * task)
-
 (* A simple instruction *)
 type 'a a_inst =
   | Goal of bexp
@@ -208,9 +205,6 @@ type 'a a_inst =
 
 (* A simple instruction with regular accesses *)
 type acc_inst = expr_acc a_inst
-
-(* A simple instruction with symbolic accesses *)
-type sym_acc_inst = sym_acc a_inst
 
 (* In a regular program the base is either a barrier or an unsync *)
 type sync_unsync =
@@ -231,8 +225,8 @@ type s_inst = u_prog base_inst
 type s_prog = s_inst list
 
 (* The unsynchronized and symbolic fragment *)
-type y_inst = sym_acc_inst base_inst
-type y_prog = y_inst list
+type l_inst = access base_inst
+type l_prog = l_inst list
 
 type 'a phase =
   | Phase of 'a

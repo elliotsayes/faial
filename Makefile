@@ -18,9 +18,11 @@ build-tests:
 #	$(OCB) test_loops.native
 	$(OCB) test_common.native
 	$(OCB) test_phasesplit.native
+	$(OCB) test_streamutil.native
 
 test: build-tests
 #	$(BUILD)/test_loops.native
+	$(BUILD)/test_streamutil.native
 	$(BUILD)/test_common.native
 	$(BUILD)/test_phasesplit.native
 

@@ -67,12 +67,12 @@ let print_kernel_P p =
 let print_kernel_C p =
   let open Serialize in
   print_endline "; conc";
-  u_phase_list_ser p |> s_print
+  Stream.iter (fun x -> u_phase_ser x |> s_print)
 
 let print_kernel_H p =
   let open Serialize in
-  print_endline "; symbolic hist";
-  y_phase_list_ser p |> s_print
+  print_endline "; symbolic hist" (*;
+  _phase_list_ser p |> s_print*)
 
 type command = ALang | PLang | CLang | HLang | Sat | Typecheck
 
@@ -158,9 +158,9 @@ let main_t =
         let k = Subst.replace_constants sets k in
         halt_when (cmd = Typecheck) print_kernel k;
         let k = Phasesplit.prog_to_s_prog k.kernel_code in
-        halt_when (cmd = PLang) print_kernel_P k;
-        let k = Phasesplit.s_prog_to_phase_list k in
-        halt_when (cmd = PLang) print_kernel_C k
+        halt_when (cmd = ALang) print_kernel_P k;
+        let k = Phasesplit.prog_to_phase_stream k in
+        halt_when (cmd = CLang) print_kernel_C k
         (*
         let k = Phasesplit.project_phase_list k in
         halt_when (cmd = CLang) print_kernel_H k
@@ -178,13 +178,13 @@ let main_t =
     let doc = "Step 0: Replace key-values and typecheck the kernel." in
     let tc = Typecheck, Arg.info ["0"; "check"] ~doc in
     let doc = "Step 1: Unroll loops, inline conditions" in
-    let k1 = PLang, Arg.info ["1"; "alang"] ~doc in
+    let k1 = ALang, Arg.info ["1"; "a"] ~doc in
     let doc = "Step 2: Split instructions into phases" in
-    let k2 = CLang, Arg.info ["2"; "plang"] ~doc in
+    let k2 = CLang, Arg.info ["2"; "c"] ~doc in
     let doc = "Step 3: Change loops into Variable Declarations" in
-    let k3 = HLang, Arg.info ["3"; "clang"] ~doc in
+    let k3 = PLang, Arg.info ["3"; "p"] ~doc in
     let doc = "Step 4: Change loops into Variable Declarations" in
-    let k4 = HLang, Arg.info ["4"; "hlang"] ~doc in
+    let k4 = HLang, Arg.info ["4"; "h"] ~doc in
     let doc = "Step 5: generate Z3." in
     let sat = Sat, Arg.info ["5"; "sat"] ~doc in
     Arg.(last & vflag_all [Sat] [tc; k1; k2; k3; k4; sat])
