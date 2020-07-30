@@ -98,7 +98,7 @@ and prog_to_phase_stream (l: ('a base_inst) list) : ('a phase) Stream.t =
     (stream_make None)
     l
 
-let s_kernel_to_p_kernel (k : s_prog kernel) : (u_prog phase kernel) Stream.t  =
+let s_kernel_to_p_kernel (k : s_prog kernel) : u_prog phase kernel Stream.t  =
   Streamutil.stream_map (fun p ->
       { k with kernel_code = p }
     )
@@ -167,6 +167,13 @@ let p_kernel_to_l_kernel_list (k:u_prog phase kernel) : l_kernel list =
     | None -> None
   )
 
+let stream_p_kernel_to_l_kernel (stream:u_prog phase kernel Stream.t) : l_kernel Stream.t =
+  let open Streamutil in
+  stream
+  |> stream_map (fun x ->
+    p_kernel_to_l_kernel_list x |> Stream.of_list
+  )
+  |> stream_concat
 
 (*
   let rec run (s:t) =
