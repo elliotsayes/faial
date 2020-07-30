@@ -67,7 +67,14 @@ let print_kernel_P p =
 let print_kernel_C p =
   let open Serialize in
   print_endline "; conc";
-  Stream.iter (fun x -> u_phase_ser x |> s_print)
+  let count = ref 0 in
+  Stream.iter (fun x ->
+    let curr = !count + 1 in
+    count := curr;
+    print_endline ("; phase " ^ (string_of_int curr));
+    u_phase_ser x |> s_print
+  ) p;
+  print_endline "; end of conc"
 
 let print_kernel_H p =
   let open Serialize in
