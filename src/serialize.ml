@@ -202,12 +202,6 @@ let s_inst_ser : s_inst -> Sexplib.Sexp.t =
 let s_prog_ser : s_prog -> Sexplib.Sexp.t =
   s_map s_inst_ser
 
-let l_inst_ser : l_inst -> Sexplib.Sexp.t =
-  base_inst_ser a_ser
-
-let l_prog_ser : l_prog -> Sexplib.Sexp.t =
-  s_map l_inst_ser
-
 let rec phase_ser (f: 'a -> Sexplib.Sexp.t) : 'a phase -> Sexplib.Sexp.t =
   function
   | Phase p -> f p
@@ -239,44 +233,3 @@ let kernel_ser (f:'a -> Sexplib.Sexp.t) (k:'a kernel) =
     var_set_ser "globals" k.kernel_global_variables;
     f k.kernel_code;
   ]
-
-let l_kernel_ser (k: l_kernel) =
-  let open Sexplib in
-  Sexp.List [
-    Sexp.Atom "kernel";
-    unop "location" (Sexp.Atom k.l_kernel_location.var_name);
-    var_set_ser "locals" k.l_kernel_local_variables;
-    var_set_ser "globals" k.l_kernel_global_variables;
-    unop "code" (phase_ser l_prog_ser k.l_kernel_code);
-  ]
-(*
-let flat_kernel_ser k =
-  let open Loops in
-  let open Sexplib in
-  Sexp.List [Sexp.Atom "flat-kernel";
-    bexp_list_ser "pre" k.flat_kernel_pre;
-    call "proofs" (List.map (fun x -> bexp_list x |> s_list) k.flat_kernel_proofs);
-    var_set_ser "globals" k.flat_kernel_single_vars;
-    var_set_ser "locals" k.flat_kernel_multi_vars;
-    serialize_lsteps "steps" k.flat_kernel_steps;
-  ]
-
-let proj_ser (k:Taskproj.proj_kernel) : Sexplib.Sexp.t =
-  let open Sexplib in
-  let open Sexp in
-  let open Taskproj in
-  let elems t = hashtbl_elements t
-    |> List.map (fun (k,v) -> List [
-      Atom k;
-      serialize_steps "steps1" (fst v);
-      serialize_steps "steps2" (snd v);
-    ])
-  in
-  List [
-    Atom "proj-kernel";
-    bexp_list_ser "pre" k.proj_kernel_pre;
-    call "proofs" (List.map (fun x -> bexp_list x |> s_list) k.proj_kernel_proofs);
-    var_set_ser "vars" k.proj_kernel_vars;
-    List (Atom "steps" :: elems k.proj_kernel_steps);
-  ]
-*)

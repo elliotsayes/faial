@@ -224,9 +224,6 @@ type u_prog = u_inst list
 type s_inst = u_prog base_inst
 type s_prog = s_inst list
 
-(* The unsynchronized and symbolic fragment *)
-type l_inst = access base_inst
-type l_prog = l_inst list
 
 type 'a phase =
   | Phase of 'a
@@ -248,17 +245,6 @@ type 'a kernel = {
   kernel_local_variables: VarSet.t;
   (* The code of a kernel performs the actual memory accesses. *)
   kernel_code: 'a;
-}
-
-type l_kernel = {
-  (* The shared location that can be accessed in the kernel. *)
-  l_kernel_location: variable;
-  (* The internal variables are used in the code of the kernel.  *)
-  l_kernel_global_variables: VarSet.t;
-  (* The internal variables are used in the code of the kernel.  *)
-  l_kernel_local_variables: VarSet.t;
-  (* The code of a kernel performs the actual memory accesses. *)
-  l_kernel_code: l_prog phase
 }
 
 
