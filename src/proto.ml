@@ -174,6 +174,7 @@ type range = {
 
 type mode = R | W
 
+(* An access pairs the index-expression with the access mode (R/W) *)
 type access = {access_index: nexp list; access_mode: mode}
 
 type 'a  base_inst =

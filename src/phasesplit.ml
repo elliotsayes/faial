@@ -1,5 +1,6 @@
 open Proto
 open Streamutil
+open Subst
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
 
 (*
@@ -22,7 +23,7 @@ type 'a prog = 'a inst list
 (* A global program contains a local program as a base case *)
 
 type 'a phase =
-  | Phase of 'a prog
+  | Phase of 'a
   | Pre of bexp * 'a phase
   | Global of variable * 'a phase
 
@@ -57,11 +58,71 @@ let inline_globals (vars:VarSet.t) (p:'a phase) : 'a phase =
     Global (x, p)
   ) p
 
+(* Variable substitution. *)
+
+let subst (f:SubstPair.t -> 'a -> 'a) (s:SubstPair.t) (p:'a prog) : 'a prog =
+  let rec i_subst (s:SubstPair.t) (i:'a inst) : 'a inst =
+    match i with
+    | Base b -> Base (f s b)
+    | Cond (b, p1) -> Cond (
+        ReplacePair.b_subst s b,
+        p_subst s p1
+      )
+    | Local (x, p) ->
+      ReplacePair.add s x (function
+        | Some s -> Local (x, p_subst s p)
+        | None -> i
+      )
+  and p_subst (s:SubstPair.t) : 'a prog  -> 'a_prog =
+    List.map (i_subst s)
+  in
+  p_subst s p
+
+(* Make variables distinct. *)
+
+let normalize_variables (f:SubstPair.t -> 'a -> 'a) (known:Proto.VarSet.t) (p:'a prog) : 'a prog =
+  let open Bindings in
+  let rec norm_inst (i:'a inst) (xs:Proto.VarSet.t) : 'a inst * Proto.VarSet.t =
+    match i with
+    | Local (x, p) ->
+      if VarSet.mem x xs then (
+        let new_x : Proto.variable = generate_fresh_name x xs in
+        let new_xs = VarSet.add new_x xs in
+        let s = Subst.SubstPair.make (x, Var new_x) in
+        let new_p = subst f s p in
+        let (p, new_xs) = norm_prog new_p new_xs in
+        Local (new_x, p), new_xs
+      ) else (
+        let (p, new_xs) = norm_prog p (VarSet.add x xs) in
+        Local (x, p), new_xs
+      )
+    | Cond (b, p) ->
+      let (p, xs) = norm_prog p xs in
+      (Cond (b, p), xs)
+    | Base _ -> i, xs
+  and norm_prog (p:'a prog) (xs:Proto.VarSet.t) : 'a prog * Proto.VarSet.t =
+    match p with
+    | [] -> ([], xs)
+    | i::p ->
+      let (i, xs) = norm_inst i xs in
+      let (p, xs) = norm_prog p xs in
+      (i::p, xs)
+  in
+  norm_prog p known |> fst
+
+
 (* ---------------- Translation-specific code ------------------- *)
 
 type p_inst = acc_inst inst
 type p_prog = acc_inst prog
-type p_phase = acc_inst phase
+type p_phase = p_prog phase
+
+type p_kernel = {
+  (* The shared locations that can be accessed in the kernel. *)
+  p_kernel_locations: VarSet.t;
+  (* The code of a kernel performs the actual memory accesses. *)
+  p_kernel_code: p_phase;
+}
 
 (* Given an unsynchronized instruction, simplify the loops so that
    there are no ranges. *)
@@ -99,13 +160,6 @@ and prog_to_phase (locals:VarSet.t) (l: s_prog) : p_phase Stream.t =
     (stream_make None)
     l
 
-type p_kernel = {
-  (* The shared locations that can be accessed in the kernel. *)
-  p_kernel_locations: VarSet.t;
-  (* The code of a kernel performs the actual memory accesses. *)
-  p_kernel_code: p_phase;
-}
-
 let translate (k : s_prog kernel) : p_kernel Stream.t  =
   Streamutil.stream_map (fun p ->
       {
@@ -138,7 +192,7 @@ and prog_ser (f : 'a -> Sexplib.Sexp.t) (ls: 'a prog) : Sexplib.Sexp.t list =
 
 let rec phase_ser (f: 'a -> Sexplib.Sexp.t) : 'a phase -> Sexplib.Sexp.t list =
   function
-  | Phase p -> [prog_ser f p |> call "phase"]
+  | Phase p -> [f p |> unop "phase"]
   | Pre (b, p) -> unop "pre" (b_ser b) :: (phase_ser f p)
   | Global (x, p) ->
     let open Sexplib in
@@ -148,7 +202,7 @@ let p_prog_ser : p_prog -> Sexplib.Sexp.t =
   prog_ser acc_inst_ser
 *)
 let p_phase_ser (p: p_phase) : Sexplib.Sexp.t =
-  phase_ser acc_inst_ser p |> s_list
+  phase_ser (fun x -> prog_ser acc_inst_ser x |> s_list) p |> s_list
 
 let kernel_ser (k:p_kernel) : Sexplib.Sexp.t =
   let open Sexplib in

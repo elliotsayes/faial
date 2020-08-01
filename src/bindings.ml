@@ -13,7 +13,7 @@ let generate_fresh_name (x:variable) (xs:VarSet.t) : variable =
   if VarSet.mem x xs then do_fresh_name x 1 else x
 
 (** Loop normalization: Makes all loop variables distinct. *)
-
+(*
 let normalize_variables (p:prog) =
   let rec norm_inst (i:inst) (xs:VarSet.t) : inst * VarSet.t =
     match i with
@@ -41,3 +41,4 @@ let normalize_variables (p:prog) =
       (i::p, xs)
   in
   norm p VarSet.empty |> fst
+  *)

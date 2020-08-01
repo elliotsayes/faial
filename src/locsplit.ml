@@ -4,7 +4,7 @@ type l_inst = Proto.access inst
 
 type l_prog = Proto.access prog
 
-type l_phase = Proto.access phase
+type l_phase = l_prog phase
 
 type l_kernel = {
   (* The shared location that can be accessed in the kernel. *)
@@ -80,15 +80,17 @@ let translate (stream:p_kernel Stream.t) : l_kernel Stream.t =
   )
   |> stream_concat
 
-
 (* ------------------- SERIALIZE ---------------------- *)
 
 let l_kernel_ser (k: l_kernel) =
   let open Sexplib in
+  let p_ser : l_prog -> Sexp.t =
+    (fun x -> prog_ser Serialize.a_ser x |> Serialize.s_list)
+  in
   Sexp.List [
     Sexp.Atom "kernel";
     Serialize.unop "location" (Sexp.Atom k.l_kernel_location.var_name);
-    Serialize.unop "code" (phase_ser Serialize.a_ser k.l_kernel_code |> Serialize.s_list);
+    Serialize.unop "code" (phase_ser p_ser k.l_kernel_code |> Serialize.s_list);
   ]
 
 let print_kernels (ks : l_kernel Stream.t) : unit =

@@ -147,7 +147,9 @@ let main_t =
         let ks = Phasesplit.translate ks in
         halt_when (cmd = PLang) Phasesplit.print_kernels ks;
         let ks = Locsplit.translate ks in
-        halt_when (cmd = CLang) Locsplit.print_kernels ks
+        halt_when (cmd = CLang) Locsplit.print_kernels ks;
+        let ks = Flatacc.translate ks in
+        halt_when (cmd = HLang) Flatacc.print_kernels ks
       ) ks
     with
       | Exit -> ()
