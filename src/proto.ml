@@ -224,18 +224,6 @@ type u_prog = u_inst list
 type s_inst = u_prog base_inst
 type s_prog = s_inst list
 
-
-type 'a phase =
-  | Phase of 'a
-  | Pre of bexp * 'a phase
-  | Global of range * 'a phase
-
-let rec phase_map (f:'a -> 'b) : 'a phase -> 'b phase =
-  function
-  | Phase a -> Phase (f a)
-  | Pre (b, p) -> Pre (b, phase_map f p)
-  | Global (r, p) -> Global (r, phase_map f p)
-
 type 'a kernel = {
   (* The shared locations that can be accessed in the kernel. *)
   kernel_locations: VarSet.t;

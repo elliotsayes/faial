@@ -15,7 +15,7 @@ native: build-tests
 build-tests:
 #	$(OCB) test_loops.native
 	$(OCB) test_common.native
-	$(OCB) test_phasesplit.native
+	$(OCB) test_phasealign.native
 	$(OCB) test_streamutil.native
 
 test: build-tests

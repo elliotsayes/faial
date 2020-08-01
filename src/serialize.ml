@@ -202,18 +202,6 @@ let s_inst_ser : s_inst -> Sexplib.Sexp.t =
 let s_prog_ser : s_prog -> Sexplib.Sexp.t =
   s_map s_inst_ser
 
-let rec phase_ser (f: 'a -> Sexplib.Sexp.t) : 'a phase -> Sexplib.Sexp.t =
-  function
-  | Phase p -> f p
-  | Pre (b, p) -> binop "pre" (b_ser b) (phase_ser f p)
-  | Global (r, p) -> binop "global" (r_ser r) (phase_ser f p)
-
-let u_phase_ser : u_prog phase -> Sexplib.Sexp.t =
-  phase_ser u_prog_ser
-
-let u_phase_list_ser : (u_prog phase) list -> Sexplib.Sexp.t =
-  s_map (phase_ser u_prog_ser)
-
 let bexp_list pre = List.map b_ser pre
 
 let bexp_list_ser name pre = bexp_list pre |> call name

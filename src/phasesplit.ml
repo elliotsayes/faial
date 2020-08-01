@@ -1,105 +1,170 @@
 open Proto
-open Common
-open Phaseord
-open Serialize
-open Subst
 open Streamutil
-
-(* ---------------- FIST STAGE OF TRANSLATION ---------------------- *)
-
-(* Represents norms(P) *)
-
-let rec prepend (u:u_prog) : s_prog -> Proto.s_prog =
-  function
-    | Base u' :: l -> Base (u @ u') :: l
-    | Cond (b, p) :: l ->
-      Cond (b, prepend u p) ::
-      prepend u l
-    | Loop (_, _) :: _ as l -> l
-    | [] -> []
-
-let seq (p:s_prog option * u_prog) (q:s_prog option * u_prog) : s_prog option * u_prog =
-  match p, q with
-  | (None,p2),(None,q2) -> (None, (p2@q2))
-  | (None,p2),(Some q1, q2) -> (Some (prepend p2 q1),q2)
-  | (Some p1,p2),(None, q2) -> (Some p1,(p2@q2))
-  | (Some p1,p2),(Some q1, q2) -> (Some (p1@(prepend p2 q1)), q2)
-
-(* Typesafe normalization *)
-let rec normalize1 : inst -> s_prog option * u_prog =
-  function
-  | Base Sync -> (Some [Base []],[])
-  | Base (Unsync u) -> (None, [Base u])
-  | Cond (b, p) ->
-    begin
-      match normalize p with
-      (* There is no synchronized part, so we only return 1 conditional *)
-      | (None, p) -> (None, [Cond (b, p)])
-      (* Duplicate the condition, one synchronized and the other unsync *)
-      | (Some p, p') -> (Some [Cond (b, p)], [Cond (b, p')])
-    end
-  | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub} as r, body) ->
-      begin match normalize body with
-        | (Some p1, p2) ->
-          let dec_ub = Bin (Minus, ub, Num 1) in
-          let p1' = Cond (
-            NRel (NLt, lb, ub),
-            ReplacePair.s_subst (x, lb) p1
-          ) in
-          let p2' = Cond (
-            NRel (NLt, lb, ub),
-            ReplacePair.u_subst (x, dec_ub) p2
-          ) in
-          let inc_var = Bin (Plus,Var x,Num 1) in
-          let subbed_p1 = ReplacePair.s_subst (x, inc_var) p1 in
-          let r' = { r with range_upper_bound = dec_ub } in
-          (Some [p1';Loop (r',prepend p2 subbed_p1)] , [p2'])
-        | (None, u) -> (None, [Loop (r, u)])
-      end
-(* Typesafe normalization of programs *)
-and normalize: Proto.prog -> s_prog option * u_prog = function
-  | [] -> (None, [])
-  | x::xs -> seq (normalize1 x) (normalize xs)
-
-(* Takes a program with Syncs and generates a program with phased blocks *)
-let prog_to_s_prog (s:Proto.prog) : s_prog =
-  match normalize s with
-  | None, x -> [Base x]
-  | (Some b, after) -> b @ [Base after]
-
-
-let translate (k: Proto.prog kernel) : s_prog kernel =
-  { k with kernel_code = prog_to_s_prog k.kernel_code }
-
-let print_kernel (k:s_prog kernel) =
-  let open Serialize in
-  print_endline "; phased";
-  kernel_ser s_prog_ser k |> s_print
-
+(* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
 
 (*
-  let rec run (s:t) =
-    let rec run_aux (s:t) (accum,phase) =
-      match s with
-      | (Loop (var,r,t1))::l ->
-          let i = eval_expr E.to_int r.r_lowerbound in
-          let j = eval_expr E.to_int r.r_upperbound in
-          let subbed_t1 = a_subst var (E.to_expr i) t1 in
-          let t1' = a_subst var (Incr (E.to_expr i)) t1 in
-          if i < j then
-            (
-              let r' = createRange (Incr (E.to_expr i)) r.r_upperbound in
-              run_aux (subbed_t1@(Loop (var,r',t1'))::l) (accum,phase)
-            )
-          else run_aux l (accum,phase)
-      | (Codeline (n,c))::l ->
-          let n' = eval_expr E.to_int n in
-          run_aux l (accum,(E.to_expr n')::phase)
-      | Sync::l -> run_aux l (phase::accum,[])
-      | [] -> (accum,phase)
-    in
-    let (accum,phase) = run_aux s ([],[]) in
-    let ret = phase::accum in
-    let ret = List.rev ret in
-    List.map List.rev ret
+  In this stage we do two simplifications:
+  1. We simplify loops/decls to not have ranges by converting the
+     range as conditionals.
+  2. We create a phase per u_prog, so the result becomes a stream (list)
+     of programs.
+  *)
+
+(* A local instruction/program *)
+
+type 'a inst =
+  | Base of 'a
+  | Cond of bexp * ('a inst list)
+  | Local of variable * ('a inst list)
+
+type 'a prog = 'a inst list
+
+(* A global program contains a local program as a base case *)
+
+type 'a phase =
+  | Phase of 'a prog
+  | Pre of bexp * 'a phase
+  | Global of variable * 'a phase
+
+(* Constructor that converts a decl+range into a decl+loop *)
+
+let range_to_cond (r:range) =
+  b_and
+    (n_le r.range_lower_bound (Var r.range_var))
+    (n_lt (Var r.range_var) r.range_upper_bound)
+
+(* Helpful constructors that allow converting loops into global/local
+   declarations *)
+
+let make_local (r:range) (ls:'a prog) : 'a inst =
+  Local (r.range_var, [Cond (range_to_cond r, ls)])
+
+let make_global (r:range) (ls:'a phase) : 'a phase =
+  Global (r.range_var, Pre (range_to_cond r, ls))
+
+
+(* Inline a set of variables as decls *)
+
+let inline_locals (vars:VarSet.t) (p:'a prog) : 'a prog =
+  VarSet.elements vars
+  |> List.fold_left (fun p x ->
+    [Local (x, p)]
+  ) p
+
+let inline_globals (vars:VarSet.t) (p:'a phase) : 'a phase =
+  VarSet.elements vars
+  |> List.fold_left (fun p x ->
+    Global (x, p)
+  ) p
+
+(* ---------------- Translation-specific code ------------------- *)
+
+type p_inst = acc_inst inst
+type p_prog = acc_inst prog
+type p_phase = acc_inst phase
+
+(* Given an unsynchronized instruction, simplify the loops so that
+   there are no ranges. *)
+
+let rec u_inst_to_p_inst (i: u_inst) : p_inst =
+  match i with
+  | Proto.Base x -> Base x
+  | Proto.Cond (b, ls) -> Cond (b, u_prog_to_p_prog ls)
+  | Proto.Loop (r, ls) -> make_local r (u_prog_to_p_prog ls)
+and u_prog_to_p_prog (ls: u_prog) : p_prog =
+  List.map u_inst_to_p_inst ls
+
+(* A synchronized-program has multiple goals to prove, so want to flatten
+   each phased block into a list. Phased blocks may be nested inside a
+   conditional or a variable declaration (loop), and in which case,
+   we must ensure we preserve that structure. *)
+
+let rec inst_to_phase (locals:VarSet.t) : s_inst -> p_phase Stream.t =
+  function
+  | Base p ->
+    let (p:p_prog) = u_prog_to_p_prog p |> inline_locals locals in
+    Stream.of_list [Phase p]
+  | Loop (r, l) ->
+    (* Create a loop per instruction in its body *)
+    prog_to_phase locals l
+    |> stream_map (make_global r)
+  | Cond (b, l) ->
+    (* Create a conditional per instruction in its body *)
+    prog_to_phase locals l
+    |> stream_map (fun p -> Pre (b, p))
+
+and prog_to_phase (locals:VarSet.t) (l: s_prog) : p_phase Stream.t =
+  List.fold_left
+    (fun s i -> inst_to_phase locals i |> stream_seq s)
+    (stream_make None)
+    l
+
+type p_kernel = {
+  (* The shared locations that can be accessed in the kernel. *)
+  p_kernel_locations: VarSet.t;
+  (* The code of a kernel performs the actual memory accesses. *)
+  p_kernel_code: p_phase;
+}
+
+let translate (k : s_prog kernel) : p_kernel Stream.t  =
+  Streamutil.stream_map (fun p ->
+      {
+        p_kernel_locations = k.kernel_locations;
+        p_kernel_code = inline_globals k.kernel_global_variables p
+      }
+    )
+    (prog_to_phase k.kernel_local_variables k.kernel_code)
+
+(* --------------------SERIALIZE -------------------------- *)
+
+open Serialize
+
+let rec inst_ser (f : 'a -> Sexplib.Sexp.t) : 'a inst -> Sexplib.Sexp.t =
+  function
+  | Base a -> f a
+  | Cond (b, ls) ->
+    prog_ser f ls
+    |> s_list
+    |> binop "if" (b_ser b)
+  | Local (x, ls) ->
+    let open Sexplib in
+    prog_ser f ls
+    |> s_list
+    |> binop "local" (Sexp.Atom x.var_name)
+
+and prog_ser (f : 'a -> Sexplib.Sexp.t) (ls: 'a prog) : Sexplib.Sexp.t list =
+  List.map (inst_ser f) ls
+
+
+let rec phase_ser (f: 'a -> Sexplib.Sexp.t) : 'a phase -> Sexplib.Sexp.t list =
+  function
+  | Phase p -> [prog_ser f p |> call "phase"]
+  | Pre (b, p) -> unop "pre" (b_ser b) :: (phase_ser f p)
+  | Global (x, p) ->
+    let open Sexplib in
+    unop "global" (Sexp.Atom x.var_name) :: (phase_ser f p)
+(*
+let p_prog_ser : p_prog -> Sexplib.Sexp.t =
+  prog_ser acc_inst_ser
 *)
+let p_phase_ser (p: p_phase) : Sexplib.Sexp.t =
+  phase_ser acc_inst_ser p |> s_list
+
+let kernel_ser (k:p_kernel) : Sexplib.Sexp.t =
+  let open Sexplib in
+  Sexp.List [
+    Sexp.Atom "kernel";
+    var_set_ser "locations" k.p_kernel_locations;
+    unop "code" (p_phase_ser k.p_kernel_code);
+  ]
+
+let print_kernels (ks : p_kernel Stream.t) : unit =
+  print_endline "; conc";
+  let count = ref 0 in
+  Stream.iter (fun (k:p_kernel) ->
+    let curr = !count + 1 in
+    count := curr;
+    print_endline ("; phase " ^ (string_of_int curr));
+    kernel_ser k |> s_print
+  ) ks;
+  print_endline "; end of conc"

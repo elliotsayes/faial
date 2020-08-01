@@ -1,7 +1,6 @@
 open Proto
 open Common
 open Cmdliner
-open Phasesplit
 
 (** Prints the nth-line of a file (starts at base 0) *)
 let nth_line filename n =
@@ -143,10 +142,10 @@ let main_t =
         Typecheck.typecheck_kernel k |> print_errs;
         let k = Subst.replace_constants sets k in
         halt_when (cmd = Typecheck) print_kernel k;
-        let ks = Phasesplit.translate k in
-        halt_when (cmd = ALang) Phasesplit.print_kernel ks;
-        let ks = Streamphase.translate ks in
-        halt_when (cmd = PLang) Streamphase.print_kernels ks;
+        let ks = Phasealign.translate k in
+        halt_when (cmd = ALang) Phasealign.print_kernel ks;
+        let ks = Phasesplit.translate ks in
+        halt_when (cmd = PLang) Phasesplit.print_kernels ks;
         let ks = Locsplit.translate ks in
         halt_when (cmd = CLang) Locsplit.print_kernels ks
       ) ks
