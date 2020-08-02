@@ -34,6 +34,14 @@ type nbin =
 | Mod
 
 type task = Task1 | Task2
+let task_to_string (t:task) : string =
+  match t with
+  | Task1 -> "T1"
+  | Task2 -> "T2"
+
+let other_task = function
+  | Task1 -> Task2
+  | Task2 -> Task1
 
 type nexp =
 | Var of variable

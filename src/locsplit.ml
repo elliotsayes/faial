@@ -6,13 +6,14 @@ type l_prog = Proto.access prog
 
 type l_phase = l_prog phase
 
-type l_kernel = {
+type 'a loc_kernel = {
   (* The shared location that can be accessed in the kernel. *)
-  l_kernel_location: Proto.variable;
+  loc_kernel_location: Proto.variable;
   (* The code of a kernel performs the actual memory accesses. *)
-  l_kernel_code: l_phase
+  loc_kernel_code: 'a
 }
 
+type l_kernel = l_phase loc_kernel
 
 (* ------------------------ THIRD STAGE OF TRANSLATION ---------------------- *)
 
@@ -66,8 +67,8 @@ let p_kernel_to_l_kernel_list (k:p_kernel) : l_kernel list =
   |> Common.map_opt (fun x ->
     match filter_loc_phase x k.p_kernel_code with
     | Some p -> Some {
-        l_kernel_location = x;
-        l_kernel_code = p;
+        loc_kernel_location = x;
+        loc_kernel_code = p;
       }
     | None -> None
   )
@@ -82,25 +83,32 @@ let translate (stream:p_kernel Stream.t) : l_kernel Stream.t =
 
 (* ------------------- SERIALIZE ---------------------- *)
 
-let l_kernel_ser (k: l_kernel) =
+let loc_kernel_ser (f:'a -> Sexplib.Sexp.t) (k: 'a loc_kernel) =
   let open Sexplib in
-  let p_ser : l_prog -> Sexp.t =
-    (fun x -> prog_ser Serialize.a_ser x |> Serialize.s_list)
-  in
   Sexp.List [
     Sexp.Atom "kernel";
-    Serialize.unop "location" (Sexp.Atom k.l_kernel_location.var_name);
-    Serialize.unop "code" (phase_ser p_ser k.l_kernel_code |> Serialize.s_list);
+    Serialize.unop "location" (Sexp.Atom k.loc_kernel_location.var_name);
+    Serialize.unop "code" (f k.loc_kernel_code);
   ]
 
-let print_kernels (ks : l_kernel Stream.t) : unit =
+let print_loc_kernels (f:'a -> Sexplib.Sexp.t) (lbl:string) (ks : 'a loc_kernel Stream.t) : unit =
   let open Serialize in
-  print_endline "; loc";
+  print_endline ("; " ^ lbl);
   let count = ref 0 in
   Stream.iter (fun x ->
     let curr = !count + 1 in
     count := curr;
-    print_endline ("; location " ^ (string_of_int curr));
-    l_kernel_ser x |> s_print
+    print_endline ("; phase " ^ (string_of_int curr));
+    loc_kernel_ser f x |> s_print
   ) ks;
-  print_endline "; end of loc"
+  print_endline ("; end of " ^ lbl)
+
+let print_kernels (ks : l_kernel Stream.t) : unit =
+  let open Sexplib in
+  let p_ser (p:l_prog) : Sexp.t =
+    prog_ser Serialize.a_ser p |> Serialize.s_list
+  in
+  let ph_ser (ph: l_phase) : Sexp.t =
+    phase_ser p_ser ph |> Serialize.s_list
+  in
+  print_loc_kernels ph_ser "locsplit" ks

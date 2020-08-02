@@ -9,12 +9,7 @@ type h_prog = {
 
 type h_phase = h_prog Phasesplit.phase
 
-type h_kernel = {
-  (* The shared location that can be accessed in the kernel. *)
-  h_kernel_location: Proto.variable;
-  (* The code of a kernel performs the actual memory accesses. *)
-  h_kernel_code: h_phase
-}
+type h_kernel = h_phase loc_kernel
 
 (* Converts a program into an h_program:
   1. we must make all loop variables unique
@@ -67,9 +62,8 @@ let l_phase_to_h_phase (p:l_phase) : h_phase =
   tr_phase Proto.VarSet.empty p
 
 let l_kernel_to_h_kernel (k:l_kernel) : h_kernel =
-  {
-    h_kernel_location = k.l_kernel_location;
-    h_kernel_code = l_phase_to_h_phase k.l_kernel_code
+  { k with
+    loc_kernel_code = l_phase_to_h_phase k.loc_kernel_code
   }
 
 let translate (stream:l_kernel Stream.t) : h_kernel Stream.t =
@@ -78,8 +72,7 @@ let translate (stream:l_kernel Stream.t) : h_kernel Stream.t =
 
 (* ------------------- SERIALIZE ---------------------- *)
 
-
-let kernel_ser (k: h_kernel) =
+let print_kernels (ks : h_kernel Stream.t) : unit =
   let open Sexplib in
   let cond_access_ser ((e,b):cond_access) : Sexp.t =
     Sexp.List [
@@ -90,26 +83,11 @@ let kernel_ser (k: h_kernel) =
   let p_ser (p: h_prog) : Sexp.t =
     let accs = List.map cond_access_ser p.prog_accesses |> Serialize.s_list in
     Sexp.List [
-      Sexp.Atom "phase";
       Serialize.var_set_ser "locals" p.prog_locals;
       Serialize.unop "accesses" accs;
     ]
   in
-  let l = Sexp.Atom k.h_kernel_location.var_name in
-  let code = Phasesplit.phase_ser p_ser k.h_kernel_code |> Serialize.s_list in
-  Sexp.List [
-    Sexp.Atom "kernel";
-    Serialize.unop "location" l;
-    Serialize.unop "code" code;
-  ]
-
-let print_kernels (ks : h_kernel Stream.t) : unit =
-  print_endline "; symbolic history";
-  let count = ref 0 in
-  Stream.iter (fun (k:h_kernel) ->
-    let curr = !count + 1 in
-    count := curr;
-    print_endline ("; hist " ^ (string_of_int curr));
-    kernel_ser k |> Serialize.s_print
-  ) ks;
-  print_endline "; end of symbolic history"
+  let ph_ser (ph:h_phase) : Sexp.t =
+    Phasesplit.phase_ser p_ser ph |> Serialize.s_list
+  in
+  print_loc_kernels ph_ser "flat-accesses" ks

@@ -27,6 +27,12 @@ type 'a phase =
   | Pre of bexp * 'a phase
   | Global of variable * 'a phase
 
+let rec phase_map (f:'a -> 'b) (p:'a phase) : 'b phase =
+  match p with
+  | Phase a -> Phase (f a)
+  | Pre (b, p) -> Pre (b, phase_map f p)
+  | Global (x, p) -> Global (x, phase_map f p)
+
 (* Constructor that converts a decl+range into a decl+loop *)
 
 let range_to_cond (r:range) =
@@ -42,7 +48,6 @@ let make_local (r:range) (ls:'a prog) : 'a inst =
 
 let make_global (r:range) (ls:'a phase) : 'a phase =
   Global (r.range_var, Pre (range_to_cond r, ls))
-
 
 (* Inline a set of variables as decls *)
 
