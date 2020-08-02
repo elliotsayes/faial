@@ -54,7 +54,7 @@ let print_kernel (k:prog kernel) : unit =
   kernel_ser prog_ser k |> s_print
 
 
-type command = ALang | PLang | CLang | HLang | Sat | Typecheck
+type command = ALang | PLang | CLang | HLang | BLang | Sat | Typecheck
 
 let print_errs errs =
   let open Typecheck in
@@ -146,7 +146,9 @@ let main_t =
         let ks = Flatacc.translate ks in
         halt_when (cmd = HLang) Flatacc.print_kernels ks;
         let ks = Symbexp.translate ks in
-        Symbexp.print_kernels ks
+        halt_when (cmd = BLang) Symbexp.print_kernels ks;
+        let ks = Gensmtlib2.translate ks in
+        Gensmtlib2.print ks
       ) ks
     with
       | Exit -> ()
@@ -158,18 +160,20 @@ let main_t =
   let get_cmd =
     (* Override the codegeneration (for debugging only). *)
     let doc = "Step 0: Replace key-values and typecheck the kernel." in
-    let tc = Typecheck, Arg.info ["0"; "check"] ~doc in
+    let tc = Typecheck, Arg.info ["0"] ~doc in
     let doc = "Step 1: Structure syncs" in
-    let k1 = ALang, Arg.info ["1"; "a"] ~doc in
+    let k1 = ALang, Arg.info ["1"] ~doc in
     let doc = "Step 2: Split phases" in
-    let k2 = PLang, Arg.info ["2"; "p"] ~doc in
+    let k2 = PLang, Arg.info ["2"] ~doc in
     let doc = "Step 3: Split per location" in
-    let k3 = CLang, Arg.info ["3"; "c"] ~doc in
-    let doc = "Step 4: Change loops into Variable Declarations" in
-    let k4 = HLang, Arg.info ["4"; "h"] ~doc in
-    let doc = "Step 5: generate Z3." in
-    let sat = Sat, Arg.info ["5"; "sat"] ~doc in
-    Arg.(last & vflag_all [Sat] [tc; k1; k2; k3; k4; sat])
+    let k3 = CLang, Arg.info ["3"] ~doc in
+    let doc = "Step 4: Flatten phases" in
+    let k4 = HLang, Arg.info ["4"] ~doc in
+    let doc = "Step 5: Generate booleans" in
+    let k5 = BLang, Arg.info ["5"] ~doc in
+    let doc = "Step 6: Generate SMT." in
+    let sat = Sat, Arg.info ["6"; "sat"] ~doc in
+    Arg.(last & vflag_all [Sat] [tc; k1; k2; k3; k4; k5; sat])
   in
   Term.(const do_main $ get_cmd $ get_fname $ use_bv $ skip_po $ skip_drf $ use_json $ decls)
 

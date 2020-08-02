@@ -52,7 +52,7 @@ struct
 
   let ser_predicate p =
     let open Sexplib in
-    let open Smt in
+    let open Predicates in
     Sexp.List [
       Sexp.Atom "define-fun";
       Sexp.Atom p.pred_name;
@@ -92,26 +92,31 @@ struct
     ]
 
   let serialize_proof p : Sexplib.Sexp.t list =
-    let open Smt in
+    let open Symbexp in
     List.(flatten [
       (* Predicates: *)
       map ser_predicate p.proof_preds;
       (* Variable declarations: *)
       map var_make p.proof_decls |> map define_uint32 |> flatten;
-      (* Preconditions: *)
-      l_assert p.proof_pre;
       (* Goal of the proof: *)
       [ b_assert p.proof_goal ];
     ]) |> prove
 
-  let serialize_proofs (ps:Smt.proof list) : Sexplib.Sexp.t list = List.(map serialize_proof ps |> flatten)
+  let serialize_proofs (ps:Symbexp.proof list) : Sexplib.Sexp.t list =
+    List.(map serialize_proof ps |> flatten)
 end
 
 module Bv2 = Make(BvGen)
 module Std2 = Make(StdGen)
 
-let bv_serialize_proofs : Smt.proof list -> Sexplib.Sexp.t list = Bv2.serialize_proofs
+let bv_serialize_proofs : Symbexp.proof list -> Sexplib.Sexp.t list = Bv2.serialize_proofs
 
-let int_serialize_proofs : Smt.proof list -> Sexplib.Sexp.t list = Std2.serialize_proofs
+let int_serialize_proofs : Symbexp.proof list -> Sexplib.Sexp.t list = Std2.serialize_proofs
 
+let translate (ps: Symbexp.proof Stream.t) : Sexplib.Sexp.t list =
+  let open Serialize in
+  Streamutil.stream_to_list ps
+  |> int_serialize_proofs
 
+let print: Sexplib.Sexp.t list -> unit =
+  List.iter Serialize.s_print
