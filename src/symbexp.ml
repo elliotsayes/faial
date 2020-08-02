@@ -83,25 +83,37 @@ let h_prog_to_bexp (h:h_prog) : bexp =
     let accs = proj_accesses t h in
     cond_acc_list_to_bexp gen accs
   in
-  b_and (task_to_bexp Task1) (task_to_bexp Task2)
+  b_and_ex [
+    task_to_bexp Task1;
+    task_to_bexp Task2;
+  ]
 
-let h_phase_to_b_phase: h_phase -> b_phase =
-  Phasesplit.phase_map h_prog_to_bexp
+let rec h_phase_to_bexp (h: bexp Phasesplit.phase) : bexp =
+  match h with
+  | Phase b -> b
+  | Pre (b, h) -> h_phase_to_bexp h |> b_and b
+  | Global (_, h) -> h_phase_to_bexp h
 
-let h_kernel_to_b_kernel (k:h_kernel) : b_kernel =
-  { k with
-    loc_kernel_code = h_phase_to_b_phase k.loc_kernel_code
-  }
+let h_kernel_to_b_kernel (k:h_kernel) : bexp =
+  Phasesplit.phase_map h_prog_to_bexp k.loc_kernel_code
+  |> Phasesplit.normalize_phase ReplacePair.b_subst Proto.VarSet.empty
+  |> h_phase_to_bexp
 
-let translate (stream:h_kernel Stream.t) : b_kernel Stream.t =
+let translate (stream:h_kernel Stream.t) : bexp Stream.t =
   let open Streamutil in
   stream_map h_kernel_to_b_kernel stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 
-let print_kernels (ks : b_kernel Stream.t) : unit =
+let print_kernels (ks : bexp Stream.t) : unit =
   let open Sexplib in
-  let ph_ser (ph: b_phase) : Sexp.t =
-    Phasesplit.phase_ser Serialize.b_ser ph |> Serialize.s_list
-  in
-  Locsplit.print_loc_kernels ph_ser "bool-exps" ks
+  let open Serialize in
+  print_endline "; symbexp";
+  let count = ref 0 in
+  Stream.iter (fun (b:bexp) ->
+    let curr = !count + 1 in
+    count := curr;
+    print_endline ("; bool " ^ (string_of_int curr));
+    b_ser b |> s_print
+  ) ks;
+  print_endline "; end of symbexp"

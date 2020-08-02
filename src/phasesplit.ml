@@ -65,7 +65,7 @@ let inline_globals (vars:VarSet.t) (p:'a phase) : 'a phase =
 
 (* Variable substitution. *)
 
-let subst (f:SubstPair.t -> 'a -> 'a) (s:SubstPair.t) (p:'a prog) : 'a prog =
+let prog_subst (f:SubstPair.t -> 'a -> 'a) (s:SubstPair.t) (p:'a prog) : 'a prog =
   let rec i_subst (s:SubstPair.t) (i:'a inst) : 'a inst =
     match i with
     | Base b -> Base (f s b)
@@ -83,9 +83,25 @@ let subst (f:SubstPair.t -> 'a -> 'a) (s:SubstPair.t) (p:'a prog) : 'a prog =
   in
   p_subst s p
 
+let phase_subst (f:SubstPair.t -> 'a -> 'a) (s:SubstPair.t) (p:'a phase) : 'a phase =
+  let rec subst (s:SubstPair.t) (i:'a phase) : 'a phase =
+    match i with
+    | Phase b -> Phase (f s b)
+    | Pre (b, p1) -> Pre (
+        ReplacePair.b_subst s b,
+        subst s p1
+      )
+    | Global (x, p) ->
+      ReplacePair.add s x (function
+        | Some s -> Global (x, subst s p)
+        | None -> i
+      )
+  in
+  subst s p
+
 (* Make variables distinct. *)
 
-let normalize_variables (f:SubstPair.t -> 'a -> 'a) (known:Proto.VarSet.t) (p:'a prog) : 'a prog =
+let normalize_prog (f:SubstPair.t -> 'a -> 'a) (known:Proto.VarSet.t) (p:'a prog) : 'a prog =
   let open Bindings in
   let rec norm_inst (i:'a inst) (xs:Proto.VarSet.t) : 'a inst * Proto.VarSet.t =
     match i with
@@ -94,7 +110,7 @@ let normalize_variables (f:SubstPair.t -> 'a -> 'a) (known:Proto.VarSet.t) (p:'a
         let new_x : Proto.variable = generate_fresh_name x xs in
         let new_xs = VarSet.add new_x xs in
         let s = Subst.SubstPair.make (x, Var new_x) in
-        let new_p = subst f s p in
+        let new_p = prog_subst f s p in
         let (p, new_xs) = norm_prog new_p new_xs in
         Local (new_x, p), new_xs
       ) else (
@@ -114,6 +130,29 @@ let normalize_variables (f:SubstPair.t -> 'a -> 'a) (known:Proto.VarSet.t) (p:'a
       (i::p, xs)
   in
   norm_prog p known |> fst
+
+let normalize_phase (f:SubstPair.t -> 'a -> 'a) (known:Proto.VarSet.t) (p:'a phase) : 'a phase =
+  let open Bindings in
+  let rec norm (i:'a phase) (xs:Proto.VarSet.t) : 'a phase * Proto.VarSet.t =
+    match i with
+    | Global (x, p) ->
+      if VarSet.mem x xs then (
+        let new_x : Proto.variable = generate_fresh_name x xs in
+        let new_xs = VarSet.add new_x xs in
+        let s = Subst.SubstPair.make (x, Var new_x) in
+        let new_p = phase_subst f s p in
+        let (p, new_xs) = norm new_p new_xs in
+        Global (new_x, p), new_xs
+      ) else (
+        let (p, new_xs) = norm p (VarSet.add x xs) in
+        Global (x, p), new_xs
+      )
+    | Pre (b, p) ->
+      let (p, xs) = norm p xs in
+      (Pre (b, p), xs)
+    | Phase _ -> i, xs
+  in
+  norm p known |> fst
 
 
 (* ---------------- Translation-specific code ------------------- *)

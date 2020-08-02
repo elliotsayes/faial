@@ -48,7 +48,7 @@ let p_prog_to_h_prog (known:Proto.VarSet.t) (p:l_prog) : h_prog =
     names_prog VarSet.empty p
   in
   (* Make all variables in the program distinct *)
-  let p = Phasesplit.normalize_variables Subst.ReplacePair.a_subst known p in
+  let p = Phasesplit.normalize_prog Subst.ReplacePair.a_subst known p in
 
   { prog_locals = get_variables p; prog_accesses = flatten p}
 
