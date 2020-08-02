@@ -54,3 +54,9 @@ let rec zip l1 l2 =
   match l1, l2 with
   | [], _ | _, [] -> []
   | x::l1, y::l2 -> (x,y) :: (zip l1 l2)
+
+let range (i:int) (j:int) : int list =
+  let rec iter n acc =
+    if n < i then acc else iter (n-1) (n :: acc)
+  in
+  iter j []

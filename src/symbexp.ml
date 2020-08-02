@@ -1,9 +1,29 @@
+open Common
 open Proto
 open Subst
 open Flatacc
 
 type b_phase = bexp Phasesplit.phase
-type b_kernel = b_phase Locsplit.loc_kernel
+
+type proof = {
+  proof_preds: Predicates.t list;
+  proof_decls: string list;
+  proof_goal: bexp;
+}
+
+let mk_proof (goal:bexp) =
+  let open Proto in
+  let open Common in
+  let decls =
+    Freenames.free_names_bexp goal VarSet.empty
+    |> VarSet.elements
+    |> List.map (fun x -> x.var_name)
+  in
+  {
+    proof_preds = Predicates.get_predicates goal;
+    proof_decls = decls;
+    proof_goal = goal;
+  }
 
 let proj_accesses (t:task) (h:h_prog) : cond_access list =
   (* Add a suffix to a variable *)
@@ -63,12 +83,6 @@ let mk_var (x:string) = Var (var_make x)
 let prefix (t:task) = "$" ^ task_to_string t ^ "$"
 let mk_mode (t:task) = mk_var (prefix t ^ "mode")
 let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
-
-let range (i:int) (j:int) : int list =
-  let rec iter n acc =
-    if n < i then acc else iter (n-1) (n :: acc)
-  in
-  iter j []
 
 (* Returns the generators for the given task *)
 let mk_task_gen (t:task) =
@@ -134,26 +148,37 @@ let rec h_phase_to_bexp (h: bexp Phasesplit.phase) : bexp =
   | Pre (b, h) -> h_phase_to_bexp h |> b_and b
   | Global (_, h) -> h_phase_to_bexp h
 
-let h_kernel_to_b_kernel (k:h_kernel) : bexp =
+let h_kernel_to_proof (k:h_kernel) : proof =
   Phasesplit.phase_map h_prog_to_bexp k.loc_kernel_code
   |> Phasesplit.normalize_phase ReplacePair.b_subst Proto.VarSet.empty
   |> h_phase_to_bexp
+  |> mk_proof
 
-let translate (stream:h_kernel Stream.t) : bexp Stream.t =
+let translate (stream:h_kernel Stream.t) : proof Stream.t =
   let open Streamutil in
-  stream_map h_kernel_to_b_kernel stream
+  stream_map h_kernel_to_proof stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 
-let print_kernels (ks : bexp Stream.t) : unit =
+let proof_ser (p:proof) : Sexplib.Sexp.t =
+  let open Sexplib in
+  let open Serialize in
+  Sexp.List [
+    Sexp.Atom "proof";
+    call "decls" (atoms p.proof_decls);
+    unop "goal" (b_ser p.proof_goal);
+  ]
+
+
+let print_kernels (ks : proof Stream.t) : unit =
   let open Sexplib in
   let open Serialize in
   print_endline "; symbexp";
   let count = ref 0 in
-  Stream.iter (fun (b:bexp) ->
+  Stream.iter (fun (p:proof) ->
     let curr = !count + 1 in
     count := curr;
     print_endline ("; bool " ^ (string_of_int curr));
-    b_ser b |> s_print
+    proof_ser p |> s_print
   ) ks;
   print_endline "; end of symbexp"
