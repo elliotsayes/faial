@@ -41,11 +41,6 @@ let safe_run f =
     ) l;
     exit (-1)
 
-let sexp_parse input : prog kernel =
-  let open Sexplib in
-  let s : Sexp.t = Sexp.input_sexp input in
-    safe_run (fun () -> Parse.parse_kernel.run s)
-
 let json_parse ic =
   safe_run (fun () ->
     Yojson.Basic.from_channel ic

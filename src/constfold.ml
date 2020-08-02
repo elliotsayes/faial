@@ -104,27 +104,3 @@ let a_opt a =
     access_mode = a.access_mode;
     access_index = List.map n_opt a.access_index;
   }
-
-(*
-let ta_opt ({timed_phase=p; timed_data=d}:access timed) =
-  {timed_phase=n_opt p; timed_data=a_opt d}
-
-let stream_opt (l:(variable * access timed) list) : (variable *access timed) list =
-  let keep_acc (_,a) =
-    match a with
-    | {
-        timed_phase = _;
-        timed_data = {
-          access_index = _;
-          access_mode = _;
-          access_cond = c;
-        }
-      } ->
-      begin
-        match c with
-        | Bool false -> false
-        | _ -> true
-      end
-  in
-    List.map (fun (x, a) -> (x, ta_opt a)) l |> List.filter keep_acc
-*)

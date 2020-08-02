@@ -152,7 +152,7 @@ let parse_string_list l =
       let msg = ("string list (index=" ^ string_of_int idx ^")") in
       parse_error [] msg elem
   ) l
-
+(*
 let parse_kernel = make "kernel" (fun s->
   match s with
   | Sexp.List [Sexp.Atom "kernel";
@@ -162,6 +162,7 @@ let parse_kernel = make "kernel" (fun s->
       p
     ] ->
     Some {
+      kernel_pre = Bool true;
       kernel_locations = parse_string_list locs |> List.map var_make |> VarSet.of_list;
       kernel_local_variables = parse_string_list ls |> List.map var_make |> VarSet.of_list;
       kernel_global_variables = parse_string_list gs |> List.map var_make |> VarSet.of_list;
@@ -169,3 +170,4 @@ let parse_kernel = make "kernel" (fun s->
     }
   | _ -> None
 )
+*)
