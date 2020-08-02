@@ -240,6 +240,8 @@ type 'a kernel = {
   kernel_global_variables: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
   kernel_local_variables: VarSet.t;
+  (* A thread-local pre-condition that is true on all phases. *)
+  kernel_pre: bexp;
   (* The code of a kernel performs the actual memory accesses. *)
   kernel_code: 'a;
 }

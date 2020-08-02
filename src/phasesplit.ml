@@ -184,23 +184,23 @@ and u_prog_to_p_prog (ls: u_prog) : p_prog =
    conditional or a variable declaration (loop), and in which case,
    we must ensure we preserve that structure. *)
 
-let rec inst_to_phase (locals:VarSet.t) : s_inst -> p_phase Stream.t =
+let rec inst_to_phase (pre:bexp) (locals:VarSet.t) : s_inst -> p_phase Stream.t =
   function
   | Base p ->
     let (p:p_prog) = u_prog_to_p_prog p |> inline_locals locals in
-    Stream.of_list [Phase p]
+    Stream.of_list [ Phase [Cond (pre,p)]]
   | Loop (r, l) ->
     (* Create a loop per instruction in its body *)
-    prog_to_phase locals l
+    prog_to_phase pre locals l
     |> stream_map (make_global r)
   | Cond (b, l) ->
     (* Create a conditional per instruction in its body *)
-    prog_to_phase locals l
+    prog_to_phase pre locals l
     |> stream_map (fun p -> Pre (b, p))
 
-and prog_to_phase (locals:VarSet.t) (l: s_prog) : p_phase Stream.t =
+and prog_to_phase (pre:bexp) (locals:VarSet.t) (l: s_prog) : p_phase Stream.t =
   List.fold_left
-    (fun s i -> inst_to_phase locals i |> stream_seq s)
+    (fun s i -> inst_to_phase pre locals i |> stream_seq s)
     (stream_make None)
     l
 
@@ -211,7 +211,7 @@ let translate (k : s_prog kernel) : p_kernel Stream.t  =
         p_kernel_code = inline_globals k.kernel_global_variables p
       }
     )
-    (prog_to_phase k.kernel_local_variables k.kernel_code)
+    (prog_to_phase k.kernel_pre k.kernel_local_variables k.kernel_code)
 
 (* --------------------SERIALIZE -------------------------- *)
 

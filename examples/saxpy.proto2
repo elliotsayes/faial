@@ -6,11 +6,12 @@ shared x, y;
 
 # We declare a thread-local variable `tid`, which we use to represent
 # the usual unique thread identifier assigned to each task.
-const local i;
+const
+  local i
+  where distinct [i];
 
 # We declare that the projection 1 of `tid` differs from the projection 2 of
 # `tid`, that is to say that any two tasks will have different values of `tid`.
-assert distinct [i];
 
 # Each task writes to a distinct index of the array `x`, hence there is no race.
 rw y[i];

@@ -13,6 +13,8 @@
 %token DISTINCT
 %token PROVE
 %token ELSE
+%token WHERE
+%token TRUE FALSE
 
 %left OR
 %left AND
@@ -58,6 +60,8 @@ nexp:
 
 bexp:
   | LPAREN b = bexp RPAREN { b }
+  | TRUE { Bool true }
+  | FALSE { Bool false }
   | n1 = nexp; o = nrel; n2 = nexp { o n1 n2 }
   | b1 = bexp; o = brel; b2 = bexp { o b1 b2 }
   | NOT b = bexp { b_not b }
@@ -133,29 +137,38 @@ locs:
   | LOCS l1 = loc_names SEMICOLON { l1 }
 
 const:
-  | CONST l2 = var_names SEMICOLON { l2 }
+  | CONST l2 = var_names SEMICOLON { (l2, Bool true) }
+  | CONST l2 = var_names WHERE b = bexp SEMICOLON { (l2, b) }
+
+opt_const:
+  | c = const { c }
+  | { ([], Bool true) }
 
 kernel:
   | l1 = locs
-    l2 = loption(const)
+    decls = opt_const
     p = prog {
+      let l2, pre = decls in
       let ls, gs = List.partition (fun (x,_) -> x = Local) l2 in
       let ls = List.map snd ls in
       let gs = List.map snd gs in
       {
         kernel_locations = l1 |> VarSet.of_list;
+        kernel_pre = pre;
         kernel_local_variables = ls |> VarSet.of_list;
         kernel_global_variables = gs |> VarSet.of_list;
         kernel_code = p;
       }
     }
-  | l2 = loption(const)
+  | decls = opt_const
     l1 = locs
     p = prog {
+      let l2, pre = decls in
       let ls, gs = List.partition (fun (x,_) -> x = Local) l2 in
       let ls = List.map snd ls in
       let gs = List.map snd gs in
       {
+        kernel_pre = pre;
         kernel_locations = l1 |> VarSet.of_list;
         kernel_local_variables = ls |> VarSet.of_list;
         kernel_global_variables = gs |> VarSet.of_list;

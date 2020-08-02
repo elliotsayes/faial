@@ -195,6 +195,7 @@ let compile (k:p_kernel) : prog kernel =
     2. We break down for-loops and variable declarations
     *)
   {
+    kernel_pre = Bool true; (* XXX: update me *)
     kernel_locations = k.p_kernel_locations;
     kernel_local_variables = locals;
     kernel_global_variables = globals;

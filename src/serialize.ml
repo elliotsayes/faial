@@ -216,6 +216,7 @@ let kernel_ser (f:'a -> Sexplib.Sexp.t) (k:'a kernel) =
   let open Sexplib in
   Sexp.List [
     Sexp.Atom "kernel";
+    unop "pre" (b_ser k.kernel_pre);
     var_set_ser "locations" k.kernel_locations;
     var_set_ser "locals" k.kernel_local_variables;
     var_set_ser "globals" k.kernel_global_variables;
