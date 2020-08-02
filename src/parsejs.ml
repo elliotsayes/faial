@@ -1,5 +1,5 @@
 open Proto
-open Program
+open Imp
 open Common
 
 let pp_js data =

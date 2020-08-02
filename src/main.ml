@@ -45,7 +45,7 @@ let json_parse ic =
   safe_run (fun () ->
     Yojson.Basic.from_channel ic
       |> Parsejs.parse_kernels.run
-      |> List.map Program.compile
+      |> List.map Imp.compile
   )
 
 let print_kernel (k:prog kernel) : unit =
