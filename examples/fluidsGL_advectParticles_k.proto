@@ -19,34 +19,35 @@ const
  global gridDim.x,
  global gridDim.y,
  local fi,
- local fj;
+ local fj
 
-assert blockIdx.x < gridDim.x;
-assert blockIdx.y < gridDim.y;
-assert threadIdx.x < blockDim.x;
-assert threadIdx.y < blockDim.y;
-assert distinct [threadIdx.x][threadIdx.y][blockIdx.x][blockIdx.y];
+where blockIdx.x < gridDim.x &&
+      blockIdx.y < gridDim.y &&
+      threadIdx.x < blockDim.x &&
+      threadIdx.y < blockDim.y &&
+      distinct [threadIdx.x][threadIdx.y][blockIdx.x][blockIdx.y] &&
 
-# GPUVerify assumptions
-#assert gridDim.x == 8;
-#assert gridDim.y == 8;
-assert blockDim.x == 64;
-assert blockDim.y == 4;
-assert lb == 16;
-assert dx == 512;
-#assert dy == 512;
-#assert fj < 1024;
+    # GPUVerify assumptions
+      blockDim.x == 64 &&
+      blockDim.y == 4 &&
+      lb == 16 &&
+      dx == 512
+    # gridDim.x == 8 &&
+    # gridDim.y == 8 &&
+    # dy == 512 &&
+    # fj < 1024
+    ;
 
 
 
-assert gtidx == blockIdx.x * blockDim.x + threadIdx.x;
-assert gtidy == blockIdx.y * (lb * blockDim.y) + threadIdx.y * lb;
-
-foreach (p in 0 .. lb) {
-  assert fi == gtidy + p;
-  assert fj == fi * dx + gtidx;
-  if (gtidx < dx && fi < dy) {
-    ro part[fj];
-    rw part[fj];
-  }
-}
+if (gtidx == blockIdx.x * blockDim.x + threadIdx.x &&
+    gtidy == blockIdx.y * (lb * blockDim.y) + threadIdx.y * lb)
+  foreach (p in 0 .. lb)
+    if (
+        fi == gtidy + p &&
+        fj == fi * dx + gtidx &&
+        gtidx < dx && fi < dy
+      ) {
+      ro part[fj];
+      rw part[fj];
+    }

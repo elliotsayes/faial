@@ -13,25 +13,24 @@ const
     global blockDim.x,
     global blockDim.y,
     local x,
-    local y;
-
-assert distinct [threadIdx.x][threadIdx.y][blockIdx.x][blockIdx.y];
-assert threadIdx.x < blockDim.x;
-assert threadIdx.y < blockDim.y;
-
-assert blockDim.x == blockDim.y && blockDim.y == blockD;
-
+    local y
+where
+    distinct [threadIdx.x][threadIdx.y][blockIdx.x][blockIdx.y] &&
+    threadIdx.x < blockDim.x &&
+    threadIdx.y < blockDim.y &&
+    blockDim.x == blockDim.y &&
+    blockDim.y == blockD
+    ;
 # Assumptions
-assert blockD == 512;
-assert Width == 512 * 1024;
-
+let blockD = 512;
+let Width = 512 * 1024;
 # keep track of column index of the Pd element using thread index
-assert x == threadIdx.x + blockIdx.x * blockDim.x; # x is column
+let x = threadIdx.x + blockIdx.x * blockDim.x; # x is column
 # keep track of row index of the Pd element using thread index
-assert y == threadIdx.y + blockIdx.y * blockDim.y; # y is row
+let y = threadIdx.y + blockIdx.y * blockDim.y; # y is row
 
 # prove?
-assert x < Width;
+# assert x < Width;
 
 # Loop over the Md and Nd block dimension required to compute the Pd element
 foreach (m in 0 .. Width/blockD) {
