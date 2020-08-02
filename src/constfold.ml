@@ -23,7 +23,7 @@ let rec n_opt (a : nexp) : nexp =
   match a with
   | Var _ -> a
   | Num n -> if n < 0 then raise (Failure "Negative number") else a
-  | Proj (t, n) -> Proj(t, n_opt n)
+  | Proj (t, n) -> Proj(t, n)
   | Bin (b, a1, a2) ->
     let a1 = n_opt a1 in
     let a2 = n_opt a2 in
