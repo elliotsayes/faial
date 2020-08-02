@@ -6,22 +6,40 @@ type b_phase = bexp Phasesplit.phase
 type b_kernel = b_phase Locsplit.loc_kernel
 
 let proj_accesses (t:task) (h:h_prog) : cond_access list =
+  (* Add a suffix to a variable *)
+  let var_append (x:variable) (suffix:string) : variable =
+    {x with var_name = x.var_name ^ suffix }
+  in
+  (* Add a suffix to all variables to make them unique. Use $ to ensure
+    these variables did not come from C *)
+  let task_suffix (t:task) = "$" ^ task_to_string t in
+  let proj_var (t:task) (x:variable) : variable =
+    var_append x (task_suffix t)
+  in
   (* Create a hash-table of substitutions make each local variable unique *)
   let make_subst (vars:VarSet.t) : SubstAssoc.t =
-    (* Add a suffix to a variable *)
-    let var_append (x:variable) (suffix:string) : variable =
-      {x with var_name = x.var_name ^ suffix }
-    in
-    (* Add a suffix to all variables to make them unique. Use $ to ensure
-      these variables did not come from C *)
-    let suffix = "$" ^ task_to_string t in
     VarSet.elements vars
-    |> List.map (fun x -> (x.var_name, Var (var_append x suffix)))
+    |> List.map (fun x -> (x.var_name, Var (proj_var t x)))
     |> SubstAssoc.make
+  in
+  let rec inline_proj_n (n: nexp) : nexp =
+    match n with
+    | Num _
+    | Var _ -> n
+    | Bin (o, n1, n2) -> Bin (o, inline_proj_n n1, inline_proj_n n2)
+    | Proj (t, x) -> Var (proj_var t x)
+  in
+  let rec inline_proj_b (b: bexp) : bexp =
+    match b with
+    | Pred _
+    | Bool _ -> b
+    | BNot b -> BNot (inline_proj_b b)
+    | BRel (o, b1, b2) -> BRel (o, inline_proj_b b1, inline_proj_b b2)
+    | NRel (o, n1, n2) -> NRel (o, inline_proj_n n1, inline_proj_n n2)
   in
   (* Find and replace under conditional accesses *)
   let cond_access_subst (s:SubstAssoc.t) ((e,b):cond_access) : cond_access =
-    (ReplaceAssoc.a_subst s e, ReplaceAssoc.b_subst s b)
+    (ReplaceAssoc.a_subst s e, inline_proj_b b |> ReplaceAssoc.b_subst s)
   in
   let s = make_subst h.prog_locals in
   List.map (cond_access_subst s) h.prog_accesses
@@ -36,6 +54,7 @@ type assign_task = {
   assign_mode : mode -> bexp;
   assign_index: int -> nexp -> bexp
 }
+
 let mode_to_nexp (m:mode) : nexp =
   Num (match m with
   | R -> 0
