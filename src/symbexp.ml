@@ -36,19 +36,23 @@ type assign_task = {
   assign_mode : mode -> bexp;
   assign_index: int -> nexp -> bexp
 }
+let mode_to_nexp (m:mode) : nexp =
+  Num (match m with
+  | R -> 0
+  | W -> 1)
+let mk_var (x:string) = Var (var_make x)
+let prefix (t:task) = "$" ^ task_to_string t ^ "$"
+let mk_mode (t:task) = mk_var (prefix t ^ "mode")
+let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
+
+let range (i:int) (j:int) : int list =
+  let rec iter n acc =
+    if n < i then acc else iter (n-1) (n :: acc)
+  in
+  iter j []
 
 (* Returns the generators for the given task *)
 let mk_task_gen (t:task) =
-  let mode_to_nexp (m:mode) : nexp =
-    Num (match m with
-    | R -> 0
-    | W -> 1)
-  in
-  let mk_var (x:string) = Var (var_make x) in
-  let prefix (t:task) = "$" ^ task_to_string t ^ "$" in
-  let mk_mode (t:task) = mk_var (prefix t ^ "mode") in
-  let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n) in
-
   let this_mode_v : nexp = mk_mode t in
   let other_mode_v : nexp = mk_mode (other_task t) in
   let idx_v : int -> nexp = mk_idx t in
@@ -78,14 +82,31 @@ let cond_acc_list_to_bexp (t:assign_task) (l:cond_access list) : bexp =
   |> b_or_ex
 
 let h_prog_to_bexp (h:h_prog) : bexp =
+  (* Pick one access *)
   let task_to_bexp (t:task) : bexp =
     let gen = mk_task_gen t in
     let accs = proj_accesses t h in
     cond_acc_list_to_bexp gen accs
   in
+  (* Make sure all indexeses match *)
+  (* $T1$index$0 = $T2$index$0 ... *)
+  let gen_eq_index (n:int) : bexp =
+    range 0 n
+    |> List.map (fun i -> 
+      n_eq (mk_idx Task1 i) (mk_idx Task2 i)
+    )
+    |> b_and_ex
+  in
+  (* The dimention is the index count *)
+  let rec get_dim (l:cond_access list) : int =
+    match l with
+    | [] -> failwith "Phase split should not generate empty phases!"
+    | (a,_) :: _ -> List.length a.access_index
+  in
   b_and_ex [
     task_to_bexp Task1;
     task_to_bexp Task2;
+    get_dim h.prog_accesses |> gen_eq_index
   ]
 
 let rec h_phase_to_bexp (h: bexp Phasesplit.phase) : bexp =
