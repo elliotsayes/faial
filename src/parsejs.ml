@@ -218,6 +218,10 @@ let rec parse_bexp b : bexp option =
             bind (parse_bexp e2) (fun b2 ->
               Some (b_rel (parse_brel.run o) b1 b2)))
     );
+    "IntegerLiteral", (["value"], function
+      | [`Int n] -> Some (Bool (n != 0))
+      | _ -> None
+    );
     "UnaryOperator", (["subExpr"; "opcode"], function
       | [b; `String "!"] ->
         bind (parse_bexp b) (fun b -> Some (b_not b))
@@ -356,8 +360,8 @@ let parse_kernel = make "kernel" (fun k ->
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
   choose_one_of [
-    "FunctionDecl", (["body"; "params"], function
-      | [body; `List params] ->
+    "FunctionDecl", (["body"; "pre"; "params"], function
+      | [body; pre; `List params] ->
         begin
           let is_param p l =
             match get_kind_opt l, member "isUsed" l, member "type" l with
@@ -370,7 +374,7 @@ let parse_kernel = make "kernel" (fun k ->
               |> VarSet.of_list
           in
           Some {
-            p_kernel_pre = Pred ("TODO", var_make "UPDATE FAIAL INFER"); (* XXX: TODO *)
+            p_kernel_pre = parse_bexp.run pre;
             p_kernel_locations = get_params is_array_type;
             p_kernel_params = get_params is_int_type;
             p_kernel_code = parse_stmt.run body;
