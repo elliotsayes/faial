@@ -50,24 +50,7 @@ module Make (S:SUBST) = struct
   let b_subst (s:S.t) (b:bexp) : bexp =
     let rec subst b =
       match b with
-        | Pred (p,x) ->
-          (* Check if we need to replace Pred(p, x) by something *)
-          begin match S.find s x with
-          | Some v ->
-            (* We must replace x by v *)
-            begin match Constfold.n_opt v with
-            | Var v -> Pred (p, v)
-            | _ ->
-              (* When replacing a variable by a predicate, we evaluate it *)
-              begin match Predicates.call_opt p v with
-              | Some p -> Constfold.b_opt p
-              | None ->
-                let msg = "subst: unknown predicate " ^ p in
-                failwith msg;
-              end
-            end
-          | None -> b (* return b unchanged *)
-          end
+        | Pred (p,v) -> Pred (p, n_subst s v)
         | Bool _ -> b
         | NRel (o, n1, n2) -> n_rel o (n_subst s n1) (n_subst s n2)
         | BRel (o, b1, b2) -> b_rel o (subst b1) (subst b2)

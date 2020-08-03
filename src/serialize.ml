@@ -105,7 +105,7 @@ module StdBexp : BEXP_SERIALIZER =
       | BRel (b, b1, b2) ->
         binop (brel_to_string b) (b_ser b1) (b_ser b2)
       | BNot b -> unop "not" (b_ser b)
-      | Pred (x, v) -> unop x (Sexp.Atom v.var_name)
+      | Pred (x, v) -> unop x (n_ser v)
   end
 
 module BvBexp : BEXP_SERIALIZER =
@@ -128,7 +128,7 @@ module BvBexp : BEXP_SERIALIZER =
       | BRel (b, b1, b2) ->
         binop (brel_to_string b) (b_ser b1) (b_ser b2)
       | BNot b -> unop "not" (b_ser b)
-      | Pred (x, v) -> unop x (Sexp.Atom v.var_name)
+      | Pred (x, v) -> unop x (n_ser v)
   end
 
 let b_ser = StdBexp.b_ser

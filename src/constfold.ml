@@ -58,7 +58,18 @@ let bexp_to_bool b =
 
 let rec b_opt (e : bexp) : bexp =
 match e with
-| Pred _
+| Pred (x, e) ->
+  begin match n_opt e with
+  | Num _ as n ->
+    (* Try to evaluate the predicate *)
+    begin match Predicates.call_opt x n with
+    | Some b ->  (* We found the predicate; call it and optimize the result *)
+      b_opt b
+    | None -> (* Otherwise, leave the predicate unchanged *)
+      Pred (x, n)
+    end
+  | v -> Pred (x, v)
+  end
 | Bool _ -> e
 | BRel (b, b1, b2) ->
   begin

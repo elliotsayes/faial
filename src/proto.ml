@@ -58,7 +58,7 @@ type bexp =
 | NRel of nrel * nexp * nexp
 | BRel of brel * bexp * bexp
 | BNot of bexp
-| Pred of string * variable
+| Pred of string * nexp
 
 let eval_nbin (o:nbin) : int -> int -> int =
   match o with

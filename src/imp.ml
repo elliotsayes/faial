@@ -167,7 +167,7 @@ let rec reify (p:stmt) : prog =
             (* ensure that the bound is correct *)
             (n_gt r.range_expr_step (Num 0))
       | Pred name ->
-          Pred (name, x)
+          Pred (name, Var x)
     end in
     [Loop ({
         range_var = x;

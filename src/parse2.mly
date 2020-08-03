@@ -67,7 +67,7 @@ bexp:
   | n1 = nexp; o = nrel; n2 = nexp { o n1 n2 }
   | b1 = bexp; o = brel; b2 = bexp { o b1 b2 }
   | NOT b = bexp { b_not b }
-  | p = ID LPAREN x = ident RPAREN { Pred (p, x) }
+  | p = ID LPAREN x = nexp RPAREN { Pred (p, x) }
   | DISTINCT i = vars { distinct i }
 
 %inline nrel:

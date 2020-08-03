@@ -229,10 +229,7 @@ let rec parse_bexp b : bexp option =
     );
     "PredicateExpr", (["subExpr"; "opcode"], function
       | [n; `String opcode] ->
-        begin match parse_nexp.run n with
-        | Var x -> Some (Pred (opcode, x))
-        | _ -> None
-        end
+        Some (Pred (opcode, parse_nexp.run n))
       | _ -> None
     );
     "DistinctExpr", (["args"], function

@@ -10,7 +10,7 @@ let rec fold_nexp f e a =
 
 let rec fold_bexp f e a =
   match e with
-  | Pred (_, x) -> f x a
+  | Pred (_, n) -> fold_nexp f n a
   | Bool _ -> a
   | NRel (_, n1, n2) -> fold_nexp f n1 a |> fold_nexp f n2
   | BRel (_, b1, b2) -> fold_bexp f b1 a |> fold_bexp f b2
