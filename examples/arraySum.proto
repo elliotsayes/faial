@@ -13,13 +13,13 @@ rw sdata[blockIdx.x][threadIdx.x];
 if (i < n) ro A[i];
 sync;
 foreach (s in 0 .. blockDim.x / 2) {
-#  if (pow2(s)) {
-  if (threadIdx.x < s) {
-    ro sdata[blockIdx.x][threadIdx.x + s];
-    rw sdata[blockIdx.x][threadIdx.x];
+  if (pow2(s)) {
+    if (threadIdx.x < s) {
+      ro sdata[blockIdx.x][threadIdx.x + s];
+      rw sdata[blockIdx.x][threadIdx.x];
+    }
+    sync;
   }
-  sync;
-#  }
 }
 if (threadIdx.x == 0) {
   ro sdata[blockIdx.x][0];

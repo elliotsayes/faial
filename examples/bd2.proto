@@ -5,22 +5,23 @@ const global MaxCol,
       local blockIdx_y,
       local blockIdx_x,
       local threadIdx_x,
-      global m,
       global n,
       local myFunc,
-      local id;
+      where
+      distinct [threadIdx_x][blockIdx_x] &&
+      blockIdx_y > blockIdx_x &&
+      threadIdx_x < m &&
+      m >= 1
+      ;
 
-assert distinct [threadIdx_x][blockIdx_x];
 
-assert blockIdx_y > blockIdx_x;
-assert threadIdx_x < m;
-
-assert m >= 1;
-assert id == blockIdx_x * m + threadIdx_x;
 
 # XXX: we are currently unable to solve this, so we assume a fixed size
+let m = 2048;
+
+let id = blockIdx_x * m + threadIdx_x;
+
 # prove distinct [id];
-assert m == 2048;
 
 
 # funcValue = Func(blockIdx.x, threadIdx.x); //func 1
@@ -47,6 +48,6 @@ sync;
 foreach (i in 0.. n)
   foreach (j in 0.. m) {
     # funcValue = Func(myFunc, j);
-    assert myFunc == i + threadIdx_x;
+    let myFunc = i + threadIdx_x;
     if (myFunc < n) ro func[j * m + myFunc];
   }

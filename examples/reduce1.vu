@@ -12,30 +12,28 @@ const
   local threadIdx.x,
   global blockDim.x,
   local blockIdx.x,
-  local tid,
-  local i;
+where
+  threadIdx.x < blockDim.x &&
+  distinct [blockIdx.x][threadIdx.x]
+;
 
-# XXX: unneeded assumption
-assert blockDim.x == 512;
+let i = blockIdx.x*blockDim.x+ threadIdx.x;
+#prove distinct[i];
 
-assert threadIdx.x < blockDim.x;
-assert i == blockIdx.x*blockDim.x+ threadIdx.x;
-assert distinct [blockIdx.x][threadIdx.x];
-prove distinct[i];
-
-assert tid == threadIdx.x;
+let tid = threadIdx.x;
 
 ro g_idata[i];
 rw sdata[blockIdx.x][tid];
 sync;
 
 foreach (s in 0.. blockDim.x) {
-  assert pow2(s);
-  if (tid % (2 * s) == 0) {
-    ro sdata[blockIdx.x][tid + s];
-    rw sdata[blockIdx.x][tid];
+  if (pow2(s)) {
+    if (tid % (2 * s) == 0) {
+        ro sdata[blockIdx.x][tid + s];
+        rw sdata[blockIdx.x][tid];
+    }
+    sync;
   }
-  sync;
 }
 if (tid == 0) {
   ro sdata[blockIdx.x][0];

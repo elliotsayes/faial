@@ -34,25 +34,25 @@ const
   local blockDim_x,
   global SUM_BUFFER_SIZE,
   global WORK_GROUP_SIZE,
-  local tid;
-
-# We must also declare tid as being unique across threads
-# That is: no two threads have the same tid.
-assert distinct [tid];
+  local tid
+where
+  # We must also declare tid as being unique across threads
+  # That is: no two threads have the same tid.
+  distinct [tid];
 
 foreach (index in tid .. SUM_BUFFER_SIZE) {
-  assert (index - tid) % blockDim_x == 0;
-  ro sumBuffer[index];
+  if ( (index - tid) % blockDim_x == 0)
+    ro sumBuffer[index];
 }
 
 rw tempBuffer[tid];
 foreach (i in 0 .. WORK_GROUP_SIZE) {
-  assert i >= 1;
-  assert pow2(i);
-  sync;
-  if (tid%(i*2) == 0 && tid+i < WORK_GROUP_SIZE) {
-    ro tempBuffer[tid + i];
-    rw tempBuffer[tid];
+  if (i >= 1 && pow2(i)) {
+    sync;
+    if (tid%(i*2) == 0 && tid+i < WORK_GROUP_SIZE) {
+        ro tempBuffer[tid + i];
+        rw tempBuffer[tid];
+    }
   }
 }
 if (tid == 0) {

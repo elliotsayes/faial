@@ -7,52 +7,44 @@ Source: https://github.com/NVIDIA/cuda-samples/blob/master/Samples/matrixMulDrv/
 
 shared C, A, B, As, Bs;
 const
-  global wA,
-  global wB,
   local bx,
   local by,
   local tx,
   local ty,
-  local aBegin,
-  local aEnd,
-  global aStep,
-  local bBegin,
-  global bStep,
-  global block_size,
-  global bEnd,
-  global gridDim.x,
-  global gridDim.y,
   local b,
-  local c,
-  local d,
+where
+  # GPUVerify assumptions
+  tx < 32 &&
+  ty < 32 &&
+  bx < gridDim.x &&
+  by < gridDim.y &&
+  # Assumption
+  distinct [tx][ty][bx][by] &&
+  320 == block_size * gridDim.y &&
+  640 == block_size * gridDim.x
   ;
 
 # GPUVerify assumptions
-assert gridDim.x == 20;
-assert gridDim.y == 10;
-assert tx < 32;
-assert ty < 32;
-assert block_size == 32;
-assert wA == 320;
-assert wB == 640;
+# assert wA > 1 && block_size > 0 && wB > 1;
+let gridDim.x = 20;
+let gridDim.y = 10;
+let block_size = 32;
+let wA = 320;
+let wB = 640;
 
-# Assumption
-assert bx < gridDim.x;
-assert by < gridDim.y;
+# Assumptions
+let aBegin = wA * block_size * by;
+let aEnd = aBegin + wA - 1;
+let aStep = block_size;
+let bBegin = block_size * bx;
+let bStep = block_size * wB;
 
-assert distinct [tx][ty][bx][by];
-assert aBegin == wA * block_size * by;
-assert aEnd == aBegin + wA - 1;
-assert aStep == block_size;
-assert bBegin == block_size * bx;
-assert bStep == block_size * wB;
-assert wA > 1 && block_size > 0 && wB > 1;
-assert wA == block_size * gridDim.y;
-assert wB == block_size * gridDim.x;
-
-foreach (a in 0 .. aEnd + 1) {
-  assert a >= aBegin && (a - aBegin) % aStep == 0;
-  assert b >= bBegin && (b - bBegin) % bStep == 0;
+foreach (a in aBegin .. aEnd + 1)
+  if (
+    (a - aBegin) % aStep == 0 &&
+    b >= bBegin &&
+    (b - bBegin) % bStep == 0
+  ) {
   rw As[by][bx][ty][tx];
   rw Bs[by][bx][ty][tx];
   ro A[a + wA * ty + tx];
@@ -65,9 +57,8 @@ foreach (a in 0 .. aEnd + 1) {
   sync;
 }
 
-assert tx < block_size;
-assert ty < block_size;
-assert c == wB * block_size * by + block_size * bx;
-assert d == wB * ty + tx;
-
-rw C[c + d];
+if (tx < block_size && ty < block_size) {
+  let c = wB * block_size * by + block_size * bx;
+  let d = wB * ty + tx;
+  rw C[c + d];
+}
