@@ -152,6 +152,7 @@ let h_kernel_to_proof (k:h_kernel) : proof =
   Phasesplit.phase_map h_prog_to_bexp k.loc_kernel_code
   |> Phasesplit.normalize_phase ReplacePair.b_subst Proto.VarSet.empty
   |> h_phase_to_bexp
+  |> Constfold.b_opt (* Optimize the output expression *)
   |> mk_proof
 
 let translate (stream:h_kernel Stream.t) : proof Stream.t =
