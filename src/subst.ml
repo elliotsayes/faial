@@ -51,17 +51,20 @@ module Make (S:SUBST) = struct
     let rec subst b =
       match b with
         | Pred (p,x) ->
+          (* Check if we need to replace Pred(p, x) by something *)
           begin match S.find s x with
-          | Some (Var v) -> Pred (p, v)
-          | Some x ->
-            begin let x = match x with
-              | Num x -> string_of_int x
-              | Bin _ -> "binop"
-              | Proj _ -> "proj"
-              | Var _ -> "impossible!"
-              in
-              let msg = "Subsitution inside predicate " ^ p ^ " returned a non-variable: " ^ x in
-              raise (Failure msg)
+          | Some v ->
+            (* We must replace x by v *)
+            begin match Constfold.n_opt v with
+            | Var v -> Pred (p, v)
+            | _ ->
+              (* When replacing a variable by a predicate, we evaluate it *)
+              begin match Predicates.call_opt p v with
+              | Some p -> Constfold.b_opt p
+              | None ->
+                let msg = "subst: unknown predicate " ^ p in
+                failwith msg;
+              end
             end
           | None -> b (* return b unchanged *)
           end

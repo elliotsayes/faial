@@ -53,12 +53,13 @@ struct
   let ser_predicate p =
     let open Sexplib in
     let open Predicates in
+    let g = Predicates.pred_to_codegen p in
     Sexp.List [
       Sexp.Atom "define-fun";
       Sexp.Atom p.pred_name;
-      Sexp.List [Serialize.unop p.pred_arg Gen.uint_s];
+      Sexp.List [Serialize.unop g.codegen_arg Gen.uint_s];
       Sexp.Atom "Bool";
-      Gen.b_ser p.pred_body;
+      Gen.b_ser g.codegen_body;
     ]
 
   let define_const v ty =

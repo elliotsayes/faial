@@ -3,12 +3,19 @@ open Proto
 
 type t = {
   pred_name: string;
-  pred_arg: string;
-  pred_body: bexp;
+  pred_body: nexp -> bexp;
 }
 
-let mk_pred (name:string) (body:nexp -> bexp) : t =
-  { pred_name = name; pred_arg = "x"; pred_body = body (Var (var_make "x")) }
+type codegen = {
+  codegen_arg: string;
+  codegen_body: bexp;
+}
+
+let pred_to_codegen (pred:t) : codegen =
+  {
+    codegen_arg = "x";
+    codegen_body = pred.pred_body (Var (var_make "x"));
+  }
 
 let is_even n =
   n mod 2 = 0
@@ -37,20 +44,30 @@ let gen_pow base x : bexp =
   pows 0 |> eq_nums x
 
 let all_predicates : t list =
-  List.map (fun x ->
-    mk_pred ("pow" ^ string_of_int x) (gen_pow x)
+  List.map (fun base ->
+    { pred_name = "pow" ^ string_of_int base;
+      pred_body = gen_pow base
+    }
   ) (range 2 4)
   @
   [
-    mk_pred "uint32" (fun x -> n_le x (Num 0xFFFFFFFF));
-    mk_pred "uint16" (fun x -> n_le x (Num 0xFFFF));
-    mk_pred "uint8" (fun x -> n_le x (Num 0xFF));
+    { pred_name = "uint32"; pred_body = fun x -> n_le x (Num 0xFFFFFFFF) };
+    { pred_name = "uint16"; pred_body = fun x -> n_le x (Num 0xFFFF) };
+    { pred_name = "uint8"; pred_body = fun x -> n_le x (Num 0xFF) };
   ]
 
 let make_pred_db (l:t list) : (string, t) Hashtbl.t =
   List.map (fun p-> (p.pred_name, p)) l
   |> Common.hashtbl_from_list
 
+let find_opt (name:string) : t option =
+  let db = make_pred_db all_predicates in
+  Hashtbl.find_opt db name
+
+let call_opt (name:string) (n:nexp) : bexp option =
+  match find_opt name with
+  | Some p -> Some (p.pred_body n)
+  | None -> None
 
 let get_predicates (b:bexp) : t list =
   let rec get_names (b:bexp) (preds:StringSet.t) : StringSet.t =
