@@ -283,10 +283,10 @@ let j_to_var j =
   let open Yojson.Basic.Util in
   member "name" j |> to_string |> var_make
 
-let rec parse_program j =
+let rec parse_stmt j =
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
-  let do_parse_prog = do_parse parse_program in
+  let do_parse_prog = do_parse parse_stmt in
 
   choose_one_of [
     "SyncStmt", ([], fun _ -> Some (Inst ISync));
@@ -317,7 +317,7 @@ let rec parse_program j =
     );
     "CompoundStmt", (["inner"], function
       | [`List l] ->
-        let on_elem (idx, j) : program =
+        let on_elem (idx, j) : stmt =
           let idx = string_of_int (idx + 1) in
           let msg = "When parsing CompoundStmt, could not parse #" ^ idx in
           do_parse_prog j msg
@@ -327,7 +327,7 @@ let rec parse_program j =
     );
     "ForEachStmt", (["var"; "range"; "body"], function
       | [v; r; body] ->
-        bind (parse_program body) (fun body ->
+        bind (parse_stmt body) (fun body ->
           Some (For (parse_var.run v, parse_range.run r, body))
         )
       | _ -> None
@@ -350,7 +350,7 @@ let rec parse_program j =
     );
   ] j
 
-let parse_program = make "program" parse_program
+let parse_stmt = make "statement" parse_stmt
 
 let parse_kernel = make "kernel" (fun k ->
   let open Yojson.Basic in
@@ -370,9 +370,10 @@ let parse_kernel = make "kernel" (fun k ->
               |> VarSet.of_list
           in
           Some {
+            p_kernel_pre = Pred ("TODO", var_make "UPDATE FAIAL INFER"); (* XXX: TODO *)
             p_kernel_locations = get_params is_array_type;
             p_kernel_params = get_params is_int_type;
-            p_kernel_code = parse_program.run body;
+            p_kernel_code = parse_stmt.run body;
           }
         end
       | _ -> None

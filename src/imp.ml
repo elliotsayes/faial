@@ -16,33 +16,35 @@ type step_kind = Default | Pred of string
 
 type range_expr = {range_expr_start: nexp; range_expr_stop: nexp; range_expr_step: nexp; range_expr_kind: step_kind}
 
-type program =
+type stmt =
 | Inst of instruction
-| Block of (program list)
+| Block of (stmt list)
 | Decl of (variable * locality * nexp option)
-| If of (bexp * program * program)
-| For of (variable * range_expr * program)
+| If of (bexp * stmt * stmt)
+| For of (variable * range_expr * stmt)
 
 type p_kernel = {
+  (* A kernel precondition of every phase. *)
+  p_kernel_pre: bexp;
   (* The shared locations that can be accessed in the kernel. *)
   p_kernel_locations: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
   p_kernel_params: VarSet.t;
   (* The code of a kernel performs the actual memory accesses. *)
-  p_kernel_code: program;
+  p_kernel_code: stmt;
 }
 
 let unblock p =
   match p with
   | Block l -> l
-  | _ -> raise (Failure "!!")
+  | _ -> failwith "unblock: expecting a block!"
 
 (** Variable normalization: Makes all variable declarations distinct. *)
 
 module SubstMake(S:Subst.SUBST) = struct
   module M = Subst.Make(S)
 
-  let program_subst (s:S.t) p : program =
+  let program_subst (s:S.t) p : stmt =
     let on_subst s o =
       match o with
       | Some n -> Some (M.n_subst s n)
@@ -92,14 +94,14 @@ module SubstMake(S:Subst.SUBST) = struct
 
 module ReplacePair = SubstMake(Subst.SubstPair)
 
-let normalize_variables (p:program) xs =
-  let rec norm p xs : program * VarSet.t =
-    let do_subst x do_cont : program * VarSet.t =
+let normalize_variables (p:stmt) xs =
+  let rec norm p xs : stmt * VarSet.t =
+    let do_subst x do_cont : stmt * VarSet.t =
       if VarSet.mem x xs then (
         let new_x : variable = Bindings.generate_fresh_name x xs in
         let new_xs = VarSet.add new_x xs in
         let si = Subst.SubstPair.make (x, Var new_x) in
-        do_cont new_x new_xs (fun (p:program) -> norm (ReplacePair.program_subst si p) new_xs)
+        do_cont new_x new_xs (fun (p:stmt) -> norm (ReplacePair.program_subst si p) new_xs)
       ) else (
         let new_xs = VarSet.add x xs in
         do_cont x new_xs (fun p -> norm p new_xs)
@@ -134,10 +136,10 @@ let normalize_variables (p:program) xs =
   in
   norm p xs |> fst
 
-let rec reify (p:program) : prog =
+let rec reify (p:stmt) : prog =
   (**
     Breaks down syntactic sugar:
-    1. Converts declarations into asserts
+    1. Inlines declarations in code (assumes code is normalized)
     2. Convert structured-loops into protocol Foreach
   *)
   match p with
@@ -148,7 +150,11 @@ let rec reify (p:program) : prog =
   | Inst (IAcc (x,y)) -> [Base (Unsync (Acc (x,y)))]
   | Block [] -> []
   | Block (Inst (IAssert b)::l) -> [Cond (b, reify (Block l))]
-  | Block (Decl (x,_,Some n)::l) -> [Cond (n_eq (Var x) n, reify (Block l))]
+  | Block (Decl (x,_,Some n)::l) ->
+    (* When we find a declaration, inline it in the code *)
+    Block l
+    |> ReplacePair.program_subst (Subst.SubstPair.make (x, n))
+    |> reify
   | Block (i::l) -> reify i @ reify (Block l)
   | If (b,p,q) -> [Cond (b,reify p);Cond(BNot b, reify q)]
   | For (x, r, p) ->
@@ -175,7 +181,7 @@ let rec reify (p:program) : prog =
       )]
     )]
 
-let rec get_variable_decls (p:program) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
+let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
   match p with
   | Inst _ -> (locals,globals)
   | Block l -> List.fold_right get_variable_decls l (locals,globals)
@@ -195,7 +201,7 @@ let compile (k:p_kernel) : prog kernel =
     2. We break down for-loops and variable declarations
     *)
   {
-    kernel_pre = Bool true; (* XXX: update me *)
+    kernel_pre = k.p_kernel_pre;
     kernel_locations = k.p_kernel_locations;
     kernel_local_variables = locals;
     kernel_global_variables = globals;

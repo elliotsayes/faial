@@ -57,6 +57,8 @@ rule read = parse
   | "true" { TRUE }
   | "false" { FALSE }
   | "where" { WHERE }
+  | "let" { LET }
+  | "=" { ASSIGN }
   | "prove" { PROVE }
   | "foreach" { FOREACH }
   | "if" { IF }

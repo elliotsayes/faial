@@ -8,8 +8,6 @@ const
  global dx,
  global dy,
  global lb,
- local gtidx,
- local gtidy,
  local blockIdx.x,
  local threadIdx.x,
  local blockIdx.y,
@@ -18,8 +16,6 @@ const
  global blockDim.x,
  global gridDim.x,
  global gridDim.y,
- local fi,
- local fj
 
 where blockIdx.x < gridDim.x &&
       blockIdx.y < gridDim.y &&
@@ -38,16 +34,14 @@ where blockIdx.x < gridDim.x &&
     # fj < 1024
     ;
 
+let gtidx = blockIdx.x * blockDim.x + threadIdx.x;
+let gtidy = blockIdx.y * (lb * blockDim.y) + threadIdx.y * lb;
 
-
-if (gtidx == blockIdx.x * blockDim.x + threadIdx.x &&
-    gtidy == blockIdx.y * (lb * blockDim.y) + threadIdx.y * lb)
-  foreach (p in 0 .. lb)
-    if (
-        fi == gtidy + p &&
-        fj == fi * dx + gtidx &&
-        gtidx < dx && fi < dy
-      ) {
+foreach (p in 0 .. lb) {
+    let fi = gtidy + p;
+    let fj = fi * dx + gtidx;
+    if (gtidx < dx && fi < dy) {
       ro part[fj];
       rw part[fj];
     }
+}

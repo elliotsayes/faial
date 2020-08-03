@@ -15,6 +15,8 @@
 %token ELSE
 %token WHERE
 %token TRUE FALSE
+%token LET
+%token ASSIGN
 
 %left OR
 %left AND
@@ -93,6 +95,8 @@ index:
 prog:
   | s = stmt; p = prog
     { s @ p }
+  | LET x = ident ASSIGN n = nexp SEMICOLON p = prog
+    { Subst.ReplacePair.p_subst (Subst.SubstPair.make (x,n)) p }
   | { [] }
 
 %inline range:
