@@ -46,8 +46,8 @@ foreach (index in tid .. SUM_BUFFER_SIZE) {
 }
 
 rw tempBuffer[tid];
-foreach (i in 0 .. WORK_GROUP_SIZE) {
-  if (i >= 1 && pow2(i)) {
+foreach (i in 1 .. WORK_GROUP_SIZE) {
+  if (pow2(i)) {
     sync;
     if (tid%(i*2) == 0 && tid+i < WORK_GROUP_SIZE) {
         ro tempBuffer[tid + i];
