@@ -12,7 +12,12 @@ const
   local tx,
   local ty,
   local b,
+  global gridDim.x,
+  global gridDym.y,
+  global block_size,
 where
+  gridDim.x > 0 &&
+  gridDim.y > 0 &&
   bx < gridDim.x &&
   by < gridDim.y &&
   # GPUVerify assumptions
@@ -20,17 +25,17 @@ where
   ty < 32 &&
   # Assumption
   distinct [tx][ty][bx][by] &&
-  320 == block_size * gridDim.y &&
-  640 == block_size * gridDim.x
+  gridDim.x == 20 &&
+  gridDim.y == 10
   ;
 
 # GPUVerify assumptions
 # assert wA > 1 && block_size > 0 && wB > 1;
-let gridDim.x = 20;
-let gridDim.y = 10;
 let block_size = 32;
 let wA = 320;
 let wB = 640;
+# assert 320 == block_size * gridDim.y &&
+# assert  640 == block_size * gridDim.x
 
 # Assumptions
 let aBegin = wA * block_size * by;
