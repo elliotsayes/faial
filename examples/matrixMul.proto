@@ -13,11 +13,11 @@ const
   local ty,
   local b,
 where
+  bx < gridDim.x &&
+  by < gridDim.y &&
   # GPUVerify assumptions
   tx < 32 &&
   ty < 32 &&
-  bx < gridDim.x &&
-  by < gridDim.y &&
   # Assumption
   distinct [tx][ty][bx][by] &&
   320 == block_size * gridDim.y &&

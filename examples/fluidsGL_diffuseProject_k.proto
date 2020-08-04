@@ -5,45 +5,41 @@ shared
   vx, vy;
 
 const
- global dx,
- global dy,
- global lb,
  local gtidx,
  local gtidy,
  local blockIdx.x,
  local threadIdx.x,
  local blockIdx.y,
  local threadIdx.y,
- global blockDim.y,
- global blockDim.x,
- global gridDim.x,
- global gridDim.y,
- local fi,
- local fj;
+where
+#  blockIdx.x < gridDim.x &&
+#  blockIdx.y < gridDim.y &&
+  blockIdx.x < 8 &&
+  blockIdx.y < 8 &&
+#  threadIdx.x < blockDim.x &&
+#  threadIdx.y < blockDim.y &&
+  threadIdx.x < 64 &&
+  threadIdx.y < 4 &&
+  distinct [threadIdx.x][threadIdx.y][blockIdx.x][blockIdx.y];
 
-assert blockIdx.x < gridDim.x;
-assert blockIdx.y < gridDim.y;
-assert threadIdx.x < blockDim.x;
-assert threadIdx.y < blockDim.y;
-assert distinct [threadIdx.x][threadIdx.y][blockIdx.x][blockIdx.y];
-
-assert gtidx == blockIdx.x * blockDim.x + threadIdx.x;
-assert gtidy == blockIdx.y * (lb * blockDim.y) + threadIdx.y * lb;
 # GPUVerify assumptions
-assert gridDim.x == 8;
-assert gridDim.y == 8;
-assert blockDim.x == 64;
-assert blockDim.y == 4;
-assert lb == 16;
-assert dx == 512;
-assert dy == 512;
-assert fj < 1024;
+let gridDim.x = 8;
+let gridDim.y = 8;
+let blockDim.x = 64;
+let blockDim.y = 4;
+let lb = 16;
+let dx = 512;
+let dy = 512;
 
-foreach (p in 0 .. lb) {
-  assert fi == gtidy + p;
-  assert fj == fi * dx + gtidx;
-  if (gtidx < dx && fi < dy) {
-    rw vx[fj];
-    rw vy[fj];
+
+let gtidx = blockIdx.x * blockDim.x + threadIdx.x;
+let gtidy = blockIdx.y * (lb * blockDim.y) + threadIdx.y * lb;
+
+  foreach (p in 0 .. lb) {
+    let fi = gtidy + p;
+    let fj = fi * dx + gtidx;
+    if (fj < 1024 && gtidx < dx && fi < dy) {
+      rw vx[fj];
+      rw vy[fj];
+    }
   }
-}

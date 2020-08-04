@@ -2,9 +2,7 @@
 shared x;
 
 # We declare a thread-global constant
-const local i, local j;
-
-assert distinct [i][j];
+const local i, local j where distinct [i][j];
 
 rw x[i][j];
 rw x[i + 1][j];

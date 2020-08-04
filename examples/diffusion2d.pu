@@ -14,39 +14,35 @@ const
   local j,
   local jx,
   local jy,
+where
+  distinct [blockIdx.x][blockIdx.y][threadIdx.x][threadIdx.y] &&
+  threadIdx.x < blockDim.x &&
+  threadIdx.y < blockDim.y &&
+  blockDim.x > 0 &&
+  blockDim.y > 0
 ;
 
 # XXX: prove without this
-assert blockDim.x == 512;
+let blockDim.x = 512;
 # XXX: prove without this
-assert blockDim.y == 512;
+let blockDim.y = 512;
 
-assert nx > 0;
-assert ny > 0;
-assert nx == blockDim.x; # * gridDim.x;
-assert ny == blockDim.y; # * gridDim.y;
-assert distinct [blockIdx.x][blockIdx.y][threadIdx.x][threadIdx.y];
+let nx = blockDim.x; # * gridDim.x;
+let ny = blockDim.y; # * gridDim.y;
 
-assert blockDim.x > 0;
-assert blockDim.y > 0;
-assert threadIdx.x < blockDim.x;
-assert threadIdx.y < blockDim.y;
 
-assert jy == blockDim.y*blockIdx.y + threadIdx.y;
-assert jx == blockDim.x*blockIdx.x + threadIdx.x;
+let jy = blockDim.y*blockIdx.y + threadIdx.y;
+let jx = blockDim.x*blockIdx.x + threadIdx.x;
 
-assert distinct [jx][jy];
+#assert distinct [jx][jy];
 
-assert j == nx*jy + jx;
+let j = nx*jy + jx;
 
-assert jx < ny;
-assert jy < ny;
-
-prove distinct [j];
-
-ro f[j];
-if (jx != 0) ro f[j - 1];
-if (jx != nx - 1) ro f[j+1];
-if (jy != 0) ro f[j-nx];
-if (jy != ny - 1) ro f[j+nx];
-rw fn[j];
+if (nx > 0 && ny > 0 && jx < ny && jy < ny) {
+  ro f[j];
+  if (jx != 0) ro f[j - 1];
+  if (jx != nx - 1) ro f[j+1];
+  if (jy != 0) ro f[j-nx];
+  if (jy != ny - 1) ro f[j+nx];
+  rw fn[j];
+}

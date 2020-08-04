@@ -26,7 +26,7 @@ ro g_idata[i];
 rw sdata[blockIdx.x][tid];
 sync;
 
-foreach (s in 0.. blockDim.x) {
+foreach (s in 1.. blockDim.x) {
   if (pow2(s)) {
     if (tid % (2 * s) == 0) {
         ro sdata[blockIdx.x][tid + s];

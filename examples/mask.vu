@@ -17,8 +17,8 @@ __global__ void uniform (int *a) {
 |#
 
 shared a;
-const local threadIdx.x, global n;
-assert distinct [threadIdx.x];
+const local threadIdx.x, global n
+where distinct [threadIdx.x];
 rw a[threadIdx.x];
 foreach (i in 0.. n) {
   rw a[threadIdx.x];

@@ -13,15 +13,16 @@ shared randArray, output, callA, callB;
 const
   local tid,
   local bid,
-  global numSteps,
+  global numSteps
+where
+  distinct [tid][bid]
   ;
 
-assert distinct [tid][bid];
 
 ro randArray[bid];
 sync;
-foreach j < numSteps {
-  assert (j + (numSteps % 2))  % 2 == 0;
+foreach (j in 1 .. numSteps) {
+  if ((j + (numSteps % 2))  % 2 == 0) {
   if (tid < j) {
     rw callB[bid][tid];
     ro callA[bid][tid];
@@ -34,6 +35,7 @@ foreach j < numSteps {
     ro callB[bid][tid + 1];
   }
   sync;
+  }
 }
 if (tid == 0) {
   ro callA[bid][0];

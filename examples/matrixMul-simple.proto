@@ -6,34 +6,40 @@ shared Md, Nd, Pd, Mds, Nds;
 const
     global Width,
     global blockD,
-    local threadIdx.x,
-    local threadIdx.y,
+    # CUDA standard
     local blockIdx.x,
+    local threadIdx.x,
     local blockIdx.y,
-    global blockDim.x,
+    local threadIdx.y,
     global blockDim.y,
-    local x,
-    local y
-where
-    distinct [threadIdx.x][threadIdx.y][blockIdx.x][blockIdx.y] &&
+    global blockDim.x,
+    global gridDim.x,
+    global gridDim.y,
+
+where blockIdx.x < gridDim.x &&
+    blockIdx.y < gridDim.y &&
     threadIdx.x < blockDim.x &&
     threadIdx.y < blockDim.y &&
+    distinct [threadIdx.x][threadIdx.y][blockIdx.x][blockIdx.y] &&
+    # Kernel assumptions
     blockDim.x == blockDim.y &&
-    blockDim.y == blockD
+    blockDim.y == blockD &&
+    # Assumptions
+    pow2(blockD) &&
+    Width == blockD * 1024
+    #blockD == 512 &&
+    #Width == 512 * 1024
     ;
-# Assumptions
-let blockD = 512;
-let Width = 512 * 1024;
+
 # keep track of column index of the Pd element using thread index
 let x = threadIdx.x + blockIdx.x * blockDim.x; # x is column
 # keep track of row index of the Pd element using thread index
 let y = threadIdx.y + blockIdx.y * blockDim.y; # y is row
 
-# prove?
-# assert x < Width;
+if (x < Width) {
 
-# Loop over the Md and Nd block dimension required to compute the Pd element
-foreach (m in 0 .. Width/blockD) {
+  # Loop over the Md and Nd block dimension required to compute the Pd element
+  foreach (m in 0 .. Width/blockD) {
 
     # collaboratively loading of Md and Nd blocks into shared memory
     rw Mds[blockIdx.x][blockIdx.y][threadIdx.y][threadIdx.x];
@@ -48,7 +54,9 @@ foreach (m in 0 .. Width/blockD) {
       ro Nds[blockIdx.x][blockIdx.y][k][threadIdx.x];
     }
     sync;
-}
+  }
 
-# write back to the global memory
-rw Pd[y * Width + x];
+  # write back to the global memory
+  rw Pd[y * Width + x];
+
+}
