@@ -27,14 +27,22 @@ WHITE = color(37)
 UNDERLINE = color(4)
 RESET = color(0)
 
-def progress_call(f, x, end=""):
+def progress_call(f, x, end="", verbose=False):
   try:
+    if verbose:
+        print("*", x, end="")
     result = f(x).run()
     if result.returncode == 0:
-        print("·", end=end)
+        if verbose:
+            print(" ✓")
+        else:
+            print("·", end=end)
         return None
     else:
-        print(RED("✗") + RESET(), end=end)
+        if verbose:
+            print(RED(" ✗") + RESET())
+        else:
+            print(RED("✗") + RESET(), end=end)
         return result
 
   finally:
@@ -49,7 +57,7 @@ def each_test(dir, f, verbose=False):
     for x in sorted(dir.iterdir()):
         if x.is_dir():
             continue
-        result = progress_call(f, x)
+        result = progress_call(f, x, verbose=verbose)
         if result is not None:
             errs.append((x,result))
     print("")
@@ -162,7 +170,8 @@ def ensure_fail():
     return Py(handle)
 
 def test(label, path, cmd, verbose=False):
-    print(label + ": ", end="")
+    end = "\n" if verbose else ""
+    print(label + ": ", end=end)
     try:
       if len(each_test(path, cmd, verbose=verbose)) > 0:
           sys.exit(1)
