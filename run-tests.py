@@ -147,13 +147,25 @@ def parse_smtlib(stdin):
             elems.append(row.value())
     return elems
 
+def has_races(elems):
+    for elem in elems:
+        if elem == "sat":
+            return True
+    return False
+
+def is_drf(elems):
+    for elem in elems:
+        if elem != "unsat":
+            return False
+    return True
+
 def ensure_ok():
     def handle(stdin):
         elems = parse_smtlib(stdin)
         return CompletedProcess(
           stdout = stdin,
           stderr = b'',
-          returncode=0 if all(map(lambda x: x == "unsat", elems)) else 255,
+          returncode=0 if is_drf(elems) else 255,
           args = [],
         )
     return Py(handle)
@@ -164,7 +176,7 @@ def ensure_fail():
         return CompletedProcess(
           stdout = stdin,
           stderr = b'',
-          returncode=0 if any(map(lambda x: x == "sat" or "unknown", elems)) else 255,
+          returncode=0 if has_races(elems) else 255,
           args = [],
         )
     return Py(handle)
