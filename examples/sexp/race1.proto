@@ -1,5 +1,0 @@
-(kernel
-  (locations x)
-  (const)
-  (pre true)
-  (loc x (rw 0 true)))
