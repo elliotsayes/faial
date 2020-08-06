@@ -1,3 +1,4 @@
+open Exp
 open Proto
 
 module type SUBST =

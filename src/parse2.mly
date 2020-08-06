@@ -29,6 +29,7 @@
 
 %{
 
+  open Exp
   open Proto
   type modifier = Local | Global
 

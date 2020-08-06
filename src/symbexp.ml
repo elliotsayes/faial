@@ -1,5 +1,5 @@
 open Common
-open Proto
+open Exp
 open Subst
 open Flatacc
 
@@ -150,7 +150,7 @@ let rec h_phase_to_bexp (h: bexp Phasesplit.phase) : bexp =
 
 let h_kernel_to_proof (k:h_kernel) : proof =
   Phasesplit.phase_map h_prog_to_bexp k.loc_kernel_code
-  |> Phasesplit.normalize_phase ReplacePair.b_subst Proto.VarSet.empty
+  |> Phasesplit.normalize_phase ReplacePair.b_subst VarSet.empty
   |> h_phase_to_bexp
   |> Constfold.b_opt (* Optimize the output expression *)
   |> mk_proof

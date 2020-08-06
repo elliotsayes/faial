@@ -1,9 +1,9 @@
 open Locsplit
-
-type cond_access = Proto.access * Proto.bexp
+open Exp
+type cond_access = access * bexp
 
 type h_prog = {
-  prog_locals: Proto.VarSet.t;
+  prog_locals: VarSet.t;
   prog_accesses: cond_access list;
 }
 
@@ -17,7 +17,7 @@ type h_kernel = h_phase loc_kernel
   3. we flatten conditions in accesses
 
   *)
-let p_prog_to_h_prog (known:Proto.VarSet.t) (p:l_prog) : h_prog =
+let p_prog_to_h_prog (known:VarSet.t) (p:l_prog) : h_prog =
   (* Inline the conditions in each access.
       Assumes all variables are distinct. *)
   let flatten (p:l_prog) : cond_access list =
@@ -25,7 +25,7 @@ let p_prog_to_h_prog (known:Proto.VarSet.t) (p:l_prog) : h_prog =
     let rec flatten_inst (b:bexp) (i: l_inst) : cond_access list =
       match i with
       | Base e -> [(e, b)]
-      | Cond (b', l) -> flatten_prog (Proto.b_and b b') l
+      | Cond (b', l) -> flatten_prog (b_and b b') l
       | Local (y, l) -> flatten_prog b l
     and flatten_prog (b:bexp) (p:l_prog): cond_access list =
       List.map (flatten_inst b) p |> List.flatten
@@ -35,7 +35,7 @@ let p_prog_to_h_prog (known:Proto.VarSet.t) (p:l_prog) : h_prog =
 
   (* Gets all variables declared in this code.
     Assumes all variables are distinct. *)
-  let get_variables (p: l_prog) : Proto.VarSet.t =
+  let get_variables (p: l_prog) : VarSet.t =
       let open Proto in
     let rec names_inst (vars:VarSet.t) (i:l_inst) : VarSet.t =
       match i with
@@ -53,13 +53,13 @@ let p_prog_to_h_prog (known:Proto.VarSet.t) (p:l_prog) : h_prog =
   { prog_locals = get_variables p; prog_accesses = flatten p}
 
 let l_phase_to_h_phase (p:l_phase) : h_phase =
-  let rec tr_phase (xs:Proto.VarSet.t) (p:l_phase) : h_phase =
+  let rec tr_phase (xs:VarSet.t) (p:l_phase) : h_phase =
     match p with
     | Phase p -> Phase (p_prog_to_h_prog xs p)
     | Pre (b, p) -> Pre (b, tr_phase xs p)
-    | Global (x, p) -> Global (x, tr_phase (Proto.VarSet.add x xs) p)
+    | Global (x, p) -> Global (x, tr_phase (VarSet.add x xs) p)
   in
-  tr_phase Proto.VarSet.empty p
+  tr_phase VarSet.empty p
 
 let l_kernel_to_h_kernel (k:l_kernel) : h_kernel =
   { k with

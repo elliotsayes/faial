@@ -1,6 +1,6 @@
 (** Generate First-Order-Logic formula *)
 
-open Proto
+open Exp
 open Common
 
 module type BASE_GEN = sig

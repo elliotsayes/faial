@@ -1,3 +1,4 @@
+open Exp
 open Proto
 open Common
 
@@ -134,8 +135,8 @@ module BvBexp : BEXP_SERIALIZER =
 let b_ser = StdBexp.b_ser
 
 let m_ser m = match m with
-  | Proto.R -> "ro"
-  | Proto.W -> "rw"
+  | Exp.R -> "ro"
+  | Exp.W -> "rw"
 
 let r_ser r =
   call "range" [

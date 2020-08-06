@@ -1,4 +1,4 @@
-open Proto
+open Exp
 open Common
 
 let rec fold_nexp f e a =
@@ -29,7 +29,7 @@ let free_names_access a fns =
 let free_names_list f l fns =
   List.fold_right f l fns
 
-let rec free_names_inst (i:inst) (fns:VarSet.t) : VarSet.t =
+let rec free_names_inst (i:Proto.inst) (fns:VarSet.t) : VarSet.t =
   match i with
   | Base Sync -> fns
   | Base (Unsync (Goal b))
@@ -43,10 +43,10 @@ let rec free_names_inst (i:inst) (fns:VarSet.t) : VarSet.t =
     |> VarSet.remove r.range_var
     |> VarSet.union (free_names_nexp r.range_upper_bound fns)
 
-and free_names_proto (p:prog) (fns:VarSet.t) : VarSet.t =
+and free_names_proto (p:Proto.prog) (fns:VarSet.t) : VarSet.t =
   free_names_list free_names_inst p fns
 
-let rec free_locs_inst (i:inst) (fns:VarSet.t) =
+let rec free_locs_inst (i:Proto.inst) (fns:VarSet.t) =
   match i with
   | Base (Unsync (Goal _))
   | Base Sync

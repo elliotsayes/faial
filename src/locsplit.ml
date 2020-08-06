@@ -1,14 +1,14 @@
 open Phasesplit
+open Exp
+type l_inst = access inst
 
-type l_inst = Proto.access inst
-
-type l_prog = Proto.access prog
+type l_prog = access prog
 
 type l_phase = l_prog phase
 
 type 'a loc_kernel = {
   (* The shared location that can be accessed in the kernel. *)
-  loc_kernel_location: Proto.variable;
+  loc_kernel_location: variable;
   (* The code of a kernel performs the actual memory accesses. *)
   loc_kernel_code: 'a
 }
@@ -17,11 +17,11 @@ type l_kernel = l_phase loc_kernel
 
 (* ------------------------ THIRD STAGE OF TRANSLATION ---------------------- *)
 
-let rec filter_loc_inst (x:Proto.variable) (i:p_inst) : l_inst option =
+let rec filter_loc_inst (x:variable) (i:p_inst) : l_inst option =
   match i with
   | Base (Goal b) -> None
   | Base (Acc (y, e)) ->
-    begin if Proto.var_equal x y then
+    begin if var_equal x y then
       Some (Base e)
     else
       None
@@ -37,12 +37,12 @@ let rec filter_loc_inst (x:Proto.variable) (i:p_inst) : l_inst option =
       | None -> None
     end
 
-and filter_loc_prog (x:Proto.variable) (l:p_prog) : l_prog option =
+and filter_loc_prog (x:variable) (l:p_prog) : l_prog option =
   match Common.map_opt (filter_loc_inst x) l with
   | [] -> None
   | l -> Some l
 
-let rec filter_loc_phase (x:Proto.variable) : p_phase -> l_phase option =
+let rec filter_loc_phase (x:variable) : p_phase -> l_phase option =
   function
   | Phase p ->
     begin match filter_loc_prog x p with

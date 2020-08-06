@@ -1,5 +1,5 @@
 open Common
-open Proto
+open Exp
 
 type t = {
   pred_name: string;

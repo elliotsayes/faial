@@ -1,4 +1,4 @@
-open Proto
+open Exp
 open Streamutil
 open Subst
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
@@ -101,13 +101,13 @@ let phase_subst (f:SubstPair.t -> 'a -> 'a) (s:SubstPair.t) (p:'a phase) : 'a ph
 
 (* Make variables distinct. *)
 
-let normalize_prog (f:SubstPair.t -> 'a -> 'a) (known:Proto.VarSet.t) (p:'a prog) : 'a prog =
+let normalize_prog (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a prog) : 'a prog =
   let open Bindings in
-  let rec norm_inst (i:'a inst) (xs:Proto.VarSet.t) : 'a inst * Proto.VarSet.t =
+  let rec norm_inst (i:'a inst) (xs:VarSet.t) : 'a inst * VarSet.t =
     match i with
     | Local (x, p) ->
       if VarSet.mem x xs then (
-        let new_x : Proto.variable = generate_fresh_name x xs in
+        let new_x : variable = generate_fresh_name x xs in
         let new_xs = VarSet.add new_x xs in
         let s = Subst.SubstPair.make (x, Var new_x) in
         let new_p = prog_subst f s p in
@@ -121,7 +121,7 @@ let normalize_prog (f:SubstPair.t -> 'a -> 'a) (known:Proto.VarSet.t) (p:'a prog
       let (p, xs) = norm_prog p xs in
       (Cond (b, p), xs)
     | Base _ -> i, xs
-  and norm_prog (p:'a prog) (xs:Proto.VarSet.t) : 'a prog * Proto.VarSet.t =
+  and norm_prog (p:'a prog) (xs:VarSet.t) : 'a prog * VarSet.t =
     match p with
     | [] -> ([], xs)
     | i::p ->
@@ -131,13 +131,13 @@ let normalize_prog (f:SubstPair.t -> 'a -> 'a) (known:Proto.VarSet.t) (p:'a prog
   in
   norm_prog p known |> fst
 
-let normalize_phase (f:SubstPair.t -> 'a -> 'a) (known:Proto.VarSet.t) (p:'a phase) : 'a phase =
+let normalize_phase (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a phase) : 'a phase =
   let open Bindings in
-  let rec norm (i:'a phase) (xs:Proto.VarSet.t) : 'a phase * Proto.VarSet.t =
+  let rec norm (i:'a phase) (xs:VarSet.t) : 'a phase * VarSet.t =
     match i with
     | Global (x, p) ->
       if VarSet.mem x xs then (
-        let new_x : Proto.variable = generate_fresh_name x xs in
+        let new_x : variable = generate_fresh_name x xs in
         let new_xs = VarSet.add new_x xs in
         let s = Subst.SubstPair.make (x, Var new_x) in
         let new_p = phase_subst f s p in
@@ -157,8 +157,8 @@ let normalize_phase (f:SubstPair.t -> 'a -> 'a) (known:Proto.VarSet.t) (p:'a pha
 
 (* ---------------- Translation-specific code ------------------- *)
 
-type p_inst = acc_inst inst
-type p_prog = acc_inst prog
+type p_inst = Proto.acc_inst inst
+type p_prog = Proto.acc_inst prog
 type p_phase = p_prog phase
 
 type p_kernel = {
@@ -171,12 +171,12 @@ type p_kernel = {
 (* Given an unsynchronized instruction, simplify the loops so that
    there are no ranges. *)
 
-let rec u_inst_to_p_inst (i: u_inst) : p_inst =
+let rec u_inst_to_p_inst (i: Proto.u_inst) : p_inst =
   match i with
   | Proto.Base x -> Base x
   | Proto.Cond (b, ls) -> Cond (b, u_prog_to_p_prog ls)
   | Proto.Loop (r, ls) -> make_local r (u_prog_to_p_prog ls)
-and u_prog_to_p_prog (ls: u_prog) : p_prog =
+and u_prog_to_p_prog (ls: Proto.u_prog) : p_prog =
   List.map u_inst_to_p_inst ls
 
 (* A synchronized-program has multiple goals to prove, so want to flatten
@@ -184,7 +184,7 @@ and u_prog_to_p_prog (ls: u_prog) : p_prog =
    conditional or a variable declaration (loop), and in which case,
    we must ensure we preserve that structure. *)
 
-let rec inst_to_phase (pre:bexp) (locals:VarSet.t) : s_inst -> p_phase Stream.t =
+let rec inst_to_phase (pre:bexp) (locals:VarSet.t) : Proto.s_inst -> p_phase Stream.t =
   function
   | Base p ->
     let (p:p_prog) = u_prog_to_p_prog p |> inline_locals locals in
@@ -198,13 +198,13 @@ let rec inst_to_phase (pre:bexp) (locals:VarSet.t) : s_inst -> p_phase Stream.t 
     prog_to_phase pre locals l
     |> stream_map (fun p -> Pre (b, p))
 
-and prog_to_phase (pre:bexp) (locals:VarSet.t) (l: s_prog) : p_phase Stream.t =
+and prog_to_phase (pre:bexp) (locals:VarSet.t) (l: Proto.s_prog) : p_phase Stream.t =
   List.fold_left
     (fun s i -> inst_to_phase pre locals i |> stream_seq s)
     (stream_make None)
     l
 
-let translate (k : s_prog kernel) : p_kernel Stream.t  =
+let translate (k : Proto.s_prog Proto.kernel) : p_kernel Stream.t  =
   Streamutil.stream_map (fun p ->
       {
         p_kernel_locations = k.kernel_locations;
@@ -245,6 +245,7 @@ let rec phase_ser (f: 'a -> Sexplib.Sexp.t) : 'a phase -> Sexplib.Sexp.t list =
 let p_prog_ser : p_prog -> Sexplib.Sexp.t =
   prog_ser acc_inst_ser
 *)
+
 let p_phase_ser (p: p_phase) : Sexplib.Sexp.t =
   phase_ser (fun x -> prog_ser acc_inst_ser x |> s_list) p |> s_list
 

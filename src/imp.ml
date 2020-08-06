@@ -1,3 +1,4 @@
+open Exp
 open Proto
 
 type var_type = Location | Index

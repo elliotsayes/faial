@@ -1,4 +1,4 @@
-open Proto
+open Exp
 
 let rec norm (b:bexp) : bexp list =
   match b with

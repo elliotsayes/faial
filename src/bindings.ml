@@ -1,4 +1,4 @@
-open Proto
+open Exp
 
 (** Given a variable and a set of known variables, returns
     a fresh variable name. *)

@@ -1,4 +1,4 @@
-open Proto
+open Exp
 open Imp
 open Common
 
@@ -238,7 +238,7 @@ let rec parse_bexp b : bexp option =
           let idx = string_of_int (idx + 1) in
           do_call parse_var.run n ("When parsing a DistinctExpr, error parsing argument #" ^ idx)
         in
-        Some (enumerate l |> List.map on_elem |> Proto.distinct)
+        Some (enumerate l |> List.map on_elem |> distinct)
       | _ -> None)
   ] b
 
