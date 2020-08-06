@@ -1,0 +1,24 @@
+#| Multi-line comments |#
+# Single line comments
+
+# We declare a shared location `x`
+shared x;
+
+const local tid, global t where distinct [tid] ;
+
+rw x[tid];
+if (t > 2) {
+    sync;
+}
+rw x[tid + 1];
+
+#|
+if (t > 2) {
+  rw x[tid];
+  sync;
+  rw x[tid + 1];
+} else {
+  rw x[tid];
+  rw x[tid + 1];
+}
+|#
