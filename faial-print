@@ -13,7 +13,11 @@ def group_data(data):
             row.clear()
 
 def parse_const(row):
-    return row[1].value(), row[-1]
+    try:
+        return row[1].value(), row[-1]
+    except AttributeError:
+        print(row)
+        raise
 
 def parse_model(data):
     for row in data[1:]:
@@ -95,6 +99,6 @@ if __name__ == '__main__':
     import sys
     import sexpdata
     data = "(" + sys.stdin.read() + ")"
-    show(sexpdata.loads(data))
+    show(sexpdata.loads(data, nil=None, true=None, false=None))
     #for data in handle(sys.stdin.read()):
     #    print(repr(sexpdata.loads(data)))
