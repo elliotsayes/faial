@@ -2,8 +2,8 @@ open Exp
 
 type 'a  base_inst =
   | Base of 'a
-  | Cond of bexp * ('a  base_inst) list
-  | Loop of range * ('a  base_inst) list
+  | Cond of bexp * 'a  base_inst list
+  | Loop of range * 'a  base_inst list
 
 (* Changes the base of a base instruction *)
 let rec base_inst_map (f: 'a -> 'b) : 'a base_inst -> 'b base_inst =
