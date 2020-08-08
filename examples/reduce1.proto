@@ -18,7 +18,6 @@ where
 ;
 
 let i = blockIdx.x*blockDim.x+ threadIdx.x;
-#prove distinct[i];
 
 let tid = threadIdx.x;
 
