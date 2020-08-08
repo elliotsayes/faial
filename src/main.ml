@@ -139,7 +139,7 @@ let main_t =
         let k = Subst.replace_constants sets k in
         halt_when (cmd = Typecheck) print_kernel k;
         let ks = Phasesplit.translate k in
-        halt_when (cmd = ALang) Phasesplit.print_kernels ks;
+        halt_when (cmd = PLang) Phasesplit.print_kernels ks;
         let ks = Locsplit.translate ks in
         halt_when (cmd = CLang) Locsplit.print_kernels ks;
         let ks = Flatacc.translate ks in
@@ -160,19 +160,17 @@ let main_t =
     (* Override the codegeneration (for debugging only). *)
     let doc = "Step 0: Replace key-values and typecheck the kernel." in
     let tc = Typecheck, Arg.info ["0"] ~doc in
-    let doc = "Step 1: Structure syncs" in
-    let k1 = ALang, Arg.info ["1"] ~doc in
     let doc = "Step 2: Split phases" in
-    let k2 = PLang, Arg.info ["2"] ~doc in
+    let k1 = PLang, Arg.info ["1"] ~doc in
     let doc = "Step 3: Split per location" in
-    let k3 = CLang, Arg.info ["3"] ~doc in
+    let k2 = CLang, Arg.info ["2"] ~doc in
     let doc = "Step 4: Flatten phases" in
-    let k4 = HLang, Arg.info ["4"] ~doc in
+    let k3 = HLang, Arg.info ["3"] ~doc in
     let doc = "Step 5: Generate booleans" in
-    let k5 = BLang, Arg.info ["5"] ~doc in
+    let k4 = BLang, Arg.info ["4"] ~doc in
     let doc = "Step 6: Generate SMT." in
-    let sat = Sat, Arg.info ["6"; "sat"] ~doc in
-    Arg.(last & vflag_all [Sat] [tc; k1; k2; k3; k4; k5; sat])
+    let sat = Sat, Arg.info ["5"; "sat"] ~doc in
+    Arg.(last & vflag_all [Sat] [tc; k1; k2; k3; k4; sat])
   in
   Term.(const do_main $ get_cmd $ get_fname $ use_bv $ skip_po $ skip_drf $ use_json $ decls)
 

@@ -7,6 +7,7 @@ open Streamutil
 
 type 'a inst =
   | Base of 'a
+  | Assert of bexp
   | Cond of bexp * 'a inst list
   | Local of variable * 'a inst list
 
@@ -56,6 +57,7 @@ let prog_subst (f:SubstPair.t -> 'a -> 'a) (s:SubstPair.t) (p:'a prog) : 'a prog
   let rec i_subst (s:SubstPair.t) (i:'a inst) : 'a inst =
     match i with
     | Base b -> Base (f s b)
+    | Assert b -> Assert (ReplacePair.b_subst s b)
     | Cond (b, p1) -> Cond (
         ReplacePair.b_subst s b,
         p_subst s p1
@@ -110,6 +112,7 @@ let var_uniq_prog (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a prog) : 'a 
     | Cond (b, p) ->
       let (p, xs) = norm_prog p xs in
       (Cond (b, p), xs)
+    | Assert _
     | Base _ -> i, xs
   and norm_prog (p:'a prog) (xs:VarSet.t) : 'a prog * VarSet.t =
     match p with
@@ -165,12 +168,33 @@ let rec prepend (u:p_prog) : p_phase -> p_phase =
 
 let seq (p:p_phase option * p_prog) (q:p_phase option * p_prog) : (p_phase option * p_prog) Stream.t  =
   match p, q with
+  (* Rule: ^P |> _|_, P *)
   | (None,p2),(None,q2) -> (None, (p2@q2)) |> Streamutil.one
+  (* Rule:
+   ^P    Q |> Q1, Q2
+   -----------------
+   P;Q |> (P;Q1), Q2
+   *)
   | (None,p2),(Some q1, q2) -> (Some (prepend p2 q1),q2) |> Streamutil.one
+  (* Rule:
+    P |> P1, P2      ^Q
+    -------------------
+    P;Q |> P1, (P2,Q)
+    *)
   | (Some p1,p2),(None, q2) -> (Some p1,(p2@q2)) |> Streamutil.one
   | (Some p1,p2),(Some q1, q2) ->
     [
+      (* Rule:
+       P |> P1, P2     Q |> Q1, Q2
+       ---------------------------
+       P;Q |> P1, skip
+       *)
       Some p1, [];
+      (* Rule:
+       P |> P1, P2     Q |> Q1, Q2
+       ---------------------------
+       P;Q |> (P2;Q), Q2
+       *)
       Some (prepend p2 q1), q2;
     ] |> Stream.of_list
 
@@ -187,7 +211,6 @@ let rec normalize1 : Proto.inst -> (p_phase option * p_prog) Stream.t =
     Streamutil.map (fun (o, p) ->
       match o with
       (* Rule: ^P |> _|_, P *)
-      (* There is no synchronized part, so we only return 1 conditional *)
       | None -> Streamutil.one (None, [Cond (b,p)])
       | Some p' -> [
           (* Rule:
@@ -195,17 +218,15 @@ let rec normalize1 : Proto.inst -> (p_phase option * p_prog) Stream.t =
             ----------
             if (b) P |> (assert b;P1, assert b;P2)
 
-            TODO: IMPLEMENT ASSERT XXX
           *)
-          Some (Pre (b, p')), [Cond (b, p)];
+          Some (Pre (b, p')), (Assert b)::p;
           (* Rule:
             P |> P1,P2
             ----------
             if (b) P |> _|_, assert !b
 
-            TODO: IMPLEMENT ASSERT XXX
           *)
-          None, [Cond (b_not b, [])]
+          None, [Assert (b_not b)]
         ]
         |> Stream.of_list
     ) |> Streamutil.concat
@@ -215,21 +236,34 @@ let rec normalize1 : Proto.inst -> (p_phase option * p_prog) Stream.t =
         | (Some p1, p2) ->
           let dec_ub = Bin (Minus, ub, Num 1) in
           let p1' = Pre (
-            NRel (NLt, lb, ub),
+            n_lt lb ub,
             ph_subst (x, lb) p1
           ) in
-          let p2' = Cond (
-            NRel (NLt, lb, ub),
-            p_subst (x, dec_ub) p2
-          ) in
+          let p2' = Assert (n_lt lb ub):: p_subst (x, dec_ub) p2 in
           let inc_var = Bin (Plus,Var x,Num 1) in
           let subbed_p1 = ph_subst (x, inc_var) p1 in
           let r' = { r with range_upper_bound = dec_ub } in
           [
-            Some p1', [];
-            Some (make_global r' (prepend p2 subbed_p1)), [p2'];
-            None, [p2']
+            (* Rule:
+              P |> P1, P2
+              --------------------------------------------------------
+              for x [n,m) {P} |> (assert (n<m);P1 {n/x}), assert (n<m)
+              *)
+            Some p1', [Assert (n_lt lb ub)];
+            (* Rule:
+              P |> P1, P2           P2' = assert (n<m);P2{m-1/x}
+              ---------------------------------------------------
+              for x [n,m) {P} |> for [n,m-1) {P2;P1 {x+1/x}}, P2'
+             *)
+            Some (make_global r' (prepend p2 subbed_p1)), p2';
+            (* Rule:
+              P |> P1, P2
+              ---------------------------------------
+              for x [n,m) {P} |> _|_, assert (n >= m)
+             *)
+            None, [Assert (n_ge lb ub)]
           ] |> Stream.of_list
+          (* Rule: ^P |> _|_, P *)
         | (None, u) -> (None, [make_local r u]) |> Streamutil.one
       ) |> Streamutil.concat
 (* Typesafe normalization of programs *)
@@ -294,6 +328,7 @@ let translate (k: Proto.prog kernel) : p_kernel Stream.t =
 let rec inst_ser (f : 'a -> Sexplib.Sexp.t) : 'a inst -> Sexplib.Sexp.t =
   function
   | Base a -> f a
+  | Assert b -> unop "assert" (b_ser b)
   | Cond (b, ls) ->
     prog_ser f ls
     |> s_list

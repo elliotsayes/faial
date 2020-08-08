@@ -2,6 +2,9 @@ open Locsplit
 open Exp
 type cond_access = access * bexp
 
+let add_cond (b:bexp) ((c,e):cond_access) : cond_access =
+  (c, b_and b e)
+
 type h_prog = {
   prog_locals: VarSet.t;
   prog_accesses: cond_access list;
@@ -18,13 +21,15 @@ type h_kernel = h_phase loc_kernel
 
   *)
 let p_prog_to_h_prog (known:VarSet.t) (p:l_prog) : h_prog =
-  (* Inline the conditions in each access.
-      Assumes all variables are distinct. *)
+  (*
+    Inline the conditions in each access.
+    Ignores asserts because these must have been handled elsewhere.
+    Assumes all variables are distinct. *)
   let flatten (p:l_prog) : cond_access list =
-    let open Proto in
     let rec flatten_inst (b:bexp) (i: l_inst) : cond_access list =
       match i with
       | Base e -> [(e, b)]
+      | Assert b -> []
       | Cond (b', l) -> flatten_prog (b_and b b') l
       | Local (y, l) -> flatten_prog b l
     and flatten_prog (b:bexp) (p:l_prog): cond_access list =
@@ -32,14 +37,35 @@ let p_prog_to_h_prog (known:VarSet.t) (p:l_prog) : h_prog =
     in
     flatten_prog (Bool true) p
   in
-
+  (* Get the asserts in the code *)
+  let get_asserts (p: l_prog): bexp =
+    let rec get_asserts_inst : l_inst -> bexp option =
+      function
+      | Base _ -> None
+      | Assert b -> Some b
+      | Cond (b, p) ->
+        begin match get_asserts_prog p with
+        | Some b' -> Some (b_impl b b')
+        | None -> None
+        end
+      | Local (_, p) -> get_asserts_prog p
+    and get_asserts_prog (p:l_prog) : bexp option =
+      match Common.map_opt get_asserts_inst p with
+      | [] -> None
+      | l -> Some (b_and_ex l)
+    in
+    match get_asserts_prog p with
+    | Some b -> b
+    | None -> Bool true
+  in
   (* Gets all variables declared in this code.
     Assumes all variables are distinct. *)
   let get_variables (p: l_prog) : VarSet.t =
       let open Proto in
     let rec names_inst (vars:VarSet.t) (i:l_inst) : VarSet.t =
       match i with
-      | Base _ -> vars
+      | Base _
+      | Assert _-> vars
       | Cond (_, l) -> names_prog vars l
       | Local (y, l) -> names_prog (VarSet.add y vars) l
     and names_prog (vars:VarSet.t) (p:l_prog): VarSet.t =
@@ -49,8 +75,11 @@ let p_prog_to_h_prog (known:VarSet.t) (p:l_prog) : h_prog =
   in
   (* Make all variables in the program distinct *)
   let p = Phasesplit.var_uniq_prog Subst.ReplacePair.a_subst known p in
-
-  { prog_locals = get_variables p; prog_accesses = flatten p}
+  (* Retrieve all accesses found in the program *)
+  let pre = get_asserts p in
+  (* Add the assert-preconditions to every access *)
+  let ps = flatten p |> List.map (add_cond pre) in
+  { prog_locals = get_variables p; prog_accesses = ps}
 
 let l_phase_to_h_phase (p:l_phase) : h_phase =
   let rec tr_phase (xs:VarSet.t) (p:l_phase) : h_phase =
