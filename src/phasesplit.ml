@@ -29,6 +29,21 @@ let rec phase_map (f:'a -> 'b) (p:'a phase) : 'b phase =
 type p_inst = Proto.acc_inst inst
 type p_prog = Proto.acc_inst prog
 type p_phase = p_prog phase
+
+
+type s_prog =
+  | Phase of p_prog
+  | Seq of s_prog * s_prog
+  | For of s_prog * range * s_prog
+
+(*
+type s_inst =
+  | Phase of p_prog
+  | Global of range * s_inst list
+
+type s_prog = s_inst list
+*)
+
 type p_kernel = {
   (* The shared locations that can be accessed in the kernel. *)
   p_kernel_locations: VarSet.t;
@@ -48,7 +63,6 @@ let make_local (r:range) (ls:'a prog) : 'a inst =
 
 let make_global (r:range) (ls:'a phase) : 'a phase =
   Global (r.range_var, Pre (range_to_cond r, ls))
-
 
 (* ---------------- SUBSTITUTION ----------------------------------- *)
 
@@ -151,55 +165,66 @@ let var_uniq_phase (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a phase) : '
 
 let p_subst : SubstPair.t -> p_prog -> p_prog = prog_subst ReplacePair.acc_inst_subst
 
-let ph_subst : SubstPair.t -> p_phase -> p_phase = phase_subst p_subst
+let rec s_subst (s:SubstPair.t): s_prog -> s_prog =
+  function
+  | Phase b -> Phase (p_subst s b)
+  | Seq (p, q) -> Seq (s_subst s p, s_subst s q)
+  | For (p, r, q) ->
+    let q = ReplacePair.add s r.range_var (function
+      | Some s -> s_subst s q
+      | None -> q)
+    in
+    For (s_subst s p, ReplacePair.r_subst s r, q)
 
+(*
+let ph_subst : SubstPair.t -> p_phase -> p_phase = phase_subst p_subst
+*)
 (* Prepend an instruction to the closest phase *)
 
-let rec prepend (u:p_prog) : p_phase -> p_phase =
+let rec prepend (u:p_prog) : s_prog -> s_prog =
   function
     | Phase u' -> Phase (u @ u')
-    | Pre (b, p) ->
-      Pre (b, prepend u p)
-    | Global (r, p) -> Global (r,prepend u p)
+    | Seq (p, q) -> Seq (prepend u p, q)
+    | For (p, r, q) -> For (prepend u p, r, q)
 
+(*
+let rec prepend (u:p_prog) : s_prog -> s_prog =
+  function
+    | Phase u' :: l -> Phase (u @ u') :: l
+    | Global (r, p) :: l -> failwith "unexpected input"
+      (* Global (r, prepend u p) :: l *)
+    | [] -> [Phase u]
+*)
 (* Represents |> *)
 
 (* Represents the 4 |> rules for sequence*)
 
-let seq (p:p_phase option * p_prog) (q:p_phase option * p_prog) : (p_phase option * p_prog) Stream.t  =
+let seq (p:s_prog option * p_prog) (q:s_prog option * p_prog) : (s_prog option * p_prog)  =
   match p, q with
   (* Rule: ^P |> _|_, P *)
-  | (None,p2),(None,q2) -> (None, (p2@q2)) |> Streamutil.one
+  | (None,p2),(None,q2) -> (None, (p2@q2))
   (* Rule:
    ^P    Q |> Q1, Q2
    -----------------
    P;Q |> (P;Q1), Q2
    *)
-  | (None,p2),(Some q1, q2) -> (Some (prepend p2 q1),q2) |> Streamutil.one
+  | (None,p2),(Some q1, q2) -> (Some (prepend p2 q1),q2)
   (* Rule:
     P |> P1, P2      ^Q
     -------------------
     P;Q |> P1, (P2,Q)
     *)
-  | (Some p1,p2),(None, q2) -> (Some p1,(p2@q2)) |> Streamutil.one
+  | (Some p1,p2),(None, q2) -> (Some p1,(p2@q2))
   | (Some p1,p2),(Some q1, q2) ->
-    [
-      (* Rule:
-       P |> P1, P2     Q |> Q1, Q2
-       ---------------------------
-       P;Q |> P1, skip
-       *)
-      Some p1, [];
-      (* Rule:
-       P |> P1, P2     Q |> Q1, Q2
-       ---------------------------
-       P;Q |> (P2;Q), Q2
-       *)
-      Some (prepend p2 q1), q2;
-    ] |> Stream.of_list
+    (* Rule:
+      P |> P1, P2     Q |> Q1, Q2
+      ---------------------------
+      P;Q |> P1;(P2;Q1), Q2
+      *)
+    Some (Seq (p1, prepend p2 q1)), q2
 
 (* Typesafe normalization *)
-let rec normalize1 : Proto.inst -> (p_phase option * p_prog) Stream.t =
+let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
   function
     (* Rule: sync |> skip, skip *)
   | Base Sync -> (Some (Phase []),[]) |> Streamutil.one
@@ -219,7 +244,7 @@ let rec normalize1 : Proto.inst -> (p_phase option * p_prog) Stream.t =
             if (b) P |> (assert b;P1, assert b;P2)
 
           *)
-          Some (Pre (b, p')), (Assert b)::p;
+          Some (prepend [Assert b] p'), (Assert b)::p;
           (* Rule:
             P |> P1,P2
             ----------
@@ -235,27 +260,19 @@ let rec normalize1 : Proto.inst -> (p_phase option * p_prog) Stream.t =
       Streamutil.map (function
         | (Some p1, p2) ->
           let dec_ub = Bin (Minus, ub, Num 1) in
-          let p1' = Pre (
-            n_lt lb ub,
-            ph_subst (x, lb) p1
-          ) in
+          let p1' = prepend [Assert (n_lt lb ub)] (s_subst (x, lb) p1) in
           let p2' = Assert (n_lt lb ub):: p_subst (x, dec_ub) p2 in
           let inc_var = Bin (Plus,Var x,Num 1) in
-          let subbed_p1 = ph_subst (x, inc_var) p1 in
+          let subbed_p1 = s_subst (x, inc_var) p1 in
           let r' = { r with range_upper_bound = dec_ub } in
           [
             (* Rule:
-              P |> P1, P2
-              --------------------------------------------------------
-              for x [n,m) {P} |> (assert (n<m);P1 {n/x}), assert (n<m)
-              *)
-            Some p1', [Assert (n_lt lb ub)];
-            (* Rule:
+                                    P1' = assert (n<m);P1 {n/x}
               P |> P1, P2           P2' = assert (n<m);P2{m-1/x}
               ---------------------------------------------------
               for x [n,m) {P} |> for [n,m-1) {P2;P1 {x+1/x}}, P2'
              *)
-            Some (make_global r' (prepend p2 subbed_p1)), p2';
+            Some (For (p1', r', prepend p2 subbed_p1)), p2';
             (* Rule:
               P |> P1, P2
               ---------------------------------------
@@ -267,25 +284,43 @@ let rec normalize1 : Proto.inst -> (p_phase option * p_prog) Stream.t =
         | (None, u) -> (None, [make_local r u]) |> Streamutil.one
       ) |> Streamutil.concat
 (* Typesafe normalization of programs *)
-and normalize: Proto.prog -> (p_phase option * p_prog) Stream.t =
+and normalize: Proto.prog -> (s_prog option * p_prog) Stream.t =
   function
   | [] -> (None, []) |> Streamutil.one
   | x::xs ->
     Streamutil.product (normalize1 x) (normalize xs)
     |> Streamutil.map (fun (x,y) -> seq x y)
-    |> Streamutil.concat
 
-let make_phases ((o,p):p_phase option * p_prog) : p_phase list =
-  let tl:(p_phase list) = match o with
-  | None -> []
-  | Some b -> [b]
-  in
-  Phase p::tl
+let make_phases ((o,q):s_prog option * p_prog) : s_prog =
+  match o with
+  | None -> Phase q
+  | Some p -> Seq (p, Phase q)
+
+let rec s_prog_to_p_phase: s_prog -> p_phase Stream.t =
+  function
+  | Phase u -> let p:p_phase = Phase u in
+    p |> Streamutil.one
+  | Seq (p, q) ->
+    s_prog_to_p_phase p
+    |> Streamutil.sequence (s_prog_to_p_phase q)
+  | For (p, r, q) ->
+    s_prog_to_p_phase p
+    |> Streamutil.sequence (
+      (* Break down the body into phases, and prefix each phase with the
+         binding *)
+      s_prog_to_p_phase q
+      |> Streamutil.map (fun q ->
+        (* For every phase in q, prefix it with variable in r *)
+        make_global r q
+      )
+    )
+
 
 (* Takes a program with Syncs and generates a program with phased blocks *)
 let prog_to_s_prog (s:Proto.prog) : p_phase Stream.t =
   normalize s
-  |> Streamutil.map (fun p -> make_phases p |> Stream.of_list)
+  |> Streamutil.map (fun p -> make_phases p)
+  |> Streamutil.map s_prog_to_p_phase
   |> Streamutil.concat
 
 (* Inline a set of variables as decls *)
