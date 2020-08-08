@@ -1,4 +1,4 @@
-open Phasesplit
+open Phasealign
 open Exp
 type l_inst = access inst
 
@@ -76,10 +76,10 @@ let p_kernel_to_l_kernel_list (k:p_kernel) : l_kernel list =
 let translate (stream:p_kernel Stream.t) : l_kernel Stream.t =
   let open Streamutil in
   stream
-  |> stream_map (fun x ->
+  |> map (fun x ->
     p_kernel_to_l_kernel_list x |> Stream.of_list
   )
-  |> stream_concat
+  |> concat
 
 (* ------------------- SERIALIZE ---------------------- *)
 

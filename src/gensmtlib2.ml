@@ -116,7 +116,7 @@ let int_serialize_proofs : Symbexp.proof list -> Sexplib.Sexp.t list = Std2.seri
 
 let translate (ps: Symbexp.proof Stream.t) : Sexplib.Sexp.t list =
   let open Serialize in
-  Streamutil.stream_to_list ps
+  Streamutil.to_list ps
   |> int_serialize_proofs
 
 let print: Sexplib.Sexp.t list -> unit =

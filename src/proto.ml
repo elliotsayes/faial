@@ -40,14 +40,6 @@ type inst = sync_unsync base_inst
 (* The source program *)
 type prog = inst list
 
-(* The unsynchronized fragment *)
-type u_inst = acc_inst base_inst
-type u_prog = u_inst list
-
-(* The synchronized fragment (phased) *)
-type s_inst = u_prog base_inst
-type s_prog = s_inst list
-
 type 'a kernel = {
   (* The shared locations that can be accessed in the kernel. *)
   kernel_locations: VarSet.t;

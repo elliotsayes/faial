@@ -96,12 +96,12 @@ module Make (S:SUBST) = struct
       | Unsync e -> Unsync (acc_inst_subst s e)
       | Sync -> Sync
     ) s
-
+(*
   let u_subst (s:S.t) : u_prog -> u_prog =
     i_list_subst (acc_inst_subst s) s
 
   let s_subst (s:S.t) : s_prog -> s_prog =
-    i_list_subst (u_subst s) s
+    i_list_subst (u_subst s) s*)
 end
 
 module SubstPair =

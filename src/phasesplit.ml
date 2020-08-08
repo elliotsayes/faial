@@ -99,6 +99,11 @@ let phase_subst (f:SubstPair.t -> 'a -> 'a) (s:SubstPair.t) (p:'a phase) : 'a ph
   in
   subst s p
 
+
+type p_inst = Proto.acc_inst inst
+type p_prog = Proto.acc_inst prog
+type p_phase = p_prog phase
+
 (* Make variables distinct. *)
 
 let normalize_prog (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a prog) : 'a prog =

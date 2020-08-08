@@ -3,7 +3,7 @@ open Exp
 open Subst
 open Flatacc
 
-type b_phase = bexp Phasesplit.phase
+type b_phase = bexp Phasealign.phase
 
 type proof = {
   proof_preds: Predicates.t list;
@@ -125,7 +125,7 @@ let h_prog_to_bexp (h:h_prog) : bexp =
   (* $T1$index$0 = $T2$index$0 ... *)
   let gen_eq_index (n:int) : bexp =
     range 0 n
-    |> List.map (fun i -> 
+    |> List.map (fun i ->
       n_eq (mk_idx Task1 i) (mk_idx Task2 i)
     )
     |> b_and_ex
@@ -142,22 +142,22 @@ let h_prog_to_bexp (h:h_prog) : bexp =
     get_dim h.prog_accesses |> gen_eq_index
   ]
 
-let rec h_phase_to_bexp (h: bexp Phasesplit.phase) : bexp =
+let rec h_phase_to_bexp (h: bexp Phasealign.phase) : bexp =
   match h with
   | Phase b -> b
   | Pre (b, h) -> h_phase_to_bexp h |> b_and b
   | Global (_, h) -> h_phase_to_bexp h
 
 let h_kernel_to_proof (k:h_kernel) : proof =
-  Phasesplit.phase_map h_prog_to_bexp k.loc_kernel_code
-  |> Phasesplit.normalize_phase ReplacePair.b_subst VarSet.empty
+  Phasealign.phase_map h_prog_to_bexp k.loc_kernel_code
+  |> Phasealign.var_uniq_phase ReplacePair.b_subst VarSet.empty
   |> h_phase_to_bexp
   |> Constfold.b_opt (* Optimize the output expression *)
   |> mk_proof
 
 let translate (stream:h_kernel Stream.t) : proof Stream.t =
   let open Streamutil in
-  stream_map h_kernel_to_proof stream
+  map h_kernel_to_proof stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 

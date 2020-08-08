@@ -139,9 +139,11 @@ let main_t =
         let k = Subst.replace_constants sets k in
         halt_when (cmd = Typecheck) print_kernel k;
         let ks = Phasealign.translate k in
-        halt_when (cmd = ALang) Phasealign.print_kernel ks;
+        halt_when (cmd = ALang) Phasealign.print_kernels ks;
+        (*
         let ks = Phasesplit.translate ks in
         halt_when (cmd = PLang) Phasesplit.print_kernels ks;
+        *)
         let ks = Locsplit.translate ks in
         halt_when (cmd = CLang) Locsplit.print_kernels ks;
         let ks = Flatacc.translate ks in

@@ -7,7 +7,7 @@ module C = CLang
 module L = LLang
 module H = HLang
 *)
-
+(*
 let sexample1 : Proto.prog =
   let open Proto in
   let tid = var_make "tid" in
@@ -34,7 +34,7 @@ let sexample2 : Proto.prog =
   let ac = {access_index=[Num 1];access_mode=W} in
   [Base (Unsync (Acc (x,ac))); Base Sync]
 
-
+*)
 (*
 let sexample1 : A.t =
   let open A in
@@ -142,7 +142,7 @@ let rec list_equal a b =
     else
       false
 *)
-
+(*
 let print_compare_output (p: Proto.prog) =
   let open Serialize in
   print_endline "----------------\nALang:\n----------------\n";
@@ -150,7 +150,7 @@ let print_compare_output (p: Proto.prog) =
   print_endline "----------------\nPLang:\n----------------\n";
   let p = prog_to_s_prog p in
   s_prog_ser p |> s_print
-
+*)
 (*
 let print_compare_trace (ex:A.t) =
   let source_L = A.run ex in
@@ -167,6 +167,7 @@ let print_compare_trace (ex:A.t) =
   then print_endline "\nTraces are equal." else print_endline "\nTraces are NOT equal!"
 *)
 (*-------------- Tests ----------------------------------------------------*)
-
+(*
 let aa = print_compare_output sexample2
+*)
 (*let aa = (TLang.run (SLang.translate sexample6))*)

@@ -190,7 +190,7 @@ let inst_ser : inst -> Sexplib.Sexp.t =
 
 let prog_ser : prog -> Sexplib.Sexp.t =
   s_map inst_ser
-
+(*
 let u_inst_ser : u_inst -> Sexplib.Sexp.t =
   base_inst_ser acc_inst_ser
 
@@ -202,7 +202,7 @@ let s_inst_ser : s_inst -> Sexplib.Sexp.t =
 
 let s_prog_ser : s_prog -> Sexplib.Sexp.t =
   s_map s_inst_ser
-
+*)
 let bexp_list pre = List.map b_ser pre
 
 let bexp_list_ser name pre = bexp_list pre |> call name
