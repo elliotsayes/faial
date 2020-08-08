@@ -12,6 +12,9 @@ const
   local tx,
   local ty,
   local b,
+  global wA,
+  global wB,
+  global blockSize,
   global gridDim.x,
   global gridDym.y,
   global block_size,
@@ -21,21 +24,24 @@ where
   bx < gridDim.x &&
   by < gridDim.y &&
   # GPUVerify assumptions
-  tx < 32 &&
-  ty < 32 &&
+  tx < blockSize &&
+  ty < blockSize &&
   # Assumption
   distinct [tx][ty][bx][by] &&
+  # GPUVerify assumptions
   gridDim.x == 20 &&
-  gridDim.y == 10
+  gridDim.y == 10 &&
+  blockSize == 32 &&
+  #wA == 320;
+  wA > 1 &&
+  block_size > 0 &&
+  wB > 1 &&
+  wB == 640 &&
+  wA == block_size * gridDim.y &&
+  wB == block_size * gridDim.x &&
+  true
   ;
 
-# GPUVerify assumptions
-# assert wA > 1 && block_size > 0 && wB > 1;
-let block_size = 32;
-let wA = 320;
-let wB = 640;
-# assert 320 == block_size * gridDim.y &&
-# assert  640 == block_size * gridDim.x
 
 # Assumptions
 let aBegin = wA * block_size * by;
@@ -44,22 +50,21 @@ let aStep = block_size;
 let bBegin = block_size * bx;
 let bStep = block_size * wB;
 
-foreach (a in aBegin .. aEnd + 1)
-  if (
+foreach (a in aBegin .. aEnd + 1) if (
     (a - aBegin) % aStep == 0 &&
     b >= bBegin &&
     (b - bBegin) % bStep == 0
   ) {
-  rw As[by][bx][ty][tx];
-  rw Bs[by][bx][ty][tx];
-  ro A[a + wA * ty + tx];
-  ro B[b + wB * ty + tx];
-  sync;
-  foreach (k in 0.. block_size) {
-    ro As[ty][k];
-    ro Bs[k][tx];
-  }
-  sync;
+    rw As[by][bx][ty][tx];
+    rw Bs[by][bx][ty][tx];
+    ro A[a + wA * ty + tx];
+    ro B[b + wB * ty + tx];
+    sync;
+    foreach (k in 0.. block_size) {
+        ro As[ty][k];
+        ro Bs[k][tx];
+    }
+    sync;
 }
 
 if (tx < block_size && ty < block_size) {
