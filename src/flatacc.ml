@@ -7,7 +7,7 @@ type h_prog = {
   prog_accesses: cond_access list;
 }
 
-type h_phase = h_prog Phasealign.phase
+type h_phase = h_prog Phasesplit.phase
 
 type h_kernel = h_phase loc_kernel
 
@@ -48,7 +48,7 @@ let p_prog_to_h_prog (known:VarSet.t) (p:l_prog) : h_prog =
     names_prog VarSet.empty p
   in
   (* Make all variables in the program distinct *)
-  let p = Phasealign.var_uniq_prog Subst.ReplacePair.a_subst known p in
+  let p = Phasesplit.var_uniq_prog Subst.ReplacePair.a_subst known p in
 
   { prog_locals = get_variables p; prog_accesses = flatten p}
 
@@ -88,6 +88,6 @@ let print_kernels (ks : h_kernel Stream.t) : unit =
     ]
   in
   let ph_ser (ph:h_phase) : Sexp.t =
-    Phasealign.phase_ser p_ser ph |> Serialize.s_list
+    Phasesplit.phase_ser p_ser ph |> Serialize.s_list
   in
   print_loc_kernels ph_ser "flat-accesses" ks

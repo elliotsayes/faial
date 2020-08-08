@@ -3,7 +3,7 @@ open Exp
 open Subst
 open Flatacc
 
-type b_phase = bexp Phasealign.phase
+type b_phase = bexp Phasesplit.phase
 
 type proof = {
   proof_preds: Predicates.t list;
@@ -142,15 +142,15 @@ let h_prog_to_bexp (h:h_prog) : bexp =
     get_dim h.prog_accesses |> gen_eq_index
   ]
 
-let rec h_phase_to_bexp (h: bexp Phasealign.phase) : bexp =
+let rec h_phase_to_bexp (h: bexp Phasesplit.phase) : bexp =
   match h with
   | Phase b -> b
   | Pre (b, h) -> h_phase_to_bexp h |> b_and b
   | Global (_, h) -> h_phase_to_bexp h
 
 let h_kernel_to_proof (k:h_kernel) : proof =
-  Phasealign.phase_map h_prog_to_bexp k.loc_kernel_code
-  |> Phasealign.var_uniq_phase ReplacePair.b_subst VarSet.empty
+  Phasesplit.phase_map h_prog_to_bexp k.loc_kernel_code
+  |> Phasesplit.var_uniq_phase ReplacePair.b_subst VarSet.empty
   |> h_phase_to_bexp
   |> Constfold.b_opt (* Optimize the output expression *)
   |> mk_proof
