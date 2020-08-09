@@ -30,17 +30,17 @@ type p_inst = Proto.acc_inst inst
 type p_prog = Proto.acc_inst prog
 type p_phase = p_prog phase
 
-(* This is an internal datatype. The output of normalize is one of 3 cases: *)
+(* This is an internal datatype. The output of normalize is one of 4 cases: *)
 type s_prog =
-    (* A single phase *)
-  | Phase of p_prog
+    (* A single phase (unsynch code ended by sync) *)
+  | NPhase of p_prog
     (* A conditional phase *)
-  | If of bexp * s_prog
-    (* A sequence of two phases *)
-  | Seq of s_prog * s_prog
+  | NCond of bexp * s_prog
+    (* A sequence of two normalized programs *)
+  | NSeq of s_prog * s_prog
     (* An unrolled for-loop, where the first element is
        the unrolled iteration *)
-  | For of s_prog * range * s_prog
+  | NFor of range * s_prog
 
 type p_kernel = {
   (* The shared locations that can be accessed in the kernel. *)
@@ -104,15 +104,15 @@ let p_subst : SubstPair.t -> p_prog -> p_prog =
 
 let rec s_subst (s:SubstPair.t): s_prog -> s_prog =
   function
-  | Phase b -> Phase (p_subst s b)
-  | Seq (p, q) -> Seq (s_subst s p, s_subst s q)
-  | If (b, p) -> If (ReplacePair.b_subst s b, s_subst s p)
-  | For (p, r, q) ->
+  | NPhase b -> NPhase (p_subst s b)
+  | NSeq (p, q) -> NSeq (s_subst s p, s_subst s q)
+  | NCond (b, p) -> NCond (ReplacePair.b_subst s b, s_subst s p)
+  | NFor (r, q) ->
     let q = ReplacePair.add s r.range_var (function
       | Some s -> s_subst s q
       | None -> q)
     in
-    For (s_subst s p, ReplacePair.r_subst s r, q)
+    NFor (ReplacePair.r_subst s r, q)
 
 (* ---------------- MAKE VARIABLES DISTINCT -------------------------------- *)
 
@@ -184,10 +184,10 @@ let var_uniq_phase (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a phase) : '
 
 let rec prepend (u:p_prog) : s_prog -> s_prog =
   function
-    | Phase u' -> Phase (u @ u')
-    | If (b, p) -> If (b, prepend u p)
-    | Seq (p, q) -> Seq (prepend u p, q)
-    | For (p, r, q) -> For (prepend u p, r, q)
+    | NPhase u' -> NPhase (u @ u')
+    | NCond (b, p) -> NCond (b, prepend u p)
+    | NSeq (p, q) -> NSeq (prepend u p, q)
+    | NFor (r, p) -> NFor (r, prepend u p)
 
 (* Represents |> *)
 
@@ -215,14 +215,14 @@ let seq (p:s_prog option * p_prog) (q:s_prog option * p_prog) : (s_prog option *
       ---------------------------
       P;Q |> P1;(P2;Q1), Q2
       *)
-    Some (Seq (p1, prepend p2 q1)), q2
+    Some (NSeq (p1, prepend p2 q1)), q2
 
 (* Typesafe normalization *)
 let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
   function
   | Assert b -> (None, [Assert b]) |> Streamutil.one
     (* Rule: sync |> skip, skip *)
-  | Base Sync -> (Some (Phase []),[]) |> Streamutil.one
+  | Base Sync -> (Some (NPhase []),[]) |> Streamutil.one
     (* Rule: ^P |> _|_, P *)
   | Base (Unsync u) -> (None, [Base u]) |> Streamutil.one
   | Cond (b, p) ->
@@ -239,7 +239,7 @@ let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
             if (b) P |> (if (b) {P1}, assert b;P2)
 
           *)
-          Some (If (b, p')), (Assert b)::p2;
+          Some (NCond (b, p')), (Assert b)::p2;
           (* Rule:
             P |> P1,P2
             ----------
@@ -270,7 +270,7 @@ let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
               ---------------------------------------------------
               for x [n,m) {P} |> for [n,m-1) {P2;P1 {x+1/x}}, P2'
              *)
-            Some (For (p1', r', prepend p2 subbed_p1)), p2';
+            Some (NSeq (p1', NFor (r', prepend p2 subbed_p1))), p2';
             (* Rule:
               P |> P1, P2
               ---------------------------------------
@@ -295,16 +295,15 @@ and normalize: Proto.prog -> (s_prog option * p_prog) Stream.t =
  *)
 let make_phases ((o,q):s_prog option * p_prog) : s_prog =
   match o with
-  | None -> Phase q
-  | Some p -> Seq (p, Phase q)
+  | None -> NPhase q
+  | Some p -> NSeq (p, NPhase q)
 
 (* Implements |> *)
 let rec s_prog_to_p_phase: s_prog -> p_phase Stream.t =
   function
     (* ^P; sync |> { P } *)
-  | Phase u -> let p:p_phase = Phase u in
-    p |> Streamutil.one
-  | If (b, p) ->
+  | NPhase u -> Phase u |> Streamutil.one
+  | NCond (b, p) ->
     (* Rule:
       P |> p
       ------------------------------
@@ -312,7 +311,7 @@ let rec s_prog_to_p_phase: s_prog -> p_phase Stream.t =
      *)
     s_prog_to_p_phase p
     |> Streamutil.map (fun p' -> Pre (b, p'))
-  | Seq (p, q) ->
+  | NSeq (p, q) ->
     (* Rule:
        P |> p      Q |> q
        ------------------
@@ -320,21 +319,18 @@ let rec s_prog_to_p_phase: s_prog -> p_phase Stream.t =
        *)
     s_prog_to_p_phase p
     |> Streamutil.sequence (s_prog_to_p_phase q)
-  | For (p, r, q) ->
+  | NFor (r, p) ->
     (* Rule:
-      P |> p    { for x in [n,m) Q' | Q' \in Q }
+      P |> p    q = { for x in [n,m) Q | Q \in p }
       ------------------------------
-      P;for x in [n,m) {Q} |> p U q
+      for x in [n,m) {Q} |> q
      *)
+    (* Break down the body into phases, and prefix each phase with the
+        binding *)
     s_prog_to_p_phase p
-    |> Streamutil.sequence (
-      (* Break down the body into phases, and prefix each phase with the
-         binding *)
-      s_prog_to_p_phase q
-      |> Streamutil.map (fun q ->
-        (* For every phase in q, prefix it with variable in r *)
-        make_global r q
-      )
+    |> Streamutil.map (fun q ->
+      (* For every phase in q, prefix it with variable in r *)
+      make_global r q
     )
 
 
