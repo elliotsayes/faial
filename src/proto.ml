@@ -2,6 +2,7 @@ open Exp
 
 type 'a  base_inst =
   | Base of 'a
+  | Assert of bexp
   | Cond of bexp * 'a  base_inst list
   | Loop of range * 'a  base_inst list
 
@@ -9,6 +10,7 @@ type 'a  base_inst =
 let rec base_inst_map (f: 'a -> 'b) : 'a base_inst -> 'b base_inst =
   function
   | Base a -> Base (f a)
+  | Assert _ as i -> i
   | Cond (b, l) -> Cond (b, List.map (base_inst_map f) l)
   | Loop (r, l) -> Loop (r, List.map (base_inst_map f) l)
 

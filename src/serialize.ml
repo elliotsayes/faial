@@ -153,6 +153,7 @@ let rec base_inst_ser (f:'a -> Sexplib.Sexp.t) : 'a base_inst -> Sexplib.Sexp.t 
   let open Sexplib in
   function
   | Base a -> f a
+  | Assert b -> unop "assert" (b_ser b)
   | Cond (b, p1) -> call "if" [
       b_ser b;
       base_prog_ser f p1;

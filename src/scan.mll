@@ -54,6 +54,7 @@ rule read = parse
   | "sync" {SYNC}
   | "rw" {RW}
   | "ro" {RO}
+  | "assert" { ASSERT }
   | "true" { TRUE }
   | "false" { FALSE }
   | "where" { WHERE }

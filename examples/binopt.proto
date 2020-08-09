@@ -22,20 +22,20 @@ where
 ro randArray[bid];
 sync;
 foreach (j in 1 .. numSteps) {
-  if ((j + (numSteps % 2))  % 2 == 0) {
-  if (tid < j) {
-    rw callB[bid][tid];
-    ro callA[bid][tid];
-    ro callA[bid][tid + 1];
-  }
-  sync;
-  if (tid < j - 1) {
-    rw callA[bid][tid];
-    ro callB[bid][tid];
-    ro callB[bid][tid + 1];
-  }
-  sync;
-  }
+    # if ((j + (numSteps % 2))  % 2 == 0)
+    assert (j + (numSteps % 2))  % 2 == 0;
+    if (tid < j) {
+        rw callB[bid][tid];
+        ro callA[bid][tid];
+        ro callA[bid][tid + 1];
+    }
+    sync;
+    if (tid < j - 1) {
+        rw callA[bid][tid];
+        ro callB[bid][tid];
+        ro callB[bid][tid + 1];
+    }
+    sync;
 }
 if (tid == 0) {
   ro callA[bid][0];

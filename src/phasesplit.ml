@@ -34,6 +34,8 @@ type p_phase = p_prog phase
 type s_prog =
     (* A single phase *)
   | Phase of p_prog
+    (* A conditional phase *)
+  | If of bexp * s_prog
     (* A sequence of two phases *)
   | Seq of s_prog * s_prog
     (* An unrolled for-loop, where the first element is
@@ -104,6 +106,7 @@ let rec s_subst (s:SubstPair.t): s_prog -> s_prog =
   function
   | Phase b -> Phase (p_subst s b)
   | Seq (p, q) -> Seq (s_subst s p, s_subst s q)
+  | If (b, p) -> If (ReplacePair.b_subst s b, s_subst s p)
   | For (p, r, q) ->
     let q = ReplacePair.add s r.range_var (function
       | Some s -> s_subst s q
@@ -182,6 +185,7 @@ let var_uniq_phase (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a phase) : '
 let rec prepend (u:p_prog) : s_prog -> s_prog =
   function
     | Phase u' -> Phase (u @ u')
+    | If (b, p) -> If (b, prepend u p)
     | Seq (p, q) -> Seq (prepend u p, q)
     | For (p, r, q) -> For (prepend u p, r, q)
 
@@ -216,25 +220,26 @@ let seq (p:s_prog option * p_prog) (q:s_prog option * p_prog) : (s_prog option *
 (* Typesafe normalization *)
 let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
   function
+  | Assert b -> (None, [Assert b]) |> Streamutil.one
     (* Rule: sync |> skip, skip *)
   | Base Sync -> (Some (Phase []),[]) |> Streamutil.one
     (* Rule: ^P |> _|_, P *)
   | Base (Unsync u) -> (None, [Base u]) |> Streamutil.one
   | Cond (b, p) ->
-    normalize p |>
-    (* For each possible element *)
-    Streamutil.map (fun (o, p) ->
+    let on_each ((o, p2):s_prog option * p_prog) :  (s_prog option * p_prog) Stream.t =
       match o with
       (* Rule: ^P |> _|_, P *)
-      | None -> Streamutil.one (None, [Cond (b,p)])
+      | None ->
+        let p:p_prog = [Cond (b,p2)] in
+        Streamutil.one (None, p)
       | Some p' -> [
           (* Rule:
             P |> P1,P2
             ----------
-            if (b) P |> (assert b;P1, assert b;P2)
+            if (b) P |> (if (b) {P1}, assert b;P2)
 
           *)
-          Some (prepend [Assert b] p'), (Assert b)::p;
+          Some (If (b, p')), (Assert b)::p2;
           (* Rule:
             P |> P1,P2
             ----------
@@ -244,7 +249,10 @@ let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
           None, [Assert (b_not b)]
         ]
         |> Stream.of_list
-    ) |> Streamutil.concat
+    in
+    normalize p
+    |> Streamutil.map on_each
+    |> Streamutil.concat
   | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub} as r, body) ->
       normalize body |>
       Streamutil.map (function
@@ -296,6 +304,14 @@ let rec s_prog_to_p_phase: s_prog -> p_phase Stream.t =
     (* ^P; sync |> { P } *)
   | Phase u -> let p:p_phase = Phase u in
     p |> Streamutil.one
+  | If (b, p) ->
+    (* Rule:
+      P |> p
+      ------------------------------
+      if (b) P |> { if (b) Q | Q \in p }
+     *)
+    s_prog_to_p_phase p
+    |> Streamutil.map (fun p' -> Pre (b, p'))
   | Seq (p, q) ->
     (* Rule:
        P |> p      Q |> q

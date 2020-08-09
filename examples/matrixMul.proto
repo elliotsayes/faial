@@ -31,7 +31,7 @@ where
   # GPUVerify assumptions
   gridDim.x == 20 &&
   gridDim.y == 10 &&
-  blockSize == 32 &&
+  (blockSize == 32 || blockSize == 64) &&
   #wA == 320;
   wA > 1 &&
   block_size > 0 &&

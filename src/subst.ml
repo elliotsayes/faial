@@ -73,6 +73,7 @@ module Make (S:SUBST) = struct
   let rec i_subst (f:'a -> 'a) (s:S.t) (i:'a  base_inst) : 'a  base_inst =
     match i with
     | Base b -> Base (f b)
+    | Assert b -> Assert (b_subst s b)
     | Cond (b, p1) -> Cond (
         b_subst s b,
         i_list_subst f s p1

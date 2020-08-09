@@ -17,6 +17,7 @@
 %token TRUE FALSE
 %token LET
 %token ASSIGN
+%token ASSERT
 
 %left OR
 %left AND
@@ -105,6 +106,7 @@ prog:
    { {range_var=x; range_lower_bound=lb; range_upper_bound=ub} }
 
 expr:
+  | ASSERT b = bexp { Assert b }
   | SYNC { Base Sync }
   | PROVE b = bexp { Base (Unsync (Goal b)) }
   | m = mode; x = ident; i = index
