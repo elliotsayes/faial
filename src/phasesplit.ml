@@ -231,14 +231,15 @@ let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
       match o with
       (* Rule: ^P |> _|_, P *)
       | None -> Streamutil.one (None, [Cond (b,p2)])
-      | Some p' -> [
+      | Some p1 ->
+        [
           (* Rule:
             P |> P1,P2
             ----------
             if (b) P |> (if (b) {P1}, assert b;P2)
 
           *)
-          Some (NCond (b, p')), (Assert b)::p2;
+          Some (NCond (b, p1)), (Assert b)::p2;
           (* Rule:
             P |> P1,P2
             ----------
