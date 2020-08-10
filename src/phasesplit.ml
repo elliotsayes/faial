@@ -220,18 +220,17 @@ let seq (p:s_prog option * p_prog) (q:s_prog option * p_prog) : (s_prog option *
 (* Typesafe normalization *)
 let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
   function
-  | Assert b -> (None, [Assert b]) |> Streamutil.one
     (* Rule: sync |> skip, skip *)
   | Base Sync -> (Some (NPhase []),[]) |> Streamutil.one
     (* Rule: ^P |> _|_, P *)
   | Base (Unsync u) -> (None, [Base u]) |> Streamutil.one
   | Cond (b, p) ->
-    let on_each ((o, p2):s_prog option * p_prog) :  (s_prog option * p_prog) Stream.t =
+    normalize p |>
+    (* For each possible element *)
+    Streamutil.map (fun (o, p2) ->
       match o with
       (* Rule: ^P |> _|_, P *)
-      | None ->
-        let p:p_prog = [Cond (b,p2)] in
-        Streamutil.one (None, p)
+      | None -> Streamutil.one (None, [Cond (b,p2)])
       | Some p' -> [
           (* Rule:
             P |> P1,P2
@@ -249,10 +248,7 @@ let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
           None, [Assert (b_not b)]
         ]
         |> Stream.of_list
-    in
-    normalize p
-    |> Streamutil.map on_each
-    |> Streamutil.concat
+    ) |> Streamutil.concat
   | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub} as r, body) ->
       normalize body |>
       Streamutil.map (function

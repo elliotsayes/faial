@@ -145,11 +145,12 @@ let rec reify (p:stmt) : prog =
   *)
   match p with
   | Decl (_,_,_) -> [] (* Only handled inside a block *)
-  | Inst (IAssert b) -> [Assert b]
+  | Inst (IAssert _) -> [] (* Only handled inside a block *)
   | Inst ISync -> [Base Sync]
   | Inst (IGoal b) -> [Base (Unsync (Goal b))]
   | Inst (IAcc (x,y)) -> [Base (Unsync (Acc (x,y)))]
   | Block [] -> []
+  | Block (Inst (IAssert b)::l) -> [Cond (b, reify (Block l))]
   | Block (Decl (x,_,Some n)::l) ->
     (* When we find a declaration, inline it in the code *)
     Block l
@@ -175,10 +176,11 @@ let rec reify (p:stmt) : prog =
         range_upper_bound = r.range_expr_stop
       },
       (* Ensure the lower bound is smaller than the upper bound *)
-      (Assert (b_and pre (n_le r.range_expr_start r.range_expr_stop)))::
-      (reify p)
+      [Cond (
+        b_and pre (n_le r.range_expr_start r.range_expr_stop),
+        reify p
       )]
-
+    )]
 
 let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
   match p with
