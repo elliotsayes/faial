@@ -162,6 +162,9 @@ let b_impl b1 b2 =
 
 let n_neq b1 b2 = b_not (n_eq b1 b2)
 
+let b_true = Bool true
+let b_false = Bool false
+
 let rec b_and_ex l =
   match l with
   | [] -> Bool true
