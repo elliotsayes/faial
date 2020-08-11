@@ -229,8 +229,12 @@ let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
     (* For each possible element *)
     Streamutil.map (fun (o, p2) ->
       match o with
-      (* Rule: ^P |> _|_, P *)
-      | None -> Streamutil.one (None, [Cond (b,p2)])
+      (* Rule:
+        P |> _|_, P
+        -----------
+        if (b) P |> _|_, assert (b) P
+        *)
+      | None -> Streamutil.one (None, Assert b::p2)
       | Some p1 ->
         [
           (* Rule:
@@ -239,7 +243,7 @@ let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
             if (b) P |> (if (b) {P1}, assert b;P2)
 
           *)
-          Some (NCond (b, p1)), (Assert b)::p2;
+          Some (NCond (b, p1)), Assert b::p2;
           (* Rule:
             P |> P1,P2
             ----------
@@ -262,10 +266,12 @@ let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
           let r' = { r with range_upper_bound = dec_ub } in
           [
             (* Rule:
-                                    P1' = assert (n<m);P1 {n/x}
-              P |> P1, P2           P2' = assert (n<m);P2{m-1/x}
-              ---------------------------------------------------
-              for x [n,m) {P} |> for [n,m-1) {P2;P1 {x+1/x}}, P2'
+                                    P1' = P1 {n/x}
+              P |> P1, P2           P2' = P2{m-1/x}
+              -------------------------------------------------------
+              for x [n,m) {P} |>
+                if (n < m) {P1'; for [n,m-1) {P2;P1 {x+1/x}},
+                assert (n<m); P2'
              *)
             Some (NSeq (p1', NFor (r', prepend p2 subbed_p1))), p2';
             (* Rule:
