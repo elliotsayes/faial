@@ -217,9 +217,26 @@ let seq (p:s_prog option * p_prog) (q:s_prog option * p_prog) : (s_prog option *
       *)
     Some (NSeq (p1, prepend p2 q1)), q2
 
+let normalize_unsync (i:Proto.inst) : p_inst option =
+  let rec norm_i: Proto.inst -> p_inst = function
+    | Base Sync -> raise Exit
+    | Base (Unsync u) -> Base u
+    | Cond (b, p) -> Cond (b, norm_p p)
+    | Loop (r, p) -> make_local r (norm_p p)
+  and norm_p (p: Proto.prog): p_prog =
+    List.map norm_i p
+  in
+  try Some (norm_i i) with
+  | Exit -> None
+
 (* Typesafe normalization *)
-let rec normalize1 : Proto.inst -> (s_prog option * p_prog) Stream.t =
-  function
+let rec normalize1 (i: Proto.inst) : (s_prog option * p_prog) Stream.t =
+  match normalize_unsync i with
+  (* Rule: ^ P |> _|_, P *)
+  | Some i -> (None, [i]) |> Streamutil.one
+  | None ->
+  (* Otherwise *)
+  match i with
     (* Rule: sync |> skip, skip *)
   | Base Sync -> (Some (NPhase []),[]) |> Streamutil.one
     (* Rule: ^P |> _|_, P *)
