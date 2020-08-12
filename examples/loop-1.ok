@@ -1,0 +1,76 @@
+
+shared x;
+
+const local tid, global t where
+  distinct [tid] &&
+  t > 0  # <---- this restriction is very important
+;
+
+rw x[tid];
+foreach (y in 0 .. t) {
+    sync;
+}
+# This never races because the loop runs at least once
+rw x[tid + 1];
+
+#|
+
+## Align phases
+
+# Version 1:
+
+if (t > 0) {
+    rw x[tid];
+    assert t <= 0; # only holds when t = 0
+    rw x[tid + 1];
+}
+
+# Version 2:
+
+if* (t > 0) {
+    if* (t > 0) {
+        rw x[tid];
+    }
+    sync;
+    foreach* (y in 0 .. t - 1) {
+        sync;
+    }
+    sync;
+    assert t > 0;
+    rw x[tid + 1];
+}
+
+## Phase split
+
+# Phase 1
+
+if (t > 0) {
+    rw x[tid];
+    assert t <= 0; # Evaluates to false
+    rw x[tid+1];
+}
+
+# Phase 2
+
+if (t < 0) { # Always evaluates to false
+    if (t > 0) {
+        rw x[tid];
+    }
+}
+
+# Phase 3
+
+if (y >= 0 && y < t - 1) {
+    if (t > 0) {
+    }
+}
+
+# Phase 4
+
+if (t > 0) {
+    assert t > 0;
+    rw x[tid + 1];
+}
+
+
+|#
