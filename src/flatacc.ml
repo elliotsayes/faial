@@ -74,7 +74,7 @@ let p_prog_to_h_prog (known:VarSet.t) (p:l_prog) : h_prog =
     names_prog VarSet.empty p
   in
   (* Make all variables in the program distinct *)
-  let p = Phasesplit.var_uniq_prog Subst.ReplacePair.a_subst known p in
+  let p = Phasealign.var_uniq_prog Subst.ReplacePair.a_subst known p in
   (* Retrieve all accesses found in the program *)
   let pre = get_asserts p in
   (* Add the assert-preconditions to every access *)

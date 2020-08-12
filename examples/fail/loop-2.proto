@@ -1,0 +1,12 @@
+shared x;
+
+const local tid, global t where distinct [tid] ;
+
+foreach (i in 0 .. t) {
+    sync;
+    rw x[tid];
+    if (t > 0) {
+        rw x[tid + i];
+    }
+    sync;
+}
