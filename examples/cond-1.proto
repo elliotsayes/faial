@@ -1,0 +1,70 @@
+#|
+
+This is a soundness problem.
+A conditional barrier only synchronizes the accesses when t > 2.
+This example never races because the second access only appears when the
+barrier happens.
+
+|#
+
+shared x;
+
+const local tid, global t where distinct [tid] ;
+
+rw x[tid];
+
+if (t > 2) {
+    sync;
+}
+
+if (t > 2) {
+  rw x[tid + 1];
+}
+
+#|
+
+## Phase align:
+
+# Version 1
+
+rw x[tid];
+assert t <= 2;
+if (t > 2) {       # evaluates to false
+    rw x[tid + 1]  # no-op
+}
+
+# Version 2
+
+if* (t > 2) {     # if* means a synchronized if
+    rw x[tid];
+    sync;
+    assert t > 2; # evaluates to true
+    if (t > 2) {  # evaluates to true
+        rw x[tid + 1];
+    }
+}
+
+## Phase split
+
+# Phase 1:
+
+assert t > 2;
+if (t > 2) {
+  rw x[tid + 1];
+}
+
+# Phase 2:
+
+if (t > 2) {
+    rw x[tid];
+}
+
+# Phase 3:
+
+rw x[tid];
+assert t <= 2;
+if (t > 2) {
+    rw x[tid + 1];
+}
+
+|#
