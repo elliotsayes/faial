@@ -1,0 +1,32 @@
+
+shared x;
+
+const local tid, global t where distinct [tid] ;
+
+if (t <= 2) {
+  rw x[tid + 1];
+}
+rw x[tid];
+if (t > 2) {
+    sync;
+}
+#|
+# version 1
+
+if (t > 2) {
+   if (<= t 2) {
+       rw x[tid + 1];
+       rw x[tid];
+   }
+}
+sync;
+assert t > 2;
+
+# version 2
+if (<= t 2) {
+    rw x[tid + 1];
+    rw x[tid];
+    assert t <= 2;
+}
+
+|#
