@@ -79,6 +79,9 @@ let zip (stream1:'a Stream.t) (stream2:'b Stream.t) : ('a * 'b) Stream.t =
       with Stream.Failure -> None in
     Stream.from next
 
+let flat_map (f:'a -> 'b Stream.t) (stream: 'a Stream.t) : 'b Stream.t =
+  map f stream |> concat
+
 (* Consumes the first stream entirely *)
 let product (s1:'a Stream.t) (s2:'b Stream.t) : ('a * 'b) Stream.t =
   let xs:'a list = to_list s1 in

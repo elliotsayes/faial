@@ -85,6 +85,7 @@ let rec s_prog_to_p_phase: s_prog -> p_phase Stream.t =
   function
     (* ^P; sync |> { P } *)
   | NPhase u -> Phase u |> Streamutil.one
+(*
   | NCond (b, p) ->
     (* Rule:
       P |> p
@@ -93,6 +94,7 @@ let rec s_prog_to_p_phase: s_prog -> p_phase Stream.t =
      *)
     s_prog_to_p_phase p
     |> Streamutil.map (fun p' -> Pre (b, p'))
+    *)
   | NSeq (p, q) ->
     (* Rule:
        P |> p      Q |> q
@@ -115,14 +117,21 @@ let rec s_prog_to_p_phase: s_prog -> p_phase Stream.t =
       make_global r q
     )
 
+let n_prog_to_s_prog : n_prog -> s_prog =
+  function
+  | Open u -> NPhase u
+  | Unaligned (p, q) -> NSeq (p, NPhase q)
+  | Aligned p -> p
 
 (* Takes a program with Syncs and generates a program with phased blocks *)
 let prog_to_s_prog (s:Proto.prog) : p_phase Stream.t =
   (* P |> Q1, Q2 *)
   normalize s
-  (* norms(P) *)
+(*  (* norms(P) *)
   |> Streamutil.map (fun p -> make_phases p)
+  *)
   (* phases(P) *)
+  |> Streamutil.map n_prog_to_s_prog
   |> Streamutil.map s_prog_to_p_phase
   (* flatten the set *)
   |> Streamutil.concat
