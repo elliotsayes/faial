@@ -8,8 +8,37 @@ const local tid, global t where
 rw x[tid];
 foreach (y in 0 .. t) {
     if (y % 2 == 0) {
-      rw x[tid];
-      if (y == 0) { }
+      rw x[tid + (y - y)];
       sync;
     }
 }
+
+#|
+
+# Version 1:
+
+rw [tid];
+
+if (y >= 0 && y < t) {
+    assert y % 2 != 0;
+}
+
+# Version 2
+
+assert (>= 0 t);
+rw x[tid];
+
+# Version 3:
+
+rw x[tid]
+assert t > 0;
+assert true;
+rw x[tid + 0]
+sync;
+foreach (y in 1 .. t) {
+    assert y % 2 == 0;
+    rw x[tid + (y - y)]
+    sync;
+}
+
+|#
