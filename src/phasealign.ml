@@ -256,10 +256,8 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
     let open Streamutil in
     match i with
     | Base Sync ->
-(*      print_endline "sync";*)
       Aligned (NPhase []) |> one
     | Base (Unsync u) ->
-(*      print_endline "rw"; *)
       Open [Base u] |> one
     | Cond (b, p) ->
       norm_p p |>
