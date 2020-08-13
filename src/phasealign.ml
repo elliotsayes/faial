@@ -287,16 +287,12 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
         let p1' = n_cond (n_lt lb ub) (s_subst (x, lb) p1) in
         let p2' = Assert (n_lt lb ub) :: p_subst (x, new_ub) p2 in
         let new_p1 = s_subst (x, n_plus (Var x) (Num 1)) p1 in
-        (*
-        Serialize.s_print (s_prog_ser p1 |> s_list);
-        Serialize.s_print (p_prog_ser p2);
-        *)
         let new_r = { r with range_upper_bound = new_ub } in
         prepend p2 new_p1 |>
         map (function
           | Open p2_new_p1 -> Unaligned (p1', make_local new_r p2_new_p1 :: p2')
           | Aligned p2_new_p1 -> Unaligned (NSeq (p1', NFor (new_r, p2_new_p1)), p2')
-          | Unaligned (p2_new_p1, new_p2') -> failwith "???"
+          | Unaligned (p2_new_p1, new_p2') -> failwith "This should never happen! A prepend with aligned on the right-hand side never returns unaligned"
             (* Rule:
                                     P1' = P1 {n/x}
               P |> P1, P2           P2' = P2{m-1/x}
