@@ -45,8 +45,8 @@ let range_is_empty (r:range) : bexp =
 let make_local (r:range) (ls:'a prog) : 'a inst =
   Local (r.range_var, [Cond (range_to_cond r, ls)])
 
-let range_first (r:range) : SubstPair.t =
-  (r.range_var, r.range_lower_bound)
+let range_first (r:range) : bexp =
+  n_eq (Var r.range_var) r.range_lower_bound
 
 let range_advance (r:range) : range =
   {r with range_lower_bound = n_plus r.range_lower_bound (Num 1) }
@@ -188,68 +188,32 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
     | NFor (r, p) -> NFor (r, n_cond b p)
     | NSeq (p, q) -> NSeq (n_cond b p, n_cond b q)
   in
-  let rec prepend (u: p_prog) (p : s_prog) : n_prog Stream.t =
+  let rec prepend (u: p_prog) (p : s_prog) : s_prog =
     match p with
-      | NPhase u' -> Aligned (NPhase (u @ u')) |> one
-        (* foreach (x in 0 .. n) {
-             foo
-             sync
-           }
-           *)
-      | NFor (r, p) ->
-        (* Unroll the loop *)
-        let p' = n_cond (range_has_next r) (s_subst (range_first r) p) in
-        prepend u p'
-        |> flat_map (fun n -> seq n (Aligned (NFor (range_advance r, p))))
-        |> sequence (Open (Assert (range_is_empty r) :: u) |> one)
-      | NSeq (p, q) ->
-        prepend u p
-        |> flat_map (fun (n:n_prog) -> seq n (Aligned q))
-  and seq (p:n_prog) (q:n_prog) : n_prog Stream.t  =
+    | NPhase u' -> NPhase (u @ u')
+    | NFor (r, p) -> NFor (r, prepend ([Cond(range_first r, u)]) p)
+    | NSeq (p, q) -> NSeq (prepend u p, q)
+  in
+  let seq (p:n_prog) (q:n_prog) : n_prog  =
+    let seq1 (p:p_prog) (q:n_prog) : n_prog =
+      match q with
+      | Open q -> Open (p @ q)
+      | Aligned q -> Aligned (prepend p q)
+      | Unaligned (q, u') -> Unaligned (prepend p q, u')
+    in
+    let seq2 (p:s_prog) (q:n_prog) : n_prog =
+      match q with
+      | Open [] -> Aligned p
+      | Open q -> Unaligned (p, q)
+      | Aligned q -> Aligned (NSeq (p, q))
+      | Unaligned (q1, q2) -> Unaligned (NSeq (p, q1), q2)
+    in
     match p, q with
-    | Open [], _ -> q |> one
-    | _, Open [] -> p |> one
-    (* Rule: ^P |> _|_, P *)
-    | Open p, Open q -> Open (p@q) |> one
-    (* Rule:
-    ^P    Q |> Q1, Q2
-    -----------------
-    P;Q |> (P;Q1), Q2
-    *)
-    | Open p, Unaligned (q1, q2) ->
-      prepend p q1
-      |> flat_map (fun n -> seq n (Open q2))
-    | Open p, Aligned q ->
-    (*
-      print_endline "open+aligned";
-      *)
-      prepend p q
-    (* Rule:
-      P |> P1, P2      ^Q
-      -------------------
-      P;Q |> P1, (P2,Q)
-      *)
-    | Unaligned (p1,p2), Open q2 -> Unaligned (p1, p2@q2) |> one
-    | Unaligned (p1,p2), Unaligned (q1, q2) ->
-      (* Rule:
-        P |> P1, P2     Q |> Q1, Q2
-        ---------------------------
-        P;Q |> P1;(P2;Q1), Q2
-        *)
-      prepend p2 q1
-      |> flat_map (fun (p2_q1:n_prog) ->
-        seq (Aligned p1) p2_q1 (* P1 ; (P2;Q1) *)
-      )
-      |> flat_map (fun (p1_p2_q1:n_prog) ->
-        seq p1_p2_q1 (Open q2) (* P1;(P2;Q1), Q2 *)
-      )
-
-    | Unaligned (p1, p2), Aligned q ->
-      prepend p2 q
-      |> flat_map (fun p2_q -> seq (Aligned p1) p2_q)
-    | Aligned p, Open q -> Unaligned (p, q) |> one
-    | Aligned p, Unaligned (q1, q2) -> Unaligned (NSeq (p, q1), q2) |> one
-    | Aligned p, Aligned q -> Aligned (NSeq (p, q)) |> one
+    | Open [], n
+    | n, Open [] -> n
+    | Open p, _ -> seq1 p q
+    | Aligned p, _ -> seq2 p q
+    | Unaligned (p1, p2), _ -> seq2 p1 (seq1 p2 q)
   in
 
   let rec norm_i (i:Proto.inst) : n_prog Stream.t =
@@ -280,17 +244,20 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
       |> flat_map (function
       | Open p -> Open [make_local r p] |> one
       | Aligned p -> Aligned (NFor (r, p)) |> one
+      | Unaligned (p, []) -> Aligned (NFor (r, p)) |> one
       | Unaligned (p1, p2) ->
         let new_ub = n_minus ub (Num 1) in
         let p1' = n_cond (n_lt lb ub) (s_subst (x, lb) p1) in
         let p2' = Assert (n_lt lb ub) :: p_subst (x, new_ub) p2 in
         let new_p1 = s_subst (x, n_plus (Var x) (Num 1)) p1 in
         let new_r = { r with range_upper_bound = new_ub } in
-        prepend p2 new_p1 |>
-        map (function
-          | Open p2_new_p1 -> Unaligned (p1', make_local new_r p2_new_p1 :: p2')
-          | Aligned p2_new_p1 -> Unaligned (NSeq (p1', NFor (new_r, p2_new_p1)), p2')
-          | Unaligned (p2_new_p1, new_p2') -> failwith "This should never happen! A prepend with aligned on the right-hand side never returns unaligned"
+        [
+            (* Rule:
+              P |> P1, P2
+              ---------------------------------------
+              for x [n,m) {P} |> _|_, assert (n >= m)
+             *)
+          Open [Assert (n_ge lb ub)];
             (* Rule:
                                     P1' = P1 {n/x}
               P |> P1, P2           P2' = P2{m-1/x}
@@ -300,23 +267,15 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
                 for [n,m-1) {P2;P1 {x+1/x}},
                 assert (n<m); P2'
              *)
-        )
-        |> sequence (
-            (* Rule:
-              P |> P1, P2
-              ---------------------------------------
-              for x [n,m) {P} |> _|_, assert (n >= m)
-             *)
-          Open [Assert (n_ge lb ub)] |> one
-        )
+          Unaligned (NSeq (p1', NFor (new_r, prepend p2 new_p1)), p2')
+        ] |> Stream.of_list
       )
-
   and norm_p (p:Proto.prog) : n_prog Stream.t =
     match p with
     | [] -> Open [] |> one
     | i :: p ->
       product (norm_i i) (norm_p p)
-      |> flat_map (fun (i, p) -> seq i p)
+      |> map (fun (i, p) -> seq i p)
   in
   norm_p p
 
