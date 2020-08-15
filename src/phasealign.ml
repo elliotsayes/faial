@@ -27,7 +27,7 @@ type s_prog =
 type n_prog =
   | Unaligned of s_prog * p_prog
   | Open of p_prog
-  | Aligned of s_prog
+(*  | Aligned of s_prog*)
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
 
@@ -79,9 +79,6 @@ let rec s_subst (s:SubstPair.t): s_prog -> s_prog =
   function
   | NPhase b -> NPhase (p_subst s b)
   | NSeq (p, q) -> NSeq (s_subst s p, s_subst s q)
-  (*
-  | NCond (b, p) -> NCond (ReplacePair.b_subst s b, s_subst s p)
-  *)
   | NFor (r, q) ->
     let q = ReplacePair.add s r.range_var (function
       | Some s -> s_subst s q
@@ -115,11 +112,6 @@ let rec s_prog_ser: s_prog -> Sexplib.Sexp.t list =
   function
   | NPhase p -> [unop "block" (p_prog_ser p)]
   | NSeq (p, q) -> s_prog_ser p @ s_prog_ser q
-  (*
-  | NCond (b, p) ->
-    let open Serialize in
-    [binop "ncond" (b_ser b) (s_prog_ser p |> s_list)]
-  *)
   | NFor (r, p) ->
     let open Serialize in
     [binop "nfor" (r_ser r) (s_prog_ser p |> s_list)]
@@ -127,7 +119,6 @@ let rec s_prog_ser: s_prog -> Sexplib.Sexp.t list =
 let n_prog_ser : n_prog -> Sexplib.Sexp.t =
   function
   | Open p -> unop "unsync" (p_prog_ser p)
-  | Aligned p -> unop "aligned" (s_prog_ser p |> s_list)
   | Unaligned (p, q) -> binop "unaligned" (s_prog_ser p |> s_list) (p_prog_ser q)
 
 (* ---------------- MAKE VARIABLES DISTINCT -------------------------------- *)
@@ -191,28 +182,24 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
   let rec prepend (u: p_prog) (p : s_prog) : s_prog =
     match p with
     | NPhase u' -> NPhase (u @ u')
-    | NFor (r, p) -> NFor (r, prepend ([Cond(range_first r, u)]) p)
+    | NFor (r, p) -> failwith "CANNOT HAPPEN!"
     | NSeq (p, q) -> NSeq (prepend u p, q)
   in
   let seq (p:n_prog) (q:n_prog) : n_prog  =
     let seq1 (p:p_prog) (q:n_prog) : n_prog =
       match q with
       | Open q -> Open (p @ q)
-      | Aligned q -> Aligned (prepend p q)
       | Unaligned (q, u') -> Unaligned (prepend p q, u')
     in
     let seq2 (p:s_prog) (q:n_prog) : n_prog =
       match q with
-      | Open [] -> Aligned p
       | Open q -> Unaligned (p, q)
-      | Aligned q -> Aligned (NSeq (p, q))
       | Unaligned (q1, q2) -> Unaligned (NSeq (p, q1), q2)
     in
     match p, q with
     | Open [], n
     | n, Open [] -> n
     | Open p, _ -> seq1 p q
-    | Aligned p, _ -> seq2 p q
     | Unaligned (p1, p2), _ -> seq2 p1 (seq1 p2 q)
   in
 
@@ -220,18 +207,13 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
     let open Streamutil in
     match i with
     | Base Sync ->
-      Aligned (NPhase []) |> one
+      Unaligned (NPhase [], []) |> one
     | Base (Unsync u) ->
       Open [Base u] |> one
     | Cond (b, p) ->
       norm_p p |>
       flat_map (function
       | Open p -> Open [Cond (b, p)] |> one
-      | Aligned p ->
-        [
-          Aligned (n_cond b p);
-          Open [Assert (b_not b)]
-        ] |> Stream.of_list
       | Unaligned (p,q) ->
         [
           Unaligned (n_cond b p, Assert b :: q);
@@ -243,8 +225,6 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
       norm_p p
       |> flat_map (function
       | Open p -> Open [make_local r p] |> one
-      | Aligned p -> Aligned (NFor (r, p)) |> one
-      | Unaligned (p, []) -> Aligned (NFor (r, p)) |> one
       | Unaligned (p1, p2) ->
         let new_ub = n_minus ub (Num 1) in
         let p1' = n_cond (n_lt lb ub) (s_subst (x, lb) p1) in
@@ -263,7 +243,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
               P |> P1, P2           P2' = P2{m-1/x}
               -------------------------------------------------------
               for x [n,m) {P} |>
-                if (n < m) {P1'};sync;
+                assert (n < m) {P1'};
                 for [n,m-1) {P2;P1 {x+1/x}},
                 assert (n<m); P2'
              *)

@@ -121,15 +121,11 @@ let n_prog_to_s_prog : n_prog -> s_prog =
   function
   | Open u -> NPhase u
   | Unaligned (p, q) -> NSeq (p, NPhase q)
-  | Aligned p -> p
 
 (* Takes a program with Syncs and generates a program with phased blocks *)
 let prog_to_s_prog (s:Proto.prog) : p_phase Stream.t =
   (* P |> Q1, Q2 *)
   normalize s
-(*  (* norms(P) *)
-  |> Streamutil.map (fun p -> make_phases p)
-  *)
   (* phases(P) *)
   |> Streamutil.map n_prog_to_s_prog
   |> Streamutil.map s_prog_to_p_phase
