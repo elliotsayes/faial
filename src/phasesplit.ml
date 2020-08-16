@@ -165,6 +165,53 @@ let translate (k: Proto.prog kernel) : p_kernel Stream.t =
     }
   )
 
+(* --------------------------- PRETTY PRINT ------------------- *)
+
+let prog_to_s (f: 'a -> PPrint.t list) : 'a prog -> PPrint.t list =
+  let open PPrint in
+  let rec inst_s : 'a inst -> t list =
+    function
+    | Base a -> f a
+    | Assert b -> [Line ("assert " ^ b_to_s b)]
+    | Cond (b, p) ->
+      [
+        Line ("if (" ^ b_to_s b ^ ") {");
+        Block (prog_s p);
+        Line ("}");
+      ]
+    | Local (x, p) ->
+      Line ("local " ^ ident x ^ ";")
+      :: prog_s p
+
+  and prog_s (p: 'a prog) : t list =
+    List.map inst_s p |> List.flatten
+  in
+  prog_s
+
+let rec phase_to_s (f: 'a -> PPrint.t list) : 'a phase -> PPrint.t list =
+  let open PPrint in
+  function
+  | Phase p -> f p
+  | Pre (b, p) ->
+      Line ("assert* (" ^ b_to_s b ^ ");")
+      ::
+      phase_to_s f p
+  | Global (x, p) ->
+      Line ("global " ^ ident x ^ ";") ::
+      phase_to_s f p
+
+let p_phase_to_s: p_phase -> PPrint.t list =
+  phase_to_s (prog_to_s PPrint.acc_inst_to_s)
+
+let kernel_to_s (k:p_kernel) : PPrint.t list =
+  let open PPrint in
+  [
+      Line ("locations: " ^ var_set_to_s k.p_kernel_locations ^ ";");
+      Line "code {";
+      Block (p_phase_to_s k.p_kernel_code);
+      Line "}"
+  ]
+
 (* ---------------------- SERIALIZATION ------------------------ *)
 
 let rec inst_ser (f : 'a -> Sexplib.Sexp.t) : 'a inst -> Sexplib.Sexp.t =
@@ -210,7 +257,8 @@ let print_kernels (ks : p_kernel Stream.t) : unit =
     let curr = !count + 1 in
     count := curr;
     print_endline ("; phase " ^ (string_of_int curr));
-    kernel_ser k |> s_print
+    PPrint.print_doc (kernel_to_s k)
+    (*kernel_ser k |> s_print*)
   ) ks;
   print_endline "; end of conc"
 
