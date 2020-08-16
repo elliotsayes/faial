@@ -297,7 +297,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
               ---------------------------------------
               for x [n,m) {P} |> _|_, assert (n >= m)
              *)
-          Open [Assert (n_ge lb ub)];
+(*          Open [Assert (n_ge lb ub)]; *)
             (* Rule:
                                     P1' = P1 {n/x}
               P |> P1, P2           P2' = P2{m-1/x}
