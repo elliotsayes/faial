@@ -121,6 +121,60 @@ let n_prog_ser : n_prog -> Sexplib.Sexp.t =
   | Open p -> unop "unsync" (p_prog_ser p)
   | Unaligned (p, q) -> binop "unaligned" (s_prog_ser p |> s_list) (p_prog_ser q)
 
+
+let rec inst_to_s  (f : 'a -> PPrint.t list) : 'a inst -> PPrint.t list =
+  let open PPrint in
+  function
+  | Base a -> f a
+  | Assert b -> [Line ("assert " ^ b_to_s b ^ ";")]
+  | Cond (b, ls) ->
+    [
+      Line ("if (" ^ b_to_s b ^ ") {");
+      Block (prog_to_s f ls);
+      Line "}"
+    ]
+  | Local (x, ls) ->
+    Line ("local " ^ ident x ^ ";")
+    ::
+    prog_to_s f ls
+
+and prog_to_s (f : 'a -> PPrint.t list) (ls: 'a prog) : PPrint.t list =
+  List.map (inst_to_s f) ls |> List.flatten
+
+let p_prog_to_s (p:p_prog) : PPrint.t list =
+  prog_to_s PPrint.acc_inst_to_s p
+
+let rec s_prog_to_s: s_prog -> PPrint.t list =
+  let open PPrint in
+  function
+  | NPhase p -> p_prog_to_s p @ [Line "sync;"]
+  | NSeq (p, q) -> s_prog_to_s p @ s_prog_to_s q
+  | NFor (r, p) ->
+    [
+      Line ("foreach* (" ^ r_to_s r ^ ") {");
+      Block (s_prog_to_s p);
+      Line "}"
+    ]
+
+let n_prog_to_s : n_prog -> PPrint.t list =
+  let open PPrint in
+  function
+  | Open p ->
+    [
+      Line "unsync {";
+      Block (p_prog_to_s p);
+      Line "}"
+    ]
+  | Unaligned (p, q) ->
+    [
+      Line "norm {";
+      Block (s_prog_to_s p);
+      Line "} unsync {";
+      Block (p_prog_to_s q);
+      Line "}"
+    ]
+
+
 (* ---------------- MAKE VARIABLES DISTINCT -------------------------------- *)
 
 
@@ -173,6 +227,12 @@ let var_uniq_prog (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a prog) : 'a 
 
 
 let normalize (p: Proto.prog) : n_prog Stream.t =
+  let rec inline_if (b:bexp) (p: s_prog) : s_prog =
+    match p with
+    | NPhase u -> NPhase ([Cond (b, u)])
+    | NFor (r, p) -> NFor (r, inline_if b p)
+    | NSeq (p, q) -> NSeq (inline_if b p, inline_if b q)
+  in
   let rec n_cond (b:bexp) (p: s_prog) : s_prog =
     match p with
     | NPhase u -> NPhase (Assert b :: u)
@@ -216,7 +276,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
       | Open p -> Open [Cond (b, p)] |> one
       | Unaligned (p,q) ->
         [
-          Unaligned (n_cond b p, Assert b :: q);
+          Unaligned (inline_if b p, [Cond(b, q)]);
           Open [Assert (b_not b)]
         ] |> Stream.of_list
       )
@@ -268,12 +328,13 @@ let translate (k: Proto.prog kernel) : n_prog kernel Stream.t =
 (* ---------------------- SERIALIZATION ------------------------ *)
 
 let print_kernels (ks : n_prog kernel Stream.t) : unit =
-  print_endline "; begin align";
+  print_endline "# begin align";
   let count = ref 0 in
   Stream.iter (fun (k:n_prog kernel) ->
     let curr = !count + 1 in
     count := curr;
-    print_endline ("; version " ^ (string_of_int curr));
-    Serialize.kernel_ser n_prog_ser k |> s_print
+    print_endline ("\n## version " ^ (string_of_int curr));
+    Serialize.PPrint.print_kernel n_prog_to_s k
+    (*Serialize.kernel_ser n_prog_ser k |> s_print*)
   ) ks;
-  print_endline "; end align"
+  print_endline "\n# end align"

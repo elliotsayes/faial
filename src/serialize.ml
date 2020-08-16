@@ -27,11 +27,14 @@ module type NEXP_SERIALIZER = sig
   val n_ser: nexp -> Sexplib.Sexp.t
 end
 
+let task_to_string t =
+  match t with
+    | Task1 -> "$T1"
+    | Task2 -> "$T2"
+
 let t_ser t =
   let open Sexplib in
-  Sexp.Atom (match t with
-    | Task1 -> "$T1"
-    | Task2 -> "$T2")
+  Sexp.Atom (task_to_string t)
 
 module StdNexp : NEXP_SERIALIZER = struct
   let nbin_to_string (m:nbin) : string =
@@ -223,3 +226,171 @@ let kernel_ser (f:'a -> Sexplib.Sexp.t) (k:'a kernel) =
     var_set_ser "globals" k.kernel_global_variables;
     f k.kernel_code;
   ]
+
+
+module PPrint = struct
+  type t =
+    | Line of string
+    | Block of t list
+    | Nil
+
+  let pp_doc (ppf:Format.formatter) ?indent:(p=4) : t list -> unit =
+    let rec pp (accum:int) : t -> unit = function
+      | Nil -> ()
+      | Line s ->
+        Format.fprintf ppf "%s%s\n" (Common.repeat " " (p*accum)) s
+      | Block lines ->
+        lines
+        |> List.iter (pp (accum + 1))
+    in
+    List.iter (pp 0)
+
+  let print_doc = pp_doc Format.std_formatter
+
+  let ident (x:variable) : string = x.var_name
+
+  let nbin_to_string : nbin -> string = function
+    | Plus -> "+"
+    | Minus -> "-"
+    | Mult -> "*"
+    | Div -> "/"
+    | Mod -> "%"
+
+  let rec n_par (n:nexp) : string =
+    match n with
+    | Proj _
+    | Num _
+    | Var _ -> n_to_s n
+    | Bin _ ->
+      "(" ^ n_to_s n ^ ")"
+  and n_to_s : nexp -> string = function
+    | Proj (t, x) ->
+      "proj(" ^ task_to_string t ^ ", "  ^ ident x ^ ")"
+    | Num n -> string_of_int n
+    | Var x -> ident x
+    | Bin (b, a1, a2) ->
+      n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
+
+
+  let print_n (n:nexp) : unit =
+    print_string (n_to_s n)
+
+  (* ----------------- bool -------------------- *)
+
+  let rec nrel_to_string (r:nrel) : string =
+    match r with
+    | NEq -> "=="
+    | NLe -> "<="
+    | NLt -> "<"
+    | NGe -> ">="
+    | NGt -> ">"
+    | NNeq -> "!="
+
+  let brel_to_string (r:brel) : string =
+    match r with
+    | BOr -> "||"
+    | BAnd -> "&&"
+
+  let rec b_to_s : bexp -> string = function
+    | Bool b -> if b then "true" else "false"
+    | NRel (b, n1, n2) ->
+      n_to_s n1 ^ " " ^nrel_to_string b ^ " " ^ n_to_s n2
+    | BRel (b, b1, b2) ->
+      b_par b1 ^ " " ^ brel_to_string b ^ " " ^ b_par b2
+    | BNot b -> "!" ^ b_par b
+    | Pred (x, v) -> x ^ "(" ^ n_to_s v ^ ")"
+  and b_par (b:bexp) : string =
+    match b with
+    | Pred _
+    | Bool _
+    | NRel _ -> b_to_s b
+    | BNot _
+    | BRel _ -> "("  ^ b_to_s b ^ ")"
+
+  let print_b (b:bexp) : unit =
+    print_string (b_to_s b)
+
+  let r_to_s (r : range) : string =
+    ident r.range_var ^ " in " ^
+    n_to_s r.range_lower_bound ^ " .. " ^
+    n_to_s r.range_upper_bound
+
+  let rec base_i_to_s (f:'a -> t list) : 'a base_inst -> t list =
+    function
+    | Base a -> f a
+    | Cond (b, p1) -> [
+        Line ("if (" ^ b_to_s b ^ ") {");
+        Block (List.map (base_i_to_s f) p1 |> List.flatten);
+        Line "}"
+      ]
+    | Loop (r, p) ->
+      [
+        Line ("foreach (" ^ r_to_s r ^ ") {");
+        Block (List.map (base_i_to_s f) p |> List.flatten);
+        Line "}"
+      ]
+
+  let base_p_to_s (f:'a -> t list) (p: 'a base_prog) : t list =
+    List.map (base_i_to_s f) p |> List.flatten
+
+  let index_to_s (ns:nexp list) : string =
+    match ns with
+    | [] -> ""
+    | _ ->
+    let idx = ns
+      |> List.map n_to_s
+      |> join ", "
+    in
+     "[" ^ idx ^ "]"
+
+  let mode_to_s: mode -> string = function
+    | W -> "rw"
+    | R -> "ro"
+
+  let expr_acc_ser (x, a) : t list =
+    [Line (mode_to_s a.access_mode ^ " " ^
+     ident x ^
+     index_to_s a.access_index ^ ";")]
+
+  let a_inst_ser (f: 'a -> t list) : 'a a_inst -> t list =
+    function
+      | Goal b -> [Line ("goal " ^ b_to_s b ^ ";")]
+      | Acc a -> f a
+
+  let acc_inst_to_s : acc_inst -> t list =
+    a_inst_ser expr_acc_ser
+
+  let sync_unsync_to_doc : sync_unsync -> t list =
+    function
+      | Sync -> [Line "sync;"]
+      | Unsync a -> acc_inst_to_s a
+
+  let p_to_s: prog -> t list =
+    base_p_to_s sync_unsync_to_doc
+
+  let print_p (p: prog) : unit =
+    print_doc (p_to_s p)
+
+  let var_set_to_s (vs:VarSet.t) : string =
+    VarSet.elements vs
+    |> List.map ident
+    |> Common.join ", "
+
+  let kernel_to_s (f:'a -> t list) (k:'a kernel) : t list =
+    [
+      Line ("locations: " ^ var_set_to_s k.kernel_locations ^ ";");
+      Line ("globals: " ^ var_set_to_s k.kernel_global_variables ^ ";");
+      Line ("locals: " ^ var_set_to_s k.kernel_local_variables ^ ";");
+      Line ("invariant: " ^ b_to_s k.kernel_pre ^";");
+      Line "";
+      Line "code {";
+      Block (f k.kernel_code);
+      Line "}"
+    ]
+
+  let print_kernel (f:'a -> t list) (k: 'a kernel) : unit =
+    print_doc (kernel_to_s f k)
+
+  let print_k (k:prog kernel) : unit =
+    print_doc (kernel_to_s p_to_s k)
+end

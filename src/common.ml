@@ -5,6 +5,10 @@ end
 
 module StringSet = Set.Make(StringOT)
 
+let rec repeat (s:string) n : string =
+  if n <= 0 then ""
+  else s ^ repeat s (n - 1)
+
 let join sep elems =
   let on_elem accum x =
     if String.equal accum ""

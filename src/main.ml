@@ -137,7 +137,7 @@ let main_t =
       List.iter (fun k ->
         Typecheck.typecheck_kernel k |> print_errs;
         let k = Subst.replace_constants sets k in
-        halt_when (cmd = Typecheck) print_kernel k;
+        halt_when (cmd = Typecheck) Serialize.PPrint.print_k k;
         let ks = Phasealign.translate k in
         halt_when (cmd = ALang) Phasealign.print_kernels ks;
         let ks = Phasesplit.translate k in
