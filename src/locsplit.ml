@@ -30,8 +30,7 @@ let filter_loc (x:variable) (p: p_phase) : l_phase option =
         one accesses in the returned program. *)
     let rec filter_inst (i:p_inst) : l_inst option =
       match i with
-      | Base (Goal b) -> None
-      | Base (Acc (y, e)) ->
+      | Base (y, e) ->
         begin if var_equal x y then
           Some (Base e)
         else

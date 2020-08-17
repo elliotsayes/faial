@@ -31,10 +31,8 @@ let free_names_list f l fns =
 
 let rec free_names_inst (i:Proto.inst) (fns:VarSet.t) : VarSet.t =
   match i with
-  | Base Sync -> fns
-  | Base (Unsync (Goal b))
-    -> free_names_bexp b fns
-  | Base (Unsync (Acc (_, a))) -> free_names_access a fns
+  | Sync -> fns
+  | Acc (_, a) -> free_names_access a fns
   | Cond (b, p1) ->
     free_names_bexp b fns
     |> free_names_proto p1
@@ -48,10 +46,9 @@ and free_names_proto (p:Proto.prog) (fns:VarSet.t) : VarSet.t =
 
 let rec free_locs_inst (i:Proto.inst) (fns:VarSet.t) =
   match i with
-  | Base (Unsync (Goal _))
-  | Base Sync
+  | Sync
     -> fns
-  | Base (Unsync (Acc (x, _))) -> VarSet.add x fns
+  | Acc (x, _) -> VarSet.add x fns
   | Cond (_, p)
   | Loop (_, p)
     -> free_locs_proto p fns

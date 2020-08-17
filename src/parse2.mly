@@ -9,9 +9,8 @@
 %token SYNC RW RO IF
 %token LOCS CONST COMMA
 %token LPAREN RPAREN LBRACK RBRACK LBRACE RBRACE
-%token FOREACH UNTIL IN
+%token FOREACH UNTIL IN STEP
 %token DISTINCT
-%token PROVE
 %token ELSE
 %token WHERE
 %token TRUE FALSE
@@ -97,18 +96,23 @@ prog:
   | s = stmt; p = prog
     { s @ p }
   | LET x = ident ASSIGN n = nexp SEMICOLON p = prog
-    { Subst.ReplacePair.p_subst (Subst.SubstPair.make (x,n)) p }
+    { Subst.ReplacePair.prog_subst (Subst.SubstPair.make (x,n)) p }
   | { [] }
 
 %inline range:
   | x = ident IN lb = nexp UNTIL ub = nexp
-   { {range_var=x; range_lower_bound=lb; range_upper_bound=ub} }
+   { {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=Default (Num 1)} }
+  | x = ident IN lb = nexp UNTIL ub = nexp AND STEP PLUS n = nexp
+   { {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=Default n} }
+  | x = ident IN lb = nexp UNTIL ub = nexp AND STEP MULT TWO
+   { {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=StepName "pow2"} }
+  | x = ident IN lb = nexp UNTIL ub = nexp AND STEP MULT y = UINT
+   { {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=StepName ("pow" ^ (string_of_int y))} }
 
 expr:
-  | SYNC { Base Sync }
-  | PROVE b = bexp { Base (Unsync (Goal b)) }
+  | SYNC { Sync }
   | m = mode; x = ident; i = index
-    { Base (Unsync (Acc (x, {access_index=i; access_mode=m}))) }
+    { Acc (x, {access_index=i; access_mode=m}) }
 
 stmt:
   | e = expr SEMICOLON

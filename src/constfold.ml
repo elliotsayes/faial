@@ -105,7 +105,7 @@ match e with
 
 let r_opt (r:range) : range =
   {
-    range_var = r.range_var;
+    r with
     range_lower_bound = n_opt r.range_lower_bound;
     range_upper_bound = n_opt r.range_upper_bound;
   }

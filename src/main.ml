@@ -48,12 +48,12 @@ let json_parse ic =
       |> Parsejs.parse_kernels.run
       |> List.map Imp.compile
   )
-
+(*
 let print_kernel (k:prog kernel) : unit =
   let open Serialize in
   print_endline "; proto";
   kernel_ser prog_ser k |> s_print
-
+*)
 
 type command = ALang | PLang | CLang | HLang | BLang | Sat | Typecheck
 

@@ -141,17 +141,23 @@ let m_ser m = match m with
   | Exp.R -> "ro"
   | Exp.W -> "rw"
 
+let s_ser s =
+  match s with
+  | Default x -> n_ser x
+  | StepName x -> Sexplib.Sexp.Atom x
+
 let r_ser r =
   call "range" [
     Sexplib.Sexp.Atom r.range_var.var_name;
     n_ser r.range_lower_bound;
     n_ser r.range_upper_bound;
+    s_ser r.range_step;
   ]
 
 let a_ser a =
   let idx = Sexplib.Sexp.List (List.map n_ser a.access_index) in
   call (m_ser a.access_mode) [idx]
-
+(*
 let rec base_inst_ser (f:'a -> Sexplib.Sexp.t) : 'a base_inst -> Sexplib.Sexp.t =
   let open Sexplib in
   function
@@ -165,7 +171,7 @@ let rec base_inst_ser (f:'a -> Sexplib.Sexp.t) : 'a base_inst -> Sexplib.Sexp.t 
 and base_prog_ser (f:'a -> Sexplib.Sexp.t) (p:('a base_inst) list) : Sexplib.Sexp.t =
   let open Sexplib in
   Sexp.List (List.map (base_inst_ser f) p)
-
+*)
 let expr_acc_ser (x, a) : Sexplib.Sexp.t =
   let open Sexplib in
   call "loc" [Sexp.Atom x.var_name; a_ser a]
@@ -173,7 +179,7 @@ let expr_acc_ser (x, a) : Sexplib.Sexp.t =
 let acc_sym_ser (x, a, t) : Sexplib.Sexp.t =
   let open Sexplib in
   call "loc" [Sexp.Atom x.var_name; a_ser a; t_ser t]
-
+(*
 let a_inst_ser (f: 'a -> Sexplib.Sexp.t) : 'a a_inst -> Sexplib.Sexp.t =
   function
     | Goal b -> unop "goal" (b_ser b)
@@ -193,6 +199,8 @@ let inst_ser : inst -> Sexplib.Sexp.t =
 
 let prog_ser : prog -> Sexplib.Sexp.t =
   s_map inst_ser
+*)
+
 (*
 let u_inst_ser : u_inst -> Sexplib.Sexp.t =
   base_inst_ser acc_inst_ser
@@ -310,28 +318,20 @@ module PPrint = struct
   let print_b (b:bexp) : unit =
     print_string (b_to_s b)
 
+  let s_to_s s =
+    match s with
+    | Default x -> n_to_s x
+    | StepName x -> x
+
   let r_to_s (r : range) : string =
     ident r.range_var ^ " in " ^
     n_to_s r.range_lower_bound ^ " .. " ^
-    n_to_s r.range_upper_bound
+    n_to_s r.range_upper_bound ^
+    " step " ^ s_to_s r.range_step
 
-  let rec base_i_to_s (f:'a -> t list) : 'a base_inst -> t list =
-    function
-    | Base a -> f a
-    | Cond (b, p1) -> [
-        Line ("if (" ^ b_to_s b ^ ") {");
-        Block (List.map (base_i_to_s f) p1 |> List.flatten);
-        Line "}"
-      ]
-    | Loop (r, p) ->
-      [
-        Line ("foreach (" ^ r_to_s r ^ ") {");
-        Block (List.map (base_i_to_s f) p |> List.flatten);
-        Line "}"
-      ]
-
-  let base_p_to_s (f:'a -> t list) (p: 'a base_prog) : t list =
-    List.map (base_i_to_s f) p |> List.flatten
+  let mode_to_s: mode -> string = function
+    | W -> "rw"
+    | R -> "ro"
 
   let index_to_s (ns:nexp list) : string =
     match ns with
@@ -343,20 +343,31 @@ module PPrint = struct
     in
      "[" ^ idx ^ "]"
 
-  let mode_to_s: mode -> string = function
-    | W -> "rw"
-    | R -> "ro"
-
-  let expr_acc_ser (x, a) : t list =
+  let acc_expr_to_s (x, a) : t list =
     [Line (mode_to_s a.access_mode ^ " " ^
      ident x ^
      index_to_s a.access_index ^ ";")]
 
-  let a_inst_ser (f: 'a -> t list) : 'a a_inst -> t list =
+  let rec inst_to_s : inst -> t list =
     function
-      | Goal b -> [Line ("goal " ^ b_to_s b ^ ";")]
-      | Acc a -> f a
+    | Sync -> [Line "sync;"]
+    | Acc e -> acc_expr_to_s e
+    | Cond (b, p1) -> [
+        Line ("if (" ^ b_to_s b ^ ") {");
+        Block (List.map inst_to_s p1 |> List.flatten);
+        Line "}"
+      ]
+    | Loop (r, p) ->
+      [
+        Line ("foreach (" ^ r_to_s r ^ ") {");
+        Block (List.map inst_to_s p |> List.flatten);
+        Line "}"
+      ]
 
+  let prog_to_s (p: prog) : t list =
+    List.map inst_to_s p |> List.flatten
+
+(*
   let acc_inst_to_s : acc_inst -> t list =
     a_inst_ser expr_acc_ser
 
@@ -367,9 +378,9 @@ module PPrint = struct
 
   let p_to_s: prog -> t list =
     base_p_to_s sync_unsync_to_doc
-
+*)
   let print_p (p: prog) : unit =
-    print_doc (p_to_s p)
+    print_doc (prog_to_s p)
 
   let var_set_to_s (vs:VarSet.t) : string =
     VarSet.elements vs
@@ -392,5 +403,5 @@ module PPrint = struct
     print_doc (kernel_to_s f k)
 
   let print_k (k:prog kernel) : unit =
-    print_doc (kernel_to_s p_to_s k)
+    print_doc (kernel_to_s prog_to_s k)
 end

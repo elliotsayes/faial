@@ -1,42 +1,14 @@
 open Exp
 
-type 'a  base_inst =
-  | Base of 'a
-  | Cond of bexp * 'a  base_inst list
-  | Loop of range * 'a  base_inst list
-
-(* Changes the base of a base instruction *)
-let rec base_inst_map (f: 'a -> 'b) : 'a base_inst -> 'b base_inst =
-  function
-  | Base a -> Base (f a)
-  | Cond (b, l) -> Cond (b, List.map (base_inst_map f) l)
-  | Loop (r, l) -> Loop (r, List.map (base_inst_map f) l)
-
-(* A base program is a list of base instructions *)
-type 'a base_prog = ('a base_inst) list
-
-(* Change the base of a program *)
-let base_prog_map (f: 'a -> 'b) : 'a base_prog -> 'b base_prog =
-  List.map (base_inst_map f)
-
-(* Regular access expression *)
-type expr_acc = (variable * access)
-
-(* A simple instruction *)
-type 'a a_inst =
-  | Goal of bexp
-  | Acc of 'a
-
-(* A simple instruction with regular accesses *)
-type acc_inst = expr_acc a_inst
-
-(* In a regular program the base is either a barrier or an unsync *)
-type sync_unsync =
-  | Sync
-  | Unsync of acc_inst
+(* Access expression *)
+type acc_expr = variable * access
 
 (* The source instruction uses the base defined above *)
-type inst = sync_unsync base_inst
+type inst =
+  | Acc of acc_expr
+  | Sync
+  | Cond of bexp * inst list
+  | Loop of range * inst list
 (* The source program *)
 type prog = inst list
 

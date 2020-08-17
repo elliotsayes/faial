@@ -201,7 +201,7 @@ let rec phase_to_s (f: 'a -> PPrint.t list) : 'a phase -> PPrint.t list =
       phase_to_s f p
 
 let p_phase_to_s: p_phase -> PPrint.t list =
-  phase_to_s (prog_to_s PPrint.acc_inst_to_s)
+  phase_to_s (prog_to_s PPrint.acc_expr_to_s)
 
 let kernel_to_s (k:p_kernel) : PPrint.t list =
   let open PPrint in
@@ -238,9 +238,9 @@ let rec phase_ser (f: 'a -> Sexplib.Sexp.t) : 'a phase -> Sexplib.Sexp.t list =
   | Global (x, p) ->
     let open Sexplib in
     unop "global" (Sexp.Atom x.var_name) :: (phase_ser f p)
-
+(*
 let p_phase_ser (p: p_phase) : Sexplib.Sexp.t =
-  phase_ser (fun x -> prog_ser acc_inst_ser x |> s_list) p |> s_list
+  phase_ser (fun x -> prog_ser acc_expr_s x |> s_list) p |> s_list
 
 let kernel_ser (k:p_kernel) : Sexplib.Sexp.t =
   let open Sexplib in
@@ -249,7 +249,7 @@ let kernel_ser (k:p_kernel) : Sexplib.Sexp.t =
     var_set_ser "locations" k.p_kernel_locations;
     unop "code" (p_phase_ser k.p_kernel_code);
   ]
-
+*)
 let print_kernels (ks : p_kernel Stream.t) : unit =
   print_endline "; conc";
   let count = ref 0 in

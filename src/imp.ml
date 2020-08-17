@@ -9,20 +9,15 @@ type access_expr = {access_index: nexp list; access_mode: mode}
 
 type instruction =
 | ISync
-| IGoal of bexp
 | IAssert of bexp
 | IAcc of variable * access
-
-type step_kind = Default | Pred of string
-
-type range_expr = {range_expr_start: nexp; range_expr_stop: nexp; range_expr_step: nexp; range_expr_kind: step_kind}
 
 type stmt =
 | Inst of instruction
 | Block of (stmt list)
 | Decl of (variable * locality * nexp option)
 | If of (bexp * stmt * stmt)
-| For of (variable * range_expr * stmt)
+| For of (range * stmt)
 
 type p_kernel = {
   (* A kernel precondition of every phase. *)
@@ -55,7 +50,6 @@ module SubstMake(S:Subst.SUBST) = struct
     let rec subst s p =
       match p with
       | Inst ISync -> Inst ISync
-      | Inst (IGoal b) -> Inst (IGoal (M.b_subst s b))
       | Inst (IAssert b) -> Inst (IAssert (M.b_subst s b))
       | Inst (IAcc (x, a)) -> Inst (IAcc (x, M.a_subst s a))
       | Block (p::l) ->
@@ -76,15 +70,9 @@ module SubstMake(S:Subst.SUBST) = struct
       | Block [] -> Block []
       | Decl (x,v,o) -> Decl (x,v, on_subst s o)
       | If (b, p1, p2) -> If (M.b_subst s b, subst s p1, subst s p2)
-      | For (x, r, p) ->
-        For (x,
-          {
-            range_expr_start = M.n_subst s r.range_expr_start;
-            range_expr_step = M.n_subst s r.range_expr_step;
-            range_expr_stop = M.n_subst s r.range_expr_stop;
-            range_expr_kind = r.range_expr_kind;
-          },
-          M.add s x (function
+      | For (r, p) ->
+        For (M.r_subst s r,
+          M.add s r.range_var (function
           | Some s -> subst s p
           | None -> p
           )
@@ -129,10 +117,10 @@ let normalize_variables (p:stmt) xs =
       let p1, xs = norm p1 xs in
       let p2, xs = norm p2 xs in
       If (b, p1, p2), xs
-    | For (x, r, p) ->
-      do_subst x (fun new_x new_xs kont ->
+    | For (r, p) ->
+      do_subst r.range_var (fun new_x new_xs kont ->
         let p, xs = kont p in
-        For (x, r, p), xs
+        For (r, p), xs
       )
   in
   norm p xs |> fst
@@ -146,9 +134,8 @@ let rec reify (p:stmt) : prog =
   match p with
   | Decl (_,_,_) -> [] (* Only handled inside a block *)
   | Inst (IAssert _) -> [] (* Only handled inside a block *)
-  | Inst ISync -> [Base Sync]
-  | Inst (IGoal b) -> [Base (Unsync (Goal b))]
-  | Inst (IAcc (x,y)) -> [Base (Unsync (Acc (x,y)))]
+  | Inst ISync -> [Sync]
+  | Inst (IAcc (x,y)) -> [Acc (x,y)]
   | Block [] -> []
   | Block (Inst (IAssert b)::l) -> [Cond (b, reify (Block l))]
   | Block (Decl (x,_,Some n)::l) ->
@@ -158,9 +145,10 @@ let rec reify (p:stmt) : prog =
     |> reify
   | Block (i::l) -> reify i @ reify (Block l)
   | If (b,p,q) -> [Cond (b,reify p);Cond(BNot b, reify q)]
-  | For (x, r, p) ->
-    let index = Var x in
-    let pre:bexp = begin match r.range_expr_kind with
+  | For (r, p) ->
+    (*
+    let index = Var r.range_var in
+    let pre:bexp = begin match r.range_step with
       | Default ->
           b_and
             (*  assert (index - INIT) % STRIDE == 0; *)
@@ -169,18 +157,8 @@ let rec reify (p:stmt) : prog =
             (n_gt r.range_expr_step (Num 0))
       | Pred name ->
           Pred (name, Var x)
-    end in
-    [Loop ({
-        range_var = x;
-        range_lower_bound = r.range_expr_start;
-        range_upper_bound = r.range_expr_stop
-      },
-      (* Ensure the lower bound is smaller than the upper bound *)
-      [Cond (
-        b_and pre (n_le r.range_expr_start r.range_expr_stop),
-        reify p
-      )]
-    )]
+    end in*)
+    [Loop (r, reify p)]
 
 let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
   match p with
@@ -189,7 +167,7 @@ let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSe
   | Decl (x, Local, _) -> VarSet.add x locals, globals
   | Decl (x, Global, _) -> locals, VarSet.add x globals
   | If (_, p1, p2) -> get_variable_decls p1 (locals,globals) |> get_variable_decls p2
-  | For (_, _, p) -> get_variable_decls p (locals,globals)
+  | For (_, p) -> get_variable_decls p (locals,globals)
 
 let compile (k:p_kernel) : prog kernel =
   let globals = k.p_kernel_params in

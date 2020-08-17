@@ -177,10 +177,13 @@ let rec b_or_ex l =
   | [x] -> x
   | x::l -> b_or x (b_or_ex l)
 
+
+type step_expr = Default of nexp | StepName of string
 type range = {
   range_var: variable;
   range_lower_bound: nexp;
-  range_upper_bound: nexp
+  range_upper_bound: nexp;
+  range_step: step_expr;
 }
 
 type mode = R | W

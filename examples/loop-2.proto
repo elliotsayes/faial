@@ -7,8 +7,10 @@ const local tid, global t where
 
 rw x[tid];
 foreach (y in 0 .. t) {
-    if (y % 2 == 0) {
+    rw x[tid];
+    foreach (z in y .. y + 2) {
       rw x[tid + (y - y)];
       sync;
     }
+    rw x[tid];
 }

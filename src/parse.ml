@@ -88,7 +88,7 @@ let rec parse_bexp (s:Sexp.t) : bexp option =
   | _ -> None
 
 let parse_bexp = make "bexp" parse_bexp
-
+(*
 let parse_range = make "range" (fun s ->
   match s with
   | Sexp.List [Sexp.Atom "range"; Sexp.Atom x; lb; ub] ->
@@ -99,7 +99,7 @@ let parse_range = make "range" (fun s ->
     }
   | _ -> None
 )
-
+*)
 let parse_access = make "access" (fun s ->
   let mk_acc m s =
     match s with
@@ -115,7 +115,7 @@ let parse_access = make "access" (fun s ->
   | Sexp.List ((Sexp.Atom "rw")::s) -> mk_acc W s
   | _ -> None
 )
-
+(*
 let rec parse_inst s : inst option =
   match s with
   | Sexp.Atom "sync" -> Some (Base Sync)
@@ -171,4 +171,5 @@ let parse_kernel = make "kernel" (fun s->
     }
   | _ -> None
 )
+*)
 *)

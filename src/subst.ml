@@ -49,13 +49,12 @@ module Make (S:SUBST) = struct
     subst n
 
   let b_subst (s:S.t) (b:bexp) : bexp =
-    let rec subst b =
-      match b with
-        | Pred (p,v) -> Pred (p, n_subst s v)
-        | Bool _ -> b
-        | NRel (o, n1, n2) -> n_rel o (n_subst s n1) (n_subst s n2)
-        | BRel (o, b1, b2) -> b_rel o (subst b1) (subst b2)
-        | BNot b -> b_not (subst b)
+    let rec subst: bexp -> bexp = function
+      | Pred (n, v) -> Pred (n, n_subst s v)
+      | Bool _ -> b
+      | NRel (o, n1, n2) -> n_rel o (n_subst s n1) (n_subst s n2)
+      | BRel (o, b1, b2) -> b_rel o (subst b1) (subst b2)
+      | BNot b -> b_not (subst b)
     in
     subst b
 
@@ -64,44 +63,35 @@ module Make (S:SUBST) = struct
       access_index = List.map (n_subst s) a.access_index
     }
 
+  let acc_expr_subst (s:S.t) ((x,e):acc_expr) : acc_expr =
+    (x, a_subst s e)
+
   let r_subst (s:S.t) (r:range) : range =
     { r with
       range_lower_bound = n_subst s r.range_lower_bound;
       range_upper_bound = n_subst s r.range_upper_bound
     }
 
-  let rec i_subst (f:'a -> 'a) (s:S.t) (i:'a  base_inst) : 'a  base_inst =
-    match i with
-    | Base b -> Base (f b)
-    | Cond (b, p1) -> Cond (
-        b_subst s b,
-        i_list_subst f s p1
-      )
-    | Loop (r, p) ->
-      let r = r_subst s r in
-      add s r.range_var (function
-        | Some s -> Loop (r, i_list_subst f s p)
-        | None -> Loop (r, p)
-      )
-  and i_list_subst (f:'a -> 'a) (s:S.t) : ('a  base_inst) list -> ('a  base_inst) list =
-    List.map (i_subst f s)
-
-  let acc_inst_subst (s:S.t) : acc_inst -> acc_inst =
-    function
-      | Goal b -> Goal (b_subst s b)
-      | Acc (x, a) -> Acc (x, a_subst s a)
-
-  let p_subst (s:S.t) : prog -> prog =
-    i_list_subst (function
-      | Unsync e -> Unsync (acc_inst_subst s e)
+  let prog_subst: S.t -> prog -> prog =
+    let rec i_subst (s:S.t) (i:inst) : inst =
+      match i with
+      | Acc (x, e) -> Acc (x, a_subst s e)
       | Sync -> Sync
-    ) s
-(*
-  let u_subst (s:S.t) : u_prog -> u_prog =
-    i_list_subst (acc_inst_subst s) s
+      | Cond (b, p) -> Cond (
+          b_subst s b,
+          p_subst s p
+        )
+      | Loop (r, p) ->
+        let r = r_subst s r in
+        add s r.range_var (function
+          | Some s -> Loop (r, p_subst s p)
+          | None -> Loop (r, p)
+        )
+    and p_subst (s:S.t) : prog -> prog =
+      List.map (i_subst s)
+    in
+    p_subst
 
-  let s_subst (s:S.t) : s_prog -> s_prog =
-    i_list_subst (u_subst s) s*)
 end
 
 module SubstPair =
@@ -136,7 +126,7 @@ let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =
   let keys = List.split kvs |> fst |> List.map var_make |> VarSet.of_list in
   let kvs = SubstAssoc.make kvs in
   { k with
-    kernel_code = ReplaceAssoc.p_subst kvs k.kernel_code;
+    kernel_code = ReplaceAssoc.prog_subst kvs k.kernel_code;
     kernel_global_variables = VarSet.diff k.kernel_global_variables keys;
     kernel_local_variables = VarSet.diff k.kernel_local_variables keys;
   }

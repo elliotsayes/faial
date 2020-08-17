@@ -13,8 +13,8 @@ type 'a inst =
 
 type 'a prog = 'a inst list
 
-type p_inst = Proto.acc_inst inst
-type p_prog = Proto.acc_inst prog
+type p_inst = Proto.acc_expr inst
+type p_prog = Proto.acc_expr prog
 
 (* This is an internal datatype. The output of normalize is one of 4 cases: *)
 type s_prog =
@@ -31,13 +31,43 @@ type n_prog =
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
 
-let range_to_cond (r:range) =
-  b_and
-    (n_le r.range_lower_bound (Var r.range_var))
-    (n_lt (Var r.range_var) r.range_upper_bound)
+let range_to_cond (r:range) : bexp =
+  (match r.range_step with
+  | Default (Num 1) -> []
+  | Default n -> [
+      (* x % step == 0 *)
+      n_eq (n_mod (Var r.range_var) n) (Num 0);
+      (* Ensure that the step is positive *)
+      n_gt n (Num 0)
+    ]
+  | StepName name -> [Pred(name, Var r.range_var)]
+  )
+  @
+  [
+    n_le r.range_lower_bound (Var r.range_var);
+    n_lt (Var r.range_var) r.range_upper_bound;
+  ]
+  |> b_and_ex
 
 let range_has_next (r:range) : bexp =
   n_lt r.range_lower_bound r.range_upper_bound
+
+let range_next_var (r:range) : nexp =
+  let x = Var r.range_var in
+  match r.range_step with
+  | Default n -> n_plus x n
+  | StepName "pow2" -> n_mult x (Num 2)
+  | StepName "pow3" -> n_mult x (Num 3)
+  | StepName x -> failwith ("I don't know how to unroll a loop with a step " ^ x)
+
+let range_prev_upper_bound (r:range) : nexp =
+  let x = r.range_upper_bound in
+  match r.range_step with
+  | Default n -> n_minus x n
+  | StepName "pow2" -> n_div x (Num 2)
+  | StepName "pow3" -> n_div x (Num 3)
+  | StepName x -> failwith ("I don't know how to unroll a loop with a step " ^ x)
+
 
 let range_is_empty (r:range) : bexp =
   n_ge r.range_lower_bound r.range_upper_bound
@@ -73,7 +103,7 @@ let prog_subst (f:SubstPair.t -> 'a -> 'a) (s:SubstPair.t) (p:'a prog) : 'a prog
   p_subst s p
 
 let p_subst : SubstPair.t -> p_prog -> p_prog =
-  prog_subst ReplacePair.acc_inst_subst
+  prog_subst ReplacePair.acc_expr_subst
 
 let rec s_subst (s:SubstPair.t): s_prog -> s_prog =
   function
@@ -87,7 +117,7 @@ let rec s_subst (s:SubstPair.t): s_prog -> s_prog =
     NFor (ReplacePair.r_subst s r, q)
 
 (* ------------------------------------------------------------------------- *)
-
+(*
 let rec inst_ser (f : 'a -> Sexplib.Sexp.t) : 'a inst -> Sexplib.Sexp.t =
   function
   | Base a -> f a
@@ -106,7 +136,7 @@ and prog_ser (f : 'a -> Sexplib.Sexp.t) (ls: 'a prog) : Sexplib.Sexp.t list =
   List.map (inst_ser f) ls
 
 let p_prog_ser (p:p_prog) : Sexplib.Sexp.t =
-  prog_ser acc_inst_ser p |> s_list
+  prog_ser acc_expr_ser p |> s_list
 
 let rec s_prog_ser: s_prog -> Sexplib.Sexp.t list =
   function
@@ -121,28 +151,31 @@ let n_prog_ser : n_prog -> Sexplib.Sexp.t =
   | Open p -> unop "unsync" (p_prog_ser p)
   | Unaligned (p, q) -> binop "unaligned" (s_prog_ser p |> s_list) (p_prog_ser q)
 
-
-let rec inst_to_s  (f : 'a -> PPrint.t list) : 'a inst -> PPrint.t list =
+*)
+let prog_to_s (f : 'a -> PPrint.t list) : 'a prog -> PPrint.t list =
   let open PPrint in
-  function
-  | Base a -> f a
-  | Assert b -> [Line ("assert " ^ b_to_s b ^ ";")]
-  | Cond (b, ls) ->
-    [
-      Line ("if (" ^ b_to_s b ^ ") {");
-      Block (prog_to_s f ls);
-      Line "}"
-    ]
-  | Local (x, ls) ->
-    Line ("local " ^ ident x ^ ";")
-    ::
-    prog_to_s f ls
+  let rec i_to_s: 'a inst -> t list =
+    function
+    | Base a -> f a
+    | Assert b -> [Line ("assert " ^ b_to_s b ^ ";")]
+    | Cond (b, p) ->
+      [
+        Line ("if (" ^ b_to_s b ^ ") {");
+        Block (p_to_s p);
+        Line "}"
+      ]
+    | Local (x, ls) ->
+      Line ("local " ^ ident x ^ ";")
+      ::
+      p_to_s ls
 
-and prog_to_s (f : 'a -> PPrint.t list) (ls: 'a prog) : PPrint.t list =
-  List.map (inst_to_s f) ls |> List.flatten
+  and p_to_s (ls: 'a prog) : t list =
+    List.map i_to_s ls |> List.flatten
+  in
+  p_to_s
 
 let p_prog_to_s (p:p_prog) : PPrint.t list =
-  prog_to_s PPrint.acc_inst_to_s p
+  prog_to_s PPrint.acc_expr_to_s p
 
 let rec s_prog_to_s: s_prog -> PPrint.t list =
   let open PPrint in
@@ -266,10 +299,10 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
   let rec norm_i (i:Proto.inst) : n_prog Stream.t =
     let open Streamutil in
     match i with
-    | Base Sync ->
+    | Sync ->
       Unaligned (NPhase [], []) |> one
-    | Base (Unsync u) ->
-      Open [Base u] |> one
+    | Acc e ->
+      Open [Base e] |> one
     | Cond (b, p) ->
       norm_p p |>
       flat_map (function
@@ -281,14 +314,14 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
         ] |> Stream.of_list
       )
 
-    | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub} as r, p) ->
+    | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub; range_step=s} as r, p) ->
       begin match norm_p p |> Streamutil.to_list with
       | [Open p] -> Open [make_local r p]
       | [Unaligned (p1, p2)] ->
-        let new_ub = n_minus ub (Num 1) in
+        let new_ub = range_prev_upper_bound r in
         let p1' = n_cond (n_lt lb ub) (s_subst (x, lb) p1) in
         let p2' = Assert (n_lt lb ub) :: p_subst (x, new_ub) p2 in
-        let new_p1 = s_subst (x, n_plus (Var x) (Num 1)) p1 in
+        let new_p1 = s_subst (x, range_next_var r) p1 in
         let new_r = { r with range_upper_bound = new_ub } in
         (* Rule:
                                 P1' = P1 {n/x}

@@ -244,23 +244,23 @@ let rec parse_bexp b : bexp option =
 
 let parse_bexp = make "bexp" parse_bexp
 
-let parse_range_kind =
+let parse_range_kind (n:nexp) =
   let open Yojson.Basic in
   make "range kind" (fun s ->
     match s with
-    | `String "+" -> Some Default
-    | `String x -> Some (Pred x)
+    | `String "+" -> Some (Default n)
+    | `String x -> Some (StepName x)
     | _ -> None
   )
 
-let parse_range = make "range" (fun s ->
+let parse_range (x:variable) = make "range" (fun s ->
     choose_one_of [
       "RangeExpr", (["init"; "upper_bound"; "step"; "opcode"], function
       | [init; ub; step; k] -> Some {
-          range_expr_start = parse_nexp.run init;
-          range_expr_stop = parse_nexp.run ub;
-          range_expr_step = parse_nexp.run step;
-          range_expr_kind = parse_range_kind.run k;
+          range_var = x;
+          range_lower_bound = parse_nexp.run init;
+          range_upper_bound = parse_nexp.run ub;
+          range_step = (parse_range_kind (parse_nexp.run step)).run k;
         }
       | _ -> None
       )
@@ -329,7 +329,8 @@ let rec parse_stmt j =
     "ForEachStmt", (["var"; "range"; "body"], function
       | [v; r; body] ->
         bind (parse_stmt body) (fun body ->
-          Some (For (parse_var.run v, parse_range.run r, body))
+          let x = parse_var.run v in
+          Some (For ((parse_range x).run r, body))
         )
       | _ -> None
     );
