@@ -282,34 +282,27 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
       )
 
     | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub} as r, p) ->
-      norm_p p
-      |> flat_map (function
-      | Open p -> Open [make_local r p] |> one
-      | Unaligned (p1, p2) ->
+      begin match norm_p p |> Streamutil.to_list with
+      | [Open p] -> Open [make_local r p]
+      | [Unaligned (p1, p2)] ->
         let new_ub = n_minus ub (Num 1) in
         let p1' = n_cond (n_lt lb ub) (s_subst (x, lb) p1) in
         let p2' = Assert (n_lt lb ub) :: p_subst (x, new_ub) p2 in
         let new_p1 = s_subst (x, n_plus (Var x) (Num 1)) p1 in
         let new_r = { r with range_upper_bound = new_ub } in
-        [
-            (* Rule:
-              P |> P1, P2
-              ---------------------------------------
-              for x [n,m) {P} |> _|_, assert (n >= m)
-             *)
-(*          Open [Assert (n_ge lb ub)]; *)
-            (* Rule:
-                                    P1' = P1 {n/x}
-              P |> P1, P2           P2' = P2{m-1/x}
-              -------------------------------------------------------
-              for x [n,m) {P} |>
-                assert (n < m) {P1'};
-                for [n,m-1) {P2;P1 {x+1/x}},
-                assert (n<m); P2'
-             *)
-          Unaligned (NSeq (p1', NFor (new_r, prepend p2 new_p1)), p2')
-        ] |> Stream.of_list
-      )
+        (* Rule:
+                                P1' = P1 {n/x}
+          P |> P1, P2           P2' = P2{m-1/x}
+          -------------------------------------------------------
+          for x [n,m) {P} |>
+            assert (n < m) {P1'};
+            for [n,m-1) {P2;P1 {x+1/x}},
+            assert (n<m); P2'
+          *)
+        Unaligned (NSeq (p1', NFor (new_r, prepend p2 new_p1)), p2')
+      | l -> failwith "Conditionals cannot appear inside for-loops"
+      end
+      |> one
   and norm_p (p:Proto.prog) : n_prog Stream.t =
     match p with
     | [] -> Open [] |> one
