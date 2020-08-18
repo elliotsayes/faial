@@ -328,7 +328,9 @@ module PPrint = struct
     ident r.range_var ^ " in " ^
     n_to_s r.range_lower_bound ^ " .. " ^
     n_to_s r.range_upper_bound ^
-    "; " ^ ident r.range_var ^ " " ^ s_to_s r.range_step
+    (match r.range_step with
+    | Default (Num 1) -> ""
+    | _ -> "; " ^ ident r.range_var ^ " " ^ s_to_s r.range_step)
 
   let mode_to_s: mode -> string = function
     | W -> "rw"
