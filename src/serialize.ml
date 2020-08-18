@@ -320,14 +320,15 @@ module PPrint = struct
 
   let s_to_s s =
     match s with
-    | Default x -> n_to_s x
+    | Default x -> "+ " ^ n_to_s x
+    | StepName "pow2" -> "* 2"
     | StepName x -> x
 
   let r_to_s (r : range) : string =
     ident r.range_var ^ " in " ^
     n_to_s r.range_lower_bound ^ " .. " ^
     n_to_s r.range_upper_bound ^
-    " step " ^ s_to_s r.range_step
+    "; " ^ ident r.range_var ^ " " ^ s_to_s r.range_step
 
   let mode_to_s: mode -> string = function
     | W -> "rw"

@@ -9,7 +9,7 @@
 %token SYNC RW RO IF
 %token LOCS CONST COMMA
 %token LPAREN RPAREN LBRACK RBRACK LBRACE RBRACE
-%token FOREACH UNTIL IN STEP
+%token FOREACH UNTIL IN
 %token DISTINCT
 %token ELSE
 %token WHERE
@@ -102,12 +102,15 @@ prog:
 %inline range:
   | x = ident IN lb = nexp UNTIL ub = nexp
    { {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=Default (Num 1)} }
-  | x = ident IN lb = nexp UNTIL ub = nexp AND STEP PLUS n = nexp
-   { {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=Default n} }
-  | x = ident IN lb = nexp UNTIL ub = nexp AND STEP MULT TWO
-   { {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=StepName "pow2"} }
-  | x = ident IN lb = nexp UNTIL ub = nexp AND STEP MULT y = UINT
-   { {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=StepName ("pow" ^ (string_of_int y))} }
+  | x = ident IN lb = nexp UNTIL ub = nexp SEMICOLON ident PLUS n = nexp
+   { (*if x != z then raise Error else*)
+     {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=Default n} }
+  | x = ident IN lb = nexp UNTIL ub = nexp SEMICOLON ident MULT TWO
+   { (*if x != z then raise Error else*)
+     {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=StepName "pow2"} }
+  | x = ident IN lb = nexp UNTIL ub = nexp SEMICOLON ident MULT y = UINT
+   { (*if x != z then raise Error else*)
+    {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=StepName ("pow" ^ (string_of_int y))} }
 
 expr:
   | SYNC { Sync }

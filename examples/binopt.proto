@@ -21,7 +21,7 @@ where
 
 ro randArray[bid];
 sync;
-foreach (j in 1 .. numSteps + 1 && step * 2) {
+foreach (j in 1 .. numSteps + 1 ; j * 2) {
     if (tid < j) {
         rw callB[bid][tid];
         ro callA[bid][tid];

@@ -40,13 +40,12 @@ where
   # That is: no two threads have the same tid.
   distinct [tid];
 
-foreach (index in tid .. SUM_BUFFER_SIZE) {
-  if ( (index - tid) % blockDim_x == 0)
+foreach (index in tid .. SUM_BUFFER_SIZE; index + blockDim_x) {
     ro sumBuffer[index];
 }
 
 rw tempBuffer[tid];
-foreach (i in 1 .. WORK_GROUP_SIZE && step * 2) {
+foreach (i in 1 .. WORK_GROUP_SIZE; i * 2) {
     sync;
     if (tid%(i*2) == 0 && tid+i < WORK_GROUP_SIZE) {
         ro tempBuffer[tid + i];

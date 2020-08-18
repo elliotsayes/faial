@@ -7,7 +7,7 @@ const global count;
 # With `foreach` we declare a range of values from 0 until 99 bound to `idx`.
 # The asserts inside a foreach block restrict the possible values of `idx`.
 
-foreach (idx in 0 .. count && step + 2) {
+foreach (idx in 0 .. count; idx + 2) {
     # Multiple threads will access position `idx`, hence there is a data-race
     rw x[idx];
     # The synchronization does nothing to solve the race.

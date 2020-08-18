@@ -59,7 +59,6 @@ rule read = parse
   | "where" { WHERE }
   | "let" { LET }
   | "=" { ASSIGN }
-  | "step" { STEP }
   | "foreach" { FOREACH }
   | "if" { IF }
   | "else" { ELSE }

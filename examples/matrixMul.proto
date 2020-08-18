@@ -50,7 +50,7 @@ let aStep = block_size;
 let bBegin = block_size * bx;
 let bStep = block_size * wB;
 
-foreach (a in aBegin .. aEnd + 1 && step + aStep) {
+foreach (a in aBegin .. aEnd + 1; a + aStep) {
     rw As[by][bx][ty][tx];
     rw Bs[by][bx][ty][tx];
     if (b >= bBegin && (b - bBegin) % bStep == 0 ) {
