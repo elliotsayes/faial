@@ -146,18 +146,6 @@ let rec reify (p:stmt) : prog =
   | Block (i::l) -> reify i @ reify (Block l)
   | If (b,p,q) -> [Cond (b,reify p);Cond(BNot b, reify q)]
   | For (r, p) ->
-    (*
-    let index = Var r.range_var in
-    let pre:bexp = begin match r.range_step with
-      | Default ->
-          b_and
-            (*  assert (index - INIT) % STRIDE == 0; *)
-            (n_eq (n_mod (n_minus index r.range_expr_start) r.range_expr_step) (Num 0))
-            (* ensure that the bound is correct *)
-            (n_gt r.range_expr_step (Num 0))
-      | Pred name ->
-          Pred (name, Var x)
-    end in*)
     [Loop (r, reify p)]
 
 let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
