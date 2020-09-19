@@ -118,7 +118,7 @@ let location_title loc =
 let make_bold =
    ANSITerminal.sprintf [ANSITerminal.Bold] "%s"
 
-let location_print_title outx loc =
+let location_print_title outx (loc:location) : unit =
   let underline offset count : string =
     (String.make offset ' ') ^ (String.make count '^' |> make_bold)
   in
@@ -132,3 +132,12 @@ let location_print_title outx loc =
   Printf.fprintf outx "%s\n" right;
   Printf.fprintf outx "%s\n" (underline hl.range_offset hl.range_count)
 
+let print_errs (errs:(string * location) list) : bool =
+  let print_err (msg,loc:string * location) =
+    Printf.printf "%a: %s" location_print_start loc msg;
+    try
+      (Printf.printf "\n\n%a" location_print_title loc)
+    with Sys_error _ -> ()
+  in
+  List.iter print_err errs;
+  List.length errs > 0

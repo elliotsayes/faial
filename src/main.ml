@@ -48,39 +48,9 @@ let json_parse ic =
       |> Parsejs.parse_kernels.run
       |> List.map Imp.compile
   )
-(*
-let print_kernel (k:prog kernel) : unit =
-  let open Serialize in
-  print_endline "; proto";
-  kernel_ser prog_ser k |> s_print
-*)
+
 
 type command = ALang | PLang | CLang | HLang | BLang | Sat | Typecheck
-
-let print_errs errs =
-  let open Typecheck in
-  let print_err msg loc =
-    Printf.printf "%a: %s" Sourceloc.location_print_start loc msg;
-    try
-      (Printf.printf "%a\n" Sourceloc.location_print_title loc)
-    with Sys_error _ -> ()
-  in
-  let print_vars msg l =
-    List.iter (fun x ->
-      print_err (msg ^ " '" ^ x.var_name ^ "'\n") x.var_loc
-    ) l
-  in
-  List.iter (fun x ->
-    match x with
-    | DuplicateLocs l -> print_vars "Duplicate location" l
-    | DuplicateVars l -> print_vars "Duplicate variable" l
-    | UndefinedLocs l -> print_vars "Undefined location" l
-    | UndefinedVars l -> print_vars "Undefined variable" l
-  )
-  errs;
-  if List.length errs > 0 then
-    exit (-1)
-  else ()
 
 let main_t =
   let use_bv =
@@ -135,7 +105,11 @@ let main_t =
           [v2_parse fname ic]
       in
       List.iter (fun k ->
-        Typecheck.typecheck_kernel k |> print_errs;
+        if Typecheck.typecheck_kernel k |> Sourceloc.print_errs then
+          exit (-1)
+        else
+          ()
+        ;
         let k = Subst.replace_constants sets k in
         halt_when (cmd = Typecheck) Serialize.PPrint.print_k k;
         let ks = Phasealign.translate k in

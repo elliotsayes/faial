@@ -1,0 +1,16 @@
+# A single-line comment
+#|
+
+This would be a multi-line comment.
+
+|#
+
+shared x;
+
+# We declare a thread-global constant
+const local tid where distinct [tid];
+
+foreach (i in 0..tid) {
+    rw x[i];
+    sync;
+}

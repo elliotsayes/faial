@@ -8,7 +8,7 @@ type type_error =
 | UndefinedLocs of variable list
 | UndefinedVars of variable list
 
-let typecheck_kernel (k:prog kernel) =
+let typecheck_kernel (k:prog kernel) : (string * Sourceloc.location) list =
   let handle ctr errs l =
     if not (VarSet.is_empty l)
     then (VarSet.elements l |> ctr)::errs
@@ -40,4 +40,14 @@ let typecheck_kernel (k:prog kernel) =
   let errs = dup_vars all_vars (fun l -> DuplicateVars l) errs in
   let errs = undef_vars (VarSet.of_list all_vars) k.kernel_code errs in
   let errs = undef_locs k.kernel_locations k.kernel_code errs in
-  errs
+  let on_msg msg =
+    List.map (fun x -> (msg ^ " '" ^ x.var_name ^ "'", x.var_loc))
+  in
+  errs |>
+  List.concat_map (fun es ->
+    match es with
+    | DuplicateLocs l -> on_msg "Duplicate location" l
+    | DuplicateVars l -> on_msg "Duplicate variable" l
+    | UndefinedLocs l -> on_msg "Undefined location" l
+    | UndefinedVars l -> on_msg "Undefined variable" l
+  )
