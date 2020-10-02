@@ -168,7 +168,7 @@ let translate (k: Proto.prog kernel) : p_kernel Stream.t =
     let errs = free_names_phase p VarSet.empty
       |> VarSet.elements
       |> List.map (fun (x:variable) ->
-        "Cannot use thread-local variable '" ^ x.var_name ^ "' in synchronized control flow",
+        "Barrier divergence error: cannot use thread-local variable '" ^ x.var_name ^ "' in synchronized control flow",
           x.
         var_loc
       )

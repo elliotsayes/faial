@@ -4,17 +4,28 @@ import argparse
 import shlex
 import sys
 import json
+from itertools import islice
 
-def read_lines(fp, count, buffer_size=512):
-  contents = ""
-  is_final = False
-  while count > 0 and not is_final:
-    data = fp.read(buffer_size).decode("utf8", "ignore")
-    contents += data
-    is_final = len(data) != buffer_size
-    count -= data.count("\n")
-  contents = contents.split("\n")
-  return contents if len(contents) < count else contents[:count]
+def take(n, iterable):
+  "Return first n items of the iterable as a list"
+  return list(islice(iterable, n))
+
+def read_lines(fp, n):
+  lines = take(n, fp)
+  return lines if len(lines) == n else None
+
+#  lines = list(get_lines(fp))
+
+# def read_lines(fp, count, buffer_size=512):
+#   contents = ""
+#   is_final = False
+#   while count > 0 and not is_final:
+#     data = fp.read(buffer_size).decode("utf8", "ignore")
+#     contents += data
+#     is_final = len(data) != buffer_size
+#     count -= data.count("\n")
+#   contents = contents.split("\n")
+#   return contents if len(contents) < count else contents[:count]
 
 
 def get_lines(fp):
@@ -59,6 +70,10 @@ def cleanup_args(args):
       result[name + "." + field] = data
   return result
 
+def take(n, iterable):
+  "Return first n items of the iterable as a list"
+  return list(islice(iterable, n))
+
 def parse(fp):
   lines = list(get_lines(fp))
   if len(lines) != 2:
@@ -75,7 +90,7 @@ def serialize(data):
 
 def main():
   for fname in sys.argv[1:]:
-    with open(fname, "rb") as fp:
+    with open(fname) as fp:
       data = parse(fp)
       if data is not None:
         print(serialize(data[1]))

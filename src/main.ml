@@ -104,6 +104,10 @@ let main_t =
         else
           [v2_parse fname ic]
       in
+      if List.length ks = 0 then begin
+        print_endline "Warning: loaded 0 kernels";
+        exit (0)
+      end else
       List.iter (fun k ->
         if Typecheck.typecheck_kernel k |> Sourceloc.print_errs then
           exit (-1)

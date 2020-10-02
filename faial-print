@@ -98,7 +98,11 @@ def show(data):
 if __name__ == '__main__':
     import sys
     import sexpdata
-    data = "(" + sys.stdin.read() + ")"
+    if len(sys.argv) == 1:
+        fp = sys.stdin
+    else:
+        fp = open(sys.argv[1])
+    data = "(" + fp.read() + ")"
     show(sexpdata.loads(data, nil=None, true=None, false=None))
     #for data in handle(sys.stdin.read()):
     #    print(repr(sexpdata.loads(data)))

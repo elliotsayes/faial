@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+from subprocess import check_call, check_output, CalledProcessError
+from tempfile import NamedTemporaryFile
+import argparse
+import sys
+import subprocess
+from pathlib import Path
+
+TYPES = ("cu", "proto")
+
+def KeyVal(data):
+    try:
+        return data.split("=", 2)
+    except ValueError as ex:
+        raise argparse.ArgumentError(self, f"could not parse argument key value, expected key=value, got: {data!r}")
+
+class App:
+    def __init__(self, args):
+        self.args = args
+        self.args.variables = dict(self.args.variables)
+        self.extra_variables = []
+
+    def call(self, *args, output_filename=None):
+        print("#", " ".join(args))
+        try:
+            data = check_output(args, stderr=subprocess.STDOUT)
+            if output_filename is not None:
+                with open(output_filename, "wb") as fp:
+                    fp.write(data)
+            return data
+        except CalledProcessError as err:
+            print("Error:", err, file=sys.stderr)
+            print("*" * 80, file=sys.stderr)
+            self.abort(err.output.decode("utf-8"))
+
+    def abort(self, message):
+        print(message, file=sys.stderr)
+        sys.exit(255)
+
+    def parse(self, filename_in, filename_out):
+        # Parse extra variables
+        if not Path(filename_in).exists():
+            self.abort(f"Error: file not found: {filename_in}")
+        self.extra_variables = check_output(["faial-gv", filename_in]).decode("utf-8").strip().split(" ")
+        self.call(self.args.cu_to_json, "-o="+filename_out, filename_in)
+        if self.args.parse_only:
+            print(open(filename_out).read())
+            sys.exit(0)
+
+    def infer(self, filename_in, filename_out):
+        out_ty = "yaml" if self.args.infer_only else "json"
+        include_provenance = out_ty == "json"
+        args = [self.args.faial_infer, filename_in, "-t", out_ty , "-o", filename_out]
+        if include_provenance:
+            args.append("--provenance")
+        self.call(*args)
+        if self.args.infer_only:
+            print(open(filename_out).read())
+            sys.exit(0)
+
+    def analyze(self, filename_in, filename_out):
+        main = Path(__file__).parent / "main"
+        kv = [str(main.resolve()), filename_in]
+        if self.args.type == "cu":
+            kv.append("--json")
+        if self.args.analyze_only is not None:
+            kv.append(f"-{self.args.analyze_only}")
+        for (k,v) in self.args.variables.items():
+            kv.append(f"-D{k}={v}")
+        kv.extend(self.extra_variables)
+        data = self.call(*kv, output_filename=filename_out)
+        if self.args.analyze_only is not None:
+            print(open(filename_out).read())
+            sys.exit(0)
+
+    def solve(self, filename_in, filename_out):
+        print("#", " ".join(["z3", filename_in]))
+        data = subprocess.run(["z3", filename_in], stdout=subprocess.PIPE).stdout
+        with open(filename_out, "wb") as fp:
+            fp.write(data)
+        if self.args.solve_only:
+            print(open(filename_out).read())
+            sys.exit(0)
+
+
+    def pretty_print(self, filename_in):
+        data = self.call("faial-print", filename_in)
+        print(data.decode("utf-8"))
+
+    def run(self):
+        with NamedTemporaryFile(mode="w", suffix=".json", delete=True) as t1, \
+             NamedTemporaryFile(mode="w", suffix=".json", delete=True) as t2, \
+             NamedTemporaryFile(mode="w", suffix=".smt2", delete=True) as t3, \
+             NamedTemporaryFile(mode="w", suffix=".smt2", delete=True) as t4:
+            if self.args.type == "auto":
+                fname = self.args.filename.lower()
+                known_exts = [".cu", ".c", ".cpp", ".h", ".hpp"]
+                for ext in known_exts:
+                    if fname.endswith(ext):
+                        self.args.type = "cu"
+                        break
+                if self.args.type == "auto":
+                    self.args.type = "proto"
+
+            if self.args.type == "cu":
+                self.parse(self.args.filename, t1.name)
+                self.infer(t1.name, t2.name)
+            t2_name = self.args.filename if self.args.type == "proto" else t2.name
+            self.analyze(t2_name, t3.name)
+            self.solve(t3.name, t4.name)
+            self.pretty_print(t4.name)
+
+    @classmethod
+    def make(cls):
+        parser = argparse.ArgumentParser()
+        parser.add_argument("filename")
+        parser.add_argument("--solve-only", "-S", action="store_true", help="Runs: parse; infer; analyze; solve")
+        parser.add_argument("--parse-only", "-P", action="store_true", help="Runs: parse")
+        parser.add_argument("--infer-only", "-I", action="store_true", help="Runs: parse; infer")
+        parser.add_argument("-D", dest="variables", type=KeyVal, default=[], help="Replaces a variable by a value in the code. Format key=value. Automatically infers GPUVerify key-val pairs.")
+        parser.add_argument("-A", "--analyze-only", dest="analyze_only", type=int, help="Runs: parse; infer; analyze. Expects the number of stages of the analysis pipeline.")
+        parser.add_argument("--type", "-t", default="auto", choices=TYPES, help="Default: it will try to guess the type according to the extension.")
+        parser.add_argument("--cu-to-json", default="cu-to-json")
+        parser.add_argument("--faial-infer", default="faial-infer")
+        return cls(parser.parse_args())
+
+
+app = App.make()
+app.run()
+
+#FILE="$1"
+#shift
+#cu-to-json "$FILE" | faial-infer - -t json | main --json /dev/stdin $(faial-gv "$FILE") "$@" -0
