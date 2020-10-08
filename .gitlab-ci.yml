@@ -18,3 +18,8 @@ build-dist:
   artifacts:
     paths:
       - main
+      - faial
+      - faial-gv
+      - faial-print
+      - README.md
+      - LICENSE
