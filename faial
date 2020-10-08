@@ -21,8 +21,12 @@ class App:
         self.extra_variables = []
         self.faial_gv = (Path(__file__).parent / "faial-gv").resolve()
 
+    def log(self, message):
+        #print("#", message)
+        pass
+
     def call(self, *args, output_filename=None):
-        print("#", " ".join(args))
+        self.log(" ".join(args))
         try:
             data = check_output(args, stderr=subprocess.STDOUT)
             if output_filename is not None:
@@ -64,7 +68,7 @@ class App:
             sys.exit(0)
 
     def analyze(self, filename_in, filename_out):
-        main = Path(__file__).parent / "main"
+        main = Path(__file__).parent / "faial-bin"
         kv = [str(main.resolve()), filename_in]
         if self.args.type == "cu":
             kv.append("--json")
@@ -79,7 +83,7 @@ class App:
             sys.exit(0)
 
     def solve(self, filename_in, filename_out):
-        print("#", " ".join(["z3", filename_in]))
+        self.log(" ".join(["z3", filename_in]))
         data = subprocess.run(["z3", filename_in], stdout=subprocess.PIPE).stdout
         with open(filename_out, "wb") as fp:
             fp.write(data)
@@ -89,7 +93,10 @@ class App:
 
 
     def pretty_print(self, filename_in):
-        data = self.call("faial-print", filename_in)
+        args = ["faial-print", filename_in]
+        if self.args.expect_fail:
+            args.append("--expect-race")
+        data = self.call(*args)
         print(data.decode("utf-8"))
 
     def run(self):
@@ -127,6 +134,7 @@ class App:
         parser.add_argument("--type", "-t", default="auto", choices=TYPES, help="Default: it will try to guess the type according to the extension.")
         parser.add_argument("--cu-to-json", default="cu-to-json")
         parser.add_argument("--faial-infer", default="faial-infer")
+        parser.add_argument("--expect-fail", action="store_true")
         return cls(parser.parse_args())
 
 

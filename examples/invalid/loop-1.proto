@@ -7,5 +7,5 @@ rw x[tid];
 foreach (x in 0 .. t) {
     sync;
 }
-# This only races when t = 0
+# This only races when t = 0, which we assume that never happens
 rw x[tid + 1];

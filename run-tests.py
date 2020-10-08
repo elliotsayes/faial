@@ -130,7 +130,7 @@ class Cmd:
 
 
 def faial(x):
-    return Cmd("./main", str(x))
+    return Cmd("./faial-bin", str(x))
 
 def z3(timeout=3000):
     return IgnoreRet(Cmd("z3",  "-in", "-t:%d" % timeout))

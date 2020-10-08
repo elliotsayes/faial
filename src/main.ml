@@ -58,16 +58,6 @@ let main_t =
     Arg.(value & flag & info ["b"; "bv"] ~doc)
   in
 
-  let skip_po =
-    let doc = "Skip proof obligations." in
-    Arg.(value & flag & info ["o"; "proof-oblig"] ~doc)
-  in
-
-  let skip_drf =
-    let doc = "Skip DRF proof." in
-    Arg.(value & flag & info ["d"; "drf"] ~doc)
-  in
-
   let use_json =
     let doc = "Parse a JSON file" in
     Arg.(value & flag & info ["json"] ~doc)
@@ -154,7 +144,7 @@ let main_t =
     let sat = Sat, Arg.info ["6"; "sat"] ~doc in
     Arg.(last & vflag_all [Sat] [tc; k1; k2; k3; k4; k5; sat])
   in
-  Term.(const do_main $ get_cmd $ get_fname $ use_bv $ skip_po $ skip_drf $ use_json $ decls)
+  Term.(const do_main $ get_cmd $ get_fname $ use_bv $ use_json $ decls)
 
 let info =
   let doc = "Verifies a GPU contract" in

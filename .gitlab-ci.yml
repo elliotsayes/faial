@@ -17,7 +17,7 @@ build-dist:
 
   artifacts:
     paths:
-      - main
+      - faial-bin
       - faial
       - faial-gv
       - faial-print
