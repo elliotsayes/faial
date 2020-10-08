@@ -6,13 +6,19 @@ void rep(char x[], int y, FILE *file);
 
 int main(int argc, char *argv[]) {
 	// use file names vecAdd.cu for no data race kernel.
-	FILE *out_file = fopen("vectorAdd.cu", "w");
+	char norace_filename[31] = "vectorAdd";
+	strcat (norace_filename, argv[1]);
+	strcat (norace_filename, ".cu");
+	FILE *out_file = fopen(norace_filename, "w");
 	if (out_file == NULL) {
 		printf("ERROR IN FILE");
 	}
 
 	// use file names vecAdd-race.cu for data race kernels
-	FILE *race_file = fopen("vectorAdd-race.cu", "w");
+	char race_filename[31] = "vectorAdd";
+	strcat (race_filename, argv[1]);
+	strcat (race_filename, "-race.cu");
+	FILE *race_file = fopen(race_filename, "w");
 	if (race_file == NULL) {
 		printf("ERROR IN FILE");
 	}
@@ -124,7 +130,7 @@ int main(int argc, char *argv[]) {
 		fprintf(race_file, "\n}\n");
 
 	}
-	
+
 	return 0;
 }
 
