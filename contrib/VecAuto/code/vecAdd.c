@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
 		fprintf(out_file, "{\n");
 		for (int i = 1; i <= n; i++) {
 			rep(tab, i, out_file);
-			fprintf(out_file, "(for int %c%d = 0; %c%d < %d; %c%d++)\n", 'i', nest, 'i', nest, N, 'i', nest);
+			fprintf(out_file, "for (int %c%d = 0; %c%d < %d; %c%d++)\n", 'i', nest, 'i', nest, N, 'i', nest);
 			rep(tab, i, out_file);
 			fprintf(out_file, "{\n");
 			rep(tab, i+1, out_file);
@@ -59,7 +59,7 @@ int main(int argc, char *argv[]) {
 		fprintf(race_file, "{\n");
 		for (int i = 1; i <= n; i++) {
 			rep(tab, i, race_file);
-			fprintf(race_file, "(for int %c%d = 0; %c%d < %d; %c%d++)\n", 'i', nest, 'i', nest, N, 'i', nest);
+			fprintf(race_file, "for (int %c%d = 0; %c%d < %d; %c%d++)\n", 'i', nest, 'i', nest, N, 'i', nest);
 			rep(tab, i, race_file);
 			fprintf(race_file, "{\n");
 			rep(tab, i+1, race_file);
@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
 		fprintf(out_file, "{\n");
 		for (int i = 1; i <= n; i++) {
 			rep(tab, 1, out_file);
-			fprintf(out_file, "(for int %c%d = 0; %c%d < %d; %c%d++)\n", 'i', nest, 'i', nest, N, 'i', nest);
+			fprintf(out_file, "for (int %c%d = 0; %c%d < %d; %c%d++)\n", 'i', nest, 'i', nest, N, 'i', nest);
 			rep(tab, 1, out_file);
 			fprintf(out_file, "{\n");
 			rep(tab, 2, out_file);
@@ -108,7 +108,7 @@ int main(int argc, char *argv[]) {
 		fprintf(race_file, "{\n");
 		for (int i = 1; i <= n; i++) {
 			rep(tab, 2, race_file);
-			fprintf(race_file, "(for int %c%d = 0; %c%d < %d; %c%d++)\n", 'i', nest, 'i', nest, N, 'i', nest);
+			fprintf(race_file, "for (int %c%d = 0; %c%d < %d; %c%d++)\n", 'i', nest, 'i', nest, N, 'i', nest);
 			rep(tab, 2, race_file);
 			fprintf(race_file, "{\n");
 			rep(tab, 2, race_file);
