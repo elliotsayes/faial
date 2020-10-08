@@ -1,5 +1,5 @@
 ---
-image: registry.gitlab.com/cogumbreiro/umb-svl/faial/faial-dev
+image: registry.gitlab.com/umb-svl/faial/faial-dev
 
 test:
   script:
