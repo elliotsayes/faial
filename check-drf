@@ -1,4 +1,0 @@
-#!/bin/bash
-FILE="$1"
-shift
-cu-to-json "$FILE" | faial-infer - -t json | main --json /dev/stdin $(faial-gv "$FILE") "$@"

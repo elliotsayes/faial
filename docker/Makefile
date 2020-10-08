@@ -1,16 +1,14 @@
-DOCKER = time docker
-IMAGE = registry.gitlab.com/cogumbreiro/faial/faial-dev
-VERSION = 1
-
+DOCKER_COMPOSE = docker-compose
 all: build
 
 build:
-	$(DOCKER) build -f docker/Dockerfile -t $(IMAGE):$(VERSION) .
+	$(DOCKER_COMPOSE) build
 
 run:
-	$(DOCKER) run -v $(PWD):/out --env VERSION=$(VERSION) -it --rm $(IMAGE):$(VERSION)
+	$(DOCKER_COMPOSE) run faial
 
 push:
-	$(DOCKER) push $(IMAGE):$(VERSION)
+	$(DOCKER_COMPOSE) create
+	$(DOCKER_COMPOSE) push
 
 .PHONY: build run test all
