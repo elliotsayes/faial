@@ -156,7 +156,7 @@ let inline_locals (vars:VarSet.t) (pre:bexp) : p_phase -> p_phase =
   (* Add pre-conditions and global variables *)
   phase_map (fun c -> [Cond (pre, c)] |> add_locals)
 
-let translate (k: Proto.prog kernel) : p_kernel Stream.t =
+let translate (k: Proto.prog kernel) (expect_typing_fail:bool) : p_kernel Stream.t =
   prog_to_s_prog k.kernel_code
   |> Streamutil.map (fun p ->
     let p : p_phase = p
@@ -174,7 +174,7 @@ let translate (k: Proto.prog kernel) : p_kernel Stream.t =
       )
     in
     if Sourceloc.print_errs errs then
-      exit (-1)
+      exit (if expect_typing_fail then 0 else -1)
     else
       ()
     ;

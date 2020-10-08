@@ -70,6 +70,8 @@ class App:
     def analyze(self, filename_in, filename_out):
         main = Path(__file__).parent / "faial-bin"
         kv = [str(main.resolve()), filename_in]
+        if self.args.expect_invalid:
+            kv.append("--expect-invalid")
         if self.args.type == "cu":
             kv.append("--json")
         if self.args.analyze_only is not None:
@@ -78,7 +80,7 @@ class App:
             kv.append(f"-D{k}={v}")
         kv.extend(self.extra_variables)
         data = self.call(*kv, output_filename=filename_out)
-        if self.args.analyze_only is not None:
+        if self.args.analyze_only is not None or self.args.expect_invalid:
             print(open(filename_out).read())
             sys.exit(0)
 
@@ -94,7 +96,7 @@ class App:
 
     def pretty_print(self, filename_in):
         args = ["faial-print", filename_in]
-        if self.args.expect_fail:
+        if self.args.expect_race:
             args.append("--expect-race")
         data = self.call(*args)
         print(data.decode("utf-8"))
@@ -134,7 +136,8 @@ class App:
         parser.add_argument("--type", "-t", default="auto", choices=TYPES, help="Default: it will try to guess the type according to the extension.")
         parser.add_argument("--cu-to-json", default="cu-to-json")
         parser.add_argument("--faial-infer", default="faial-infer")
-        parser.add_argument("--expect-fail", action="store_true")
+        parser.add_argument("--expect-race", action="store_true")
+        parser.add_argument("--expect-invalid", action="store_true")
         return cls(parser.parse_args())
 
 
