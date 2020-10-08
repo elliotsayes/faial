@@ -125,7 +125,9 @@ let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =
   let kvs = List.map (fun (x,n) -> x, Num n) kvs in
   let keys = List.split kvs |> fst |> List.map var_make |> VarSet.of_list in
   let kvs = SubstAssoc.make kvs in
-  { k with
+  {
+    kernel_locations = k.kernel_locations;
+    kernel_pre = ReplaceAssoc.b_subst kvs k.kernel_pre;
     kernel_code = ReplaceAssoc.prog_subst kvs k.kernel_code;
     kernel_global_variables = VarSet.diff k.kernel_global_variables keys;
     kernel_local_variables = VarSet.diff k.kernel_local_variables keys;
