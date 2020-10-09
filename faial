@@ -14,12 +14,18 @@ def KeyVal(data):
     except ValueError as ex:
         raise argparse.ArgumentError(self, f"could not parse argument key value, expected key=value, got: {data!r}")
 
+def get_exe(name):
+    return str((Path(__file__).parent / name).resolve())
+
 class App:
     def __init__(self, args):
         self.args = args
         self.args.variables = dict(self.args.variables)
         self.extra_variables = []
-        self.faial_gv = (Path(__file__).parent / "faial-gv").resolve()
+        self.faial_gv = get_exe("faial-gv")
+        self.faial_print = get_exe("faial-print")
+        self.faial_bin = get_exe("faial-bin")
+
 
     def log(self, message):
         #print("#", message)
@@ -68,8 +74,7 @@ class App:
             sys.exit(0)
 
     def analyze(self, filename_in, filename_out):
-        main = Path(__file__).parent / "faial-bin"
-        kv = [str(main.resolve()), filename_in]
+        kv = [self.faial_bin, filename_in]
         if self.args.expect_invalid:
             kv.append("--expect-invalid")
         if self.args.type == "cu":
@@ -95,7 +100,7 @@ class App:
 
 
     def pretty_print(self, filename_in):
-        args = ["faial-print", filename_in]
+        args = [self.faial_print, filename_in]
         if self.args.expect_race:
             args.append("--expect-race")
         data = self.call(*args)
