@@ -61,61 +61,17 @@ def each_test(dir, f, verbose=False):
         result = progress_call(f, x, verbose=verbose)
         if result is not None:
             errs.append((x,result))
-    print("")
+    print()
+
     if len(errs) > 0:
-        print("Errors:")
+        print()
+
     for x,msg in errs:
-        if verbose:
-            print()
-            print(str(x)+":")
-            print(msg.stdout.decode("utf-8"))
-        else:
-            print("  ", x)
+        print("~" * 30, "FAILURE:", str(x), "~" * 30)
+        print()
+        print(msg.stdout.decode("utf-8"))
 
     return errs
-
-class IgnoreRet:
-    def __init__(self, cmd):
-        self.cmd = cmd
-
-    def run(self, stdin=None):
-        result = self.cmd.run(stdin=stdin)
-        result.returncode = 0
-        return result
-
-    def __or__(self, other):
-        return self.cmd | other
-
-class Py:
-    def __init__(self, func):
-        self.func = func
-
-    def run(self, stdin=None):
-        return self.func(stdin=stdin)
-
-    def __or__(self, other):
-        return Pipe(self, other)
-
-class Pipe:
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
-
-    def __or__(self, other):
-        return Pipe(self, other)
-
-    def run(self, stdin=None):
-        result1 = self.left.run(stdin=stdin)
-        if result1.returncode != 0:
-            return result1
-        result2 = self.right.run(stdin=result1.stdout)
-        return CompletedProcess(
-            args = result2.args,
-            stderr = result1.stderr + result2.stderr,
-            stdout = result2.stdout,
-            returncode = result2.returncode
-        )
-
 class Cmd:
     def __init__(self, *args):
         self.args = args
@@ -124,11 +80,13 @@ class Cmd:
         kwargs = {}
         if stdin is not None:
             kwargs["input"] = stdin
-        return subprocess.run(self.args, capture_output=True, **kwargs)
-
-    def __or__(self, other):
-        return Pipe(self, other)
-
+        return subprocess.run(
+            self.args,
+            stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            #capture_output=True,
+            **kwargs
+        )
 
 class Mode(Enum):
     OK = 0
@@ -146,18 +104,8 @@ def faial(mode, faial_exe="./faial"):
             args.append("--expect-invalid")
         else:
             raise ValueError(mode)
-        return Cmd(*args) | ensure_ok()
+        return Cmd(*args) # | ensure_ok()
     return run
-
-def ensure_ok():
-    def handle(stdin):
-        return CompletedProcess(
-          stdout = stdin,
-          stderr = b'',
-          returncode=0,
-          args = [],
-        )
-    return Py(handle)
 
 def test(label, path, cmd, verbose=False):
     end = "\n" if verbose else ""
