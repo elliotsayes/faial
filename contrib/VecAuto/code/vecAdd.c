@@ -113,9 +113,15 @@ int main(int argc, char *argv[]) {
 		fprintf(race_file, "\n__global__ void vectorAdd(float *out, float *a, float *b)\n");
 		fprintf(race_file, "{\n");
 		for (int i = 1; i <= n; i++) {
+<<<<<<< HEAD
 			rep(tab, 2, race_file);
 			fprintf(race_file, "for (int %c%d = 0; %c%d < %d; %c%d++)\n", 'i', nest, 'i', nest, N, 'i', nest);
 			rep(tab, 2, race_file);
+=======
+			rep(tab, 1, race_file);
+			fprintf(race_file, "for (int %c%d = 0; %c%d < %d; %c%d++)\n", 'i', nest, 'i', nest, N, 'i', nest);
+			rep(tab, 1, race_file);
+>>>>>>> e719df20daa4d7c5f429d59499b8aab3fe2b746d
 			fprintf(race_file, "{\n");
 			rep(tab, 2, race_file);
         	fprintf(race_file, "out[threadIdx.x + %c%d] = a[%c%d] + b[%c%d];\n", 'i', nest, 'i', nest, 'i', nest);

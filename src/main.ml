@@ -58,14 +58,9 @@ let main_t =
     Arg.(value & flag & info ["b"; "bv"] ~doc)
   in
 
-  let skip_po =
-    let doc = "Skip proof obligations." in
-    Arg.(value & flag & info ["o"; "proof-oblig"] ~doc)
-  in
-
-  let skip_drf =
-    let doc = "Skip DRF proof." in
-    Arg.(value & flag & info ["d"; "drf"] ~doc)
+  let expect_typefail =
+    let doc = "Expect typechecking failure." in
+    Arg.(value & flag & info ["expect-invalid"] ~doc)
   in
 
   let use_json =
@@ -83,12 +78,12 @@ let main_t =
     Arg.(required & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
   in
 
-  let halt_when b f k : unit =
-    if b then (f k; raise Exit)
-    else ()
-  in
+  let do_main cmd fname use_bv use_json expect_typing_fail sets =
+    let halt_when b f k : unit =
+      if b then (f k; raise Exit)
+      else ()
+    in
 
-  let do_main cmd fname use_bv skip_po skip_drf use_json sets =
     let ic = open_in fname in
     let on_kv x =
       let kv = String.split_on_char '=' x in
@@ -104,9 +99,13 @@ let main_t =
         else
           [v2_parse fname ic]
       in
+      if List.length ks = 0 then begin
+        print_endline "Warning: loaded 0 kernels";
+        exit (0)
+      end else
       List.iter (fun k ->
         if Typecheck.typecheck_kernel k |> Sourceloc.print_errs then
-          exit (-1)
+          exit (if expect_typing_fail then 0 else -1)
         else
           ()
         ;
@@ -114,7 +113,7 @@ let main_t =
         halt_when (cmd = Typecheck) Serialize.PPrint.print_k k;
         let ks = Phasealign.translate k in
         halt_when (cmd = ALang) Phasealign.print_kernels ks;
-        let ks = Phasesplit.translate k in
+        let ks = Phasesplit.translate k expect_typing_fail in
         halt_when (cmd = PLang) Phasesplit.print_kernels ks;
         let ks = Locsplit.translate ks in
         halt_when (cmd = CLang) Locsplit.print_kernels ks;
@@ -123,10 +122,15 @@ let main_t =
         let ks = Symbexp.translate ks in
         halt_when (cmd = BLang) Symbexp.print_kernels ks;
         let ks = Gensmtlib2.translate ks in
-        Gensmtlib2.print ks
+        if expect_typing_fail then exit(-1)
+        else Gensmtlib2.print ks
       ) ks
     with
-      | Exit -> ()
+      | Exit ->
+        begin
+          if expect_typing_fail then exit(-1)
+          else ()
+        end
       | e ->
       print_endline "error!";
       close_in_noerr ic;
@@ -150,11 +154,11 @@ let main_t =
     let sat = Sat, Arg.info ["6"; "sat"] ~doc in
     Arg.(last & vflag_all [Sat] [tc; k1; k2; k3; k4; k5; sat])
   in
-  Term.(const do_main $ get_cmd $ get_fname $ use_bv $ skip_po $ skip_drf $ use_json $ decls)
+  Term.(const do_main $ get_cmd $ get_fname $ use_bv $ use_json $ expect_typefail $ decls)
 
 let info =
   let doc = "Verifies a GPU contract" in
-  Term.info "main" ~doc ~exits:Term.default_exits
+  Term.info "faial-bin" ~doc ~exits:Term.default_exits
 
 
 

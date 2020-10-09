@@ -5,6 +5,7 @@ import sys
 import shlex
 import os
 import sexpdata
+from enum import Enum
 
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -60,61 +61,17 @@ def each_test(dir, f, verbose=False):
         result = progress_call(f, x, verbose=verbose)
         if result is not None:
             errs.append((x,result))
-    print("")
+    print()
+
     if len(errs) > 0:
-        print("Errors:")
+        print()
+
     for x,msg in errs:
-        if verbose:
-            print()
-            print(str(x)+":")
-            print(msg.stdout.decode("utf-8"))
-        else:
-            print("  ", x)
+        print("~" * 30, "FAILURE:", str(x), "~" * 30)
+        print()
+        print(msg.stdout.decode("utf-8"))
 
     return errs
-
-class IgnoreRet:
-    def __init__(self, cmd):
-        self.cmd = cmd
-
-    def run(self, stdin=None):
-        result = self.cmd.run(stdin=stdin)
-        result.returncode = 0
-        return result
-
-    def __or__(self, other):
-        return self.cmd | other
-
-class Py:
-    def __init__(self, func):
-        self.func = func
-
-    def run(self, stdin=None):
-        return self.func(stdin=stdin)
-
-    def __or__(self, other):
-        return Pipe(self, other)
-
-class Pipe:
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
-
-    def __or__(self, other):
-        return Pipe(self, other)
-
-    def run(self, stdin=None):
-        result1 = self.left.run(stdin=stdin)
-        if result1.returncode != 0:
-            return result1
-        result2 = self.right.run(stdin=result1.stdout)
-        return CompletedProcess(
-            args = result2.args,
-            stderr = result1.stderr + result2.stderr,
-            stdout = result2.stdout,
-            returncode = result2.returncode
-        )
-
 class Cmd:
     def __init__(self, *args):
         self.args = args
@@ -123,63 +80,32 @@ class Cmd:
         kwargs = {}
         if stdin is not None:
             kwargs["input"] = stdin
-        return subprocess.run(self.args, capture_output=True, **kwargs)
-
-    def __or__(self, other):
-        return Pipe(self, other)
-
-
-def faial(x):
-    return Cmd("./main", str(x))
-
-def z3(timeout=3000):
-    return IgnoreRet(Cmd("z3",  "-in", "-t:%d" % timeout))
-
-def cvc4(timeout=3000):
-    return IgnoreRet(Cmd("cvc4", "--lang=smtlib", "--incremental-parallel", "--tlimit=%d" % timeout))
-
-
-def parse_smtlib(stdin):
-    data = "(" + stdin.decode("utf-8") + ")"
-    elems = []
-    for idx, row in enumerate(sexpdata.loads(data)):
-        if idx % 2 == 0:
-            elems.append(row.value())
-    return elems
-
-def has_races(elems):
-    for elem in elems:
-        if elem == "sat":
-            return True
-    return False
-
-def is_drf(elems):
-    for elem in elems:
-        if elem != "unsat":
-            return False
-    return True
-
-def ensure_ok():
-    def handle(stdin):
-        elems = parse_smtlib(stdin)
-        return CompletedProcess(
-          stdout = stdin,
-          stderr = b'',
-          returncode=0 if is_drf(elems) else 255,
-          args = [],
+        return subprocess.run(
+            self.args,
+            stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            #capture_output=True,
+            **kwargs
         )
-    return Py(handle)
 
-def ensure_fail():
-    def handle(stdin):
-        elems = parse_smtlib(stdin)
-        return CompletedProcess(
-          stdout = stdin,
-          stderr = b'',
-          returncode=0 if has_races(elems) else 255,
-          args = [],
-        )
-    return Py(handle)
+class Mode(Enum):
+    OK = 0
+    FAIL = 1
+    INVALID = 2
+
+def faial(mode, faial_exe="./faial"):
+    def run(x):
+        args = [faial_exe, str(x)]
+        if mode == Mode.OK:
+            pass
+        elif mode == Mode.FAIL:
+            args.append("--expect-race")
+        elif mode == Mode.INVALID:
+            args.append("--expect-invalid")
+        else:
+            raise ValueError(mode)
+        return Cmd(*args) # | ensure_ok()
+    return run
 
 def test(label, path, cmd, verbose=False):
     end = "\n" if verbose else ""
@@ -192,14 +118,15 @@ def test(label, path, cmd, verbose=False):
           print(e, file=sys.stderr)
           sys.exit(1)
 
-def run_all_tests(solver, verbose=False):
-    test("Parsing OK tests", Path("examples"), faial, verbose=verbose)
-    test("Parsing FAIL tests", Path("examples/fail"), faial, verbose=verbose)
-    test("Solving OK tests", Path("examples"), lambda x: faial(x) | solver | ensure_ok(), verbose=verbose)
-    test("Solving FAIL tests", Path("examples/fail"), lambda x: faial(x) | solver | ensure_fail(), verbose=verbose)
+def run_all_tests(verbose=False):
+    test("OK tests", Path("examples"), faial(Mode.OK), verbose=verbose)
+    test("FAIL tests", Path("examples/fail"), faial(Mode.FAIL), verbose=verbose)
+    test("INVALID tests", Path("examples/invalid"), faial(Mode.INVALID), verbose=verbose)
 
 def run_one_test(file, solver):
-    cmd = faial(file) | solver
+    modes = {"examples": Mode.OK, "fail": Mode.FAIL, "invalid": Mode.INVALID}
+    mode = modes[file.parent.name]
+    cmd = faial(mode)(file)
     result = cmd.run()
     print(result.stdout.decode("utf-8"))
 
@@ -215,20 +142,12 @@ def main():
     parser = argparse.ArgumentParser(description='Runs system tests.')
     parser.add_argument('--timeout', default=3000, type=int, help="Sets the timeout of the solver. Default: %(default)s")
     parser.add_argument('-f', dest="file", metavar='FILE', help='Tries to solve a single file.')
-    parser.add_argument('--cvc4', action="store_false", dest="z3", help="Use CVC4 instead of Z3 (default).")
     parser.add_argument('--verbose', action="store_true", help="Increase verbosity level.")
-    #parser.add_argument('--z3', action='store_true', help='By default uses cvc4, this lets you use z3')
     args = parser.parse_args()
-    if args.z3:
-        solver = z3(timeout=args.timeout)
-    elif which("cvc4"):
-        solver = cvc4(timeout=args.timeout)
-    else:
-        solver = z3(timeout=args.timeout)
     if args.file is None:
-        run_all_tests(solver=solver, verbose=args.verbose)
+        run_all_tests(verbose=args.verbose)
     else:
-        run_one_test(solver=solver, file=Path(args.file))
+        run_one_test(file=Path(args.file))
 
 
 

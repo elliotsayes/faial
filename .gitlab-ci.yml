@@ -1,5 +1,5 @@
 ---
-image: registry.gitlab.com/cogumbreiro/faial/faial-dev:1
+image: registry.gitlab.com/umb-svl/faial/faial-dev
 
 test:
   script:
@@ -17,4 +17,9 @@ build-dist:
 
   artifacts:
     paths:
-      - main
+      - faial-bin
+      - faial
+      - faial-gv
+      - faial-print
+      - README.md
+      - LICENSE

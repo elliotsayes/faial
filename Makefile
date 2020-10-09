@@ -10,7 +10,7 @@ clean:
 
 native: build-tests
 	$(OCB) main.native
-	cp $(BUILD)/main.native main
+	cp $(BUILD)/main.native faial-bin
 
 build-tests:
 #	$(OCB) test_loops.native
