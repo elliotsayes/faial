@@ -7,25 +7,26 @@ import time
 import psutil
 import csv
 import os
+import re
 
 ARGUMENTS =[
     "--time-as-csv",
 ]
 
 def get_time(kernel_dir):
-    kernel_dir = os.getcwd() + kernel_dir[1:-1]
-    kernel_dir.replace("gpuverify-cav2014experiments","edited-gpuverify-cav2014experiments")
-    print("FAIAL DIRECTORY: ",kernel_dir)
-    faial_cmd = ["check-drf",kernel_dir]
+    kernel_dir = os.getcwd() + "/" + kernel_dir[:-1]
+    kernel_dir = kernel_dir.replace("/home/dennisliew/Work/faial/faial/","/home/dennisliew/Work/faial/gpuverify-cav2014experiments/")
+    #print("FAIAL DIRECTORY: ",kernel_dir)
+    faial_cmd = ["/home/dennisliew/Work/faial/faial/check-drf",kernel_dir]
     start=time.time()
-    subprocess.call(faial_cmd,stdout=subprocess.DEVNULL)
+    subprocess.Popen(faial_cmd)
     end=time.time()
     return (end - start)
 
 def main(arg):
     parser = argparse.ArgumentParser(description="Frontend script to run Faial on CAV2014 dataset.")
     parser.add_argument('--from-file',type=str, required=True)
-    parser.add_argument('--csv-file',type=str, default = "Faial_TimeMem.csv")
+    parser.add_argument('--csv-file',type=str, default = "Faial_Time.csv")
 
     args = parser.parse_args()
 
@@ -36,7 +37,7 @@ def main(arg):
         output_file.writerow(['kernel','total'])
         for line in text_file:
             current_time = get_time(line)
-            output_file.writerow([line[1:-1],current_time])
+            output_file.writerow([line[:-1],current_time])
 
     text_file.close()
 

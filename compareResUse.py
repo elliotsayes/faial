@@ -154,19 +154,19 @@ def main(arg):
     print("Comparing Faial to GPUVerify...")
 
     for i in range(runs):
-        process = subprocess.Popen(GV_cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-        stdout,err = process.communicate()
+        process = subprocess.check_call(GV_cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        #stdout,err = process.communicate()
         csv_to_time(GPUVerify_time,args.gv_csv_file)
         #os.remove(args.gv_csv_file)
-        process = subprocess.Popen(FAIAL_cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-        stdout,err = process.communicate()
-        output = re.findall(r":added-eqs.*\n|:arith-assert-lower.*\n|:arith-assert-upper.*\n|:arith-eq-adapter.*\n|:arith-pivots.*\n|:del-clause.*\n|:final-checks.*\n|:max-memory.*\n|:memory.*\n|:mk-bool-var.*\n|:mk-clause.*\n|:num-allocs.*\n|:num-checks.*\n|:propagations.*\n|:rlimit-count.*\n|:total-time.*\n",str(stdout))
+        process = subprocess.check_call(FAIAL_cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        #stdout,err = process.communicate()
+        #output = re.findall(r":added-eqs.*\n|:arith-assert-lower.*\n|:arith-assert-upper.*\n|:arith-eq-adapter.*\n|:arith-pivots.*\n|:del-clause.*\n|:final-checks.*\n|:max-memory.*\n|:memory.*\n|:mk-bool-var.*\n|:mk-clause.*\n|:num-allocs.*\n|:num-checks.*\n|:propagations.*\n|:rlimit-count.*\n|:total-time.*\n",str(stdout))
         csv_to_time(Faial_time,args.f_csv_file)
         #os.remove(args.f_csv_file)
 
-    for ii in output:
-        x = re.search("\d+.*\d*",ii).group().replace(")","")
-        mem_info.append(x)
+    #for ii in output:
+    #    x = re.search("\d+.*\d*",ii).group().replace(")","")
+    #    mem_info.append(x)
 
     # Creates csv file from memory data of z3 -st option
     ##Faial_mem = populate_memory_arr(mem_info)
