@@ -173,6 +173,12 @@ let rec parse_nexp n : nexp option =
       | [`Int n; `String x] ->
         bind (parse_task n) (fun t -> Some (Proj (t, var_make x)))
       | _ -> None
+    );
+    "CallExpr", (["func"], function
+    | [`String x] ->
+      print_endline ("ERROR: How to handle function " ^ x );
+      Some (Num 0)
+    | _ -> None
     )
   ] n
 
@@ -348,6 +354,8 @@ let rec parse_stmt j =
     "BinaryOperator", (["lhs"; "rhs"; "type"; "opcode"], function
       | [lhs; rhs; ty; `String "="] when is_var lhs && is_int_type ty ->
          Some (Decl (j_to_var lhs, Local, Some (parse_nexp.run rhs)))
+      | [lhs; rhs; ty; `String "="] ->
+         Some (Block [])
       | _ -> None
     );
   ] j
