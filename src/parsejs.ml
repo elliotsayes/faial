@@ -351,6 +351,10 @@ let rec parse_stmt j =
         (* XXX: Silently ignore any unrecognized declaration*)
         Some (Block [])
     );
+    "CallExpr", ([], function
+      | [] -> Some (Block [])
+      | _ -> None
+    );
     "BinaryOperator", (["lhs"; "rhs"; "type"; "opcode"], function
       | [lhs; rhs; ty; `String "="] when is_var lhs && is_int_type ty ->
          Some (Decl (j_to_var lhs, Local, Some (parse_nexp.run rhs)))
