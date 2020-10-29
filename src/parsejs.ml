@@ -354,6 +354,10 @@ let rec parse_stmt j =
         (* XXX: Silently ignore any unrecognized declaration*)
         Some (Block [])
     );
+    "CXXOperatorCallExpr", ([], function
+      | [] -> Some (Block [])
+      | _ -> None
+    );
     "CallExpr", ([], function
       | [] -> Some (Block [])
       | _ -> None
