@@ -117,7 +117,10 @@ let is_int_type o =
   | `String "int"
   | `String "const int"
   | `String "unsigned int"
-  | `String "const unsigned int" -> true
+  | `String "const unsigned int"
+  | `String "uint"
+  | `String "const uint"
+   -> true
   | _ -> false
 
 let has_type j ty =
