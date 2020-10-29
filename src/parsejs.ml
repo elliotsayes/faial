@@ -118,6 +118,8 @@ let is_int_type o =
   | `String "const int"
   | `String "unsigned int"
   | `String "const unsigned int"
+  | `String "short"
+  | `String "const short"
   | `String "uint"
   | `String "const uint"
    -> true
