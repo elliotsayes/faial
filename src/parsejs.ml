@@ -367,7 +367,7 @@ let rec parse_stmt j =
     "BinaryOperator", (["lhs"; "rhs"; "type"; "opcode"], function
       | [lhs; rhs; ty; `String "="] when is_var lhs && is_int_type ty ->
          Some (Decl (j_to_var lhs, Local, Some (parse_nexp.run rhs)))
-      | [lhs; rhs; ty; `String "="] ->
+      | [_; _; _; _] ->
          Some (Block [])
       | _ -> None
     );
