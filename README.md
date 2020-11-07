@@ -2,7 +2,7 @@
 
 A modeling language to specify and debug GPU programs.
 
-### [Download `faial` for Linux x86-64bits](https://gitlab.com/cogumbreiro/faial/-/jobs/artifacts/master/download?job=build-dist)
+### [Download `faial` for Linux x86-64bits](https://gitlab.com/umb-svl/faial/-/jobs/artifacts/master/download?job=build-dist)
 
 
 # Compiling from source
