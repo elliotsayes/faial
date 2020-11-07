@@ -4,17 +4,21 @@ open Common
 open Serialize
 open Subst
 open Streamutil
+open Hash_rt
+open Ppx_compare_lib.Builtin
 
 type 'a inst =
   | Base of 'a
   | Assert of bexp
   | Cond of bexp * 'a inst list
   | Local of variable * 'a inst list
+  [@@deriving hash, compare]
 
-type 'a prog = 'a inst list
+type 'a prog = 'a inst list [@@deriving hash, compare]
 
-type p_inst = Proto.acc_expr inst
-type p_prog = Proto.acc_expr prog
+type p_inst = Proto.acc_expr inst [@@deriving hash, compare]
+
+type p_prog = Proto.acc_expr prog [@@deriving hash, compare]
 
 (* This is an internal datatype. The output of normalize is one of 4 cases: *)
 type s_prog =
@@ -27,7 +31,6 @@ type s_prog =
 type n_prog =
   | Unaligned of s_prog * p_prog
   | Open of p_prog
-(*  | Aligned of s_prog*)
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
 
@@ -268,7 +271,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
   in
   let rec n_cond (b:bexp) (p: s_prog) : s_prog =
     match p with
-    | NPhase u -> NPhase (Assert b :: u)
+    | NPhase u -> NPhase ((*Assert b ::*) u)
     | NFor (r, p) -> NFor (r, n_cond b p)
     | NSeq (p, q) -> NSeq (n_cond b p, n_cond b q)
   in
@@ -310,7 +313,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
       | Unaligned (p,q) ->
         [
           Unaligned (inline_if b p, [Cond(b, q)]);
-          Open [Assert (b_not b)]
+          Open [(*Assert (b_not b)*)]
         ] |> Stream.of_list
       )
 
@@ -320,7 +323,8 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
       | [Unaligned (p1, p2)] ->
         let new_ub = range_prev_upper_bound r in
         let p1' = n_cond (n_lt lb ub) (s_subst (x, lb) p1) in
-        let p2' = Assert (n_lt lb ub) :: p_subst (x, new_ub) p2 in
+        let p2' = (* Assert (n_lt lb ub) :: *)
+                  p_subst (x, new_ub) p2 in
         let new_p1 = s_subst (x, range_next_var r) p1 in
         let new_r = { r with range_upper_bound = new_ub } in
         (* Rule:

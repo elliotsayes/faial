@@ -1,7 +1,11 @@
+open Hash_rt
+open Ppx_compare_lib.Builtin
+
 type variable = {
   var_loc: Sourceloc.location;
   var_name: string;
 }
+  [@@deriving hash, compare]
 
 let var_make (name:string) = {
   var_loc = Sourceloc.loc_empty;
@@ -27,13 +31,18 @@ let tid = "$tid"
 let idx = "idx"
 
 type nbin =
-| Plus
-| Minus
-| Mult
-| Div
-| Mod
+  | Plus
+  | Minus
+  | Mult
+  | Div
+  | Mod
+  [@@deriving hash, compare]
 
-type task = Task1 | Task2
+type task =
+  | Task1
+  | Task2
+  [@@deriving hash, compare]
+
 let task_to_string (t:task) : string =
   match t with
   | Task1 -> "T1"
@@ -44,21 +53,33 @@ let other_task = function
   | Task2 -> Task1
 
 type nexp =
-| Var of variable
-| Num of int
-| Bin of nbin * nexp * nexp
-| Proj of task * variable
+  | Var of variable
+  | Num of int
+  | Bin of nbin * nexp * nexp
+  | Proj of task * variable
+  [@@deriving hash, compare]
 
-type nrel = NEq | NNeq | NLe | NLt | NGt | NGe
+type nrel =
+  | NEq
+  | NNeq
+  | NLt
+  | NLe
+  | NGt
+  | NGe
+  [@@deriving hash, compare]
 
-type brel = BOr | BAnd
+type brel =
+  | BOr
+  | BAnd
+  [@@deriving hash, compare]
 
 type bexp =
-| Bool of bool
-| NRel of nrel * nexp * nexp
-| BRel of brel * bexp * bexp
-| BNot of bexp
-| Pred of string * nexp
+  | Bool of bool
+  | NRel of nrel * nexp * nexp
+  | BRel of brel * bexp * bexp
+  | BNot of bexp
+  | Pred of string * nexp
+  [@@deriving hash, compare]
 
 let eval_nbin (o:nbin) : int -> int -> int =
   match o with
@@ -178,18 +199,22 @@ let rec b_or_ex l =
   | x::l -> b_or x (b_or_ex l)
 
 
-type step_expr = Default of nexp | StepName of string
+type step_expr = Default of nexp | StepName of string [@@deriving hash, compare]
 type range = {
   range_var: variable;
   range_lower_bound: nexp;
   range_upper_bound: nexp;
   range_step: step_expr;
-}
+} [@@deriving hash, compare]
 
-type mode = R | W
+type mode =
+  | R
+  | W
+  [@@deriving hash, compare]
 
 (* An access pairs the index-expression with the access mode (R/W) *)
 type access = {access_index: nexp list; access_mode: mode}
+  [@@deriving hash, compare]
 
 let distinct (idx:variable list) : bexp =
   b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)

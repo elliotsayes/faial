@@ -1,7 +1,9 @@
 open Exp
+open Hash_rt
+open Ppx_compare_lib.Builtin
 
 (* Access expression *)
-type acc_expr = variable * access
+type acc_expr = variable * access [@@deriving hash, compare]
 
 (* The source instruction uses the base defined above *)
 type inst =
@@ -9,8 +11,10 @@ type inst =
   | Sync
   | Cond of bexp * inst list
   | Loop of range * inst list
+  [@@deriving hash, compare]
+
 (* The source program *)
-type prog = inst list
+type prog = inst list [@@deriving hash, compare]
 
 type 'a kernel = {
   (* The shared locations that can be accessed in the kernel. *)

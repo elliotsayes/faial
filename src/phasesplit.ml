@@ -11,6 +11,7 @@ type 'a phase =
   | Phase of 'a
   | Pre of bexp * 'a phase
   | Global of variable * 'a phase
+  [@@deriving hash, compare]
 
 let rec phase_map (f:'a -> 'b) (p:'a phase) : 'b phase =
   match p with
@@ -24,7 +25,7 @@ let rec free_names_phase (p:'a phase) (fns:VarSet.t) : VarSet.t =
   | Pre (b, p) -> Freenames.free_names_bexp b fns |> free_names_phase p
   | Global (x, p) -> free_names_phase p fns |> VarSet.remove x
 
-type p_phase = p_prog phase
+type p_phase = p_prog phase [@@deriving hash, compare]
 
 type p_kernel = {
   (* The shared locations that can be accessed in the kernel. *)
@@ -37,6 +38,17 @@ type p_kernel = {
 
 let make_global (r:range) (ls:'a phase) : 'a phase =
   Global (r.range_var, Pre (range_to_cond r, ls))
+
+(* -------------------- HASHING ------------------------------------ *)
+
+ module PPhaseHash =
+  struct
+    type t = p_phase
+    let equal i j : bool = compare_p_phase i j = 0
+    let hash i = hash_p_phase i
+  end
+
+module PPhaseHashtbl = Hashtbl.Make(PPhaseHash)
 
 (* ---------------- SUBSTITUTION ----------------------------------- *)
 
@@ -130,6 +142,16 @@ let n_prog_to_s_prog : n_prog -> s_prog =
 
 (* Takes a program with Syncs and generates a program with phased blocks *)
 let prog_to_s_prog (s:Proto.prog) : p_phase Stream.t =
+  let known = PPhaseHashtbl.create 100 in
+  let keep_phase (p:p_phase) : bool =
+    if PPhaseHashtbl.mem known p then
+      false
+    else begin
+      (* Cache element *)
+      PPhaseHashtbl.add known p ();
+      true
+    end
+  in
   (* P |> Q1, Q2 *)
   normalize s
   (* phases(P) *)
@@ -137,6 +159,7 @@ let prog_to_s_prog (s:Proto.prog) : p_phase Stream.t =
   |> Streamutil.map s_prog_to_p_phase
   (* flatten the set *)
   |> Streamutil.concat
+  |> Streamutil.filter keep_phase
 
 (* Inline a set of variables as decls *)
 let inline_globals (vars:VarSet.t) (p:'a phase) : 'a phase =

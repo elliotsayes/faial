@@ -23,9 +23,9 @@ let v2_parse fname input : prog kernel =
   try Parse2.main Scan.read filebuf with
   | Parse2.Error ->
     let sloc = Sourceloc.of_lexbuf filebuf in
-    Printf.fprintf stderr "%a: syntax error\n" Sourceloc.location_print_start sloc;
+    Printf.eprintf "%a: syntax error\n" Sourceloc.location_print_start sloc;
     (try
-      Printf.fprintf stderr "\n%a" Sourceloc.location_print_title sloc
+      Printf.eprintf "\n%a" Sourceloc.location_print_title sloc
     with
       Sys_error _ -> ());
     exit (-1)
@@ -35,10 +35,17 @@ let safe_run f =
   try
     f ()
   with
+  | Yojson.Json_error("Blank input data") ->
+    (* If the input is blank, just ignore the input and err with -1 *)
+    exit (-1)
+  | Yojson.Json_error(e) -> begin
+      Printf.eprintf "Error parsing JSON: %s" e;
+      exit (-1)
+    end
   | Parse.ParseError l ->
     List.iter (fun x ->
-      print_endline x;
-      print_endline ""
+      prerr_endline x;
+      prerr_endline ""
     ) l;
     exit (-1)
 
@@ -75,16 +82,26 @@ let main_t =
 
   let get_fname =
     let doc = "The path $(docv) of the GPU contract." in
-    Arg.(required & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
+    Arg.(value & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
   in
 
-  let do_main cmd fname use_bv use_json expect_typing_fail sets =
+  let do_main
+    (cmd: command)
+    (fname: string option)
+    (use_bv: bool)
+    (use_json: bool)
+    (expect_typing_fail: bool)
+    (sets: string list) : unit
+  =
     let halt_when b f k : unit =
       if b then (f k; raise Exit)
       else ()
     in
 
-    let ic = open_in fname in
+    let ic = match fname with
+      | Some fname -> open_in fname
+      | None -> stdin
+    in
     let on_kv x =
       let kv = String.split_on_char '=' x in
       let kv = List.map String.trim kv in
@@ -97,6 +114,10 @@ let main_t =
       let ks = if use_json
         then json_parse ic
         else
+          let fname = match fname with
+          | Some x -> x
+          | None -> "<STDIN>"
+          in
           [v2_parse fname ic]
       in
       if List.length ks = 0 then begin
@@ -132,8 +153,10 @@ let main_t =
           else ()
         end
       | e ->
-      print_endline "error!";
-      close_in_noerr ic;
+      (match fname with
+      | Some _ -> close_in_noerr ic
+      | None -> ()
+      );
       raise e
   in
   let get_cmd =
