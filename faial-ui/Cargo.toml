@@ -1,0 +1,13 @@
+[package]
+name = "faial"
+version = "1.0.0"
+authors = ["Tiago Cogumbreiro <cogumbreiro@users.sf.net>"]
+edition = "2018"
+
+[dependencies]
+
+#num_cpus = "1.13.0"
+sexp = "1.1.4"
+prettytable-rs = "0.8.0"
+clap = "2.33.3"
+subprocess = "0.2.6"
