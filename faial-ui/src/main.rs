@@ -684,7 +684,7 @@ impl Opts {
     fn parse_args() -> Opts {
         let inp_choices = InputType::values();
         let inp_choices : Vec<&str> = inp_choices.iter().map(|x| x.as_str()).collect();
-        let matches = App::new("faial")
+        let mut app = App::new("faial")
                 .version("1.0")
                 .arg(Arg::with_name("expect_race")
                     .long("expect-race")
@@ -756,14 +756,17 @@ impl Opts {
                 .arg(Arg::with_name("input")
                     .takes_value(true)
                     .index(1)
-                )
-                .get_matches();
+                );
+
+        let matches = app.clone().get_matches();
         let input : Option<String> = matches.value_of("input").map(|x| x.to_string());
         let guessed = InputType::from_filename(input.clone().unwrap_or(String::from("")).as_str());
         let input_type = parse_opt::<InputType>(&matches, "input_type").unwrap_or(guessed);
         let stage = input_type.as_stage();
         if stage == Stage::Parse && input.is_none() {
-            eprintln!("Error: filename required when parsing a CUDA file.\nEither change file type or supply filename.");
+            eprintln!("Error: filename required when parsing a CUDA file. Change file type or supply filename.\n");
+            let mut out = io::stderr();
+            app.write_help(&mut out).expect("failed to write to stdout");
             std::process::exit(255);
         }
         let infer_json = match stage {
