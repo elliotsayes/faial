@@ -361,11 +361,10 @@ impl Pipe {
         runs
     }
 
-    fn spawn(self, mut data:InputData) -> subprocess::Result<CaptureData> {
+    fn spawn(self) -> subprocess::Result<CaptureData> {
         let runs : Vec<Run> = self.build();
         let mut it = runs.iter();
         let exec : Exec = it.next().unwrap().as_exec();
-//        let exec = data.update_exec(exec);
         let mut state = PipelineState::new(exec);
         for run in it {
             state = state.add(run.as_exec());
@@ -411,6 +410,88 @@ impl Stage {
     }
 }
 
+#[derive(Debug,Eq,PartialEq)]
+enum InputType {
+    CUDA,
+    PROTO,
+    CJSON,
+    PJSON,
+    SMT
+}
+
+impl InputType {
+    fn from_filename(filename:&str) -> Self {
+        let curr_ext = filename.rsplitn(2, ".").collect::<Vec<_>>();
+        let curr_ext = curr_ext.get(0);
+        if curr_ext.is_none() {
+            return InputType::CUDA;
+        }
+        let mut curr_ext = String::from(*curr_ext.unwrap());
+        curr_ext.make_ascii_lowercase();
+        let curr_ext = curr_ext;
+        for ext in &["cu", "c", "cpp", "h", "hpp"] {
+            if curr_ext.as_str() == *ext {
+                return InputType::CUDA;
+            }
+        }
+        if curr_ext == "proto" {
+            return InputType::PROTO;
+        }
+        if curr_ext == "smt2" || curr_ext == "smt" {
+            return InputType::SMT;
+        }
+        if curr_ext == "json" {
+            return InputType::CJSON;
+        }
+        return InputType::CUDA;
+    }
+
+    fn as_stage(&self) -> Stage {
+        match self {
+            InputType::CUDA => Stage::Parse,
+            InputType::CJSON => Stage::Infer,
+            InputType::PJSON | InputType::PROTO => Stage::Analyze,
+            InputType::SMT => Stage::Solve,
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        match self {
+            InputType::CUDA=>"cuda",
+            InputType::PROTO=>"proto",
+            InputType::CJSON => "cjson",
+            InputType::PJSON => "pjson",
+            InputType::SMT => "smt",
+        }
+    }
+
+    fn values() -> [InputType; 5] {
+        [
+            InputType::CUDA,
+            InputType::PROTO,
+            InputType::CJSON,
+            InputType::PJSON,
+            InputType::SMT,
+        ]
+    }
+}
+
+
+impl FromStr for InputType {
+    type Err = String;
+    fn from_str(data: &str) -> Result<Self, String> {
+        match data {
+            "cuda" => Ok(InputType::CUDA),
+            "proto" => Ok(InputType::PROTO),
+            "cjson" => Ok(InputType::CJSON),
+            "pjson" => Ok(InputType::PJSON),
+            "smt" => Ok(InputType::SMT),
+            x => Err(format!("Unknown format: {}", x)),
+        }
+    }
+}
+
+
 #[derive(Debug)]
 struct Opts {
     solve_only: bool,
@@ -424,6 +505,7 @@ struct Opts {
     grid_dim: Vec<usize>,
     verbose: bool,
     defines: HashMap<String,u32>,
+    input_type: InputType,
 }
 
 impl Opts {
@@ -600,6 +682,8 @@ fn parse_key_val<'a>(matches:&ArgMatches<'a>, name:&str) -> HashMap<String, u32>
 impl Opts {
 
     fn parse_args() -> Opts {
+        let inp_choices = InputType::values();
+        let inp_choices : Vec<&str> = inp_choices.iter().map(|x| x.as_str()).collect();
         let matches = App::new("faial")
                 .version("1.0")
                 .arg(Arg::with_name("expect_race")
@@ -635,6 +719,12 @@ impl Opts {
                 .arg(Arg::with_name("verbose")
                     .long("verbose")
                 )
+                .arg(Arg::with_name("input_type")
+                    .long("type")
+                    .short("t")
+                    .takes_value(true)
+                    .possible_values(inp_choices.as_slice())
+                )
                 .arg(Arg::with_name("grid_dim")
                     .long("grid-dim")
                     .multiple(true)
@@ -668,15 +758,22 @@ impl Opts {
                     .index(1)
                 )
                 .get_matches();
-        let stage = Stage::Parse;
+        let input : Option<String> = matches.value_of("input").map(|x| x.to_string());
+        let guessed = InputType::from_filename(input.clone().unwrap_or(String::from("")).as_str());
+        let input_type = parse_opt::<InputType>(&matches, "input_type").unwrap_or(guessed);
+        let stage = input_type.as_stage();
+        if stage == Stage::Parse && input.is_none() {
+            eprintln!("Error: filename required when parsing a CUDA file.\nEither change file type or supply filename.");
+            std::process::exit(255);
+        }
         let infer_json = match stage {
             Stage::Infer | Stage::Parse => true,
-            _ => false,
+            _ => input_type == InputType::CJSON,
         };
         Opts {
             expect_race: matches.is_present("expect_race"),
             solve_only: matches.is_present("solve_only"),
-            input: matches.value_of("input").map(|x| x.to_string()),
+            input: input,
             analyze_only: parse_opt::<i32>(&matches, "analyze_only"),
             infer_only: parse_opt::<i32>(&matches, "infer_only"),
             grid_dim: get_vec(&matches, "grid_dim").unwrap(),
@@ -685,6 +782,7 @@ impl Opts {
             infer_json: infer_json,
             verbose: matches.is_present("verbose"),
             defines: parse_key_val(&matches, "defines"),
+            input_type: input_type,
         }
     }
 
@@ -720,17 +818,13 @@ impl Opts {
 
 fn main() {
     let opts = Opts::parse_args();
-    let in_data = match &opts.input {
-        Some(x) => InputData::FromFile(x.clone(), File::open(x).unwrap()),
-        None => InputData::FromStdin,
-    };
     let pipe = opts.get_pipe();
     let pipe_str = pipe.iter().map(|x| x.join(" ")).collect::<Vec<_>>().join(" | ");
     let pipe = Pipe::new(pipe, StreamCapture::Capture, StreamCapture::Capture);
     if opts.verbose {
         eprintln!("RUN {}", pipe_str);
     }
-    match pipe.spawn(in_data) {
+    match pipe.spawn() {
         Ok(data) => opts.handle_data(data),
         Err(e) => {
             eprintln!("Could exec: {}\nReason: {}", pipe_str, e);
