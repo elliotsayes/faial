@@ -423,6 +423,7 @@ struct Opts {
     block_dim: Vec<usize>,
     grid_dim: Vec<usize>,
     verbose: bool,
+    defines: HashMap<String,u32>,
 }
 
 impl Opts {
@@ -469,6 +470,9 @@ impl Opts {
                 }
                 for (idx, d) in self.grid_dim.iter().enumerate() {
                     cmd.push(format!("-DblockDim.{}={}", field.get(idx).unwrap(), d));
+                }
+                for (k,v) in &self.defines {
+                    cmd.push(format!("-D{}={}", k, v));
                 }
                 if self.infer_json {
                     cmd.push("--json".to_string());
@@ -537,7 +541,64 @@ where T : FromStr {
     }
 }
 
+fn can_parse<T>(value:String) -> Result<(),String>
+where T : FromStr {
+    if value.parse::<T>().is_ok() {
+        Ok(())
+    } else {
+        Err(format!("Could not parse argument"))
+    }
+}
+
+fn parse<'a,T>(matches:&ArgMatches<'a>, name:&str) -> T
+where T : FromStr {
+    let x = matches.value_of(name).unwrap();
+    x.parse::<T>().ok().unwrap()
+}
+
+fn parse_opt<'a,T>(matches:&ArgMatches<'a>, name:&str) -> Option<T>
+where T : FromStr {
+    matches.value_of(name).map(|x| x.parse::<T>().ok().unwrap())
+}
+
+fn is_key_val(v: String) -> Result<(), String> {
+    if v.matches("=").count() != 1 {
+        return Err(
+            String::from(
+                "Expecting exaclty one equals sign, example: 'key=13'."
+            )
+        );
+    }
+    let vs = v.split("=").collect::<Vec<_>>();
+    let key = vs.get(0).unwrap();
+    if key.len() == 0 {
+        return Err(String::from("Key must be nonempty."));
+    }
+    let value = vs.get(1).unwrap();
+    if value.parse::<u32>().is_ok() {
+        return Ok(());
+    }
+    Err(String::from("Value assigned to key must be an unsigned integer."))
+}
+fn parse_key_val<'a>(matches:&ArgMatches<'a>, name:&str) -> HashMap<String, u32> {
+    match matches.values_of(name) {
+        Some(vs) => {
+            let mut kvs = HashMap::new();
+            for kv in vs {
+                let kv = kv.split("=").collect::<Vec<_>>();
+                let key = String::from(*kv.get(0).unwrap());
+                let value = String::from(*kv.get(1).unwrap()).parse::<u32>().ok().unwrap();
+                kvs.insert(key, value);
+            }
+            kvs
+        },
+        None => HashMap::new(),
+    }
+}
+
+
 impl Opts {
+
     fn parse_args() -> Opts {
         let matches = App::new("faial")
                 .version("1.0")
@@ -551,6 +612,7 @@ impl Opts {
                 .arg(Arg::with_name("analyze_only")
                     .long("analyze-only")
                     .short("A")
+                    .validator(can_parse::<i32>)
                     .takes_value(true)
                     .conflicts_with("solve_only")
                     .conflicts_with("infer_only")
@@ -566,6 +628,7 @@ impl Opts {
                     .long("infer-only")
                     .short("I")
                     .takes_value(true)
+                    .validator(can_parse::<i32>)
                     .conflicts_with("solve_only")
                     .conflicts_with("analyze_only")
                 )
@@ -592,6 +655,14 @@ impl Opts {
                     .max_values(3)
                     .conflicts_with("infer_only")
                 )
+                .arg(Arg::with_name("defines")
+                    .short("-D")
+                    .long("define")
+                    .multiple(true)
+                    .takes_value(true)
+                    .validator(is_key_val)
+                    .min_values(0)
+                )
                 .arg(Arg::with_name("input")
                     .takes_value(true)
                     .index(1)
@@ -606,13 +677,14 @@ impl Opts {
             expect_race: matches.is_present("expect_race"),
             solve_only: matches.is_present("solve_only"),
             input: matches.value_of("input").map(|x| x.to_string()),
-            analyze_only: matches.value_of("analyze_only").map(|x| x.parse::<i32>().unwrap()),
-            infer_only: matches.value_of("infer_only").map(|x| x.parse::<i32>().unwrap()),
+            analyze_only: parse_opt::<i32>(&matches, "analyze_only"),
+            infer_only: parse_opt::<i32>(&matches, "infer_only"),
             grid_dim: get_vec(&matches, "grid_dim").unwrap(),
             block_dim: get_vec(&matches, "block_dim").unwrap(),
             stage: stage,
             infer_json: infer_json,
             verbose: matches.is_present("verbose"),
+            defines: parse_key_val(&matches, "defines"),
         }
     }
 
