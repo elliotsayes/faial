@@ -271,7 +271,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
   in
   let rec n_cond (b:bexp) (p: s_prog) : s_prog =
     match p with
-    | NPhase u -> NPhase ((*Assert b ::*) u)
+    | NPhase u -> NPhase (Assert b :: u)
     | NFor (r, p) -> NFor (r, n_cond b p)
     | NSeq (p, q) -> NSeq (n_cond b p, n_cond b q)
   in
@@ -313,7 +313,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
       | Unaligned (p,q) ->
         [
           Unaligned (inline_if b p, [Cond(b, q)]);
-          Open [(*Assert (b_not b)*)]
+          Open [Assert (b_not b)]
         ] |> Stream.of_list
       )
 
@@ -323,7 +323,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
       | [Unaligned (p1, p2)] ->
         let new_ub = range_prev_upper_bound r in
         let p1' = n_cond (n_lt lb ub) (s_subst (x, lb) p1) in
-        let p2' = (* Assert (n_lt lb ub) :: *)
+        let p2' = Assert (n_lt lb ub) ::
                   p_subst (x, new_ub) p2 in
         let new_p1 = s_subst (x, range_next_var r) p1 in
         let new_r = { r with range_upper_bound = new_ub } in

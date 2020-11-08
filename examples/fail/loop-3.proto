@@ -1,0 +1,17 @@
+
+shared x;
+
+const local tid, global t where
+  distinct [tid]
+;
+
+rw x[tid];
+foreach (y in 0 .. t) {
+    rw x[tid];
+    foreach (z in y .. y + 2) {
+      #rw x[tid + (y - y)];
+      sync;
+      rw x[tid + (y - y) + 1];
+    }
+    rw x[tid];
+}
