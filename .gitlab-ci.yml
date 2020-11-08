@@ -14,12 +14,13 @@ build-dist:
     - cd "$CI_PROJECT_DIR"
     - eval $(opam config env)
     - make
+    - cd faial-ui
+    - cargo b --release
+    - cp ./target/release/faial ..
 
   artifacts:
     paths:
       - faial-bin
       - faial
-      - faial-gv
-      - faial-print
       - README.md
       - LICENSE
