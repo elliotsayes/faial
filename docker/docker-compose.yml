@@ -4,4 +4,4 @@ services:
         build:
             dockerfile: docker/Dockerfile
             context: ..
-        image: registry.gitlab.com/umb-svl/faial/faial-dev
+        image: registry.gitlab.com/umb-svl/faial/faial:dev
