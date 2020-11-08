@@ -5,6 +5,9 @@ test:
   script:
     - cd "$CI_PROJECT_DIR"
     - eval $(opam config env)
+    - cd faial-ui
+    - cargo b --release
+    - cd ..
     - make
     - make test
     - ./run-tests.py
