@@ -153,6 +153,9 @@ impl Pipe {
             children: children,
         }
     }
+    fn as_str(&self) -> String {
+        self.children.iter().map(|x| x.join(" ")).collect::<Vec<_>>().join(" | ")
+    }
 
     fn build(&self) -> Vec<Run> {
         let mut runs = Vec::new();
@@ -291,7 +294,7 @@ impl FromStr for InputType {
 
 
 #[derive(Debug)]
-struct Opts {
+struct Faial {
     solve_only: bool,
     expect_race: bool,
     input: Option<String>,
@@ -304,9 +307,10 @@ struct Opts {
     verbose: bool,
     defines: HashMap<String,u32>,
     input_type: InputType,
+    dry_run: bool,
 }
 
-impl Opts {
+impl Faial {
     fn get_command(&self, stage:Stage, filename:Option<String>) -> Vec<String> {
         match stage {
             Stage::Parse => {
@@ -399,7 +403,7 @@ impl Opts {
         stages.get(stages.len() - 1).unwrap().clone()
     }
 
-    fn get_pipe(&self) -> Vec<Vec<String>> {
+    fn get_pipe(&self) -> Pipe {
         let mut pipe = Vec::new();
         for stage in self.get_stages() {
             let filename = if stage == self.stage {
@@ -409,7 +413,7 @@ impl Opts {
             };
             pipe.push(self.get_command(stage, filename));
         }
-        pipe
+        Pipe::new(pipe)
     }
 }
 
@@ -478,13 +482,15 @@ fn parse_key_val<'a>(matches:&ArgMatches<'a>, name:&str) -> HashMap<String, u32>
 }
 
 
-impl Opts {
+impl Faial {
 
-    fn parse_args() -> Opts {
+    fn new() -> Self {
         let inp_choices = InputType::values();
         let inp_choices : Vec<&str> = inp_choices.iter().map(|x| x.as_str()).collect();
         let app = App::new("faial")
                 .version("1.0")
+                .about("Checks if a GPU code is data-race free")
+                .author("UMB-SVL research group: https://umb-svl.gitlab.io/")
                 .arg(Arg::with_name("expect_race")
                     .long("expect-race")
                     .help("Sets exit status according to finding data-races.")
@@ -495,6 +501,7 @@ impl Opts {
                 .arg(Arg::with_name("analyze_only")
                     .long("analyze-only")
                     .short("A")
+                    .help("Halts after analysis")
                     .validator(can_parse::<i32>)
                     .takes_value(true)
                     .conflicts_with("solve_only")
@@ -503,7 +510,7 @@ impl Opts {
                 .arg(Arg::with_name("solve_only")
                     .long("solve-only")
                     .short("S")
-                    .help("Runs until it output of the SMT solver and exits.")
+                    .help("Halts after invoking solver")
                     .conflicts_with("infer_only")
                     .conflicts_with("analyze_only")
                 )
@@ -512,19 +519,27 @@ impl Opts {
                     .short("I")
                     .takes_value(true)
                     .validator(can_parse::<i32>)
+                    .help("Halts after model inference")
                     .conflicts_with("solve_only")
                     .conflicts_with("analyze_only")
                 )
                 .arg(Arg::with_name("verbose")
                     .long("verbose")
+                    .help("Shows more information")
+                )
+                .arg(Arg::with_name("dry_run")
+                    .long("dry-run")
+                    .help("Prints the sequence of programs being run internally and exits")
                 )
                 .arg(Arg::with_name("input_type")
                     .long("type")
                     .short("t")
+                    .help("Start at a given point of the pipeline")
                     .takes_value(true)
                     .possible_values(inp_choices.as_slice())
                 )
                 .arg(Arg::with_name("grid_dim")
+                    .help("Sets the 'gridDim' variable (first 'x', then 'y', then 'z')")
                     .long("grid-dim")
                     .multiple(true)
                     .value_delimiter(",")
@@ -535,6 +550,7 @@ impl Opts {
                     .conflicts_with("infer_only")
                 )
                 .arg(Arg::with_name("block_dim")
+                    .help("Sets the 'blockDim' variable (first 'x', then 'y', then 'z')")
                     .long("block-dim")
                     .short("b")
                     .value_delimiter(",")
@@ -545,6 +561,7 @@ impl Opts {
                     .conflicts_with("infer_only")
                 )
                 .arg(Arg::with_name("defines")
+                    .help("Sets a variable")
                     .short("-D")
                     .long("define")
                     .multiple(true)
@@ -553,6 +570,7 @@ impl Opts {
                     .min_values(0)
                 )
                 .arg(Arg::with_name("input")
+                    .help("The code being checked for data-race freedom")
                     .takes_value(true)
                     .index(1)
                 );
@@ -572,7 +590,7 @@ impl Opts {
             Stage::Infer | Stage::Parse => true,
             _ => input_type == InputType::CJSON,
         };
-        Opts {
+        Faial {
             expect_race: matches.is_present("expect_race"),
             solve_only: matches.is_present("solve_only"),
             input: input,
@@ -585,6 +603,7 @@ impl Opts {
             verbose: matches.is_present("verbose"),
             defines: parse_key_val(&matches, "defines"),
             input_type: input_type,
+            dry_run: matches.is_present("dry_run"),
         }
     }
 
@@ -592,18 +611,23 @@ impl Opts {
         match self.last_stage() {
             Stage::Solve => {
                 let buffer = data.stdout_str();
-                if buffer.len() > 0 {
-                    match buffer.parse::<DataRaceFreedom>() {
-                        Ok(d) => {
-                            render_drf(&d);
-                            if self.expect_race ^ d.is_drf() {
-                                return
-                            }
-                        },
-                        Err(e) => eprintln!("Error parsing solver output: {}", e.to_string()),
-                    }
-                } else {
+                if self.solve_only {
+                    print!("{}", data.stdout_str());
                     eprint!("{}", data.stderr_str());
+                } else {
+                    if buffer.len() > 0 {
+                        match buffer.parse::<DataRaceFreedom>() {
+                            Ok(d) => {
+                                render_drf(&d);
+                                if self.expect_race ^ d.is_drf() {
+                                    return
+                                }
+                            },
+                            Err(e) => eprintln!("Error parsing solver output: {}", e.to_string()),
+                        }
+                    } else {
+                        eprint!("{}", data.stderr_str());
+                    }
                 }
                 std::process::exit(1);
             },
@@ -619,17 +643,19 @@ impl Opts {
 }
 
 fn main() {
-    let opts = Opts::parse_args();
-    let pipe = opts.get_pipe();
-    let pipe_str = pipe.iter().map(|x| x.join(" ")).collect::<Vec<_>>().join(" | ");
-    let pipe = Pipe::new(pipe);
-    if opts.verbose {
+    let faial = Faial::new();
+    let pipe = faial.get_pipe();
+    let pipe_str = pipe.as_str();
+    if faial.dry_run || faial.verbose {
         eprintln!("RUN {}", pipe_str);
+        if faial.dry_run {
+            return
+        }
     }
     match pipe.spawn() {
-        Ok(data) => opts.handle_data(data),
+        Ok(data) => faial.handle_data(data),
         Err(e) => {
-            eprintln!("Could exec: {}\nReason: {}", pipe_str, e);
+            eprintln!("Internal error running: {}\nReason: {}", pipe_str, e);
             std::process::exit(255);
         },
     }
