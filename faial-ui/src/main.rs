@@ -1,14 +1,11 @@
 use std::fs::File;
 use std::io::{self, BufRead};
-use std::io::prelude::*;
-use std::process::{Command, Stdio, ChildStdout, Child};
-use std::thread;
 use std::collections::HashMap;
 use sexp::{Sexp,Atom};
 use std::str::FromStr;
 use clap::{App,Arg,ArgMatches};
 use std::convert::TryFrom;
-use subprocess::{Exec,Redirection,ExitStatus, Pipeline, Popen, CaptureData, PopenError};
+use subprocess::{Exec, Pipeline, CaptureData};
 
 #[macro_use]
 extern crate prettytable;
@@ -23,14 +20,6 @@ impl<R> Proofs<R> {
     pub fn new(reader: R) -> Proofs<R> {
         Proofs {reader: reader }
     }
-}
-fn read_file(mut file:File) -> String {
-    //file.sync_data().unwrap();
-    //file.seek(std::io::SeekFrom::Start(0)).unwrap();
-    let mut reader = io::BufReader::new(file);
-    let mut buffer = String::new();
-    reader.read_to_string(&mut buffer).expect("Failed loading output");
-    buffer
 }
 
 impl<B: BufRead> Iterator for Proofs<B> {
@@ -61,12 +50,14 @@ impl<B: BufRead> Iterator for Proofs<B> {
     }
 }
 
+#[allow(dead_code)]
 fn get_proofs(filename:&str) -> Vec<String> {
     let file = File::open(filename).unwrap();
     let reader = io::BufReader::new(file);
     return Proofs::new(reader).collect::<Result<_, _>>().unwrap();
 }
 
+#[allow(dead_code)]
 fn chunk_lines (lines:Vec<String>, count:usize) -> Vec<String> {
     let count = lines.len() / count;
     return lines
@@ -76,60 +67,9 @@ fn chunk_lines (lines:Vec<String>, count:usize) -> Vec<String> {
 }
 
 #[derive(Debug)]
-enum InputData {
-    FromProc(ChildStdout),
-    FromMemory(String),
-    FromFile(String, File),
-    FromStdin,
-}
-
-impl InputData {
-    fn get_filename(&self) -> Option<String> {
-        match self {
-            | InputData::FromMemory(_)
-            | InputData::FromProc(_)
-            | InputData::FromStdin
-            => None,
-            InputData::FromFile(x, _) => Some(x.clone())
-        }
-    }
-
-    fn get_stdio(self) -> (Stdio, Option<String>) {
-        match self {
-            InputData::FromMemory(data) => (Stdio::piped(), Some(data)),
-            InputData::FromProc(p) => (Stdio::from(p), None),
-            InputData::FromFile(p, f) => (Stdio::from(f), None),
-            InputData::FromStdin => (Stdio::inherit(), None),
-        }
-    }
-
-    fn update_exec(self, exec:Exec) -> Exec {
-        match self {
-            InputData::FromMemory(data) => exec.stdin(data.as_str()),
-            InputData::FromProc(p) => exec,
-            InputData::FromFile(p, f) => {
-                exec.stdin(Redirection::File(f))
-            },
-            InputData::FromStdin => exec,
-        }
-    }
-}
-
-#[derive(Debug)]
 enum AnalysisStatus {
-    Fail,
     Pass,
     Abort(i32),
-}
-
-impl AnalysisStatus {
-    fn get_status(self) -> i32 {
-        match self {
-            AnalysisStatus::Fail => 1,
-            AnalysisStatus::Pass => 0,
-            AnalysisStatus::Abort(x) => x,
-        }
-    }
 }
 
 impl From<std::process::ExitStatus> for AnalysisStatus {
@@ -146,69 +86,16 @@ impl From<std::process::ExitStatus> for AnalysisStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum StreamCapture {
-    Capture,
-    Silent,
-    Echo,
-}
-
-impl StreamCapture {
-    fn as_stdio(self) -> Stdio {
-        match self {
-            StreamCapture::Capture => Stdio::piped(),
-            StreamCapture::Silent => Stdio::null(),
-            StreamCapture::Echo => Stdio::inherit(),
-        }
-    }
-    fn as_redirection(&self) -> Option<Redirection> {
-        match self {
-            StreamCapture::Capture => Some(Redirection::Pipe),
-            StreamCapture::Silent => Some(Redirection::None),
-            StreamCapture::Echo => None,
-        }
-    }
-}
-
 #[derive(Debug)]
 struct Run {
     args: Vec<String>,
-    stdout: StreamCapture,
-    stderr: StreamCapture,
 }
 
-fn echo_child(child:&mut Child, echo_stdout:bool, echo_stderr:bool) {
-    if echo_stdout {
-        let mut stdout = child.stdout.take().expect("Failed capturing output");
-        let mut buffer = String::new();
-        stdout.read_to_string(&mut buffer).expect("Failed loading output");
-        print!("{}", buffer);
-    }
-    if echo_stderr {
-        let mut stderr = child.stderr.take().expect("Failed capturing output");
-        let mut buffer = String::new();
-        stderr.read_to_string(&mut buffer).expect("Failed loading output");
-        eprint!("{}", buffer);
-    }
-}
 impl Run {
     fn new(args:Vec<String>) -> Self {
         Run {
             args: args,
-            stdout: StreamCapture::Echo,
-            stderr: StreamCapture::Echo,
         }
-    }
-
-    fn as_command(self) -> Command {
-        let mut it = self.args.iter();
-        let exe = it.next().expect("Run.args cannot be empty");
-        let mut cmd = Command::new(exe);
-        cmd.stdout(self.stdout.as_stdio());
-        for arg in it {
-            cmd.arg(arg);
-        }
-        cmd
     }
 
     fn as_exec(&self) -> Exec {
@@ -220,54 +107,10 @@ impl Run {
         }
         cmd
     }
-
-    fn spawn(self, data:InputData) -> Child {
-        eprintln!("RUN {}", &self.args.join(" "));
-        let (sio, data) = data.get_stdio();
-        let mut cmd = self.as_command();
-        cmd.stdin(sio);
-        let mut child = cmd.spawn().expect("Failed to spawn");
-        if let Some(data) = data {
-            // there is something to write
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin.write_all(data.as_bytes()).expect("Failed to write to stdin");
-        }
-        child
-    }
-
-    fn call(self, data:InputData) -> (std::process::ExitStatus, Child) {
-        let mut child = self.spawn(data);
-        let result = child.wait().expect("Failed waiting for child");
-        (result, child)
-    }
-
-    fn check_call(self, data:InputData) -> Result<Child,AnalysisStatus> {
-        let echo_on_err = self.stdout == StreamCapture::Capture;
-        let (result, mut child) = self.call(data);
-        if result.success() {
-            Ok(child)
-        } else {
-            echo_child(&mut child, echo_on_err, false);
-            Err(AnalysisStatus::from(result))
-        }
-    }
-
-    fn check_call_and(self, data:InputData, halt_after_spawn:bool) -> Result<InputData, AnalysisStatus> {
-        let child = self.check_call(data)?;
-        if halt_after_spawn {
-            Err(AnalysisStatus::Pass)
-        } else {
-            let inp = child.stdout.expect("Failed to obtain stdout");
-            Ok(InputData::FromProc(inp))
-        }
-    }
-
 }
 
 struct Pipe {
     children: Vec<Vec<String>>,
-    stdout: StreamCapture,
-    stderr: StreamCapture,
 }
 
 
@@ -291,29 +134,6 @@ impl PipelineState {
         }
     }
 
-    fn stdout(self, stdout: Redirection) -> Self {
-        match self {
-            PipelineState::One(prev) => PipelineState::One(prev.stdout(stdout)),
-            PipelineState::Many(prev) => PipelineState::Many(prev.stdout(stdout)),
-        }
-    }
-
-    fn join(self) -> subprocess::Result<ExitStatus> {
-        match self {
-            PipelineState::One(prev) => prev.join(),
-            PipelineState::Many(prev) => prev.join(),
-        }
-    }
-
-    fn popen(self) -> subprocess::Result<Vec<Popen>> {
-        match self {
-            PipelineState::One(prev) => {
-                let x = prev.popen()?;
-                Ok(vec![x])
-            },
-            PipelineState::Many(prev) => prev.popen(),
-        }
-    }
     fn capture(self) -> subprocess::Result<subprocess::CaptureData> {
         match self {
             PipelineState::One(prev) => {
@@ -327,36 +147,17 @@ impl PipelineState {
 }
 
 impl Pipe {
-    fn add(mut self, args:Vec<String>) {
-        self.children.push(args);
-    }
 
-    fn new(children:Vec<Vec<String>>, stdout:StreamCapture, stderr: StreamCapture) -> Self {
+    fn new(children:Vec<Vec<String>>) -> Self {
         Pipe {
             children: children,
-            stdout: stdout,
-            stderr: stderr,
         }
     }
 
     fn build(&self) -> Vec<Run> {
         let mut runs = Vec::new();
-        let last_idx = self.children.len() - 1;
-        for (idx, args) in self.children.iter().enumerate() {
-            let stdout;
-            let stderr;
-            if idx == last_idx {
-                stdout = self.stdout.clone();
-                stderr = self.stderr.clone();
-            } else {
-                stdout = StreamCapture::Capture;
-                stderr = StreamCapture::Capture;
-            }
-            runs.push(Run {
-                args: args.clone(),
-                stdout: stdout,
-                stderr: stderr,
-            });
+        for args in self.children.iter() {
+            runs.push(Run::new(args.clone()));
         }
         runs
     }
@@ -368,9 +169,6 @@ impl Pipe {
         let mut state = PipelineState::new(exec);
         for run in it {
             state = state.add(run.as_exec());
-        }
-        if let Some(r) = self.stdout.as_redirection() {
-            state = state.stdout(r);
         }
         state.capture()
     }
@@ -632,6 +430,7 @@ where T : FromStr {
     }
 }
 
+#[allow(dead_code)]
 fn parse<'a,T>(matches:&ArgMatches<'a>, name:&str) -> T
 where T : FromStr {
     let x = matches.value_of(name).unwrap();
@@ -684,7 +483,7 @@ impl Opts {
     fn parse_args() -> Opts {
         let inp_choices = InputType::values();
         let inp_choices : Vec<&str> = inp_choices.iter().map(|x| x.as_str()).collect();
-        let mut app = App::new("faial")
+        let app = App::new("faial")
                 .version("1.0")
                 .arg(Arg::with_name("expect_race")
                     .long("expect-race")
@@ -823,7 +622,7 @@ fn main() {
     let opts = Opts::parse_args();
     let pipe = opts.get_pipe();
     let pipe_str = pipe.iter().map(|x| x.join(" ")).collect::<Vec<_>>().join(" | ");
-    let pipe = Pipe::new(pipe, StreamCapture::Capture, StreamCapture::Capture);
+    let pipe = Pipe::new(pipe);
     if opts.verbose {
         eprintln!("RUN {}", pipe_str);
     }
@@ -858,6 +657,7 @@ fn main2() {
 }
 */
 
+#[allow(dead_code)]
 fn sexp_list(s:&Sexp) -> Option<Vec<Sexp>> {
     match s {
         Sexp::List(l) => Some(l.clone()),
@@ -927,6 +727,7 @@ struct Model {
     data: HashMap<String,Atom>,
 }
 
+#[allow(dead_code)]
 impl Model {
     fn get(&self, name:&str) -> Option<&Atom> {
         self.data.get(name)
@@ -998,7 +799,7 @@ impl CommandResponse {
                     },
                     _ => Err(format!("While parsing an error command: expecting a list of 2 elements, but got: {:?}", data))
                 },
-            Sexp::Atom(ref x) => Err(format!("While parsing an error command: expecting a list, but got atom: {:?}", data)),
+            data => Err(format!("While parsing an error command: expecting a list, but got atom: {:?}", data)),
         }
     }
 }
@@ -1151,21 +952,11 @@ enum Tid {
 }
 
 impl Tid {
-    fn is_task(name: &str) -> bool {
-        return name == "T1" || name == "T2";
-    }
 
     fn get(&self) -> i32 {
         match self {
             &Tid::T1 => 1,
             &Tid::T2 => 2,
-        }
-    }
-
-    fn as_str(&self) -> &str {
-        match self {
-            &Tid::T1 => "T1",
-            &Tid::T2 => "T2",
         }
     }
 }
@@ -1228,10 +1019,6 @@ impl TaskBuilder {
             indices: HashMap::new(),
             mode: None,
         }
-    }
-
-    fn is_match(&self, s:&str) -> bool {
-        self.tid.as_str() == s
     }
 
     fn add_variable(&mut self, key:String, value:Atom) {
