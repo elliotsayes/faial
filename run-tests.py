@@ -93,7 +93,7 @@ class Mode(Enum):
     FAIL = 1
     INVALID = 2
 
-def faial(mode, faial_exe="./faial-ui/target/release/faial"):
+def faial(mode, faial_exe="faial"):
     def run(x):
         args = [faial_exe, str(x)]
         if mode == Mode.OK:
