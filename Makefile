@@ -1,6 +1,8 @@
 OCB_FLAGS   = -use-ocamlfind -use-menhir -I src -no-links
 OCB = ocamlbuild $(OCB_FLAGS)
 
+GITLAB_CACHE = /tmp/gitlab-cache
+
 BUILD = _build/src
 
 all: native byte
@@ -26,6 +28,10 @@ test: build-tests
 
 sys-test: build-tests
 	@./run-tests.py
+
+gitlab:
+	 gitlab-runner exec docker build-dist --cache-dir=${GITLAB_CACHE} --docker-cache-dir=${GITLAB_CACHE} --docker-volumes=${GITLAB_CACHE}
+	 gitlab-runner exec docker test --cache-dir=${GITLAB_CACHE} --docker-cache-dir=${GITLAB_CACHE} --docker-volumes=${GITLAB_CACHE}
 
 byte:
 	$(OCB) main.byte
