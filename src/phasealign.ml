@@ -20,6 +20,7 @@ type p_inst = Proto.acc_expr inst [@@deriving hash, compare]
 
 type p_prog = Proto.acc_expr prog [@@deriving hash, compare]
 
+
 (* This is an internal datatype. The output of normalize is one of 4 cases: *)
 type s_prog =
     (* A single phase (unsynch code ended by sync) *)
@@ -31,6 +32,53 @@ type s_prog =
 type n_prog =
   | Unaligned of s_prog * p_prog
   | Open of p_prog
+
+let rec get_locs (known:VarSet.t) (p:p_prog) =
+  match p with
+  | Base (x,a) :: l -> get_locs (if a.access_mode = Exp.W then VarSet.add x known else known) l
+  | Assert _ :: l -> get_locs known l
+  | Cond (_, l1)::l2 | Local (_, l1)::l2 -> get_locs known (l1 @ l2)
+  | [] -> known
+
+let opt_p_prog (p:p_prog) =
+
+  let rec opt_p_prog (p:p_prog) =
+    match p with
+    | Assert (Bool true) :: l -> opt_p_prog l
+    | Assert b :: Assert b' :: l -> opt_p_prog (Assert (b_and b b') :: l)
+    | Assert b :: l -> opt_p_prog [Cond (b, l)]
+    | Cond (b, []) :: l -> opt_p_prog l
+    | Cond (b1, Cond (b2, l1) :: l2) :: l3 ->
+      opt_p_prog (Cond (b_and b1 b2, l1) :: Cond (b1, l2) :: l3)
+    | x :: l -> x :: opt_p_prog l
+    | [] -> []
+  in
+
+  let rec keep_locs (known:VarSet.t) (p:p_prog) =
+    match p with
+    | Base (x, a) :: l ->
+      let l = keep_locs known l in
+      if VarSet.mem x known then (Base (x, a) ):: l else l
+    | Assert b :: l -> Assert b :: (keep_locs known l)
+    | Cond (b, l1) :: l2 -> Cond (b, keep_locs known l1) :: keep_locs known l2
+    | Local (x, l1) :: l2 -> Local( x, keep_locs known l1) :: keep_locs known l2
+    | [] -> []
+  in
+
+  let p = opt_p_prog p in
+  keep_locs (get_locs VarSet.empty p) p
+
+
+let rec opt_s_prog (s:s_prog) =
+  match s with
+  | NPhase p -> NPhase (opt_p_prog p)
+  | NFor (r, s) -> NFor (r, opt_s_prog s)
+  | NSeq (p, q) -> NSeq (opt_s_prog p, opt_s_prog q)
+
+let rec opt_n_prog (n:n_prog) =
+  match n with
+  | Unaligned (s, p) -> Unaligned (opt_s_prog s, opt_p_prog p)
+  | Open p -> Open (opt_p_prog p)
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
 
@@ -346,6 +394,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
     | i :: p ->
       product (norm_i i) (norm_p p)
       |> map (fun (i, p) -> seq i p)
+      |> map opt_n_prog
   in
   norm_p p
 

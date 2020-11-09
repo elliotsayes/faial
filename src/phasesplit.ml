@@ -27,6 +27,11 @@ let rec free_names_phase (p:'a phase) (fns:VarSet.t) : VarSet.t =
 
 type p_phase = p_prog phase [@@deriving hash, compare]
 
+let rec get_locs (p:p_phase) =
+  match p with
+  | Phase p -> Phasealign.get_locs VarSet.empty p
+  | Pre (_, p) | Global (_, p) -> get_locs p
+
 type p_kernel = {
   (* The shared locations that can be accessed in the kernel. *)
   p_kernel_locations: VarSet.t;
@@ -202,7 +207,7 @@ let translate (k: Proto.prog kernel) (expect_typing_fail:bool) : p_kernel Stream
       ()
     ;
     {
-      p_kernel_locations = k.kernel_locations;
+      p_kernel_locations = get_locs p;
       p_kernel_code = p
     }
   )
