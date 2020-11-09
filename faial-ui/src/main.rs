@@ -297,6 +297,7 @@ impl FromStr for InputType {
 struct Faial {
     solve_only: bool,
     expect_race: bool,
+    expect_invalid: bool,
     input: Option<String>,
     analyze_only: Option<i32>,
     infer_only: Option<i32>,
@@ -348,6 +349,9 @@ impl Faial {
                     // Set the level of the analysis, example: -3
                     cmd.push(format!("-{}", lvl));
                 }
+                if self.expect_invalid {
+                    cmd.push("--expect-invalid".to_string());
+                }
                 let field = vec!["x", "y", "z"];
                 for (idx, d) in self.grid_dim.iter().enumerate() {
                     cmd.push(format!("-DgridDim.{}={}", field.get(idx).unwrap(), d));
@@ -383,7 +387,7 @@ impl Faial {
         let mut last = Stage::Solve;
         if self.infer_only.is_some() {
             last = Stage::Infer;
-        } else if self.analyze_only.is_some() {
+        } else if self.analyze_only.is_some() || self.expect_invalid {
             last = Stage::Analyze;
         }
         let mut stages = Vec::new();
@@ -498,6 +502,12 @@ impl Faial {
                     .conflicts_with("infer_only")
                     .conflicts_with("analyze_only")
                 )
+                .arg(Arg::with_name("expect_invalid")
+                    .long("expect-invalid")
+                    .help("Sets exit status according to finding invalid code.")
+                    .conflicts_with("solve_only")
+                    .conflicts_with("infer_only")
+                )
                 .arg(Arg::with_name("analyze_only")
                     .long("analyze-only")
                     .short("A")
@@ -592,6 +602,7 @@ impl Faial {
         };
         Faial {
             expect_race: matches.is_present("expect_race"),
+            expect_invalid: matches.is_present("expect_invalid"),
             solve_only: matches.is_present("solve_only"),
             input: input,
             analyze_only: parse_opt::<i32>(&matches, "analyze_only"),
