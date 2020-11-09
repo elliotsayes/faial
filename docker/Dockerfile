@@ -23,8 +23,10 @@ RUN eval $(opam config env) && \
     sudo pip3 install -r /requirements.txt
 
 ADD --chown=opam faial-ui/Cargo.toml faial-ui/Cargo.lock /opt/faial-ui/
-ADD --chown=opam faial-ui/src /opt/faial-ui/src
 RUN cd /opt/faial-ui && \
+    mkdir src && \
+    echo "fn main() {}" > src/main.rs && \
     cargo b --release && \
     cargo b && \
-    rm -rf src target/*/faial Cargo.*
+    rm -f src/main.rs target/{debug,release}/faial{,.d} Cargo.{toml,lock} && \
+    rmdir src
