@@ -29,9 +29,13 @@ test: build-tests
 sys-test: build-tests
 	@./run-tests.py
 
-gitlab:
-	 gitlab-runner exec docker build-dist --cache-dir=${GITLAB_CACHE} --docker-cache-dir=${GITLAB_CACHE} --docker-volumes=${GITLAB_CACHE}
+gitlab-test:
 	 gitlab-runner exec docker test --cache-dir=${GITLAB_CACHE} --docker-cache-dir=${GITLAB_CACHE} --docker-volumes=${GITLAB_CACHE}
+
+gitlab-bin:
+	 gitlab-runner exec docker build-dist --cache-dir=${GITLAB_CACHE} --docker-cache-dir=${GITLAB_CACHE} --docker-volumes=${GITLAB_CACHE}
+
+gitlab: gitlab-test gitlab-bin
 
 byte:
 	$(OCB) main.byte
