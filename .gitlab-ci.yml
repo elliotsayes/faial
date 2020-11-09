@@ -2,7 +2,7 @@
 image: registry.gitlab.com/umb-svl/faial/faial:dev
 variables:
 
-.tpl: &tpl
+.cache: &global_cache
   before_script:
     - export PATH="$PATH:$CI_PROJECT_DIR"
     - export CARGO_HOME="$CI_PROJECT_DIR/cargo"
@@ -28,7 +28,7 @@ variables:
 
 
 test:
-  <<: *tpl
+  <<: *global_cache
   script:
     - rm -f ./target/*/faial
     - cd "$CI_PROJECT_DIR"
@@ -37,12 +37,13 @@ test:
     - cargo b
     - cp ./target/debug/faial ..
     - cd ..
+    - export PATH="$PATH:$PWD"
     - make
     - make test
     - ./run-tests.py
 
 build-dist:
-  <<: *tpl
+  <<: *global_cache
   script:
     - cd "$CI_PROJECT_DIR"
     - rm -f ./target/*/faial
