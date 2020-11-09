@@ -22,7 +22,8 @@ RUN eval $(opam config env) && \
     /configure.sh && \
     sudo pip3 install -r /requirements.txt
 
-ADD --chown=opam faial-ui /opt/faial-ui
+ADD --chown=opam faial-ui/Cargo.toml faial-ui/Cargo.lock /opt/faial-ui/
+ADD --chown=opam faial-ui/src /opt/faial-ui/src
 RUN cd /opt/faial-ui && \
     cargo b --release && \
     cargo b
