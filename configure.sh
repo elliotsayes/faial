@@ -1,6 +1,6 @@
 #!/bin/sh
 if which opam > /dev/null; then
-    opam install \
+    opam install "$@" \
         ocamlbuild=0.14.0 \
         menhir=20200624 \
         sexplib=v0.14.0 \
