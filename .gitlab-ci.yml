@@ -1,18 +1,23 @@
 ---
 image: registry.gitlab.com/umb-svl/faial/faial:dev
 variables:
-    PATH: "$PATH:$CI_PROJECT_DIR"
-    CARGO_HOME: "$CI_PROJECT_DIR/cargo"
 
 .tpl: &tpl
   before_script:
+    - export PATH="$PATH:$CI_PROJECT_DIR"
+    - export CARGO_HOME="$CI_PROJECT_DIR/cargo"
+    - echo CARGO_HOME=$CARGO_HOME
     - rustup --version
     - rustc --version
     - cargo --version
     - opam --version
     - ocamlc --version
+    - ls /opt/faial-ui
+    - ls faial-ui/
     - cp -a /home/opam/.cargo "$CARGO_HOME"
-    - cp /opt/faial-ui/target "$CI_PROJECT_DIR/faial-ui/target"
+    - echo "FOUND PACKAGES:"; find "$CARGO_HOME"/registry/ -iname '*.crate' -type f -exec basename '{}' \;
+    - cp -a /opt/faial-ui/target "$CI_PROJECT_DIR/faial-ui/target"
+    - ls faial-ui/
 
   cache:
     key: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
