@@ -21,3 +21,8 @@ COPY configure.sh requirements.txt /
 RUN eval $(opam config env) && \
     /configure.sh && \
     sudo pip3 install -r /requirements.txt
+
+ADD --chown=opam faial-ui /opt/faial-ui
+RUN cd /opt/faial-ui && \
+    cargo b --release && \
+    cargo b
