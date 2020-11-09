@@ -20,7 +20,7 @@ variables:
     - ls faial-ui/
 
   cache:
-    key: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
+    key: "$CI_COMMIT_REF_NAME"
     paths:
     - .cargo
     - faial-ui/target
@@ -33,7 +33,7 @@ test:
     - cd "$CI_PROJECT_DIR"
     - eval $(opam config env)
     - cd faial-ui
-    - cargo b --release
+    - cargo b
     - cd ..
     - make
     - make test
