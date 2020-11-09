@@ -10,6 +10,7 @@ test:
     - cd ..
     - make
     - make test
+    - export PATH="$PATH:$PWD"
     - ./run-tests.py
 
 build-dist:
