@@ -26,4 +26,5 @@ ADD --chown=opam faial-ui/Cargo.toml faial-ui/Cargo.lock /opt/faial-ui/
 ADD --chown=opam faial-ui/src /opt/faial-ui/src
 RUN cd /opt/faial-ui && \
     cargo b --release && \
-    cargo b
+    cargo b && \
+    rm -rf src target/*/faial Cargo.*

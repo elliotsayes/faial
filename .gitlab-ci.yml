@@ -30,10 +30,12 @@ variables:
 test:
   <<: *tpl
   script:
+    - rm -f ./target/*/faial
     - cd "$CI_PROJECT_DIR"
     - eval $(opam config env)
     - cd faial-ui
     - cargo b
+    - cp ./target/debug/faial ..
     - cd ..
     - make
     - make test
@@ -43,6 +45,7 @@ build-dist:
   <<: *tpl
   script:
     - cd "$CI_PROJECT_DIR"
+    - rm -f ./target/*/faial
     - eval $(opam config env)
     - make
     - cd faial-ui
