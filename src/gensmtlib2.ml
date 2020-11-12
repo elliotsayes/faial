@@ -44,6 +44,23 @@ let print_code : Sexplib.Sexp.t list -> unit =
     Sexplib.Sexp.to_string_hum s |> print_endline;
   )
 
+let decl_string name value =
+  let open Sexplib in
+  let open Predicates in
+  [
+    Sexp.List [
+      Sexp.Atom "declare-fun";
+      Sexp.Atom name;
+      Sexp.List [];
+      Sexp.Atom "String";
+    ];
+    Serialize.unop "assert" (Sexp.List [
+      Sexp.Atom "=";
+      Sexp.Atom name;
+      Sexp.Atom (" " ^ value ^ " ")
+    ])
+  ]
+
 module Make = functor (Gen: BASE_GEN) ->
 struct
   let b_assert b = Serialize.unop "assert" (Gen.b_ser b)
@@ -95,6 +112,8 @@ struct
   let serialize_proof p : Sexplib.Sexp.t list =
     let open Symbexp in
     List.(flatten [
+      (* String decl *)
+      decl_string "$name" p.proof_name;
       (* Predicates: *)
       map ser_predicate p.proof_preds;
       (* Variable declarations: *)

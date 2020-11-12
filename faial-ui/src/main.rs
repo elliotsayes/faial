@@ -6,6 +6,9 @@ use std::str::FromStr;
 use clap::{App,Arg,ArgMatches};
 use std::convert::TryFrom;
 use subprocess::{Exec, Pipeline, CaptureData};
+use ansi_term::Colour::Red;
+use prettytable::Attr;
+use prettytable::format;
 
 #[macro_use]
 extern crate prettytable;
@@ -258,8 +261,8 @@ impl InputType {
 
     fn as_str(&self) -> &str {
         match self {
-            InputType::CUDA=>"cuda",
-            InputType::PROTO=>"proto",
+            InputType::CUDA => "cuda",
+            InputType::PROTO => "proto",
             InputType::CJSON => "cjson",
             InputType::PJSON => "pjson",
             InputType::SMT => "smt",
@@ -705,6 +708,7 @@ fn sexp_list(s:&Sexp) -> Option<Vec<Sexp>> {
 #[derive(Debug,PartialEq)]
 struct Decl {
     name:String,
+    ty: String,
     value:Atom,
 }
 
@@ -723,10 +727,11 @@ impl TryFrom<Sexp> for Decl {
         match s {
             Sexp::List(l) => match l.as_slice() {
                 //  ["define-fun", "$T1$mode", "()", "Int", 1]
-                | [_, Sexp::Atom(Atom::S(k)), _, _, Sexp::Atom(v)] =>
+                | [_, Sexp::Atom(Atom::S(k)), _, Sexp::Atom(Atom::S(ty)), Sexp::Atom(v)] =>
                     Ok(Decl{
                         name:k.clone(),
-                        value:v.clone()
+                        value:v.clone(),
+                        ty:ty.clone(),
                     }),
                 | _ => Err(format!("Error parsing variable declaration: expecting a list with 5 elements, bug got:  {:?}", l)),
             },
@@ -1111,6 +1116,7 @@ impl TaskBuilder {
 struct DataRace {
     t1: Task,
     t2: Task,
+    location: String,
     indices: Vec<i32>,
     globals: HashMap<String, Atom>,
 }
@@ -1118,6 +1124,7 @@ struct DataRace {
 struct DataRaceBuilder {
     t1: TaskBuilder,
     t2: TaskBuilder,
+    location: Option<String>,
     globals: HashMap<String, Atom>,
 }
 
@@ -1126,6 +1133,7 @@ impl DataRaceBuilder {
         DataRaceBuilder {
             t1:TaskBuilder::new(Tid::T1),
             t2:TaskBuilder::new(Tid::T2),
+            location: None,
             globals: HashMap::new(),
         }
     }
@@ -1153,11 +1161,20 @@ impl DataRaceBuilder {
         self.get(t).add_index(index, value);
     }
 
+    fn set_location(&mut self, location:String) {
+        self.location = Some(location);
+    }
+
     fn build(self) -> Result<DataRace,String> {
         let idx1 = self.t1.get_indices()?;
+        let location = match self.location {
+            Some(x) => x,
+            None => return Err("No location set".to_string()),
+        };
         Ok(DataRace {
             t1: self.t1.build()?,
             t2: self.t2.build()?,
+            location: location,
             indices: idx1,
             globals: self.globals,
         })
@@ -1176,10 +1193,20 @@ impl TryFrom<Model> for DataRace {
                 &[name] => {
                     b.add_global(name.to_string(), val.clone());
                 },
+                // (define-fun $name () String "foo")
                 // (define-fun i$T2 () Int 1)
                 &[name, tid] => {
-                    let t:Tid = tid.parse()?;
-                    b.add_local(t, name.to_string(), val.clone());
+                    if name == "" && tid == "name" {
+                        match val {
+                            Atom::S(x) => {
+                                b.set_location(x.to_string());
+                            },
+                            val => return Err(format!("Expecting a string, but got: {}", val))
+                        }
+                    } else {
+                        let t:Tid = tid.parse()?;
+                        b.add_local(t, name.to_string(), val.clone());
+                    }
                 },
                 // (define-fun $T1$mode () Int 1)
                 &[_, tid, _] => {
@@ -1263,7 +1290,7 @@ fn render_drf(drf:&DataRaceFreedom) {
     for x in &drf.0 {
         match x {
             AnalysisError::Race(m) => {
-                println!("*** DATA RACE ERROR ***");
+                println!("{}", Red.bold().paint("*** DATA RACE ERROR ***"));
                 println!("");
                 render_data_race(m)
             },
@@ -1276,29 +1303,21 @@ fn render_drf(drf:&DataRaceFreedom) {
 }
 
 fn render_data_race(dr:&DataRace) {
-    let mut table = Table::new();
-    /*
-    t1: Task,
-    t2: Task,
-    indices: Vec<i32>,
-    globals: HashMap<String, Atom>,
-    */
-    table.add_row(row![b->"Globals", b->"Value"]);
-    table.add_row(
-        Row::new(vec![
-            Cell::new("(index)"),
-            Cell::new(format!("{:?}", dr.indices).as_str()),
-        ])
-    );
-    for (k, v) in &dr.globals {
-        table.add_row(
-            Row::new(vec![
-                Cell::new(k.as_str()),
-                Cell::new(v.to_string().as_str()),
-            ])
-        );
+    if dr.globals.len() > 0 {
+        let mut table = Table::new();
+        table.set_format(*format::consts::FORMAT_NO_BORDER);
+        table.add_row(row![b->"Globals", b->"Value"]);
+        for (k, v) in &dr.globals {
+            table.add_row(
+                Row::new(vec![
+                    Cell::new(k.as_str()),
+                    Cell::new(v.to_string().as_str()),
+                ])
+            );
+        }
+        table.printstd();
+        println!("");
     }
-    table.printstd();
 
     let mut locals = HashMap::new();
     for (k, v1) in &dr.t1.variables {
@@ -1308,10 +1327,17 @@ fn render_data_race(dr:&DataRace) {
     }
 
     let mut table = Table::new();
+    table.set_format(*format::consts::FORMAT_NO_BORDER);
+//    table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
     table.add_row(row![b->"Locals", b->"T1", b->"T2"]);
     table.add_row(
         Row::new(vec![
-            Cell::new("(mode)"),
+            Cell::new(format!("{}{:?}", dr.location.trim(), dr.indices).as_str())
+            // .with_style(Attr::Bold)
+//          .with_style(Attr::Underline(true))
+          .with_style(Attr::Italic(true))
+            ,
+//            Cell::new("(mode)"),
             Cell::new(dr.t1.mode.to_string().as_str()),
             Cell::new(dr.t2.mode.to_string().as_str()),
         ])
@@ -1326,6 +1352,7 @@ fn render_data_race(dr:&DataRace) {
         );
     }
     table.printstd();
+    println!("");
 }
 
 #[test]

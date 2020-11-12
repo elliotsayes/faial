@@ -6,12 +6,13 @@ open Flatacc
 type b_phase = bexp Phasesplit.phase
 
 type proof = {
+  proof_name: string;
   proof_preds: Predicates.t list;
   proof_decls: string list;
   proof_goal: bexp;
 }
 
-let mk_proof (goal:bexp) =
+let mk_proof (location:variable) (goal:bexp) =
   let open Proto in
   let open Common in
   let decls =
@@ -23,6 +24,7 @@ let mk_proof (goal:bexp) =
     proof_preds = Predicates.get_predicates goal;
     proof_decls = decls;
     proof_goal = goal;
+    proof_name = location.var_name;
   }
 
 let proj_accesses (t:task) (h:h_prog) : cond_access list =
@@ -153,7 +155,7 @@ let h_kernel_to_proof (k:h_kernel) : proof =
   |> Phasesplit.var_uniq_phase ReplacePair.b_subst VarSet.empty
   |> h_phase_to_bexp
   |> Constfold.b_opt (* Optimize the output expression *)
-  |> mk_proof
+  |> mk_proof k.loc_kernel_location
 
 let translate (stream:h_kernel Stream.t) : proof Stream.t =
   let open Streamutil in
