@@ -7,12 +7,11 @@ use clap::{App,Arg,ArgMatches};
 use std::convert::TryFrom;
 use subprocess::{Exec, Pipeline, CaptureData};
 use ansi_term::Colour::Red;
-use prettytable::Attr;
-use prettytable::format;
 
 #[macro_use]
 extern crate prettytable;
-use prettytable::{Table, Row, Cell};
+use prettytable::format::{TableFormat};
+use prettytable::{Table, Row, Cell, Attr, format};
 
 #[derive(Debug)]
 pub struct Proofs<R> {
@@ -1303,9 +1302,39 @@ fn render_drf(drf:&DataRaceFreedom) {
 }
 
 fn render_data_race(dr:&DataRace) {
+    let mut f = TableFormat::new();
+    f.column_separator(' ');
+    let mut table = Table::new();
+    table.set_format(f);
+    table.add_row(
+        Row::new(vec![
+            Cell::new("Location:").with_style(Attr::Bold),
+            Cell::new(
+                format!("{}{:?}",
+                    dr.location.trim(),
+                    dr.indices
+                ).as_str()
+            ),
+        ])
+    );
+    table.add_row(
+        Row::new(vec![
+            Cell::new("T1 mode:").with_style(Attr::Bold),
+            Cell::new(dr.t1.mode.to_string().as_str()),
+        ])
+    );
+    table.add_row(
+        Row::new(vec![
+            Cell::new("T2 mode:").with_style(Attr::Bold),
+            Cell::new(dr.t2.mode.to_string().as_str()),
+        ])
+    );
+    table.printstd();
+    println!("");
+
     if dr.globals.len() > 0 {
         let mut table = Table::new();
-        table.set_format(*format::consts::FORMAT_NO_BORDER);
+        table.set_format(*format::consts::FORMAT_NO_COLSEP);
         table.add_row(row![b->"Globals", b->"Value"]);
         for (k, v) in &dr.globals {
             table.add_row(
@@ -1326,33 +1355,22 @@ fn render_data_race(dr:&DataRace) {
         }
     }
 
-    let mut table = Table::new();
-    table.set_format(*format::consts::FORMAT_NO_BORDER);
-//    table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
-    table.add_row(row![b->"Locals", b->"T1", b->"T2"]);
-    table.add_row(
-        Row::new(vec![
-            Cell::new(format!("{}{:?}", dr.location.trim(), dr.indices).as_str())
-            // .with_style(Attr::Bold)
-//          .with_style(Attr::Underline(true))
-          .with_style(Attr::Italic(true))
-            ,
-//            Cell::new("(mode)"),
-            Cell::new(dr.t1.mode.to_string().as_str()),
-            Cell::new(dr.t2.mode.to_string().as_str()),
-        ])
-    );
-    for (k, (v1,v2)) in locals {
-        table.add_row(
-            Row::new(vec![
-                Cell::new(k.as_str()),
-                Cell::new(v1.to_string().as_str()),
-                Cell::new(v2.to_string().as_str()),
-            ])
-        );
+    if locals.len() > 0 {
+        let mut table = Table::new();
+        table.set_format(*format::consts::FORMAT_NO_COLSEP);
+        table.add_row(row![b->"Locals", b->"T1", b->"T2"]);
+        for (k, (v1,v2)) in locals {
+            table.add_row(
+                Row::new(vec![
+                    Cell::new(k.as_str()),
+                    Cell::new(v1.to_string().as_str()),
+                    Cell::new(v2.to_string().as_str()),
+                ])
+            );
+        }
+        table.printstd();
+        println!("");
     }
-    table.printstd();
-    println!("");
 }
 
 #[test]
