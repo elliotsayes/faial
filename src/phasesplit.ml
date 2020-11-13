@@ -261,7 +261,7 @@ let kernel_to_s (k:p_kernel) : PPrint.t list =
 
 (* ---------------------- SERIALIZATION ------------------------ *)
 
-let rec inst_ser (f : 'a -> Sexplib.Sexp.t) : 'a inst -> Sexplib.Sexp.t =
+let rec inst_ser (f : 'a -> Smtlib.sexp) : 'a inst -> Smtlib.sexp =
   function
   | Base a -> f a
   | Assert b -> unop "assert" (b_ser b)
@@ -270,21 +270,19 @@ let rec inst_ser (f : 'a -> Sexplib.Sexp.t) : 'a inst -> Sexplib.Sexp.t =
     |> s_list
     |> binop "if" (b_ser b)
   | Local (x, ls) ->
-    let open Sexplib in
     prog_ser f ls
     |> s_list
-    |> binop "local" (Sexp.Atom x.var_name)
+    |> binop "local" (symbol x.var_name)
 
-and prog_ser (f : 'a -> Sexplib.Sexp.t) (ls: 'a prog) : Sexplib.Sexp.t list =
+and prog_ser (f : 'a -> Smtlib.sexp) (ls: 'a prog) : Smtlib.sexp list =
   List.map (inst_ser f) ls
 
-let rec phase_ser (f: 'a -> Sexplib.Sexp.t) : 'a phase -> Sexplib.Sexp.t list =
+let rec phase_ser (f: 'a -> Smtlib.sexp) : 'a phase -> Smtlib.sexp list =
   function
   | Phase p -> [f p |> unop "phase"]
   | Pre (b, p) -> unop "pre" (b_ser b) :: (phase_ser f p)
   | Global (x, p) ->
-    let open Sexplib in
-    unop "global" (Sexp.Atom x.var_name) :: (phase_ser f p)
+    unop "global" (symbol x.var_name) :: (phase_ser f p)
 
 let print_kernels (ks : p_kernel Stream.t) : unit =
   print_endline "; conc";

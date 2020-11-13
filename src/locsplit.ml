@@ -112,15 +112,15 @@ let translate (stream:p_kernel Stream.t) : l_kernel Stream.t =
 
 (* ------------------- SERIALIZE ---------------------- *)
 
-let loc_kernel_ser (f:'a -> Sexplib.Sexp.t) (k: 'a loc_kernel) =
-  let open Sexplib in
-  Sexp.List [
-    Sexp.Atom "kernel";
-    Serialize.unop "location" (Sexp.Atom k.loc_kernel_location.var_name);
+let loc_kernel_ser (f:'a -> Smtlib.sexp) (k: 'a loc_kernel) =
+  let open Smtlib in
+  List [
+    Atom (Symbol "kernel");
+    Serialize.unop "location" (Atom (String k.loc_kernel_location.var_name));
     Serialize.unop "code" (f k.loc_kernel_code);
   ]
 
-let print_loc_kernels (f:'a -> Sexplib.Sexp.t) (lbl:string) (ks : 'a loc_kernel Stream.t) : unit =
+let print_loc_kernels (f:'a -> Smtlib.sexp) (lbl:string) (ks : 'a loc_kernel Stream.t) : unit =
   let open Serialize in
   print_endline ("; " ^ lbl);
   let count = ref 0 in
@@ -133,11 +133,10 @@ let print_loc_kernels (f:'a -> Sexplib.Sexp.t) (lbl:string) (ks : 'a loc_kernel 
   print_endline ("; end of " ^ lbl)
 
 let print_kernels (ks : l_kernel Stream.t) : unit =
-  let open Sexplib in
-  let p_ser (p:l_prog) : Sexp.t =
+  let p_ser (p:l_prog) : Smtlib.sexp =
     prog_ser Serialize.a_ser p |> Serialize.s_list
   in
-  let ph_ser (ph: l_phase) : Sexp.t =
+  let ph_ser (ph: l_phase) : Smtlib.sexp =
     phase_ser p_ser ph |> Serialize.s_list
   in
   print_loc_kernels ph_ser "locsplit" ks

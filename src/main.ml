@@ -42,7 +42,7 @@ let safe_run f =
       Printf.eprintf "Error parsing JSON: %s" e;
       exit (-1)
     end
-  | Parse.ParseError l ->
+  | Common.ParseError l ->
     List.iter (fun x ->
       prerr_endline x;
       prerr_endline ""

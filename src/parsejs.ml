@@ -12,13 +12,13 @@ let pp_js data =
     result
 
 let parse_error (cause:string list) msg data =
-  raise (Parse.ParseError (( "Error parsing '" ^ msg ^"': " ^ pp_js data)::cause))
+  raise (Common.ParseError (( "Error parsing '" ^ msg ^"': " ^ pp_js data)::cause))
 
 let abort_error msg data =
-  raise (Parse.ParseError [msg ^ "\n" ^ pp_js data])
+  raise (Common.ParseError [msg ^ "\n" ^ pp_js data])
 
 let call msg f data =
-  let o = (try f data with Parse.ParseError l -> parse_error l msg data) in
+  let o = (try f data with Common.ParseError l -> parse_error l msg data) in
   match o with
   | Some m -> m
   | None ->  parse_error [] msg data
@@ -211,7 +211,7 @@ let parse_brel = make "brel" (fun m ->
 )
 
 let do_call f k msg =
-  try f k with Parse.ParseError l -> parse_error l msg k
+  try f k with Common.ParseError l -> parse_error l msg k
 
 let do_parse f k msg =
   match do_call f k msg with

@@ -4,14 +4,14 @@ open Exp
 open Common
 
 module type BASE_GEN = sig
-  val preamble : Sexplib.Sexp.t list
-  val uint_s : Sexplib.Sexp.t
-  val b_ser : bexp -> Sexplib.Sexp.t
+  val preamble : Smtlib.sexp list
+  val uint_s : Smtlib.sexp
+  val b_ser : bexp -> Smtlib.sexp
 end
 
 module StdGen : BASE_GEN =
   struct
-    let uint_s = Sexplib.Sexp.Atom "Int"
+    let uint_s = Serialize.symbol "Int"
     let b_ser = Serialize.StdBexp.b_ser
     let preamble = [
       Serialize.flat_call "set-logic" ["QF_NIA"];
@@ -23,11 +23,12 @@ module StdGen : BASE_GEN =
 module BvGen : BASE_GEN =
   struct
     let uint_s =
-      let open Sexplib in
-      Sexp.List [
-        Sexp.Atom "_";
-        Sexp.Atom "BitVec";
-        Sexp.Atom "32";
+      let open Smtlib in
+      let open Serialize in
+      List [
+        symbol "_";
+        symbol "BitVec";
+        symbol "32";
       ]
 
     let b_ser = Serialize.BvBexp.b_ser
@@ -39,25 +40,21 @@ module BvGen : BASE_GEN =
     ]
   end
 
-let print_code : Sexplib.Sexp.t list -> unit =
-  List.iter (fun s ->
-    Sexplib.Sexp.to_string_hum s |> print_endline;
-  )
-
 let decl_string name value =
-  let open Sexplib in
+  let open Smtlib in
   let open Predicates in
+  let open Serialize in
   [
-    Sexp.List [
-      Sexp.Atom "declare-fun";
-      Sexp.Atom name;
-      Sexp.List [];
-      Sexp.Atom "String";
+    List [
+      symbol "declare-fun";
+      symbol name;
+      List [];
+      symbol "String";
     ];
-    Serialize.unop "assert" (Sexp.List [
-      Sexp.Atom "=";
-      Sexp.Atom name;
-      Sexp.Atom (" " ^ value ^ " ")
+    unop "assert" (List [
+      symbol "=";
+      symbol name;
+      Atom (String value)
     ])
   ]
 
@@ -68,23 +65,25 @@ struct
   let l_assert = List.map b_assert
 
   let ser_predicate p =
-    let open Sexplib in
-    let open Predicates in
+  let open Smtlib in
+  let open Predicates in
+  let open Serialize in
     let g = Predicates.pred_to_codegen p in
-    Sexp.List [
-      Sexp.Atom "define-fun";
-      Sexp.Atom p.pred_name;
-      Sexp.List [Serialize.unop g.codegen_arg Gen.uint_s];
-      Sexp.Atom "Bool";
+    List [
+      symbol "define-fun";
+      symbol p.pred_name;
+      List [Serialize.unop g.codegen_arg Gen.uint_s];
+      symbol "Bool";
       Gen.b_ser g.codegen_body;
     ]
 
   let define_const v ty =
-    let open Sexplib in
-    Sexp.List [
-      Sexp.Atom "declare-fun";
-      Sexp.Atom v.var_name;
-      Sexp.List [];
+  let open Smtlib in
+  let open Serialize in
+    List [
+      symbol "declare-fun";
+      symbol v.var_name;
+      List [];
       ty;
     ]
 
@@ -96,20 +95,21 @@ struct
     ]
 
   let prove l =
-    let open Sexplib in
+    let open Serialize in
+    let open Smtlib in
     List.flatten [
       [
-        Sexp.List [Sexp.Atom "push"; Sexp.Atom "1";];
+        List [symbol "push"; Atom (Int 1);];
       ];
       l;
       [
-        Sexp.List [Sexp.Atom "check-sat"];
-        Sexp.List [Sexp.Atom "get-model"];
-        Sexp.List [Sexp.Atom "pop"; Sexp.Atom "1";];
+        List [symbol "check-sat"];
+        List [symbol "get-model"];
+        List [symbol "pop"; Atom (Int 1)];
       ]
     ]
 
-  let serialize_proof p : Sexplib.Sexp.t list =
+  let serialize_proof p : Smtlib.sexp list =
     let open Symbexp in
     List.(flatten [
       (* String decl *)
@@ -122,21 +122,24 @@ struct
       [ b_assert p.proof_goal ];
     ]) |> prove
 
-  let serialize_proofs (ps:Symbexp.proof list) : Sexplib.Sexp.t list =
+  let serialize_proofs (ps:Symbexp.proof list) : Smtlib.sexp list =
     List.(map serialize_proof ps |> flatten)
 end
 
 module Bv2 = Make(BvGen)
 module Std2 = Make(StdGen)
 
-let bv_serialize_proofs : Symbexp.proof list -> Sexplib.Sexp.t list = Bv2.serialize_proofs
+let bv_serialize_proofs : Symbexp.proof list -> Smtlib.sexp list = Bv2.serialize_proofs
 
-let int_serialize_proofs : Symbexp.proof list -> Sexplib.Sexp.t list = Std2.serialize_proofs
+let int_serialize_proofs : Symbexp.proof list -> Smtlib.sexp list = Std2.serialize_proofs
 
-let translate (ps: Symbexp.proof Stream.t) : Sexplib.Sexp.t list =
+let translate (ps: Symbexp.proof Stream.t) : Smtlib.sexp list =
   let open Serialize in
   Streamutil.to_list ps
   |> int_serialize_proofs
 
-let print: Sexplib.Sexp.t list -> unit =
-  List.iter Serialize.s_print
+let print: Smtlib.sexp list -> unit =
+  List.iter (fun x ->
+    Serialize.s_print x;
+    print_endline "";
+  )

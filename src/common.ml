@@ -64,3 +64,5 @@ let range (i:int) (j:int) : int list =
     if n < i then acc else iter (n-1) (n :: acc)
   in
   iter j []
+
+exception ParseError of (string list)

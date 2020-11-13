@@ -163,18 +163,17 @@ let translate (stream:h_kernel Stream.t) : proof Stream.t =
 
 (* ------------------- SERIALIZE ---------------------- *)
 
-let proof_ser (p:proof) : Sexplib.Sexp.t =
-  let open Sexplib in
+let proof_ser (p:proof) : Smtlib.sexp =
+  let open Smtlib in
   let open Serialize in
-  Sexp.List [
-    Sexp.Atom "proof";
+  List [
+    symbol "proof";
     call "decls" (atoms p.proof_decls);
     unop "goal" (b_ser p.proof_goal);
   ]
 
 
 let print_kernels (ks : proof Stream.t) : unit =
-  let open Sexplib in
   let open Serialize in
   print_endline "; symbexp";
   let count = ref 0 in

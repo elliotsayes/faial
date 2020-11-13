@@ -102,21 +102,20 @@ let translate (stream:l_kernel Stream.t) : h_kernel Stream.t =
 (* ------------------- SERIALIZE ---------------------- *)
 
 let print_kernels (ks : h_kernel Stream.t) : unit =
-  let open Sexplib in
-  let cond_access_ser ((e,b):cond_access) : Sexp.t =
-    Sexp.List [
+  let cond_access_ser ((e,b):cond_access) : Smtlib.sexp =
+    Smtlib.List [
       Serialize.a_ser e;
       Serialize.b_ser b;
     ]
   in
-  let p_ser (p: h_prog) : Sexp.t =
+  let p_ser (p: h_prog) : Smtlib.sexp =
     let accs = List.map cond_access_ser p.prog_accesses |> Serialize.s_list in
-    Sexp.List [
+    Smtlib.List [
       Serialize.var_set_ser "locals" p.prog_locals;
       Serialize.unop "accesses" accs;
     ]
   in
-  let ph_ser (ph:h_phase) : Sexp.t =
+  let ph_ser (ph:h_phase) : Smtlib.sexp =
     Phasesplit.phase_ser p_ser ph |> Serialize.s_list
   in
   print_loc_kernels ph_ser "flat-accesses" ks
