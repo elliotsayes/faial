@@ -1,9 +1,14 @@
 open Phasealign
 open Phasesplit
 open Exp
-type l_inst = access inst
+type l_access = {
+  la_access: access;
+  la_location: Sourceloc.location;
+}
 
-type l_prog = access prog
+type l_inst = l_access inst
+
+type l_prog = l_access prog
 
 type l_phase = l_prog phase
 
@@ -32,7 +37,7 @@ let filter_loc (x:variable) (p: p_phase) : l_phase option =
       match i with
       | Base (y, e) ->
         begin if var_equal x y then
-          Some (Base e)
+          Some (Base {la_location = x.var_loc; la_access = e})
         else
           None
         end
@@ -134,7 +139,7 @@ let print_loc_kernels (f:'a -> Smtlib.sexp) (lbl:string) (ks : 'a loc_kernel Str
 
 let print_kernels (ks : l_kernel Stream.t) : unit =
   let p_ser (p:l_prog) : Smtlib.sexp =
-    prog_ser Serialize.a_ser p |> Serialize.s_list
+    prog_ser (fun a -> Serialize.a_ser a.la_access) p |> Serialize.s_list
   in
   let ph_ser (ph: l_phase) : Smtlib.sexp =
     phase_ser p_ser ph |> Serialize.s_list

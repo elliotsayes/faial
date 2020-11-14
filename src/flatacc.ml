@@ -1,9 +1,13 @@
 open Locsplit
 open Exp
-type cond_access = access * bexp
+type cond_access = {
+  ca_location: Sourceloc.location;
+  ca_access: access;
+  ca_cond: bexp;
+}
 
-let add_cond (b:bexp) ((c,e):cond_access) : cond_access =
-  (c, b_and b e)
+let add_cond (b:bexp) (c:cond_access) : cond_access =
+  { c with ca_cond = b_and c.ca_cond b }
 
 type h_prog = {
   prog_locals: VarSet.t;
@@ -28,7 +32,7 @@ let p_prog_to_h_prog (known:VarSet.t) (p:l_prog) : h_prog =
   let flatten (p:l_prog) : cond_access list =
     let rec flatten_inst (b:bexp) (i: l_inst) : cond_access list =
       match i with
-      | Base e -> [(e, b)]
+      | Base e -> [{ca_location = e.la_location; ca_access = e.la_access; ca_cond = b}]
       | Assert b -> []
       | Cond (b', l) -> flatten_prog (b_and b b') l
       | Local (y, l) -> flatten_prog b l
@@ -73,8 +77,14 @@ let p_prog_to_h_prog (known:VarSet.t) (p:l_prog) : h_prog =
     in
     names_prog VarSet.empty p
   in
+  let la_subst (s:Subst.SubstPair.t) (a:l_access) : l_access =
+    {
+      la_access = Subst.ReplacePair.a_subst s a.la_access;
+      la_location = a.la_location;
+    }
+  in
   (* Make all variables in the program distinct *)
-  let p = Phasealign.var_uniq_prog Subst.ReplacePair.a_subst known p in
+  let (p:l_prog) = Phasealign.var_uniq_prog la_subst known p in
   (* Retrieve all accesses found in the program *)
   let pre = get_asserts p in
   (* Add the assert-preconditions to every access *)
@@ -102,10 +112,10 @@ let translate (stream:l_kernel Stream.t) : h_kernel Stream.t =
 (* ------------------- SERIALIZE ---------------------- *)
 
 let print_kernels (ks : h_kernel Stream.t) : unit =
-  let cond_access_ser ((e,b):cond_access) : Smtlib.sexp =
+  let cond_access_ser (c:cond_access) : Smtlib.sexp =
     Smtlib.List [
-      Serialize.a_ser e;
-      Serialize.b_ser b;
+      Serialize.a_ser c.ca_access;
+      Serialize.b_ser c.ca_cond;
     ]
   in
   let p_ser (p: h_prog) : Smtlib.sexp =

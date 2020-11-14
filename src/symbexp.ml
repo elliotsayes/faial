@@ -60,8 +60,12 @@ let proj_accesses (t:task) (h:h_prog) : cond_access list =
     | NRel (o, n1, n2) -> NRel (o, inline_proj_n n1, inline_proj_n n2)
   in
   (* Find and replace under conditional accesses *)
-  let cond_access_subst (s:SubstAssoc.t) ((e,b):cond_access) : cond_access =
-    (ReplaceAssoc.a_subst s e, inline_proj_b b |> ReplaceAssoc.b_subst s)
+  let cond_access_subst (s:SubstAssoc.t) (c:cond_access) : cond_access =
+    {
+      ca_access = ReplaceAssoc.a_subst s c.ca_access;
+      ca_cond = inline_proj_b c.ca_cond |> ReplaceAssoc.b_subst s;
+      ca_location = c.ca_location;
+    }
   in
   let s = make_subst h.prog_locals in
   List.map (cond_access_subst s) h.prog_accesses
@@ -104,12 +108,12 @@ let mk_task_gen (t:task) =
   }
 
 (* Given a task generator serialize a conditional access *)
-let cond_access_to_bexp (t:assign_task) ((e,b):cond_access) :bexp =
-  [ b;
-    t.assign_mode e.access_mode
+let cond_access_to_bexp (t:assign_task) (c:cond_access) :bexp =
+  [ c.ca_cond;
+    t.assign_mode c.ca_access.access_mode
   ]
   @
-  List.mapi t.assign_index e.access_index
+  List.mapi t.assign_index c.ca_access.access_index
   |> b_and_ex
 
 let cond_acc_list_to_bexp (t:assign_task) (l:cond_access list) : bexp =
@@ -136,7 +140,7 @@ let h_prog_to_bexp (h:h_prog) : bexp =
   let rec get_dim (l:cond_access list) : int =
     match l with
     | [] -> failwith "Phase split should not generate empty phases!"
-    | (a,_) :: _ -> List.length a.access_index
+    | c :: _ -> List.length c.ca_access.access_index
   in
   b_and_ex [
     task_to_bexp Task1;
