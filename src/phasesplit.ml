@@ -46,7 +46,7 @@ let make_global (r:range) (ls:'a phase) : 'a phase =
 
 (* -------------------- HASHING ------------------------------------ *)
 
- module PPhaseHash =
+module PPhaseHash =
   struct
     type t = p_phase
     let equal i j : bool = compare_p_phase i j = 0
@@ -104,7 +104,7 @@ let var_uniq_phase (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a phase) : '
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
 
 (* Implements |> *)
-let rec s_prog_to_p_phase: s_prog -> p_phase Stream.t =
+let rec s_prog_to_p_phase: s_prog -> p_phase stream =
   function
     (* ^P; sync |> { P } *)
   | NPhase u -> Phase u |> Streamutil.one
@@ -146,7 +146,7 @@ let n_prog_to_s_prog : n_prog -> s_prog =
   | Unaligned (p, q) -> NSeq (p, NPhase q)
 
 (* Takes a program with Syncs and generates a program with phased blocks *)
-let prog_to_s_prog (s:Proto.prog) : p_phase Stream.t =
+let prog_to_s_prog (s:Proto.prog) : p_phase stream =
   let known = PPhaseHashtbl.create 100 in
   let keep_phase (p:p_phase) : bool =
     if PPhaseHashtbl.mem known p then
@@ -184,7 +184,7 @@ let inline_locals (vars:VarSet.t) (pre:bexp) : p_phase -> p_phase =
   (* Add pre-conditions and global variables *)
   phase_map (fun c -> [Cond (pre, c)] |> add_locals)
 
-let translate (k: Proto.prog kernel) (expect_typing_fail:bool) : p_kernel Stream.t =
+let translate (k: Proto.prog kernel) (expect_typing_fail:bool) : p_kernel stream =
   prog_to_s_prog k.kernel_code
   |> Streamutil.map (fun p ->
     let p : p_phase = p
@@ -284,15 +284,14 @@ let rec phase_ser (f: 'a -> Smtlib.sexp) : 'a phase -> Smtlib.sexp list =
   | Global (x, p) ->
     unop "global" (symbol x.var_name) :: (phase_ser f p)
 
-let print_kernels (ks : p_kernel Stream.t) : unit =
+let print_kernels (ks : p_kernel Streamutil.stream) : unit =
   print_endline "; conc";
   let count = ref 0 in
-  Stream.iter (fun (k:p_kernel) ->
+  Streamutil.iter (fun (k:p_kernel) ->
     let curr = !count + 1 in
     count := curr;
     print_endline ("; phase " ^ (string_of_int curr));
     PPrint.print_doc (kernel_to_s k)
-    (*kernel_ser k |> s_print*)
   ) ks;
   print_endline "; end of conc"
 

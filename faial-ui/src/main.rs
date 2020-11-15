@@ -304,7 +304,8 @@ struct Faial {
     analyze_only: Option<i32>,
     infer_only: Option<i32>,
     stage: Stage,
-    infer_json: bool,
+    analyze_json: bool,
+    infer_output_json: bool,
     block_dim: Vec<usize>,
     grid_dim: Vec<usize>,
     verbose: bool,
@@ -333,6 +334,11 @@ impl Faial {
                     // Set the level of the analysis, example: -3
                     cmd.push("-X".to_string());
                     cmd.push(format!("{}", lvl));
+                    if self.infer_output_json {
+                        cmd.push("--provenance".to_string());
+                        cmd.push("-t".to_string());
+                        cmd.push("json".to_string());
+                    }
                 } else {
                     cmd.push("--provenance".to_string());
                     cmd.push("-t".to_string());
@@ -364,7 +370,7 @@ impl Faial {
                 for (k,v) in &self.defines {
                     cmd.push(format!("-D{}={}", k, v));
                 }
-                if self.infer_json {
+                if self.analyze_json {
                     cmd.push("--json".to_string());
                 }
                 if let Some(filename) = filename {
@@ -456,7 +462,7 @@ fn is_key_val(v: String) -> Result<(), String> {
     if v.matches("=").count() != 1 {
         return Err(
             String::from(
-                "Expecting exaclty one equals sign, example: 'key=13'."
+                "Expecting exactly one equals sign, example: 'key=13'."
             )
         );
     }
@@ -543,6 +549,10 @@ impl Faial {
                     .long("dry-run")
                     .help("Prints the sequence of programs being run internally and exits")
                 )
+                .arg(Arg::with_name("infer_output_json")
+                    .long("--infer-output-json")
+                    .help("Outputs the result of inference as a PJSON format.")
+                )
                 .arg(Arg::with_name("input_type")
                     .long("type")
                     .short("t")
@@ -598,7 +608,7 @@ impl Faial {
             app.write_help(&mut out).expect("failed to write to stdout");
             std::process::exit(255);
         }
-        let infer_json = match stage {
+        let analyze_json = match stage {
             Stage::Infer | Stage::Parse => true,
             _ => input_type == InputType::CJSON,
         };
@@ -612,7 +622,8 @@ impl Faial {
             grid_dim: get_vec(&matches, "grid_dim").unwrap(),
             block_dim: get_vec(&matches, "block_dim").unwrap(),
             stage: stage,
-            infer_json: infer_json,
+            infer_output_json: matches.is_present("infer_output_json"),
+            analyze_json: analyze_json,
             verbose: matches.is_present("verbose"),
             defines: parse_key_val(&matches, "defines"),
             input_type: input_type,
@@ -824,6 +835,7 @@ enum CommandResponse {
     Unknown(),
     Model(Model),
     Error(String),
+    Str(String),
 }
 
 impl CommandResponse {
@@ -840,6 +852,7 @@ impl CommandResponse {
                     },
                     _ => Err(format!("While parsing an error command: expecting a list of 2 elements, but got: {:?}", data))
                 },
+            Sexp::Atom(Atom::S(s)) => Ok(CommandResponse::Str(s)),
             data => Err(format!("While parsing an error command: expecting a list, but got atom: {:?}", data)),
         }
     }
@@ -854,7 +867,7 @@ impl TryFrom<Sexp> for CommandResponse {
                     "sat" => Ok(CommandResponse::Sat()),
                     "unsat" => Ok(CommandResponse::Unsat()),
                     "unknown" => Ok(CommandResponse::Unknown()),
-                    _ => Err(format!("Unexpected tag: {}", x)),
+                    x => Ok(CommandResponse::Str(x.to_string())),
                 }
             },
             Sexp::List(ref l)  => {
@@ -1046,6 +1059,7 @@ struct TaskBuilder {
     indices:HashMap<i32, i32>,
     variables:HashMap<String,Atom>,
     mode: Option<AccessMode>,
+    location_id: Option<usize>,
 }
 
 impl TaskBuilder {
@@ -1059,11 +1073,16 @@ impl TaskBuilder {
             variables: HashMap::new(),
             indices: HashMap::new(),
             mode: None,
+            location_id: None,
         }
     }
 
     fn add_variable(&mut self, key:String, value:Atom) {
         self.variables.insert(key, value);
+    }
+
+    fn set_location_id(&mut self, lid:usize) {
+        self.location_id = Some(lid)
     }
 
     fn set_mode(&mut self, m:AccessMode) {
@@ -1088,6 +1107,7 @@ impl TaskBuilder {
 
 #[derive(Debug,PartialEq)]
 struct Task {
+    location_id: Option<usize>,
     mode: AccessMode,
     variables: HashMap<String, Atom>
 }
@@ -1103,6 +1123,7 @@ impl TaskBuilder {
         }
         match self.mode {
             Some(m) => Ok (Task{
+                location_id: self.location_id,
                 mode: m,
                 variables: self.variables,
             }),
@@ -1115,7 +1136,7 @@ impl TaskBuilder {
 struct DataRace {
     t1: Task,
     t2: Task,
-    location: String,
+    array: String,
     indices: Vec<i32>,
     globals: HashMap<String, Atom>,
 }
@@ -1123,7 +1144,7 @@ struct DataRace {
 struct DataRaceBuilder {
     t1: TaskBuilder,
     t2: TaskBuilder,
-    location: Option<String>,
+    array: Option<String>,
     globals: HashMap<String, Atom>,
 }
 
@@ -1132,7 +1153,7 @@ impl DataRaceBuilder {
         DataRaceBuilder {
             t1:TaskBuilder::new(Tid::T1),
             t2:TaskBuilder::new(Tid::T2),
-            location: None,
+            array: None,
             globals: HashMap::new(),
         }
     }
@@ -1160,20 +1181,24 @@ impl DataRaceBuilder {
         self.get(t).add_index(index, value);
     }
 
-    fn set_location(&mut self, location:String) {
-        self.location = Some(location);
+    fn set_location_id(&mut self, t:Tid, lid:usize) {
+        self.get(t).set_location_id(lid);
+    }
+
+    fn set_array(&mut self, array:String) {
+        self.array = Some(array);
     }
 
     fn build(self) -> Result<DataRace,String> {
         let idx1 = self.t1.get_indices()?;
-        let location = match self.location {
+        let array = match self.array {
             Some(x) => x,
-            None => return Err("No location set".to_string()),
+            None => return Err("No array set".to_string()),
         };
         Ok(DataRace {
             t1: self.t1.build()?,
             t2: self.t2.build()?,
-            location: location,
+            array: array,
             indices: idx1,
             globals: self.globals,
         })
@@ -1182,7 +1207,7 @@ impl DataRaceBuilder {
 
 impl TryFrom<Model> for DataRace {
     type Error = String;
-    fn try_from(m:Model) -> Result<Self,Self::Error> {
+    fn try_from(m:Model) -> Result<Self,String> {
         let mut b = DataRaceBuilder::new();
         for (name, val) in &m.data {
             let name = name.clone();
@@ -1195,10 +1220,10 @@ impl TryFrom<Model> for DataRace {
                 // (define-fun $name () String "foo")
                 // (define-fun i$T2 () Int 1)
                 &[name, tid] => {
-                    if name == "" && tid == "name" {
+                    if name == "" && tid == "array" {
                         match val {
                             Atom::S(x) => {
-                                b.set_location(x.to_string());
+                                b.set_array(x.to_string());
                             },
                             val => return Err(format!("Expecting a string, but got: {}", val))
                         }
@@ -1208,10 +1233,20 @@ impl TryFrom<Model> for DataRace {
                     }
                 },
                 // (define-fun $T1$mode () Int 1)
-                &[_, tid, _] => {
-                    let m = AccessMode::try_from(val.clone())?;
+                &[_, tid, tag] => {
                     let t:Tid = tid.parse()?;
-                    b.set_mode(t, m);
+                    if tag == "mode" {
+                        let m = AccessMode::try_from(val.clone())?;
+                        b.set_mode(t, m);
+                    } else if tag == "loc" {
+                        let loc_idx:usize = match val.clone() {
+                            Atom::I(idx) => idx as usize,
+                            val => return Err(format!("Expected an integer, got: {:?}", val)),
+                        };
+                        b.set_location_id(t, loc_idx);
+                    } else {
+                        return Err(format!("Unknown tag: {}", tag))
+                    }
                 },
                 // (define-fun $T2$idx$0 () Int 1)
                 &[_, tid, _, num] => {
@@ -1237,11 +1272,14 @@ enum AnalysisError {
 }
 
 #[derive(Debug,PartialEq)]
-struct DataRaceFreedom(Vec<AnalysisError>);
+struct DataRaceFreedom {
+    errors: Vec<AnalysisError>,
+    locations: Vec<String>,
+}
 
 impl DataRaceFreedom {
     fn is_drf(&self) -> bool {
-        self.0.len() == 0
+        self.errors.len() == 0
     }
 }
 
@@ -1251,28 +1289,46 @@ impl TryFrom<Smtlib2Response> for DataRaceFreedom {
         let mut it = elems.0.iter();
         let mut result = Vec::new();
         let mut idx = 1;
+        let mut locations:Vec<String> = Vec::new();
         while let Some(v1) = it.next() {
-            if let Some(v2) = it.next() {
-                match (v1,v2) {
-                    (CommandResponse::Unsat(), CommandResponse::Error(_)) => {
-                        // OK
-                    },
-                    (CommandResponse::Sat(), CommandResponse::Model(ref m)) => {
-                        let dr = DataRace::try_from(m.clone())?;
-                        result.push(AnalysisError::Race(dr));
-                    },
-                    (CommandResponse::Unknown(), CommandResponse::Error(_)) => {
-                        result.push(AnalysisError::Unknown);
-                    },
-                    (v1, v2) => {return Err(format!("Error handling index {}: {:?} {:?}", idx, v1, v2))},
-                }
-            } else {
-                return Err("Expecting pairs".to_string());
+            match v1 {
+                CommandResponse::Str(v1) => {
+                    locations.push(v1.clone());
+                    break;
+                },
+                v1 => {
+                    if let Some(v2) = it.next() {
+                        match (v1,v2) {
+                            (CommandResponse::Unsat(), CommandResponse::Error(_)) => {
+                                // OK
+                            },
+                            (CommandResponse::Sat(), CommandResponse::Model(ref m)) => {
+                                let dr = DataRace::try_from(m.clone())?;
+                                result.push(AnalysisError::Race(dr));
+                            },
+                            (CommandResponse::Unknown(), CommandResponse::Error(_)) => {
+                                result.push(AnalysisError::Unknown);
+                            },
+                            (v1, v2) => {return Err(format!("Error handling index {}: {:?} {:?}", idx, v1, v2))},
+                        }
+                    } else {
+                        return Err("Expecting pairs".to_string());
+                    }
+                    idx += 2;
+                },
             }
-            idx += 2;
         }
-        Ok(DataRaceFreedom(result))
+        while let Some(v1) = it.next() {
+            match v1 {
+                CommandResponse::Str(v1) => {
+                    locations.push(v1.clone());
+                },
+                v1 => return Err(format!("Expecting a string, got: {:?}", v1)),
+            }
+        }
+        Ok(DataRaceFreedom{errors:result, locations:locations})
     }
+
 
 }
 
@@ -1286,12 +1342,12 @@ impl FromStr for DataRaceFreedom {
 }
 
 fn render_drf(drf:&DataRaceFreedom) {
-    for x in &drf.0 {
+    for x in &drf.errors {
         match x {
             AnalysisError::Race(m) => {
                 println!("{}", Red.bold().paint("*** DATA RACE ERROR ***"));
                 println!("");
-                render_data_race(m)
+                render_data_race(m, &drf.locations)
             },
             AnalysisError::Unknown => println!("I DONT'T KNOW!"),
         }
@@ -1301,22 +1357,38 @@ fn render_drf(drf:&DataRaceFreedom) {
     }
 }
 
-fn render_data_race(dr:&DataRace) {
+fn render_data_race(dr:&DataRace, locs:&Vec<String>) {
     let mut f = TableFormat::new();
     f.column_separator(' ');
     let mut table = Table::new();
     table.set_format(f);
     table.add_row(
         Row::new(vec![
-            Cell::new("Location:").with_style(Attr::Bold),
+            Cell::new("Array:").with_style(Attr::Bold),
             Cell::new(
                 format!("{}{:?}",
-                    dr.location.trim(),
+                    dr.array,
                     dr.indices
                 ).as_str()
             ),
         ])
     );
+    if let  (Some(lid1), Some(lid2)) = (dr.t1.location_id, dr.t2.location_id) {
+        if let (Some(lid1), Some(lid2)) = (locs.get(lid1), locs.get(lid2)) {
+            table.add_row(
+                Row::new(vec![
+                    Cell::new("T1 location:").with_style(Attr::Bold),
+                    Cell::new(format!("{}", lid1.as_str()).as_str()),
+                ])
+            );
+            table.add_row(
+                Row::new(vec![
+                    Cell::new("T2 location:").with_style(Attr::Bold),
+                    Cell::new(format!("{}", lid2.as_str()).as_str()),
+                ])
+            );
+        }
+    }
     table.add_row(
         Row::new(vec![
             Cell::new("T1 mode:").with_style(Attr::Bold),

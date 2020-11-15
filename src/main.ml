@@ -130,6 +130,7 @@ let main_t =
         else
           ()
         ;
+        let provenance = false in
         let k = Subst.replace_constants sets k in
         halt_when (cmd = Typecheck) Serialize.PPrint.print_k k;
         let ks = Phasealign.translate k in
@@ -140,9 +141,9 @@ let main_t =
         halt_when (cmd = CLang) Locsplit.print_kernels ks;
         let ks = Flatacc.translate ks in
         halt_when (cmd = HLang) Flatacc.print_kernels ks;
-        let ks = Symbexp.translate ks in
+        let ks = Symbexp.translate provenance ks in
         halt_when (cmd = BLang) Symbexp.print_kernels ks;
-        let ks = Gensmtlib2.translate ks in
+        let ks = Gensmtlib2.translate provenance ks in
         if expect_typing_fail then exit(-1)
         else Gensmtlib2.print ks
       ) ks

@@ -78,8 +78,43 @@ let proj_accesses (t:task) (h:h_prog) : cond_access list =
 *)
 type assign_task = {
   assign_mode : mode -> bexp;
-  assign_index: int -> nexp -> bexp
+  assign_index: int -> nexp -> bexp;
+  assign_loc: Sourceloc.location -> bexp;
 }
+
+module LocationHash =
+  struct
+    type t = Sourceloc.location
+    let equal i j : bool = Sourceloc.compare_location i j = 0
+    let hash i = Sourceloc.hash_location i
+  end
+
+module LocationTbl = Hashtbl.Make(LocationHash)
+
+module LocationCache = struct
+  type t = {
+    loc_to_int: int LocationTbl.t;
+    mutable all_locs: Sourceloc.location list;
+  }
+
+  let create (size:int) : t = {
+    loc_to_int = LocationTbl.create size;
+    all_locs = []
+  }
+
+  let get (ht:t) (l:Sourceloc.location) : int =
+    match LocationTbl.find_opt ht.loc_to_int l with
+    | Some n -> n
+    | None ->
+      let n = LocationTbl.length ht.loc_to_int in
+      LocationTbl.add ht.loc_to_int l n;
+      ht.all_locs <- l::ht.all_locs;
+      n
+
+  let all (ht:t) : Sourceloc.location list =
+    ht.all_locs
+end
+
 
 let mode_to_nexp (m:mode) : nexp =
   Num (match m with
@@ -88,10 +123,11 @@ let mode_to_nexp (m:mode) : nexp =
 let mk_var (x:string) = Var (var_make x)
 let prefix (t:task) = "$" ^ task_to_string t ^ "$"
 let mk_mode (t:task) = mk_var (prefix t ^ "mode")
+let mk_loc (t:task) = mk_var (prefix t ^ "loc")
 let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
 
 (* Returns the generators for the given task *)
-let mk_task_gen (t:task) =
+let mk_task_gen (cache:LocationCache.t) (t:task) : assign_task =
   let this_mode_v : nexp = mk_mode t in
   let other_mode_v : nexp = mk_mode (other_task t) in
   let idx_v : int -> nexp = mk_idx t in
@@ -102,30 +138,41 @@ let mk_task_gen (t:task) =
       |> b_and b
     else b
   in
+  let assign_loc (l:Sourceloc.location) : bexp =
+        n_eq (mk_loc (other_task t))
+            (Num (LocationCache.get cache l))
+  in
+  let assign_index (idx:int) (n:nexp) : bexp = n_eq (idx_v idx) n
+  in
   {
     assign_mode = eq_mode;
-    assign_index = fun idx n -> n_eq (idx_v idx) n;
+    assign_index = assign_index;
+    assign_loc = assign_loc;
   }
 
 (* Given a task generator serialize a conditional access *)
-let cond_access_to_bexp (t:assign_task) (c:cond_access) :bexp =
-  [ c.ca_cond;
-    t.assign_mode c.ca_access.access_mode
-  ]
-  @
-  List.mapi t.assign_index c.ca_access.access_index
-  |> b_and_ex
+let cond_access_to_bexp (provenance:bool) (t:assign_task) (c:cond_access) :bexp =
+    let head = [
+        c.ca_cond;
+        t.assign_mode c.ca_access.access_mode;
+    ] in
+    let head = if provenance
+        then t.assign_loc c.ca_location :: head
+        else head
+    in
+    head @ List.mapi t.assign_index c.ca_access.access_index
+    |> b_and_ex
 
-let cond_acc_list_to_bexp (t:assign_task) (l:cond_access list) : bexp =
-  List.map (cond_access_to_bexp t) l
+let cond_acc_list_to_bexp (provenance:bool) (t:assign_task) (l:cond_access list) : bexp =
+  List.map (cond_access_to_bexp provenance t) l
   |> b_or_ex
 
-let h_prog_to_bexp (h:h_prog) : bexp =
+let h_prog_to_bexp (provenance:bool) (cache:LocationCache.t) (h:h_prog) : bexp =
   (* Pick one access *)
   let task_to_bexp (t:task) : bexp =
-    let gen = mk_task_gen t in
+    let gen = mk_task_gen cache t in
     let accs = proj_accesses t h in
-    cond_acc_list_to_bexp gen accs
+    cond_acc_list_to_bexp provenance gen accs
   in
   (* Make sure all indexeses match *)
   (* $T1$index$0 = $T2$index$0 ... *)
@@ -154,16 +201,17 @@ let rec h_phase_to_bexp (h: bexp Phasesplit.phase) : bexp =
   | Pre (b, h) -> h_phase_to_bexp h |> b_and b
   | Global (_, h) -> h_phase_to_bexp h
 
-let h_kernel_to_proof (k:h_kernel) : proof =
-  Phasesplit.phase_map h_prog_to_bexp k.loc_kernel_code
+let h_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (k:h_kernel) : proof =
+  Phasesplit.phase_map (h_prog_to_bexp provenance cache) k.loc_kernel_code
   |> Phasesplit.var_uniq_phase ReplacePair.b_subst VarSet.empty
   |> h_phase_to_bexp
   |> Constfold.b_opt (* Optimize the output expression *)
   |> mk_proof k.loc_kernel_location
 
-let translate (stream:h_kernel Stream.t) : proof Stream.t =
+let translate (provenance:bool) (stream:h_kernel Streamutil.stream) : (LocationCache.t * proof Streamutil.stream) =
   let open Streamutil in
-  map h_kernel_to_proof stream
+  let c = LocationCache.create 100 in
+  c, map (h_kernel_to_proof provenance c) stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 
@@ -177,11 +225,11 @@ let proof_ser (p:proof) : Smtlib.sexp =
   ]
 
 
-let print_kernels (ks : proof Stream.t) : unit =
+let print_kernels ((cache, ks) : LocationCache.t * proof Streamutil.stream) : unit =
   let open Serialize in
   print_endline "; symbexp";
   let count = ref 0 in
-  Stream.iter (fun (p:proof) ->
+  Streamutil.iter (fun (p:proof) ->
     let curr = !count + 1 in
     count := curr;
     print_endline ("; bool " ^ (string_of_int curr));

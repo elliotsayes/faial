@@ -168,41 +168,7 @@ let rec s_subst (s:SubstPair.t): s_prog -> s_prog =
     NFor (ReplacePair.r_subst s r, q)
 
 (* ------------------------------------------------------------------------- *)
-(*
-let rec inst_ser (f : 'a -> Sexplib.Sexp.t) : 'a inst -> Sexplib.Sexp.t =
-  function
-  | Base a -> f a
-  | Assert b -> unop "assert" (b_ser b)
-  | Cond (b, ls) ->
-    prog_ser f ls
-    |> s_list
-    |> binop "if" (b_ser b)
-  | Local (x, ls) ->
-    let open Sexplib in
-    prog_ser f ls
-    |> s_list
-    |> binop "local" (Sexp.Atom x.var_name)
 
-and prog_ser (f : 'a -> Sexplib.Sexp.t) (ls: 'a prog) : Sexplib.Sexp.t list =
-  List.map (inst_ser f) ls
-
-let p_prog_ser (p:p_prog) : Sexplib.Sexp.t =
-  prog_ser acc_expr_ser p |> s_list
-
-let rec s_prog_ser: s_prog -> Sexplib.Sexp.t list =
-  function
-  | NPhase p -> [unop "block" (p_prog_ser p)]
-  | NSeq (p, q) -> s_prog_ser p @ s_prog_ser q
-  | NFor (r, p) ->
-    let open Serialize in
-    [binop "nfor" (r_ser r) (s_prog_ser p |> s_list)]
-
-let n_prog_ser : n_prog -> Sexplib.Sexp.t =
-  function
-  | Open p -> unop "unsync" (p_prog_ser p)
-  | Unaligned (p, q) -> binop "unaligned" (s_prog_ser p |> s_list) (p_prog_ser q)
-
-*)
 let prog_to_s (f : 'a -> PPrint.t list) : 'a prog -> PPrint.t list =
   let open PPrint in
   let rec i_to_s: 'a inst -> t list =
@@ -310,7 +276,7 @@ let var_uniq_prog (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a prog) : 'a 
 
 
 
-let normalize (p: Proto.prog) : n_prog Stream.t =
+let normalize (p: Proto.prog) : n_prog stream =
   let rec inline_if (b:bexp) (p: s_prog) : s_prog =
     match p with
     | NPhase u -> NPhase ([Cond (b, u)])
@@ -347,7 +313,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
     | Unaligned (p1, p2), _ -> seq2 p1 (seq1 p2 q)
   in
 
-  let rec norm_i (i:Proto.inst) : n_prog Stream.t =
+  let rec norm_i (i:Proto.inst) : n_prog stream =
     let open Streamutil in
     match i with
     | Sync ->
@@ -362,7 +328,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
         [
           Unaligned (inline_if b p, [Cond(b, q)]);
           Open [Assert (b_not b)]
-        ] |> Stream.of_list
+        ] |> from_list
       )
 
     | Loop ({range_var=x;range_lower_bound=lb;range_upper_bound=ub; range_step=s} as r, p) ->
@@ -388,7 +354,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
       | l -> failwith "Conditionals cannot appear inside for-loops"
       end
       |> one
-  and norm_p (p:Proto.prog) : n_prog Stream.t =
+  and norm_p (p:Proto.prog) : n_prog stream =
     match p with
     | [] -> Open [] |> one
     | i :: p ->
@@ -398,7 +364,7 @@ let normalize (p: Proto.prog) : n_prog Stream.t =
   in
   norm_p p
 
-let translate (k: Proto.prog kernel) : n_prog kernel Stream.t =
+let translate (k: Proto.prog kernel) : n_prog kernel stream =
   normalize k.kernel_code
   |> Streamutil.map (fun p ->
     { k with kernel_code = p }
@@ -406,10 +372,10 @@ let translate (k: Proto.prog kernel) : n_prog kernel Stream.t =
 
 (* ---------------------- SERIALIZATION ------------------------ *)
 
-let print_kernels (ks : n_prog kernel Stream.t) : unit =
+let print_kernels (ks : n_prog kernel Streamutil.stream) : unit =
   print_endline "# begin align";
   let count = ref 0 in
-  Stream.iter (fun (k:n_prog kernel) ->
+  Streamutil.iter (fun (k:n_prog kernel) ->
     let curr = !count + 1 in
     count := curr;
     print_endline ("\n## version " ^ (string_of_int curr));

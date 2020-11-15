@@ -105,13 +105,13 @@ let l_kernel_to_h_kernel (k:l_kernel) : h_kernel =
     loc_kernel_code = l_phase_to_h_phase k.loc_kernel_code
   }
 
-let translate (stream:l_kernel Stream.t) : h_kernel Stream.t =
+let translate (stream:l_kernel Streamutil.stream) : h_kernel Streamutil.stream =
   let open Streamutil in
   map l_kernel_to_h_kernel stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 
-let print_kernels (ks : h_kernel Stream.t) : unit =
+let print_kernels (ks : h_kernel Streamutil.stream) : unit =
   let cond_access_ser (c:cond_access) : Smtlib.sexp =
     Smtlib.List [
       Serialize.a_ser c.ca_access;

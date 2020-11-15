@@ -107,11 +107,11 @@ let p_kernel_to_l_kernel_list (k:p_kernel) : l_kernel list =
     | None -> None
   )
 
-let translate (stream:p_kernel Stream.t) : l_kernel Stream.t =
+let translate (stream:p_kernel Streamutil.stream) : l_kernel Streamutil.stream =
   let open Streamutil in
   stream
   |> map (fun x ->
-    p_kernel_to_l_kernel_list x |> Stream.of_list
+    p_kernel_to_l_kernel_list x |> Streamutil.from_list
   )
   |> concat
 
@@ -125,11 +125,11 @@ let loc_kernel_ser (f:'a -> Smtlib.sexp) (k: 'a loc_kernel) =
     Serialize.unop "code" (f k.loc_kernel_code);
   ]
 
-let print_loc_kernels (f:'a -> Smtlib.sexp) (lbl:string) (ks : 'a loc_kernel Stream.t) : unit =
+let print_loc_kernels (f:'a -> Smtlib.sexp) (lbl:string) (ks : 'a loc_kernel Streamutil.stream) : unit =
   let open Serialize in
   print_endline ("; " ^ lbl);
   let count = ref 0 in
-  Stream.iter (fun x ->
+  Streamutil.iter (fun x ->
     let curr = !count + 1 in
     count := curr;
     print_endline ("; phase " ^ (string_of_int curr));
@@ -137,7 +137,7 @@ let print_loc_kernels (f:'a -> Smtlib.sexp) (lbl:string) (ks : 'a loc_kernel Str
   ) ks;
   print_endline ("; end of " ^ lbl)
 
-let print_kernels (ks : l_kernel Stream.t) : unit =
+let print_kernels (ks : l_kernel Streamutil.stream) : unit =
   let p_ser (p:l_prog) : Smtlib.sexp =
     prog_ser (fun a -> Serialize.a_ser a.la_access) p |> Serialize.s_list
   in

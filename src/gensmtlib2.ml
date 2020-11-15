@@ -113,7 +113,7 @@ struct
     let open Symbexp in
     List.(flatten [
       (* String decl *)
-      decl_string "$name" p.proof_name;
+      decl_string "$array" p.proof_name;
       (* Predicates: *)
       map ser_predicate p.proof_preds;
       (* Variable declarations: *)
@@ -133,13 +133,42 @@ let bv_serialize_proofs : Symbexp.proof list -> Smtlib.sexp list = Bv2.serialize
 
 let int_serialize_proofs : Symbexp.proof list -> Smtlib.sexp list = Std2.serialize_proofs
 
-let translate (ps: Symbexp.proof Stream.t) : Smtlib.sexp list =
-  let open Serialize in
-  Streamutil.to_list ps
-  |> int_serialize_proofs
+let location_to_sexp (l:Sourceloc.location) : Smtlib.sexp =
+    let add_pos (b:Buffer.t) (p:Sourceloc.position) =
+        Buffer.add_string b (string_of_int p.pos_line);
+        Buffer.add_char b ':';
+        Buffer.add_string b (string_of_int p.pos_column)
+    in
+    let b = Buffer.create 100 in
+    Buffer.add_string b l.loc_filename;
+    Buffer.add_char b ':';
+    add_pos b l.loc_start;
+    Buffer.add_char b ':';
+    add_pos b l.loc_end;
+    let b = Buffer.contents b in
+    let open Smtlib in
+    let b = atom_to_string (String b) in
+    List [Atom (Symbol "echo"); Atom (String b)]
 
-let print: Smtlib.sexp list -> unit =
-  List.iter (fun x ->
+let translate (provenance:bool) ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : Smtlib.sexp Streamutil.stream =
+    let open Serialize in
+    let open Symbexp in
+    let proofs : Smtlib.sexp Streamutil.stream =
+        Streamutil.map Std2.serialize_proof ps
+        |> Streamutil.map Streamutil.from_list
+        |> Streamutil.concat
+    in
+    if provenance then
+        let locs : Smtlib.sexp Streamutil.stream = LocationCache.all cache
+            |> Streamutil.from_list
+            |> Streamutil.map location_to_sexp
+        in
+        Streamutil.sequence proofs locs
+    else
+        proofs
+
+let print: Smtlib.sexp Streamutil.stream -> unit =
+  Streamutil.iter (fun x ->
     Serialize.s_print x;
     print_endline "";
   )
