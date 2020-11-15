@@ -138,9 +138,9 @@ let location_print_title outx (loc:location) : unit =
 
 let print_errs (errs:(string * location) list) : bool =
   let print_err (msg,loc:string * location) =
-    Printf.printf "%a: %s" location_print_start loc msg;
+    Printf.eprintf "%a: %s" location_print_start loc msg;
     try
-      (Printf.printf "\n\n%a" location_print_title loc)
+      (Printf.eprintf "\n\n%a" location_print_title loc)
     with Sys_error _ -> ()
   in
   List.iter print_err errs;
