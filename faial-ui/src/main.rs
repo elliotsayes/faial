@@ -6,7 +6,8 @@ use std::io::{self, BufRead};
 use std::collections::HashMap;
 use std::str::FromStr;
 use clap::{App,Arg,ArgMatches};
-use subprocess::{Exec, Pipeline, CaptureData};
+use subprocess::{Exec, Pipeline, PopenError};
+use std::process::ExitStatus;
 
 mod parser;
 use parser::DataRaceFreedom;
@@ -81,8 +82,8 @@ enum AnalysisStatus {
     Abort(i32),
 }
 
-impl From<std::process::ExitStatus> for AnalysisStatus {
-    fn from(status:std::process::ExitStatus) -> Self {
+impl From<ExitStatus> for AnalysisStatus {
+    fn from(status:ExitStatus) -> Self {
         if status.success() {
             AnalysisStatus::Pass
         } else {
@@ -118,10 +119,18 @@ impl Run {
     }
 }
 
-struct Pipe {
-    children: Vec<Vec<String>>,
+trait CommandBuilder {
+    type Error;
+    fn new(exec:Vec<Vec<String>>) -> Self;
+    fn spawn(self) -> Result<CommandOutput, Self::Error>;
+    fn to_string(&self) -> String;
 }
 
+struct CommandOutput {
+    stdout: String,
+    stderr: String,
+    success: bool,
+}
 
 #[derive(Debug)]
 enum PipelineState {
@@ -155,16 +164,11 @@ impl PipelineState {
     }
 }
 
-impl Pipe {
+struct SubprocBuilder {
+    children: Vec<Vec<String>>,
+}
 
-    fn new(children:Vec<Vec<String>>) -> Self {
-        Pipe {
-            children: children,
-        }
-    }
-    fn as_str(&self) -> String {
-        self.children.iter().map(|x| x.join(" ")).collect::<Vec<_>>().join(" | ")
-    }
+impl SubprocBuilder {
 
     fn build(&self) -> Vec<Run> {
         let mut runs = Vec::new();
@@ -174,7 +178,22 @@ impl Pipe {
         runs
     }
 
-    fn spawn(self) -> subprocess::Result<CaptureData> {
+}
+
+impl CommandBuilder for SubprocBuilder {
+    type Error = PopenError;
+
+    fn new(children:Vec<Vec<String>>) -> Self {
+        SubprocBuilder {
+            children: children,
+        }
+    }
+
+    fn to_string(&self) -> String {
+        self.children.iter().map(|x| x.join(" ")).collect::<Vec<_>>().join(" | ")
+    }
+
+    fn spawn(self) -> Result<CommandOutput, PopenError> {
         let runs : Vec<Run> = self.build();
         let mut it = runs.iter();
         let exec : Exec = it.next().unwrap().as_exec();
@@ -182,8 +201,16 @@ impl Pipe {
         for run in it {
             state = state.add(run.as_exec());
         }
-        state.capture()
+        match state.capture() {
+            Ok(data) => Ok(CommandOutput {
+                stdout: data.stdout_str(),
+                stderr: data.stderr_str(),
+                success: data.exit_status.success(),
+            }),
+            Err(e) => Err(e),
+        }
     }
+
 }
 
 #[derive(Debug,Clone,Eq,PartialEq)]
@@ -422,7 +449,7 @@ impl Faial {
         stages.get(stages.len() - 1).unwrap().clone()
     }
 
-    fn get_pipe(&self) -> Pipe {
+    fn get_pipe(&self) -> Vec<Vec<String>> {
         let mut pipe = Vec::new();
         for stage in self.get_stages() {
             let filename = if stage == self.stage {
@@ -432,7 +459,7 @@ impl Faial {
             };
             pipe.push(self.get_command(stage, filename));
         }
-        Pipe::new(pipe)
+        pipe
     }
 }
 
@@ -484,6 +511,7 @@ fn is_key_val(v: String) -> Result<(), String> {
     }
     Err(String::from("Value assigned to key must be an unsigned integer."))
 }
+
 fn parse_key_val<'a>(matches:&ArgMatches<'a>, name:&str) -> HashMap<String, u32> {
     match matches.values_of(name) {
         Some(vs) => {
@@ -638,13 +666,13 @@ impl Faial {
         }
     }
 
-    fn handle_data(self, data:CaptureData) {
+    fn handle_data(self, data:CommandOutput) {
         match self.last_stage() {
             Stage::Solve => {
-                let buffer = data.stdout_str();
+                let buffer = data.stdout;
                 if self.solve_only {
-                    print!("{}", data.stdout_str());
-                    eprint!("{}", data.stderr_str());
+                    print!("{}", buffer);
+                    eprint!("{}", data.stderr);
                 } else {
                     if buffer.len() > 0 {
                         match buffer.parse::<DataRaceFreedom>() {
@@ -657,15 +685,15 @@ impl Faial {
                             Err(e) => eprintln!("Error parsing solver output: {}", e.to_string()),
                         }
                     } else {
-                        eprint!("{}", data.stderr_str());
+                        eprint!("{}", data.stderr);
                     }
                 }
                 std::process::exit(1);
             },
             _ => {
-                print!("{}", data.stdout_str());
-                eprint!("{}", data.stderr_str());
-                if ! data.exit_status.success() {
+                print!("{}", data.stdout);
+                eprint!("{}", data.stderr);
+                if ! data.success {
                     std::process::exit(255);
                 }
             }
@@ -675,8 +703,8 @@ impl Faial {
 
 fn main() {
     let faial = Faial::new();
-    let pipe = faial.get_pipe();
-    let pipe_str = pipe.as_str();
+    let pipe = SubprocBuilder::new(faial.get_pipe());
+    let pipe_str = pipe.to_string();
     if faial.dry_run || faial.verbose {
         eprintln!("RUN {}", pipe_str);
         if faial.dry_run {
