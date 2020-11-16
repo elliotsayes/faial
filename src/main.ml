@@ -144,10 +144,12 @@ let main_t =
         let ks = Symbexp.translate provenance ks in
         halt_when (cmd = BLang) Symbexp.print_kernels ks;
         let ks = Gensmtlib2.translate provenance ks in
-        if expect_typing_fail then exit(-1)
-        else Gensmtlib2.print ks
+        Gensmtlib2.print ks
       ) ks
     with
+      | Phasesplit.PhasesplitException errs ->
+          Sourceloc.print_errs errs;
+          exit (if expect_typing_fail then 0 else -1)
       | Exit ->
         begin
           if expect_typing_fail then exit(-1)

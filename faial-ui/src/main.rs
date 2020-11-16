@@ -5,9 +5,10 @@ use std::fs::File;
 use std::io::{self, BufRead};
 use std::collections::HashMap;
 use std::str::FromStr;
-use clap::{App,Arg,ArgMatches};
-use subprocess::{Exec, Pipeline, PopenError};
 use std::process::ExitStatus;
+
+use clap::{App,Arg,ArgMatches};
+use duct::{Expression, cmd};
 
 mod parser;
 use parser::DataRaceFreedom;
@@ -97,33 +98,45 @@ impl From<ExitStatus> for AnalysisStatus {
 }
 
 #[derive(Debug)]
-struct Run {
+struct Cmd {
     args: Vec<String>,
+    unchecked: bool,
 }
 
-impl Run {
-    fn new(args:Vec<String>) -> Self {
-        Run {
+impl Cmd {
+
+    fn to_string(self:&Self) -> String {
+        self.args.join(" ")
+    }
+
+    fn checked(args:Vec<String>) -> Self {
+        Cmd {
             args: args,
+            unchecked: false,
         }
     }
 
-    fn as_exec(&self) -> Exec {
-        let mut it = self.args.iter();
-        let exe = it.next().expect("Run.args cannot be empty");
-        let mut cmd = Exec::cmd(exe);
-        for arg in it {
-            cmd = cmd.arg(arg);
+    fn unchecked(args:Vec<String>) -> Self {
+        Cmd {
+            args: args,
+            unchecked: true,
         }
-        cmd
+    }
+
+    fn to_expr(self:&Self) -> Expression {
+        let mut it = self.args.iter();
+        let head = it.next().unwrap();
+        let rest:Vec<String> = it.map(|x| x.clone()).collect();
+        let expr = cmd(head, rest);
+        if self.unchecked { expr.unchecked() } else { expr }
     }
 }
+
 
 trait CommandBuilder {
     type Error;
-    fn new(exec:Vec<Vec<String>>) -> Self;
+    fn new(exec:Vec<Cmd>) -> Self;
     fn spawn(self) -> Result<CommandOutput, Self::Error>;
-    fn to_string(&self) -> String;
 }
 
 struct CommandOutput {
@@ -132,85 +145,35 @@ struct CommandOutput {
     success: bool,
 }
 
-#[derive(Debug)]
-enum PipelineState {
-    One(Exec),
-    Many(Pipeline),
+
+fn cmd_to_string(children:&Vec<Cmd>) -> String {
+    children.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" | ")
 }
 
-impl PipelineState {
-    fn new(exec:Exec) -> Self {
-        PipelineState::One(exec)
-    }
+struct DuctBuilder(Expression);
 
-    fn add(self, exec:Exec) -> PipelineState {
-        match self {
-            PipelineState::One(prev) => {
-                PipelineState::Many(prev | exec)
-            },
-            PipelineState::Many(prev) => PipelineState::Many(prev | exec),
+impl CommandBuilder for DuctBuilder {
+    type Error = io::Error;
+
+    fn new(children:Vec<Cmd>) -> Self {
+        let mut it = children.iter();
+        let mut c = it.next().unwrap().to_expr();
+        while let Some(elem) = it.next() {
+            c = c.pipe(elem.to_expr());
         }
+        DuctBuilder(c)
     }
 
-    fn capture(self) -> subprocess::Result<subprocess::CaptureData> {
-        match self {
-            PipelineState::One(prev) => {
-                prev.capture()
-            },
-            PipelineState::Many(prev) => {
-                prev.capture()
-            },
-        }
-    }
-}
-
-struct SubprocBuilder {
-    children: Vec<Vec<String>>,
-}
-
-impl SubprocBuilder {
-
-    fn build(&self) -> Vec<Run> {
-        let mut runs = Vec::new();
-        for args in self.children.iter() {
-            runs.push(Run::new(args.clone()));
-        }
-        runs
-    }
-
-}
-
-impl CommandBuilder for SubprocBuilder {
-    type Error = PopenError;
-
-    fn new(children:Vec<Vec<String>>) -> Self {
-        SubprocBuilder {
-            children: children,
-        }
-    }
-
-    fn to_string(&self) -> String {
-        self.children.iter().map(|x| x.join(" ")).collect::<Vec<_>>().join(" | ")
-    }
-
-    fn spawn(self) -> Result<CommandOutput, PopenError> {
-        let runs : Vec<Run> = self.build();
-        let mut it = runs.iter();
-        let exec : Exec = it.next().unwrap().as_exec();
-        let mut state = PipelineState::new(exec);
-        for run in it {
-            state = state.add(run.as_exec());
-        }
-        match state.capture() {
-            Ok(data) => Ok(CommandOutput {
-                stdout: data.stdout_str(),
-                stderr: data.stderr_str(),
-                success: data.exit_status.success(),
+    fn spawn(self) -> Result<CommandOutput, Self::Error> {
+        match self.0.stdout_capture().run() {
+            Ok(output) => Ok(CommandOutput {
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                success: output.status.success(),
             }),
             Err(e) => Err(e),
         }
     }
-
 }
 
 #[derive(Debug,Clone,Eq,PartialEq)]
@@ -349,7 +312,7 @@ struct Faial {
 }
 
 impl Faial {
-    fn get_command(&self, stage:Stage, filename:Option<String>) -> Vec<String> {
+    fn get_command(&self, stage:Stage, filename:Option<String>) -> Cmd {
         match stage {
             Stage::Parse => {
                 let mut cmd = Vec::new();
@@ -359,7 +322,7 @@ impl Faial {
                 } else {
                     cmd.push("/dev/stdin".to_string());
                 }
-                cmd
+                Cmd::checked(cmd)
             },
             Stage::Infer => {
                 let mut cmd = Vec::new();
@@ -383,7 +346,7 @@ impl Faial {
                 } else {
                     cmd.push("-".to_string());
                 }
-                cmd
+                Cmd::checked(cmd)
             },
             Stage::Analyze => {
                 let mut cmd = vec!["faial-bin".to_string()];
@@ -410,7 +373,7 @@ impl Faial {
                 if let Some(filename) = filename {
                     cmd.push(filename);
                 }
-                cmd
+                Cmd::checked(cmd)
             },
             Stage::Solve => {
                 let mut args = vec!["z3".to_string()];
@@ -420,7 +383,7 @@ impl Faial {
                 } else {
                     args.push("-in".to_string());
                 }
-                args
+                Cmd::unchecked(args)
             },
         }
     }
@@ -449,7 +412,7 @@ impl Faial {
         stages.get(stages.len() - 1).unwrap().clone()
     }
 
-    fn get_pipe(&self) -> Vec<Vec<String>> {
+    fn get_pipe(&self) -> Vec<Cmd> {
         let mut pipe = Vec::new();
         for stage in self.get_stages() {
             let filename = if stage == self.stage {
@@ -691,7 +654,7 @@ impl Faial {
                 std::process::exit(1);
             },
             _ => {
-                print!("{}", data.stdout);
+//                print!("{}", data.stdout);
                 eprint!("{}", data.stderr);
                 if ! data.success {
                     std::process::exit(255);
@@ -703,8 +666,10 @@ impl Faial {
 
 fn main() {
     let faial = Faial::new();
-    let pipe = SubprocBuilder::new(faial.get_pipe());
-    let pipe_str = pipe.to_string();
+    let pipe = faial.get_pipe();
+    let pipe_str = cmd_to_string(&pipe);
+    // let pipe = SubprocBuilder::new(pipe);
+    let pipe = DuctBuilder::new(pipe);
     if faial.dry_run || faial.verbose {
         eprintln!("RUN {}", pipe_str);
         if faial.dry_run {

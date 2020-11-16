@@ -184,6 +184,8 @@ let inline_locals (vars:VarSet.t) (pre:bexp) : p_phase -> p_phase =
   (* Add pre-conditions and global variables *)
   phase_map (fun c -> [Cond (pre, c)] |> add_locals)
 
+exception PhasesplitException of (string * Sourceloc.location) list
+
 let translate (k: Proto.prog kernel) (expect_typing_fail:bool) : p_kernel stream =
   prog_to_s_prog k.kernel_code
   |> Streamutil.map (fun p ->
@@ -201,15 +203,13 @@ let translate (k: Proto.prog kernel) (expect_typing_fail:bool) : p_kernel stream
         var_loc
       )
     in
-    if Sourceloc.print_errs errs then
-      exit (if expect_typing_fail then 0 else -1)
+    if List.length errs > 0 then
+      raise (PhasesplitException errs)
     else
-      ()
-    ;
-    {
-      p_kernel_locations = get_locs p;
-      p_kernel_code = p
-    }
+      {
+        p_kernel_locations = get_locs p;
+        p_kernel_code = p
+      }
   )
 
 (* --------------------------- PRETTY PRINT ------------------- *)
