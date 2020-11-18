@@ -88,6 +88,24 @@ let form_well (p:Proto.prog) : w_prog =
   | Some p, c -> p @ [SSync c]
   | None, c -> [SSync c]
 
+let rec inline_ifs (w:w_prog) : w_prog =
+  let rec i_inline (b:bexp) (w:w_inst) =
+    match w with
+    | SSync c -> SSync [UCond (b, c)]
+    | SCond (b', w) -> SCond (b_and b b', w)
+    | SLoop (c1, r, w, c2) -> SLoop ([UCond (b, c1)], r, p_inline b w, [UCond (b, c2)])
+  and p_inline (b:bexp) (p:w_prog) =
+    List.map (i_inline b) p
+  in
+  match w with
+  | i :: w ->
+    begin match i with
+    | SCond (b, w1) -> p_inline b w1 @ inline_ifs w
+    | _ -> i :: inline_ifs w
+    end
+  | [] -> []
+
+
 (* This is an internal datatype. The output of normalize is one of 4 cases: *)
 type s_prog =
     (* A single phase (unsynch code ended by sync) *)
