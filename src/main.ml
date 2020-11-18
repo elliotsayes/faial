@@ -148,7 +148,7 @@ let main_t =
       ) ks
     with
       | Phasesplit.PhasesplitException errs ->
-          Sourceloc.print_errs errs;
+          let _ = Sourceloc.print_errs errs in
           exit (if expect_typing_fail then 0 else -1)
       | Exit ->
         begin
