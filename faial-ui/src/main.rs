@@ -654,7 +654,9 @@ impl Faial {
                 std::process::exit(1);
             },
             _ => {
-//                print!("{}", data.stdout);
+                if ! self.expect_invalid {
+                    print!("{}", data.stdout);
+                }
                 eprint!("{}", data.stderr);
                 if ! data.success {
                     std::process::exit(255);
@@ -668,7 +670,6 @@ fn main() {
     let faial = Faial::new();
     let pipe = faial.get_pipe();
     let pipe_str = cmd_to_string(&pipe);
-    // let pipe = SubprocBuilder::new(pipe);
     let pipe = DuctBuilder::new(pipe);
     if faial.dry_run || faial.verbose {
         eprintln!("RUN {}", pipe_str);
