@@ -7,6 +7,7 @@ open Streamutil
 open Hash_rt
 open Ppx_compare_lib.Builtin
 
+
 type 'a inst =
   | Base of 'a
   | Assert of bexp
@@ -20,6 +21,72 @@ type p_inst = Proto.acc_expr inst [@@deriving hash, compare]
 
 type p_prog = Proto.acc_expr prog [@@deriving hash, compare]
 
+type u_inst =
+  | UAcc of acc_expr
+  | UCond of bexp * u_inst list
+  | ULoop of range * u_inst list
+
+type u_prog = u_inst list
+
+type w_inst =
+  | SSync of u_prog
+  | SCond of bexp * w_inst list
+  | SLoop of u_prog * range * w_inst list * u_prog
+
+type w_prog = w_inst list
+
+type w_or_u_inst =
+  | WInst of w_inst
+  | UInst of u_inst
+  | Both of w_inst * u_inst
+
+(* Given a regular program, return a well-formed one *)
+let form_well (p:Proto.prog) : w_prog =
+  let rec i_infer (i:Proto.inst): w_or_u_inst =
+    match i with
+    | Acc e -> UInst (UAcc e)
+    | Sync -> WInst (SSync [])
+    | Cond (b, p) ->
+      begin match p_infer p with
+      | (Some p, c) -> Both (SCond (b, p), UCond (b, c))
+      | (None, c) -> UInst (UCond (b, c))
+      end
+    | Loop (r, p) ->
+      begin match p_infer p with
+      | Some p, c -> WInst (SLoop ([], r, p, c))
+      | None, c -> UInst (ULoop (r, c))
+      end
+  and p_infer (p:Proto.prog) : w_prog option * u_prog =
+    match p with
+    | i :: p ->
+      let j = i_infer i in
+      begin match p_infer p with
+      | (None, c2) ->
+        begin match j with
+        | WInst w -> (Some [w], c2)
+        | UInst p -> (None, p::c2)
+        | Both (p, c1) -> (Some [p], c1::c2)
+        end
+      | (Some p, c2) ->
+        begin match j with
+        | WInst i -> Some (i::p), c2
+        | UInst c -> Some (w_add c p), c2
+        | Both (i, c) -> Some (i:: w_add c p), c2
+        end
+      end
+    | [] -> (None, [])
+
+  and w_add (c:u_inst) (w:w_prog) =
+    match w with
+    | SSync c2 :: w -> SSync (c :: c2) :: w
+    | SCond (b, w1) :: w2 -> SCond (b, w_add c w1) :: w_add c w2
+    | SLoop (c2, r, w1, c3) :: w2 ->
+      SLoop (c::c2, r, w1, c3) :: w2
+    | [] -> []
+  in
+  match p_infer p with
+  | Some p, c -> p @ [SSync c]
+  | None, c -> [SSync c]
 
 (* This is an internal datatype. The output of normalize is one of 4 cases: *)
 type s_prog =
@@ -342,13 +409,15 @@ let normalize (p: Proto.prog) : n_prog stream =
         let new_p1 = s_subst (x, range_next_var r) p1 in
         let new_r = { r with range_upper_bound = new_ub } in
         (* Rule:
-                                P1' = P1 {n/x}
-          P |> P1, P2           P2' = P2{m-1/x}
+          aligned(p) = (q,c3)      c = c3;c2
           -------------------------------------------------------
-          for x [n,m) {P} |>
-            assert (n < m) {P1'};
-            for [n,m-1) {P2;P1 {x+1/x}},
-            assert (n<m); P2'
+          align(c1;for x [n,m) {P,c2}) =
+            (c1 . q[x:=n]);
+            for x in [n+1, m) {
+                   c[x:=x - 1] . q
+                 }
+            ,
+            c[x:= m - 1]
           *)
         Unaligned (NSeq (p1', NFor (new_r, prepend p2 new_p1)), p2')
       | l -> failwith "Conditionals cannot appear inside for-loops"
