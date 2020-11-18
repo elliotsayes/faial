@@ -52,13 +52,6 @@ let other_task = function
   | Task1 -> Task2
   | Task2 -> Task1
 
-type nexp =
-  | Var of variable
-  | Num of int
-  | Bin of nbin * nexp * nexp
-  | Proj of task * variable
-  [@@deriving hash, compare]
-
 type nrel =
   | NEq
   | NNeq
@@ -73,7 +66,15 @@ type brel =
   | BAnd
   [@@deriving hash, compare]
 
-type bexp =
+type nexp =
+  | Var of variable
+  | Num of int
+  | Bin of nbin * nexp * nexp
+  | Proj of task * variable
+  | NIf of bexp * nexp * nexp
+  [@@deriving hash, compare]
+
+and bexp =
   | Bool of bool
   | NRel of nrel * nexp * nexp
   | BRel of brel * bexp * bexp

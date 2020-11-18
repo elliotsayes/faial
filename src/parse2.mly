@@ -52,6 +52,8 @@ nexp:
   | n1 = nexp ; o = nbin ; n2 = nexp { o n1 n2 }
   | ONE AT x = ident { Proj(Task1, x) }
   | TWO AT x = ident { Proj(Task2, x) }
+  | IF LPAREN b = bexp LBRACE n1 = nexp RBRACE ELSE LBRACE n2 = nexp RBRACE
+    { NIf (b, n1, n2) }
 
 %inline nbin:
   | PLUS { n_plus }

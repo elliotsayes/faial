@@ -50,8 +50,8 @@ let proj_accesses (t:task) (h:h_prog) : cond_access list =
     | Var _ -> n
     | Bin (o, n1, n2) -> Bin (o, inline_proj_n n1, inline_proj_n n2)
     | Proj (t, x) -> Var (proj_var t x)
-  in
-  let rec inline_proj_b (b: bexp) : bexp =
+    | NIf (b, n1, n2) -> NIf (inline_proj_b b, inline_proj_n n1, inline_proj_n n2)
+  and inline_proj_b (b: bexp) : bexp =
     match b with
     | Pred _
     | Bool _ -> b

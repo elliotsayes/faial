@@ -27,6 +27,7 @@ let s_print (s:Smtlib.sexp) : unit =
 
 module type NEXP_SERIALIZER = sig
   val n_ser: nexp -> Smtlib.sexp
+  val b_ser: bexp -> Smtlib.sexp
 end
 
 let task_to_string t =
@@ -37,6 +38,11 @@ let task_to_string t =
 let t_ser t =
   symbol (task_to_string t)
 
+let brel_to_string (r:brel) =
+  match r with
+  | BOr -> "or"
+  | BAnd -> "and"
+
 module StdNexp : NEXP_SERIALIZER = struct
   let nbin_to_string (m:nbin) : string =
     match m with
@@ -46,6 +52,15 @@ module StdNexp : NEXP_SERIALIZER = struct
     | Div -> "div"
     | Mod -> "mod"
 
+  let rec nrel_ser (r:nrel) =
+    match r with
+    | NEq -> binop "="
+    | NLe -> binop "<="
+    | NLt -> binop "<"
+    | NGe -> binop ">="
+    | NGt -> binop ">"
+    | NNeq -> fun n1 n2 -> unop "not" (nrel_ser NEq n1 n2)
+
   let rec n_ser (a:nexp) : Smtlib.sexp =
     let open Smtlib in
     match a with
@@ -54,6 +69,16 @@ module StdNexp : NEXP_SERIALIZER = struct
     | Var x -> Atom (Symbol x.var_name)
     | Bin (b, a1, a2) ->
       binop (nbin_to_string b) (n_ser a1) (n_ser a2)
+    | NIf (b, n1, n2) -> call "if" [b_ser b; n_ser n1; n_ser n2]
+  and b_ser (b:bexp) : Smtlib.sexp =
+    match b with
+    | Bool b -> Smtlib.Atom (Smtlib.Bool b)
+    | NRel (b, a1, a2) ->
+      nrel_ser b (n_ser a1) (n_ser a2)
+    | BRel (b, b1, b2) ->
+      binop (brel_to_string b) (b_ser b1) (b_ser b2)
+    | BNot b -> unop "not" (b_ser b)
+    | Pred (x, v) -> unop x (n_ser v)
 end
 
 module BvNexp : NEXP_SERIALIZER = struct
@@ -64,6 +89,15 @@ module BvNexp : NEXP_SERIALIZER = struct
     | Mult -> "bvmul"
     | Div -> "bvudiv"
     | Mod -> "bvurem"
+
+  let rec nrel_ser (r:nrel) =
+    match r with
+    | NEq -> binop "="
+    | NLe -> binop "bvule"
+    | NLt -> binop "bvult"
+    | NGe -> binop "bvuge"
+    | NGt -> binop "bvugt"
+    | NNeq -> fun n1 n2 -> unop "not" (nrel_ser NEq n1 n2)
 
   let rec n_ser (a:nexp) : Smtlib.sexp =
     let open Smtlib in
@@ -77,64 +111,22 @@ module BvNexp : NEXP_SERIALIZER = struct
     | Var x -> symbol x.var_name
     | Bin (b, a1, a2) ->
       binop (nbin_to_string b) (n_ser a1) (n_ser a2)
+    | NIf (b, n1, n2) -> call "if" [b_ser b; n_ser n1; n_ser n2]
+
+  and b_ser (b:bexp) : Smtlib.sexp =
+    match b with
+    | Bool b -> Smtlib.Atom (Smtlib.Bool b)
+    | NRel (b, a1, a2) ->
+      nrel_ser b (n_ser a1) (n_ser a2)
+    | BRel (b, b1, b2) ->
+      binop (brel_to_string b) (b_ser b1) (b_ser b2)
+    | BNot b -> unop "not" (b_ser b)
+    | Pred (x, v) -> unop x (n_ser v)
 end
 
 let n_ser = StdNexp.n_ser
 
-let brel_to_string (r:brel) =
-  match r with
-  | BOr -> "or"
-  | BAnd -> "and"
-
-module type BEXP_SERIALIZER = sig
-  val b_ser: bexp -> Smtlib.sexp
-end
-
-module StdBexp : BEXP_SERIALIZER =
-  struct
-    let rec nrel_ser (r:nrel) =
-      match r with
-      | NEq -> binop "="
-      | NLe -> binop "<="
-      | NLt -> binop "<"
-      | NGe -> binop ">="
-      | NGt -> binop ">"
-      | NNeq -> fun n1 n2 -> unop "not" (nrel_ser NEq n1 n2)
-
-    let rec b_ser (b:bexp) : Smtlib.sexp =
-      match b with
-      | Bool b -> Smtlib.Atom (Smtlib.Bool b)
-      | NRel (b, a1, a2) ->
-        nrel_ser b (StdNexp.n_ser a1) (StdNexp.n_ser a2)
-      | BRel (b, b1, b2) ->
-        binop (brel_to_string b) (b_ser b1) (b_ser b2)
-      | BNot b -> unop "not" (b_ser b)
-      | Pred (x, v) -> unop x (n_ser v)
-  end
-
-module BvBexp : BEXP_SERIALIZER =
-  struct
-    let rec nrel_ser (r:nrel) =
-      match r with
-      | NEq -> binop "="
-      | NLe -> binop "bvule"
-      | NLt -> binop "bvult"
-      | NGe -> binop "bvuge"
-      | NGt -> binop "bvugt"
-      | NNeq -> fun n1 n2 -> unop "not" (nrel_ser NEq n1 n2)
-
-    let rec b_ser (b:bexp) : Smtlib.sexp =
-      match b with
-      | Bool b -> Smtlib.Atom (Smtlib.Bool b)
-      | NRel (b, a1, a2) ->
-        nrel_ser b (BvNexp.n_ser a1) (BvNexp.n_ser a2)
-      | BRel (b, b1, b2) ->
-        binop (brel_to_string b) (b_ser b1) (b_ser b2)
-      | BNot b -> unop "not" (b_ser b)
-      | Pred (x, v) -> unop x (n_ser v)
-  end
-
-let b_ser = StdBexp.b_ser
+let b_ser = StdNexp.b_ser
 
 let m_ser m = match m with
   | Exp.R -> "ro"
@@ -156,61 +148,13 @@ let r_ser r =
 let a_ser a =
   let idx = Smtlib.List (List.map n_ser a.access_index) in
   call (m_ser a.access_mode) [idx]
-(*
-let rec base_inst_ser (f:'a -> Sexplib.Sexp.t) : 'a base_inst -> Sexplib.Sexp.t =
-  let open Sexplib in
-  function
-  | Base a -> f a
-  | Cond (b, p1) -> call "if" [
-      b_ser b;
-      base_prog_ser f p1;
-    ]
-  | Loop (r, p) -> binop "loop" (r_ser r) (base_prog_ser f p)
 
-and base_prog_ser (f:'a -> Sexplib.Sexp.t) (p:('a base_inst) list) : Sexplib.Sexp.t =
-  let open Sexplib in
-  Sexp.List (List.map (base_inst_ser f) p)
-*)
 let expr_acc_ser (x, a) : Smtlib.sexp =
   call "loc" [symbol x.var_name; a_ser a]
 
 let acc_sym_ser (x, a, t) : Smtlib.sexp =
   call "loc" [symbol x.var_name; a_ser a; t_ser t]
-(*
-let a_inst_ser (f: 'a -> Sexplib.Sexp.t) : 'a a_inst -> Sexplib.Sexp.t =
-  function
-    | Goal b -> unop "goal" (b_ser b)
-    | Acc a -> f a
 
-let acc_inst_ser : acc_inst -> Sexplib.Sexp.t =
-  a_inst_ser expr_acc_ser
-
-let sync_unsync_ser : sync_unsync -> Sexplib.Sexp.t =
-  let open Sexplib in
-  function
-    | Sync -> Sexp.Atom "sync"
-    | Unsync a -> acc_inst_ser a
-
-let inst_ser : inst -> Sexplib.Sexp.t =
-  base_inst_ser sync_unsync_ser
-
-let prog_ser : prog -> Sexplib.Sexp.t =
-  s_map inst_ser
-*)
-
-(*
-let u_inst_ser : u_inst -> Sexplib.Sexp.t =
-  base_inst_ser acc_inst_ser
-
-let u_prog_ser : u_prog -> Sexplib.Sexp.t =
-  s_map u_inst_ser
-
-let s_inst_ser : s_inst -> Sexplib.Sexp.t =
-  base_inst_ser (fun x -> call "phase" (List.map u_inst_ser x))
-
-let s_prog_ser : s_prog -> Sexplib.Sexp.t =
-  s_map s_inst_ser
-*)
 let bexp_list pre = List.map b_ser pre
 
 let bexp_list_ser name pre = bexp_list pre |> call name
@@ -260,27 +204,6 @@ module PPrint = struct
     | Div -> "/"
     | Mod -> "%"
 
-  let rec n_par (n:nexp) : string =
-    match n with
-    | Proj _
-    | Num _
-    | Var _ -> n_to_s n
-    | Bin _ ->
-      "(" ^ n_to_s n ^ ")"
-  and n_to_s : nexp -> string = function
-    | Proj (t, x) ->
-      "proj(" ^ task_to_string t ^ ", "  ^ ident x ^ ")"
-    | Num n -> string_of_int n
-    | Var x -> ident x
-    | Bin (b, a1, a2) ->
-      n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
-
-
-  let print_n (n:nexp) : unit =
-    print_string (n_to_s n)
-
-  (* ----------------- bool -------------------- *)
-
   let rec nrel_to_string (r:nrel) : string =
     match r with
     | NEq -> "=="
@@ -295,7 +218,25 @@ module PPrint = struct
     | BOr -> "||"
     | BAnd -> "&&"
 
-  let rec b_to_s : bexp -> string = function
+  let rec n_par (n:nexp) : string =
+    match n with
+    | Proj _
+    | Num _
+    | Var _
+      -> n_to_s n
+    | NIf _
+    | Bin _
+      -> "(" ^ n_to_s n ^ ")"
+  and n_to_s : nexp -> string = function
+    | Proj (t, x) ->
+      "proj(" ^ task_to_string t ^ ", "  ^ ident x ^ ")"
+    | Num n -> string_of_int n
+    | Var x -> ident x
+    | Bin (b, a1, a2) ->
+      n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
+    | NIf (b, n1, n2) ->
+      b_par b ^ " ? " ^ n_par n1 ^ " : " ^ n_par n2
+  and b_to_s : bexp -> string = function
     | Bool b -> if b then "true" else "false"
     | NRel (b, n1, n2) ->
       n_to_s n1 ^ " " ^nrel_to_string b ^ " " ^ n_to_s n2
@@ -310,6 +251,11 @@ module PPrint = struct
     | NRel _ -> b_to_s b
     | BNot _
     | BRel _ -> "("  ^ b_to_s b ^ ")"
+
+  let print_n (n:nexp) : unit =
+    print_string (n_to_s n)
+
+  (* ----------------- bool -------------------- *)
 
   let print_b (b:bexp) : unit =
     print_string (b_to_s b)

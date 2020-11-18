@@ -19,11 +19,25 @@ let rec norm (b:bexp) : bexp list =
   | BNot (NRel (NGe, n1, n2)) -> norm (n_gt n1 n2)
   | BNot (BNot b) -> norm b
 
+let bexp_to_bool b =
+  match b with
+  | Bool b -> Some b
+  | _ -> None
+
 let rec n_opt (a : nexp) : nexp =
   match a with
   | Var _ -> a
   | Num n -> if n < 0 then raise (Failure "Negative number") else a
   | Proj (t, n) -> Proj(t, n)
+  | NIf (b, n1, n2) ->
+    let b = b_opt b in
+    let n1 = n_opt n1 in
+    let n2 = n_opt n2 in
+    begin match b with
+    | Bool true -> n1
+    | Bool false -> n2
+    | _ -> NIf (b, n1, n2)
+    end
   | Bin (b, a1, a2) ->
     let a1 = n_opt a1 in
     let a2 = n_opt a2 in
@@ -51,57 +65,52 @@ let rec n_opt (a : nexp) : nexp =
     (* Propagate *)
     | _, _, _ -> Bin (b, a1, a2)
 
-let bexp_to_bool b =
-  match b with
-  | Bool b -> Some b
-  | _ -> None
-
-let rec b_opt (e : bexp) : bexp =
-match e with
-| Pred (x, e) ->
-  begin match n_opt e with
-  | Num _ as n ->
-    (* Try to evaluate the predicate *)
-    begin match Predicates.call_opt x n with
-    | Some b ->  (* We found the predicate; call it and optimize the result *)
-      b_opt b
-    | None -> (* Otherwise, leave the predicate unchanged *)
-      Pred (x, n)
+and b_opt (e : bexp) : bexp =
+  match e with
+  | Pred (x, e) ->
+    begin match n_opt e with
+    | Num _ as n ->
+      (* Try to evaluate the predicate *)
+      begin match Predicates.call_opt x n with
+      | Some b ->  (* We found the predicate; call it and optimize the result *)
+        b_opt b
+      | None -> (* Otherwise, leave the predicate unchanged *)
+        Pred (x, n)
+      end
+    | v -> Pred (x, v)
     end
-  | v -> Pred (x, v)
-  end
-| Bool _ -> e
-| BRel (b, b1, b2) ->
-  begin
-    let b1 = b_opt b1 in
-    let b2 = b_opt b2 in
-    match b, bexp_to_bool b1, bexp_to_bool b2 with
-    | _, Some b1, Some b2 -> Bool ((eval_brel b) b1 b2)
-    | BAnd, _, Some true -> b1
-    | BAnd, Some true, _ -> b2
-    | BAnd, Some false, _
-    | BAnd, _, Some false
-      -> Bool false
-    | BOr, Some true, _
-    | BOr, _, Some true
-      -> Bool true
-    | BOr, _, Some false -> b1
-    | BOr, Some false, _ -> b2
-    | _, _, _ -> BRel (b, b1, b2)
-  end
-| NRel (o, a1, a2) ->
-  begin
-    let a1 = n_opt a1 in
-    let a2 = n_opt a2 in
-    match a1, a2 with
-    | Num n1, Num n2 -> Bool ((eval_nrel o) n1 n2)
-    | _, _ -> NRel (o, a1, a2)
-  end
-| BNot b ->
-  let b = b_opt b in
-  match bexp_to_bool b with
-  | Some b -> Bool (not b)
-  | _ -> BNot b
+  | Bool _ -> e
+  | BRel (b, b1, b2) ->
+    begin
+      let b1 = b_opt b1 in
+      let b2 = b_opt b2 in
+      match b, bexp_to_bool b1, bexp_to_bool b2 with
+      | _, Some b1, Some b2 -> Bool ((eval_brel b) b1 b2)
+      | BAnd, _, Some true -> b1
+      | BAnd, Some true, _ -> b2
+      | BAnd, Some false, _
+      | BAnd, _, Some false
+        -> Bool false
+      | BOr, Some true, _
+      | BOr, _, Some true
+        -> Bool true
+      | BOr, _, Some false -> b1
+      | BOr, Some false, _ -> b2
+      | _, _, _ -> BRel (b, b1, b2)
+    end
+  | NRel (o, a1, a2) ->
+    begin
+      let a1 = n_opt a1 in
+      let a2 = n_opt a2 in
+      match a1, a2 with
+      | Num n1, Num n2 -> Bool ((eval_nrel o) n1 n2)
+      | _, _ -> NRel (o, a1, a2)
+    end
+  | BNot b ->
+    let b = b_opt b in
+    match bexp_to_bool b with
+    | Some b -> Bool (not b)
+    | _ -> BNot b
 
 let r_opt (r:range) : range =
   {

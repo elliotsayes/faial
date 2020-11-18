@@ -155,40 +155,6 @@ let parse_var = make "variable" (fun j ->
     ] j
   )
 
-let rec parse_nexp n : nexp option =
-  let open Yojson.Basic in
-  choose_one_of [
-    "VarDecl", (["name"],
-      function [`String x] -> Some (Var (var_make x)) | _ -> None
-    );
-    "ParmVarDecl", (["name"],
-      function [`String x] -> Some (Var (var_make x)) | _ -> None
-    );
-    binary_operator (fun o n1 n2 ->
-      bind (parse_nexp n1) (fun n1 ->
-        bind (parse_nexp n2) (fun n2 ->
-            Some (n_bin (parse_nbin.run o) n1 n2)
-          ))
-    );
-    "IntegerLiteral", (["value"], function
-      | [`Int n] -> Some (Num n)
-      | _ -> None
-    );
-    "ProjExpr", (["task"; "child"], function
-      | [`Int n; `String x] ->
-        bind (parse_task n) (fun t -> Some (Proj (t, var_make x)))
-      | _ -> None
-    );
-    "CallExpr", (["func"], function
-    | [`String x] ->
-      print_endline ("ERROR: How to handle function " ^ x );
-      Some (Num 0)
-    | _ -> None
-    )
-  ] n
-
-let parse_nexp = make "nexp" parse_nexp
-
 let parse_nrel_opt m =
   let open Yojson.Basic in
   match m with
@@ -218,12 +184,60 @@ let do_parse f k msg =
   | Some p -> p
   | None -> abort_error msg k
 
-let rec parse_bexp b : bexp option =
+let rec parse_nexp n : nexp option =
+  let open Yojson.Basic in
+  choose_one_of [
+    "VarDecl", (["name"],
+      function [`String x] -> Some (Var (var_make x)) | _ -> None
+    );
+    "ParmVarDecl", (["name"],
+      function [`String x] -> Some (Var (var_make x)) | _ -> None
+    );
+    binary_operator (fun o n1 n2 ->
+      bind (parse_nexp n1) (fun n1 ->
+        bind (parse_nexp n2) (fun n2 ->
+            Some (n_bin (parse_nbin.run o) n1 n2)
+          ))
+    );
+    "IntegerLiteral", (["value"], function
+      | [`Int n] -> Some (Num n)
+      | _ -> None
+    );
+    "ProjExpr", (["task"; "child"], function
+      | [`Int n; `String x] ->
+        bind (parse_task n) (fun t -> Some (Proj (t, var_make x)))
+      | _ -> None
+    );
+    "ConditionalExpr", (["cond"; "thenExpr"; "elseExpr"], function
+      | [b; then_expr; else_expr] ->
+        bind (parse_bexp b) (fun b ->
+          bind (parse_nexp then_expr) (fun n1 ->
+            bind (parse_nexp else_expr) (fun n2 ->
+              Some (NIf (b, n1, n2))
+            )
+          )
+        )
+      | _ -> None
+    );
+    "CallExpr", (["func"], function
+    | [`String x] ->
+      print_endline ("ERROR: How to handle function " ^ x );
+      Some (Num 0)
+    | _ -> None
+    )
+  ] n
+
+and parse_bexp b : bexp option =
   let open Yojson.Basic in
   choose_one_of [
     binary_operator (fun o e1 e2 ->
         match parse_nrel_opt o with
-        | Some n -> Some (n_rel n (parse_nexp.run e1) (parse_nexp.run e2))
+        | Some n ->
+          bind (parse_nexp e1) (fun n1 ->
+            bind (parse_nexp e2) (fun n2 ->
+              Some (n_rel n n1 n2)
+            )
+          )
         | None ->
           bind (parse_bexp e1) (fun b1 ->
             bind (parse_bexp e2) (fun b2 ->
@@ -240,7 +254,9 @@ let rec parse_bexp b : bexp option =
     );
     "PredicateExpr", (["subExpr"; "opcode"], function
       | [n; `String opcode] ->
-        Some (Pred (opcode, parse_nexp.run n))
+        bind (parse_nexp n) (fun n ->
+          Some (Pred (opcode, n))
+        )
       | _ -> None
     );
     "DistinctExpr", (["args"], function
@@ -252,6 +268,8 @@ let rec parse_bexp b : bexp option =
         Some (enumerate l |> List.map on_elem |> distinct)
       | _ -> None)
   ] b
+
+let parse_nexp = make "nexp" parse_nexp
 
 let parse_bexp = make "bexp" parse_bexp
 

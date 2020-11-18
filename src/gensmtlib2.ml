@@ -12,7 +12,7 @@ end
 module StdGen : BASE_GEN =
   struct
     let uint_s = Serialize.symbol "Int"
-    let b_ser = Serialize.StdBexp.b_ser
+    let b_ser = Serialize.StdNexp.b_ser
     let preamble = [
       Serialize.flat_call "set-logic" ["QF_NIA"];
       Serialize.flat_call "set-option" [":produce-models"; "true"];
@@ -31,7 +31,7 @@ module BvGen : BASE_GEN =
         symbol "32";
       ]
 
-    let b_ser = Serialize.BvBexp.b_ser
+    let b_ser = Serialize.BvNexp.b_ser
 
     let preamble = [
       Serialize.flat_call "set-logic" ["QF_BV"];
