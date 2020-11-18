@@ -203,7 +203,12 @@ let align (w:w_prog) : a_prog =
   match p_align p with
   | (p, c) -> p @ [ASync c]
 *)
+
 (* This is an internal datatype. The output of normalize is one of 4 cases: *)
+
+let make_local (r:range) (ls:'a prog) : 'a inst =
+  Local (r.range_var, [Cond (range_to_cond r, ls)])
+
 type s_prog =
     (* A single phase (unsynch code ended by sync) *)
   | NPhase of p_prog
@@ -261,58 +266,6 @@ let rec opt_n_prog (n:n_prog) =
   match n with
   | Unaligned (s, p) -> Unaligned (opt_s_prog s, opt_p_prog p)
   | Open p -> Open (opt_p_prog p)
-
-(* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
-
-let range_to_cond (r:range) : bexp =
-  (match r.range_step with
-  | Default (Num 1) -> []
-  | Default n -> [
-      (* x % step == 0 *)
-      n_eq (n_mod (Var r.range_var) n) (Num 0);
-      (* Ensure that the step is positive *)
-      n_gt n (Num 0)
-    ]
-  | StepName name -> [Pred(name, Var r.range_var)]
-  )
-  @
-  [
-    n_le r.range_lower_bound (Var r.range_var);
-    n_lt (Var r.range_var) r.range_upper_bound;
-  ]
-  |> b_and_ex
-
-let range_has_next (r:range) : bexp =
-  n_lt r.range_lower_bound r.range_upper_bound
-
-let range_next_var (r:range) : nexp =
-  let x = Var r.range_var in
-  match r.range_step with
-  | Default n -> n_plus x n
-  | StepName "pow2" -> n_mult x (Num 2)
-  | StepName "pow3" -> n_mult x (Num 3)
-  | StepName x -> failwith ("I don't know how to unroll a loop with a step " ^ x)
-
-let range_prev_upper_bound (r:range) : nexp =
-  let x = r.range_upper_bound in
-  match r.range_step with
-  | Default n -> n_minus x n
-  | StepName "pow2" -> n_div x (Num 2)
-  | StepName "pow3" -> n_div x (Num 3)
-  | StepName x -> failwith ("I don't know how to unroll a loop with a step " ^ x)
-
-
-let range_is_empty (r:range) : bexp =
-  n_ge r.range_lower_bound r.range_upper_bound
-
-let make_local (r:range) (ls:'a prog) : 'a inst =
-  Local (r.range_var, [Cond (range_to_cond r, ls)])
-
-let range_first (r:range) : bexp =
-  n_eq (Var r.range_var) r.range_lower_bound
-
-let range_advance (r:range) : range =
-  {r with range_lower_bound = n_plus r.range_lower_bound (Num 1) }
 
 (* ---------------- SUBSTITUTION ----------------------------------- *)
 
