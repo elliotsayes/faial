@@ -470,11 +470,11 @@ let normalize (p: Proto.prog) : n_prog stream =
       begin match norm_p p |> Streamutil.to_list with
       | [Open p] -> Open [make_local r p]
       | [Unaligned (p1, p2)] ->
-        let new_ub = range_prev_upper_bound r in
+        let new_ub = Predicates.range_last r in
         let p1' = n_cond (n_lt lb ub) (s_subst (x, lb) p1) in
-        let p2' = Assert (n_lt lb ub) ::
+        let p2' = (*Assert (n_lt lb ub) ::*)
                   p_subst (x, new_ub) p2 in
-        let new_p1 = s_subst (x, range_next_var r) p1 in
+        let new_p1 = s_subst (x, Predicates.step_inc r.range_step (Var r.range_var)) p1 in
         let new_r = { r with range_upper_bound = new_ub } in
         (* Rule:
           aligned(p) = (q,c3)      c = c3;c2

@@ -141,13 +141,13 @@ let n_div n1 n2 =
   match n1, n2 with
   | _, Num 1 -> n1
   | Num 0, _ -> Num 0
-  | _, Num 0 -> raise (Failure "Division by 0")
+  | _, Num 0 -> failwith ("Division by 0")
   | _, _ -> n_bin Div n1 n2
 
 let n_mod n1 n2 =
   match n1, n2 with
   | _, Num 1 -> Num 0
-  | _, Num 0 -> raise (Failure "Modulo by 0")
+  | _, Num 0 -> failwith ("Modulo by 0")
   | _, _ -> n_bin Mod n1 n2
 
 let b_rel o b1 b2 =
@@ -231,32 +231,11 @@ let range_to_cond (r:range) : bexp =
 let range_has_next (r:range) : bexp =
   n_lt r.range_lower_bound r.range_upper_bound
 
-let range_next_var (r:range) : nexp =
-  let x = Var r.range_var in
-  match r.range_step with
-  | Default n -> n_plus x n
-  | StepName "pow2" -> n_mult x (Num 2)
-  | StepName "pow3" -> n_mult x (Num 3)
-  | StepName x -> failwith ("I don't know how to unroll a loop with a step " ^ x)
-
-let range_prev_upper_bound (r:range) : nexp =
-  let x = r.range_upper_bound in
-  match r.range_step with
-  | Default n -> n_minus x n
-  | StepName "pow2" -> n_div x (Num 2)
-  | StepName "pow3" -> n_div x (Num 3)
-  | StepName x -> failwith ("I don't know how to unroll a loop with a step " ^ x)
-
-
 let range_is_empty (r:range) : bexp =
   n_ge r.range_lower_bound r.range_upper_bound
 
 let range_first (r:range) : bexp =
   n_eq (Var r.range_var) r.range_lower_bound
-
-let range_advance (r:range) : range =
-  {r with range_lower_bound = n_plus r.range_lower_bound (Num 1) }
-
 
 type mode =
   | R

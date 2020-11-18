@@ -1,11 +1,16 @@
 open Common
 open Exp
 
+type step_handler = {
+  step_handler_inc: nexp -> nexp;
+  step_handler_dec: nexp -> nexp;
+  step_handler_trunc: nexp -> nexp;
+}
+
 type t = {
   pred_name: string;
   pred_body: nexp -> bexp;
-  pred_inc: (nexp -> nexp) option;
-  pred_dec: (nexp -> nexp) option;
+  pred_step: step_handler option;
 }
 
 type codegen = {
@@ -46,6 +51,11 @@ let gen_pow (base:int) (n:nexp) : bexp =
   in
   pows 0 |> eq_nums n
 
+let highest_power (base:int) (n:int) : int =
+  let exponent : float = Float.log(Float.of_int n)
+    /. Float.log(Float.of_int base) in
+  pow base (Float.to_int(exponent))
+
 let all_predicates : t list =
   let mk_uint size : t =
     let n : string = "uint" ^(string_of_int size) in
@@ -53,15 +63,26 @@ let all_predicates : t list =
     {
         pred_name = n;
         pred_body = b;
-        pred_inc = None;
-        pred_dec = None;
+        pred_step = None;
     }
   in
-  List.map (fun base ->
+  List.map (fun (base:int) ->
+    let trunc = function
+      | Num n -> Num (highest_power base n)
+      | _ -> failwith "power: Cannot handle symbolic expression"
+    in
+    let inc (x:nexp) : nexp = n_mult x (Num base) in
+    let dec (x:nexp) : nexp = n_div x (Num base) in
+    let handler =
+      {
+        step_handler_inc = inc;
+        step_handler_dec = dec;
+        step_handler_trunc = trunc;
+      }
+    in
     { pred_name = "pow" ^ string_of_int base;
       pred_body = gen_pow base;
-      pred_inc = Some (fun x -> n_mult x (Num base));
-      pred_dec = Some (fun x -> n_div x (Num base));
+      pred_step = Some handler;
     }
   ) (range 2 4)
   @
@@ -99,20 +120,26 @@ let get_predicates (b:bexp) : t list =
   |> StringSet.elements
   |> List.map (Hashtbl.find all_predicates_db)
 
+let get_step_handler (pred_name:string) : step_handler =
+    let (p:t) = Hashtbl.find all_predicates_db pred_name in
+    match p.pred_step with
+    | Some h -> h
+    | None -> failwith ("Cannot use predicate '" ^ pred_name ^ "' as a step expression.")
+
 let step_inc (s:step_expr) : nexp -> nexp =
   match s with
   | Default n -> n_plus n
-  | StepName pred_name ->
-    let (p:t) = Hashtbl.find all_predicates_db pred_name in
-    match p.pred_inc with
-    | Some f -> f
-    | None -> failwith ("Cannot use predicate '" ^ pred_name ^ "' as a step expression.")
+  | StepName pred_name -> (get_step_handler pred_name).step_handler_inc
 
-let step_dec (s:step_expr) (e:nexp) =
+let step_dec (s:step_expr) : nexp -> nexp =
   match s with
   | Default n -> n_minus n
-  | StepName pred_name ->
-    let (p:t) = Hashtbl.find all_predicates_db pred_name in
-    match p.pred_dec with
-    | Some f -> f
-    | None -> failwith ("Cannot use predicate '" ^ pred_name ^ "' as a step expression.")
+  | StepName pred_name -> (get_step_handler pred_name).step_handler_dec
+
+let step_trunc (s:step_expr) : nexp -> nexp =
+  match s with
+  | Default divisor -> fun n -> n_minus n (n_mod n divisor)
+  | StepName pred_name -> (get_step_handler pred_name).step_handler_trunc
+
+let range_last (r:range) : nexp =
+  step_trunc r.range_step (n_minus r.range_upper_bound (Num 1))
