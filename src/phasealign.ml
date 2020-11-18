@@ -40,8 +40,80 @@ type w_or_u_inst =
   | UInst of u_inst
   | Both of w_inst * u_inst
 
+type a_inst =
+  | ASync of u_prog
+  | ALoop of range * a_inst list
+
+type a_prog = a_inst list
+
+
+module Make (S:SUBST) = struct
+  module M = Subst.Make(S)
+
+  let u_subst: S.t -> u_prog -> u_prog =
+    let rec i_subst (s:S.t) (i:u_inst) : u_inst =
+      match i with
+      | UAcc e -> UAcc (M.acc_expr_subst s e)
+      | UCond (b, p) -> UCond (
+          M.b_subst s b,
+          p_subst s p
+        )
+      | ULoop (r, p) ->
+        let r = M.r_subst s r in
+        M.add s r.range_var (function
+          | Some s -> ULoop (r, p_subst s p)
+          | None -> ULoop (r, p)
+        )
+    and p_subst (s:S.t) : u_prog -> u_prog =
+      List.map (i_subst s)
+    in
+    p_subst
+
+  let w_subst: S.t -> w_prog -> w_prog =
+    let rec i_subst (s:S.t) (i:w_inst) : w_inst =
+      match i with
+      | SSync c -> SSync (u_subst s c)
+      | SCond (b, p) -> SCond (
+          M.b_subst s b,
+          p_subst s p
+        )
+      | SLoop (c1, r, p, c2) ->
+        let r = M.r_subst s r in
+        let c1 = u_subst s c1 in
+        M.add s r.range_var (function
+          | Some s -> SLoop (c1, r, p_subst s p, u_subst s c2)
+          | None -> SLoop (c1, r, p, c2)
+        )
+    and p_subst (s:S.t) : w_prog -> w_prog =
+      List.map (i_subst s)
+    in
+    p_subst
+
+
+  let a_subst: S.t -> a_prog -> a_prog =
+    let rec i_subst (s:S.t) (i:a_inst) : a_inst =
+      match i with
+      | ASync c -> ASync (u_subst s c)
+      | ALoop (r, p) ->
+        let r = M.r_subst s r in
+        M.add s r.range_var (function
+          | Some s -> ALoop (r, p_subst s p)
+          | None -> ALoop (r, p)
+        )
+    and p_subst (s:S.t) : a_prog -> a_prog =
+      List.map (i_subst s)
+    in
+    p_subst
+
+end
+
+module S1 = Make(SubstPair)
+let w_subst = S1.w_subst
+let u_subst = S1.u_subst
+let a_subst = S1.a_subst
+
 (* Given a regular program, return a well-formed one *)
-let form_well (p:Proto.prog) : w_prog =
+let make_well_formed (p:Proto.prog) : w_prog =
   let rec i_infer (i:Proto.inst): w_or_u_inst =
     match i with
     | Acc e -> UInst (UAcc e)
@@ -75,13 +147,11 @@ let form_well (p:Proto.prog) : w_prog =
         end
       end
     | [] -> (None, [])
-
   and w_add (c:u_inst) (w:w_prog) =
     match w with
     | SSync c2 :: w -> SSync (c :: c2) :: w
     | SCond (b, w1) :: w2 -> SCond (b, w_add c w1) :: w_add c w2
-    | SLoop (c2, r, w1, c3) :: w2 ->
-      SLoop (c::c2, r, w1, c3) :: w2
+    | SLoop (c2, r, w1, c3) :: w2 -> SLoop (c::c2, r, w1, c3) :: w2
     | [] -> []
   in
   match p_infer p with
@@ -104,8 +174,35 @@ let rec inline_ifs (w:w_prog) : w_prog =
     | _ -> i :: inline_ifs w
     end
   | [] -> []
-
-
+(*
+let align (w:w_prog) : a_prog =
+  let seq (c:u_prog) (w:a_prog) : a_prog =
+    match w with
+    | ASync c' :: w -> ASync (c @ c') :: w
+    | _ -> failwith "Unexpected!"
+  in
+  let rec i_align (i:w_inst) : a_prog * u_prog =
+    match i with
+    | SSync c -> ([ASync c], [])
+    | SCond _ -> failwith "Unexpected conditional inside fors"
+    | SLoop (c1, r, p, c2) ->
+      let (q, c3) = p_align p in
+      let q1 = seq c1 (w_subst (r.range_var, r.range_lower_bound) q) in
+      let c = c3 @ c2 in
+      (q1 @ [ALoop (advance_range r, seq (w_subst (r.range_var, range_dec x) c) q)],
+        c_subst x (range_last r) c)
+  and p_align (p:p_inst) : a_prog * u_prog =
+    match p with
+    | [i] -> i_align i
+    | i :: p ->
+      begin match i_align i, p_align p with
+      | (p, c1), (q, c2) -> (p @ seq c q, c2)
+      end
+    | [] -> failwith "Unexpected empty synchronized code!"
+  in
+  match p_align p with
+  | (p, c) -> p @ [ASync c]
+*)
 (* This is an internal datatype. The output of normalize is one of 4 cases: *)
 type s_prog =
     (* A single phase (unsynch code ended by sync) *)
