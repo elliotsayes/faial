@@ -2,6 +2,20 @@ open OUnit2
 open Common
 
 let tests = "ends_with" >::: [
+  "app_rev" >:: (fun _ ->
+    assert_equal [4; 3; 2; 1] (append_rev [1;2;3;4] []);
+    assert_equal [3; 2; 1; 4] (append_rev [1;2;3] [4]);
+    assert_equal [2; 1; 3; 4] (append_rev [1;2] [3;4]);
+    assert_equal [1; 2; 3; 4] (append_rev [1] [2;3;4]);
+    assert_equal [1; 2; 3; 4] (append_rev [] [1;2;3;4])
+  );
+  "app_tr" >:: (fun _ ->
+    assert_equal [1; 2; 3; 4] (append_tr [1;2;3;4] []);
+    assert_equal [1; 2; 3; 4] (append_tr [1;2;3] [4]);
+    assert_equal [1; 2; 3; 4] (append_tr [1;2] [3;4]);
+    assert_equal [1; 2; 3; 4] (append_tr [1] [2;3;4]);
+    assert_equal [1; 2; 3; 4] (append_tr [] [1;2;3;4])
+  );
   "ends_with" >:: (fun _ ->
       assert_bool "" (ends_with "foo" "");
       assert_bool "" (ends_with "foo" "o");

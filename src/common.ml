@@ -5,6 +5,19 @@ end
 
 module StringSet = Set.Make(StringOT)
 
+let append_tr (l1:'a list) (l2:'a list) : 'a list =
+  let rec app (ret:'a list -> 'a list) (l:'a list) : 'a list =
+    match l with
+    | [] -> ret l2
+    | x:: l -> app (fun new_l -> ret (x :: new_l)) l
+  in
+    app (fun x -> x) l1
+
+let rec append_rev (l1:'a list) (l2:'a list): 'a list =
+  match l1 with
+  | [] -> l2
+  | x :: l1 -> append_rev l1 (x::l2)
+
 let rec repeat (s:string) n : string =
   if n <= 0 then ""
   else s ^ repeat s (n - 1)
