@@ -25,8 +25,9 @@ type u_inst =
   | UAcc of acc_expr
   | UCond of bexp * u_inst list
   | ULoop of range * u_inst list
+   [@@deriving hash, compare]
 
-type u_prog = u_inst list
+type u_prog = u_inst list [@@deriving hash, compare]
 
 type w_inst =
   | SSync of u_prog
@@ -211,6 +212,17 @@ let align (w:w_prog) : a_prog =
   in
   match p_align w with
   | (p, c) -> ASync c :: p
+
+let translate2 (k: Proto.prog kernel) : a_prog kernel =
+  { k with kernel_code = make_well_formed k.kernel_code |> align }
+
+let rec get_locs2 (p:u_prog) (known:VarSet.t) =
+  match p with
+  | UAcc (x,a) :: l -> get_locs2 l (if a.access_mode = Exp.W then VarSet.add x known else known)
+  | ULoop (_, l1)::l2
+  | UCond (_, l1)::l2
+    -> get_locs2 l1 known |> get_locs2 l2
+  | [] -> known
 
 
 (* This is an internal datatype. The output of normalize is one of 4 cases: *)

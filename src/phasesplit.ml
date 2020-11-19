@@ -5,6 +5,8 @@ open Serialize
 open Subst
 open Streamutil
 open Phasealign
+open Hash_rt
+open Ppx_compare_lib.Builtin (* compare_list *)
 (* A global program contains a local program as a base case *)
 
 type 'a phase =
@@ -25,6 +27,18 @@ let rec free_names_phase (p:'a phase) (fns:VarSet.t) : VarSet.t =
   | Pre (b, p) -> Freenames.free_names_bexp b fns |> free_names_phase p
   | Global (x, p) -> free_names_phase p fns |> VarSet.remove x
 
+type l_inst =
+  | LAcc of acc_expr
+  | LCond of bexp * l_inst list
+   [@@deriving hash, compare]
+
+type l_prog = {
+  l_locals: variable list;
+  l_code: l_inst list;
+ } [@@deriving hash, compare]
+
+type l_phase = l_prog phase [@@deriving hash, compare]
+
 type p_phase = p_prog phase [@@deriving hash, compare]
 
 let rec get_locs (p:p_phase) =
@@ -37,6 +51,13 @@ type p_kernel = {
   p_kernel_locations: VarSet.t;
   (* The code of a kernel performs the actual memory accesses. *)
   p_kernel_code: p_phase;
+}
+
+type u_kernel = {
+  (* The shared locations that can be accessed in the kernel. *)
+  u_kernel_locations: VarSet.t;
+  (* The code of a kernel performs the actual memory accesses. *)
+  u_kernel_code: l_prog phase;
 }
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
@@ -104,6 +125,122 @@ let var_uniq_phase (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a phase) : '
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
 
 (* Implements |> *)
+let a_prog_to_u_phase: a_prog -> u_prog phase stream =
+  let rec i_phase: a_inst -> u_prog phase stream =
+    function
+      (* ^P; sync |> { P } *)
+    | ASync u ->
+      Phase u
+      |> Streamutil.one
+    | ALoop (p, r, q) ->
+      (* Rule:
+        P |> p    q = { for x in [n,m) Q | Q \in p }
+        ------------------------------
+        for x in [n,m) {Q} |> q
+      *)
+      (* Break down the body into phases, and prefix each phase with the
+          binding *)
+      p_phase p
+      |> Streamutil.sequence (
+        p_phase q
+        |> Streamutil.map (fun q ->
+          (* For every phase in q, prefix it with variable in r *)
+          make_global r q
+        )
+      )
+  and p_phase : a_prog -> u_prog phase stream =
+    function
+    | [] -> Streamutil.empty
+    | i :: p ->
+      (* Rule:
+        P |> p      Q |> q
+        ------------------
+        P;Q |> p U q
+        *)
+      i_phase i
+      |> Streamutil.sequence (p_phase p)
+  in
+  p_phase
+
+let u_prog_to_l_prog (pre:bexp) (locals:VarSet.t) (p:u_prog) : l_prog =
+  (* We want to make each phase self-contained. This means that we need to
+     somehow declare in the code the locals that are defiend at the parameter
+     level.
+
+     The problem is that u_prog only allows declaring variables with a loop.
+     Thus, we create a new language, called l_prog, that defines all locals
+     in a list, and holds the code after that.
+ *)
+
+  let rec i_to_l : u_inst -> l_inst = function
+    | UAcc e -> LAcc e
+    | UCond (b, l) -> LCond (b, p_to_l l)
+    | ULoop (r, l) -> LCond (range_to_cond r, p_to_l l)
+  and p_to_l : u_prog -> l_inst list = function
+    | i :: l -> i_to_l i :: p_to_l l
+    | [] -> []
+  in
+  let rec fn_i (i:l_inst) (n:VarSet.t) : VarSet.t =
+    match i with
+    | LAcc (_,e) -> Freenames.free_names_access e n
+    | LCond (b, l) -> Freenames.free_names_bexp b n |> fn_p l
+  and fn_p (l: l_inst list) (n: VarSet.t) : VarSet.t =
+    List.fold_right fn_i l n
+  in
+  let p = [LCond(pre, p_to_l p)] in
+  let locals = VarSet.inter (fn_p p VarSet.empty) locals in
+  {
+    (* We sort the list of locals so that we can hash regardless of the order *)
+    l_locals = VarSet.elements locals |> List.sort Exp.compare_variable;
+    l_code = p;
+  }
+
+(* Inline a set of variables as decls *)
+let inline_globals (vars:VarSet.t) (p:'a phase) : 'a phase =
+  VarSet.elements vars
+  |> List.fold_left (fun p x ->
+    Global (x, p)
+  ) p
+
+exception PhasesplitException of (string * Sourceloc.location) list
+
+let translate2 (k: a_prog kernel) (expect_typing_fail:bool) : u_kernel stream =
+  let rec get_locs (p:u_prog phase) =
+    match p with
+    | Phase p -> Phasealign.get_locs2 p VarSet.empty
+    | Pre (_, p) | Global (_, p) -> get_locs p
+  in
+  let p_to_k (ph:u_prog phase) : u_kernel =
+    let locs:VarSet.t = get_locs ph in
+    let ph : l_prog phase =
+      ph
+      |> phase_map (
+        u_prog_to_l_prog k.kernel_pre k.kernel_local_variables
+      )
+      (* Inline globals *)
+      |> inline_globals k.kernel_global_variables
+    in
+    let errs = free_names_phase ph VarSet.empty
+      |> VarSet.elements
+      |> List.map (fun (x:variable) ->
+        "Barrier divergence error: cannot use thread-local variable '" ^
+        x.var_name ^ "' in synchronized control flow",
+        x.var_loc
+        )
+    in
+    if List.length errs > 0 then
+      raise (PhasesplitException errs)
+    else
+      {
+        u_kernel_locations = locs;
+        u_kernel_code = ph
+      }
+  in
+  a_prog_to_u_phase k.kernel_code
+  |> Streamutil.map p_to_k
+
+
+(* Implements |> *)
 let rec s_prog_to_p_phase: s_prog -> p_phase stream =
   function
     (* ^P; sync |> { P } *)
@@ -166,14 +303,7 @@ let prog_to_s_prog (s:Proto.prog) : p_phase stream =
   |> Streamutil.concat
   |> Streamutil.filter keep_phase
 
-(* Inline a set of variables as decls *)
-let inline_globals (vars:VarSet.t) (p:'a phase) : 'a phase =
-  VarSet.elements vars
-  |> List.fold_left (fun p x ->
-    Global (x, p)
-  ) p
-
-(* Inlines globals and pre-conditon *)
+(* Inlines locals and pre-conditon *)
 let inline_locals (vars:VarSet.t) (pre:bexp) : p_phase -> p_phase =
   let add_locals (p:'a prog) : 'a prog =
     VarSet.elements vars
@@ -183,8 +313,6 @@ let inline_locals (vars:VarSet.t) (pre:bexp) : p_phase -> p_phase =
   in
   (* Add pre-conditions and global variables *)
   phase_map (fun c -> [Cond (pre, c)] |> add_locals)
-
-exception PhasesplitException of (string * Sourceloc.location) list
 
 let translate (k: Proto.prog kernel) (expect_typing_fail:bool) : p_kernel stream =
   prog_to_s_prog k.kernel_code
