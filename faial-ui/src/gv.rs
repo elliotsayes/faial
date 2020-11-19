@@ -215,6 +215,17 @@ fn test_parse_metadata() {
         }
     };
     assert_eq!(GvMetadata::parse_lines(5, cursor.lines()).unwrap(), gv);
+    let cursor = io::Cursor::new("//pass\n//--gridDim=128              --blockDim=256\n");
+    let gv = GvMetadata {
+        expect : GvResult::Pass,
+        args: GvArgs {
+            defines: Vec::new(),
+            unknown: Vec::new(),
+            grid_dim:vec![128],
+            block_dim:vec![256],
+        }
+    };
+    assert_eq!(GvMetadata::try_from(cursor.lines()).unwrap(), gv);
 }
 
 impl GvMetadata {

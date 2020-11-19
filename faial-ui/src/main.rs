@@ -299,8 +299,8 @@ struct Faial {
     expect_race: bool,
     expect_invalid: bool,
     input: Option<String>,
-    analyze_only: Option<i32>,
-    infer_only: Option<i32>,
+    analyze_only: bool,
+    infer_only: bool,
     stage: Stage,
     analyze_json: bool,
     infer_output_json: bool,
@@ -310,6 +310,7 @@ struct Faial {
     defines: HashMap<String,u32>,
     input_type: InputType,
     dry_run: bool,
+    internal_steps: Option<u8>,
 }
 
 impl Faial {
@@ -328,10 +329,12 @@ impl Faial {
             Stage::Infer => {
                 let mut cmd = Vec::new();
                 cmd.push("faial-infer".to_string());
-                if let Some(lvl) = self.infer_only {
-                    // Set the level of the analysis, example: -3
-                    cmd.push("-X".to_string());
-                    cmd.push(format!("{}", lvl));
+                if self.infer_only {
+                    if let Some(lvl) = self.internal_steps {
+                        // Set the level of the analysis, example: -3
+                        cmd.push("-X".to_string());
+                        cmd.push(format!("{}", lvl));
+                    }
                     if self.infer_output_json {
                         cmd.push("--provenance".to_string());
                         cmd.push("-t".to_string());
@@ -351,9 +354,11 @@ impl Faial {
             },
             Stage::Analyze => {
                 let mut cmd = vec!["faial-bin".to_string()];
-                if let Some(lvl) = self.analyze_only {
-                    // Set the level of the analysis, example: -3
-                    cmd.push(format!("-{}", lvl));
+                if self.analyze_only {
+                    if let Some(lvl) = self.internal_steps {
+                        // Set the level of the analysis, example: -3
+                        cmd.push(format!("-{}", lvl));
+                    }
                 }
                 if self.expect_invalid {
                     cmd.push("--expect-invalid".to_string());
@@ -362,7 +367,7 @@ impl Faial {
                 for (idx, d) in self.grid_dim.iter().enumerate() {
                     cmd.push(format!("-DgridDim.{}={}", field.get(idx).unwrap(), d));
                 }
-                for (idx, d) in self.grid_dim.iter().enumerate() {
+                for (idx, d) in self.block_dim.iter().enumerate() {
                     cmd.push(format!("-DblockDim.{}={}", field.get(idx).unwrap(), d));
                 }
                 for (k,v) in &self.defines {
@@ -391,9 +396,9 @@ impl Faial {
 
     fn get_stages(&self) -> Vec<Stage> {
         let mut last = Stage::Solve;
-        if self.infer_only.is_some() {
+        if self.infer_only {
             last = Stage::Infer;
-        } else if self.analyze_only.is_some() || self.expect_invalid {
+        } else if self.analyze_only || self.expect_invalid {
             last = Stage::Analyze;
         }
         let mut stages = Vec::new();
@@ -509,6 +514,12 @@ impl Faial {
                     .conflicts_with("infer_only")
                     .conflicts_with("analyze_only")
                 )
+                .arg(Arg::with_name("steps")
+                    .long("steps")
+                    .takes_value(true)
+                    .validator(can_parse::<u8>)
+                    .help("Each internal phase (eg, inference) can have multiple internal steps. Use this option to control how many steps to run. Default: run the whole stage until the end.")
+                )
                 .arg(Arg::with_name("expect_invalid")
                     .long("expect-invalid")
                     .help("Sets exit status according to finding invalid code.")
@@ -519,8 +530,6 @@ impl Faial {
                     .long("analyze-only")
                     .short("A")
                     .help("Halts after analysis")
-                    .validator(can_parse::<i32>)
-                    .takes_value(true)
                     .conflicts_with("solve_only")
                     .conflicts_with("infer_only")
                 )
@@ -534,8 +543,6 @@ impl Faial {
                 .arg(Arg::with_name("infer_only")
                     .long("infer-only")
                     .short("I")
-                    .takes_value(true)
-                    .validator(can_parse::<i32>)
                     .help("Halts after model inference")
                     .conflicts_with("solve_only")
                     .conflicts_with("analyze_only")
@@ -620,11 +627,12 @@ impl Faial {
             expect_invalid: matches.is_present("expect_invalid"),
             solve_only: matches.is_present("solve_only"),
             input: input,
-            analyze_only: parse_opt::<i32>(&matches, "analyze_only"),
-            infer_only: parse_opt::<i32>(&matches, "infer_only"),
+            analyze_only: matches.is_present("analyze_only"),
+            infer_only: matches.is_present("infer_only"),
             grid_dim: get_vec(&matches, "grid_dim").unwrap(),
             block_dim: get_vec(&matches, "block_dim").unwrap(),
             stage: stage,
+            internal_steps: parse_opt::<u8>(&matches, "steps"),
             infer_output_json: matches.is_present("infer_output_json"),
             analyze_json: analyze_json,
             verbose: matches.is_present("verbose"),
