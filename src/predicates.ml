@@ -143,3 +143,6 @@ let step_trunc (s:step_expr) : nexp -> nexp =
 
 let range_last (r:range) : nexp =
   step_trunc r.range_step (n_minus r.range_upper_bound (Num 1))
+
+let range_inc (r:range) : range =
+  { r with range_lower_bound = n_plus r.range_lower_bound (Num 1) }

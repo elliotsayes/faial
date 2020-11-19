@@ -174,7 +174,7 @@ let rec inline_ifs (w:w_prog) : w_prog =
     | _ -> i :: inline_ifs w
     end
   | [] -> []
-(*
+
 let align (w:w_prog) : a_prog =
   let seq (c:u_prog) (w:a_prog) : a_prog =
     match w with
@@ -187,22 +187,25 @@ let align (w:w_prog) : a_prog =
     | SCond _ -> failwith "Unexpected conditional inside fors"
     | SLoop (c1, r, p, c2) ->
       let (q, c3) = p_align p in
-      let q1 = seq c1 (w_subst (r.range_var, r.range_lower_bound) q) in
+      let q1 = seq c1 (a_subst (r.range_var, r.range_lower_bound) q) in
       let c = c3 @ c2 in
-      (q1 @ [ALoop (advance_range r, seq (w_subst (r.range_var, range_dec x) c) q)],
-        c_subst x (range_last r) c)
-  and p_align (p:p_inst) : a_prog * u_prog =
+      let r' = Predicates.range_inc r in
+      let x = r.range_var in
+      let x_dec = Predicates.step_dec r.range_step (Var r.range_var) in
+      (q1 @ [ALoop (r', seq (u_subst (x, x_dec) c) q)],
+        u_subst (x, Predicates.range_last r) c)
+  and p_align (p:w_prog) : a_prog * u_prog =
     match p with
     | [i] -> i_align i
     | i :: p ->
       begin match i_align i, p_align p with
-      | (p, c1), (q, c2) -> (p @ seq c q, c2)
+      | (p, c1), (q, c2) -> (p @ seq c1 q, c2)
       end
     | [] -> failwith "Unexpected empty synchronized code!"
   in
-  match p_align p with
+  match p_align w with
   | (p, c) -> p @ [ASync c]
-*)
+
 
 (* This is an internal datatype. The output of normalize is one of 4 cases: *)
 
