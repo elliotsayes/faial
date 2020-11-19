@@ -11,6 +11,7 @@ use clap::{App,Arg,ArgMatches};
 use duct::{Expression, cmd};
 
 mod parser;
+mod gv;
 use parser::DataRaceFreedom;
 
 #[derive(Debug)]
@@ -580,6 +581,10 @@ impl Faial {
                     .max_values(3)
                     .conflicts_with("infer_only")
                 )
+                .arg(Arg::with_name("parse_gv_args")
+                    .long("parse-gv-args")
+                    .help("Try to parse GPUVerify arguments present in the input file.")
+                )
                 .arg(Arg::with_name("defines")
                     .help("Sets a variable")
                     .short("-D")
@@ -610,7 +615,7 @@ impl Faial {
             Stage::Infer | Stage::Parse => true,
             _ => input_type == InputType::CJSON,
         };
-        Faial {
+        let mut opts = Faial {
             expect_race: matches.is_present("expect_race"),
             expect_invalid: matches.is_present("expect_invalid"),
             solve_only: matches.is_present("solve_only"),
@@ -626,7 +631,19 @@ impl Faial {
             defines: parse_key_val(&matches, "defines"),
             input_type: input_type,
             dry_run: matches.is_present("dry_run"),
+        };
+        if matches.is_present("parse_gv_args") && opts.input_type == InputType::CUDA {
+            let opts = &mut opts;
+            if let Some(args) = gv::GvMetadata::parse_file(String::from(opts.input.as_ref().unwrap())) {
+                if opts.block_dim.len() == 0 {
+                    opts.block_dim = args.args.block_dim;
+                }
+                if opts.grid_dim.len() == 0 {
+                    opts.grid_dim = args.args.grid_dim;
+                }
+            }
         }
+        opts
     }
 
     fn handle_data(self, data:CommandOutput) {
