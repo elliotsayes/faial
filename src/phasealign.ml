@@ -42,7 +42,7 @@ type w_or_u_inst =
 
 type a_inst =
   | ASync of u_prog
-  | ALoop of range * a_inst list
+  | ALoop of a_inst list * range * a_inst list
 
 type a_prog = a_inst list
 
@@ -59,11 +59,11 @@ module Make (S:SUBST) = struct
           p_subst s p
         )
       | ULoop (r, p) ->
-        let r = M.r_subst s r in
-        M.add s r.range_var (function
-          | Some s -> ULoop (r, p_subst s p)
-          | None -> ULoop (r, p)
-        )
+        let p = M.add s r.range_var (function
+          | Some s -> p_subst s p
+          | None -> p
+        ) in
+        ULoop (M.r_subst s r, p)
     and p_subst (s:S.t) : u_prog -> u_prog =
       List.map (i_subst s)
     in
@@ -78,12 +78,11 @@ module Make (S:SUBST) = struct
           p_subst s p
         )
       | SLoop (c1, r, p, c2) ->
-        let r = M.r_subst s r in
-        let c1 = u_subst s c1 in
-        M.add s r.range_var (function
-          | Some s -> SLoop (c1, r, p_subst s p, u_subst s c2)
-          | None -> SLoop (c1, r, p, c2)
-        )
+        let (p, c2) = M.add s r.range_var (function
+          | Some s -> p_subst s p, u_subst s c2
+          | None -> p, c2
+        ) in
+        SLoop (u_subst s c1, M.r_subst s r, p, c2)
     and p_subst (s:S.t) : w_prog -> w_prog =
       List.map (i_subst s)
     in
@@ -94,12 +93,12 @@ module Make (S:SUBST) = struct
     let rec i_subst (s:S.t) (i:a_inst) : a_inst =
       match i with
       | ASync c -> ASync (u_subst s c)
-      | ALoop (r, p) ->
-        let r = M.r_subst s r in
-        M.add s r.range_var (function
-          | Some s -> ALoop (r, p_subst s p)
-          | None -> ALoop (r, p)
-        )
+      | ALoop (p, r, q) ->
+        let q = M.add s r.range_var (function
+          | Some s -> p_subst s q
+          | None -> q
+        ) in
+        ALoop (p_subst s p, M.r_subst s r, q)
     and p_subst (s:S.t) : a_prog -> a_prog =
       List.map (i_subst s)
     in
@@ -111,6 +110,10 @@ module S1 = Make(SubstPair)
 let w_subst = S1.w_subst
 let u_subst = S1.u_subst
 let a_subst = S1.a_subst
+
+let u_seq (u1:u_prog) (u2:u_prog) =
+  (* The order of appending doesn't matter for unsync insts *)
+  append_rev u1 u2
 
 (* Given a regular program, return a well-formed one *)
 let make_well_formed (p:Proto.prog) : w_prog =
@@ -176,35 +179,38 @@ let rec inline_ifs (w:w_prog) : w_prog =
   | [] -> []
 
 let align (w:w_prog) : a_prog =
-  let seq (c:u_prog) (w:a_prog) : a_prog =
+  let rec seq (c:u_prog) (w:a_prog) : a_prog =
     match w with
-    | ASync c' :: w -> ASync (c @ c') :: w
-    | _ -> failwith "Unexpected!"
+    | ASync c' :: w -> ASync (u_seq c c') :: w
+    | ALoop (p, r, q)::w -> ALoop (seq c p, r, q)::w
+    | [] -> failwith "UNEXPECTED!"
   in
-  let rec i_align (i:w_inst) : a_prog * u_prog =
+  let rec i_align (i:w_inst) : a_inst * u_prog =
     match i with
-    | SSync c -> ([ASync c], [])
+    | SSync c -> (ASync c, [])
     | SCond _ -> failwith "Unexpected conditional inside fors"
     | SLoop (c1, r, p, c2) ->
       let (q, c3) = p_align p in
       let q1 = seq c1 (a_subst (r.range_var, r.range_lower_bound) q) in
-      let c = c3 @ c2 in
+      let c = u_seq c3 c2 in
       let r' = Predicates.range_inc r in
       let x = r.range_var in
       let x_dec = Predicates.step_dec r.range_step (Var r.range_var) in
-      (q1 @ [ALoop (r', seq (u_subst (x, x_dec) c) q)],
+      (ALoop (q1, r', seq (u_subst (x, x_dec) c) q),
         u_subst (x, Predicates.range_last r) c)
   and p_align (p:w_prog) : a_prog * u_prog =
     match p with
-    | [i] -> i_align i
+    | [i] ->
+      let (i, c) = i_align i in
+      [i], c
     | i :: p ->
-      begin match i_align i, p_align p with
-      | (p, c1), (q, c2) -> (p @ seq c1 q, c2)
-      end
+      let (i, c1) = i_align i in
+      let (q, c2) = p_align p in
+      i :: seq c1 q, c2
     | [] -> failwith "Unexpected empty synchronized code!"
   in
   match p_align w with
-  | (p, c) -> p @ [ASync c]
+  | (p, c) -> ASync c :: p
 
 
 (* This is an internal datatype. The output of normalize is one of 4 cases: *)
