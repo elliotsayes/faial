@@ -7,8 +7,9 @@ let rec fold_nexp f e a =
   | Proj (_, x) -> f x a
   | Var x -> f x a
   | Bin (_, e1, e2) -> fold_nexp f e1 a |> fold_nexp f e2
+  | NIf (b, e1, e2) -> fold_bexp f b a |> fold_nexp f e1 |> fold_nexp f e2
 
-let rec fold_bexp f e a =
+and fold_bexp f e a =
   match e with
   | Pred (_, n) -> fold_nexp f n a
   | Bool _ -> a

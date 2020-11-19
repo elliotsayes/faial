@@ -24,7 +24,7 @@ module Make (S:SUBST) = struct
     else
       cont (Some s)
 
-  let n_subst (s:S.t) (n:nexp) : nexp =
+  let rec n_subst (s:S.t) (n:nexp) : nexp =
     let rec subst n =
       match n with
       | Var x ->
@@ -45,10 +45,11 @@ module Make (S:SUBST) = struct
           | None -> Proj (t, x)
         end
       | Bin (o, n1, n2) -> n_bin o (subst n1) (subst n2)
+      | NIf (b, n1, n2) -> NIf (b_subst s b, subst n1, subst n2)
     in
     subst n
 
-  let b_subst (s:S.t) (b:bexp) : bexp =
+  and b_subst (s:S.t) (b:bexp) : bexp =
     let rec subst: bexp -> bexp = function
       | Pred (n, v) -> Pred (n, n_subst s v)
       | Bool _ -> b
