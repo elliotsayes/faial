@@ -153,10 +153,20 @@ let location_to_sexp (l:Sourceloc.location) : Smtlib.sexp =
 let translate (provenance:bool) ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : Smtlib.sexp Streamutil.stream =
     let open Serialize in
     let open Symbexp in
+
     let proofs : Smtlib.sexp Streamutil.stream =
-        Streamutil.map Std2.serialize_proof ps
-        |> Streamutil.map Streamutil.from_list
-        |> Streamutil.concat
+      let open Streamutil in
+      let open Smtlib in
+      map Std2.serialize_proof ps
+      |> map from_list
+      |> concat
+      |> sequence (from_list [
+        List [symbol "push"; Atom (Int 1);];
+        List [symbol "assert"; Atom (Symbol "false");];
+        List [symbol "check-sat";];
+        List [symbol "get-model";];
+        List [symbol "pop"; Atom (Int 1);];
+      ])
     in
     if provenance then
         let locs : Smtlib.sexp Streamutil.stream = LocationCache.all cache
