@@ -15,6 +15,12 @@ type 'a phase =
   | Global of variable * 'a phase
   [@@deriving hash, compare]
 
+let rec get_phase (ph:'a phase) : 'a =
+  match ph with
+  | Phase a -> a
+  | Pre (_, ph) -> get_phase ph
+  | Global (_, ph) -> get_phase ph
+
 let rec phase_map (f:'a -> 'b) (p:'a phase) : 'b phase =
   match p with
   | Phase a -> Phase (f a)
@@ -26,7 +32,7 @@ let rec free_names_phase (p:'a phase) (fns:VarSet.t) : VarSet.t =
   | Phase a -> fns
   | Pre (b, p) -> Freenames.free_names_bexp b fns |> free_names_phase p
   | Global (x, p) -> free_names_phase p fns |> VarSet.remove x
-
+(*
 type l_inst =
   | LAcc of acc_expr
   | LCond of bexp * l_inst list
@@ -36,8 +42,8 @@ type l_prog = {
   l_locals: variable list;
   l_code: l_inst list;
  } [@@deriving hash, compare]
-
-type l_phase = l_prog phase [@@deriving hash, compare]
+*)
+type u_phase = u_prog phase [@@deriving hash, compare]
 
 type p_phase = p_prog phase [@@deriving hash, compare]
 
@@ -56,8 +62,15 @@ type p_kernel = {
 type u_kernel = {
   (* The shared locations that can be accessed in the kernel. *)
   u_kernel_locations: VarSet.t;
+  (* The internal variables are used in the code of the kernel.  *)
+  u_kernel_global_variables: VarSet.t;
+  (* The internal variables are used in the code of the kernel.  *)
+  u_kernel_local_variables: VarSet.t;
+  (* Global ranges *)
+  u_kernel_ranges: range list;
   (* The code of a kernel performs the actual memory accesses. *)
-  u_kernel_code: l_prog phase;
+  u_kernel_code: u_inst;
+  (* A thread-local pre-condition that is true on all phases. *)
 }
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
@@ -124,13 +137,24 @@ let var_uniq_phase (f:SubstPair.t -> 'a -> 'a) (known:VarSet.t) (p:'a phase) : '
 
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
 
+type barrier_interval = {
+  bi_code: u_inst;
+  bi_ranges: range list;
+}
+
+let bi_add (bi:barrier_interval) (r:range) : barrier_interval =
+  { bi with bi_ranges = r :: bi.bi_ranges }
+
 (* Implements |> *)
-let a_prog_to_u_phase: a_prog -> u_prog phase stream =
-  let rec i_phase: a_inst -> u_prog phase stream =
+let a_prog_to_bi (pre:bexp) : a_prog -> barrier_interval stream =
+  let rec i_phase: a_inst -> barrier_interval stream =
     function
       (* ^P; sync |> { P } *)
     | ASync u ->
-      Phase u
+      {
+        bi_code = UCond (pre, u);
+        bi_ranges = []
+      }
       |> Streamutil.one
     | ALoop (p, r, q) ->
       (* Rule:
@@ -143,12 +167,12 @@ let a_prog_to_u_phase: a_prog -> u_prog phase stream =
       p_phase p
       |> Streamutil.sequence (
         p_phase q
-        |> Streamutil.map (fun q ->
+        |> Streamutil.map (fun bi ->
           (* For every phase in q, prefix it with variable in r *)
-          make_global r q
+          bi_add bi r
         )
       )
-  and p_phase : a_prog -> u_prog phase stream =
+  and p_phase : a_prog -> barrier_interval stream =
     function
     | [] -> Streamutil.empty
     | i :: p ->
@@ -162,7 +186,21 @@ let a_prog_to_u_phase: a_prog -> u_prog phase stream =
   in
   p_phase
 
-let u_prog_to_l_prog (pre:bexp) (locals:VarSet.t) (p:u_prog) : l_prog =
+let u_free_names (p:u_prog) : VarSet.t -> VarSet.t =
+  let rec fn_i (i:u_inst) (fns:VarSet.t) : VarSet.t =
+    match i with
+    | UAcc (_,e) ->
+      Freenames.free_names_access e fns
+    | ULoop (r, l) ->
+      Freenames.free_names_range r fns |> fn_p l
+    | UCond (b, l) ->
+      Freenames.free_names_bexp b fns |> fn_p l
+  and fn_p (p:u_prog) (fns:VarSet.t) : VarSet.t =
+    List.fold_right fn_i p fns
+  in
+  fn_p p
+(*
+let u_prog_to_u_prog (pre:bexp) (locals:VarSet.t) (p:u_prog) : u_prog =
   (* We want to make each phase self-contained. This means that we need to
      somehow declare in the code the locals that are defiend at the parameter
      level.
@@ -194,6 +232,7 @@ let u_prog_to_l_prog (pre:bexp) (locals:VarSet.t) (p:u_prog) : l_prog =
     l_locals = VarSet.elements locals |> List.sort Exp.compare_variable;
     l_code = p;
   }
+*)
 
 (* Inline a set of variables as decls *)
 let inline_globals (vars:VarSet.t) (p:'a phase) : 'a phase =
@@ -205,22 +244,20 @@ let inline_globals (vars:VarSet.t) (p:'a phase) : 'a phase =
 exception PhasesplitException of (string * Sourceloc.location) list
 
 let translate2 (k: a_prog kernel) (expect_typing_fail:bool) : u_kernel stream =
-  let rec get_locs (p:u_prog phase) =
-    match p with
-    | Phase p -> Phasealign.get_locs2 p VarSet.empty
-    | Pre (_, p) | Global (_, p) -> get_locs p
-  in
-  let p_to_k (ph:u_prog phase) : u_kernel =
-    let locs:VarSet.t = get_locs ph in
-    let ph : l_prog phase =
-      ph
-      |> phase_map (
-        u_prog_to_l_prog k.kernel_pre k.kernel_local_variables
-      )
-      (* Inline globals *)
-      |> inline_globals k.kernel_global_variables
+  let p_to_k (bi:barrier_interval) : u_kernel =
+    (* Get locations of u_prog *)
+    let locations:VarSet.t = Phasealign.get_locs2 [bi.bi_code] VarSet.empty in
+    (* Check for undefs *)
+    (* 1. compute all globals *)
+    let globals =
+      List.map (fun r -> r.range_var) bi.bi_ranges
+      |> VarSet.of_list
+      |> VarSet.union k.kernel_global_variables
     in
-    let errs = free_names_phase ph VarSet.empty
+    (* 2. compute all free names in the ranges *)
+    let fns = List.fold_right Freenames.free_names_range bi.bi_ranges VarSet.empty in
+    (* 3. check if there are any locals *)
+    let errs = VarSet.diff fns globals
       |> VarSet.elements
       |> List.map (fun (x:variable) ->
         "Barrier divergence error: cannot use thread-local variable '" ^
@@ -232,11 +269,14 @@ let translate2 (k: a_prog kernel) (expect_typing_fail:bool) : u_kernel stream =
       raise (PhasesplitException errs)
     else
       {
-        u_kernel_locations = locs;
-        u_kernel_code = ph
+        u_kernel_local_variables = k.kernel_local_variables;
+        u_kernel_global_variables = k.kernel_global_variables;
+        u_kernel_locations = locations;
+        u_kernel_ranges = bi.bi_ranges;
+        u_kernel_code = bi.bi_code;
       }
   in
-  a_prog_to_u_phase k.kernel_code
+  a_prog_to_bi k.kernel_pre k.kernel_code
   |> Streamutil.map p_to_k
 
 
