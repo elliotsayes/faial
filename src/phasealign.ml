@@ -163,21 +163,19 @@ let make_well_formed (p:Proto.prog) : w_prog =
   | None, c -> [SSync c]
 
 let rec inline_ifs (w:w_prog) : w_prog =
-  let rec i_inline (b:bexp) (w:w_inst) =
+  let rec i_inline (inside_loops:bool) (b:bexp) (w:w_inst) =
     match w with
-    | SSync c -> SSync [UCond (b, c)]
-    | SCond (b', w) -> SCond (b_and b b', w)
-    | SLoop (c1, r, w, c2) -> SLoop ([UCond (b, c1)], r, p_inline b w, [UCond (b, c2)])
-  and p_inline (b:bexp) (p:w_prog) =
-    List.map (i_inline b) p
+    | SSync c -> [SSync [UCond (b, c)]]
+    | SCond (b', w) ->
+      if inside_loops then
+        failwith "Synchronized conditionals inside loops are unsupported."
+      else
+        p_inline inside_loops (b_and b b') w
+    | SLoop (c1, r, w, c2) -> [SLoop ([UCond (b, c1)], r, p_inline true b w, [UCond (b, c2)])]
+  and p_inline (inside_loops:bool) (b:bexp) (p:w_prog) =
+    List.concat_map (i_inline inside_loops b) p
   in
-  match w with
-  | i :: w ->
-    begin match i with
-    | SCond (b, w1) -> p_inline b w1 @ inline_ifs w
-    | _ -> i :: inline_ifs w
-    end
-  | [] -> []
+  p_inline false (Bool true) w
 
 let align (w:w_prog) : a_prog =
   let rec seq (c:u_prog) (w:a_prog) : a_prog =
@@ -189,7 +187,7 @@ let align (w:w_prog) : a_prog =
   let rec i_align (i:w_inst) : a_inst * u_prog =
     match i with
     | SSync c -> (ASync c, [])
-    | SCond _ -> failwith "Unexpected conditional inside fors"
+    | SCond _ -> failwith "Internal error: did you run inline_ifs first?"
     | SLoop (c1, r, p, c2) ->
       let (q, c3) = p_align p in
       let q1 = seq c1 (a_subst (r.range_var, r.range_lower_bound) q) in
@@ -210,7 +208,7 @@ let align (w:w_prog) : a_prog =
       i :: seq c1 q, c2
     | [] -> failwith "Unexpected empty synchronized code!"
   in
-  match p_align w with
+  match p_align (inline_ifs w) with
   | (p, c) -> ASync c :: p
 
 let translate2 (k: Proto.prog kernel) : a_prog kernel =

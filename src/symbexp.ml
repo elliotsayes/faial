@@ -202,10 +202,15 @@ let rec h_phase_to_bexp (h: bexp Phasesplit.phase) : bexp =
   | Global (_, h) -> h_phase_to_bexp h
 
 let f_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (k:f_kernel) : proof =
-  { prog_locals = k.f_kernel_locals; prog_accesses = k.f_kernel_accesses }
+  { prog_locals = k.f_kernel_local_variables; prog_accesses = k.f_kernel_accesses }
   |> h_prog_to_bexp provenance cache
   |> Constfold.b_opt (* Optimize the output expression *)
   |> mk_proof k.f_kernel_location
+
+let translate2 (provenance:bool) (stream:f_kernel Streamutil.stream) : (LocationCache.t * proof Streamutil.stream) =
+  let open Streamutil in
+  let c = LocationCache.create 100 in
+  c, map (f_kernel_to_proof provenance c) stream
 
 let h_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (k:h_kernel) : proof =
   Phasesplit.phase_map (h_prog_to_bexp provenance cache) k.loc_kernel_code
@@ -230,6 +235,23 @@ let proof_ser (p:proof) : Smtlib.sexp =
     unop "goal" (b_ser p.proof_goal);
   ]
 
+let proof_to_s (p:proof) : Serialize.PPrint.t list =
+  let open Common in
+  let open Serialize in
+  let open PPrint in
+  let preds =
+    let open Predicates in
+    List.map (fun x -> x.pred_name) p.proof_preds
+    |> join ", "
+  in
+  [
+      Line ("array: " ^ p.proof_name);
+      Line ("predicates: " ^ preds ^ ";");
+      Line ("decls: " ^ (p.proof_decls |> join ", ") ^ ";");
+      Line ("goal: " ^ b_to_s p.proof_goal ^ ";");
+  ]
+
+
 
 let print_kernels ((cache, ks) : LocationCache.t * proof Streamutil.stream) : unit =
   let open Serialize in
@@ -239,6 +261,6 @@ let print_kernels ((cache, ks) : LocationCache.t * proof Streamutil.stream) : un
     let curr = !count + 1 in
     count := curr;
     print_endline ("; bool " ^ (string_of_int curr));
-    proof_ser p |> s_print
+    proof_to_s p |> Serialize.PPrint.print_doc
   ) ks;
   print_endline "; end of symbexp"

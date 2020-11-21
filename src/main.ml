@@ -133,18 +133,19 @@ let main_t =
         let provenance = false in
         let k = Subst.replace_constants sets k in
         halt_when (cmd = Typecheck) Serialize.PPrint.print_k k;
-        let ks = Phasealign.translate k in
-        halt_when (cmd = ALang) Phasealign.print_kernels ks;
-        let ks = Phasesplit.translate k expect_typing_fail in
-        halt_when (cmd = PLang) Phasesplit.print_kernels ks;
-        let ks = Locsplit.translate ks in
-        halt_when (cmd = CLang) Locsplit.print_kernels ks;
-        let ks = Flatacc.translate ks in
-        halt_when (cmd = HLang) Flatacc.print_kernels ks;
-        let ks = Symbexp.translate provenance ks in
+        let ks = Phasealign.translate2 k in
+        halt_when (cmd = ALang) Phasealign.print_kernel ks;
+        let ks = Phasesplit.translate2 ks expect_typing_fail in
+        halt_when (cmd = PLang) Phasesplit.print_kernels2 ks;
+        let ks = Locsplit.translate2 ks in
+        halt_when (cmd = CLang) Locsplit.print_kernels2 ks;
+        let ks = Flatacc.translate2 ks in
+        halt_when (cmd = HLang) Flatacc.print_kernels2 ks;
+        let ks = Symbexp.translate2 provenance ks in
         halt_when (cmd = BLang) Symbexp.print_kernels ks;
         let ks = Gensmtlib2.translate provenance ks in
-        Gensmtlib2.print ks
+        Gensmtlib2.print ks;
+        ()
       ) ks
     with
       | Phasesplit.PhasesplitException errs ->
