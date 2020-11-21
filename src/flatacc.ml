@@ -19,13 +19,13 @@ type h_phase = h_prog Phasesplit.phase
 type h_kernel = h_phase loc_kernel
 
 type f_kernel = {
-  f_kernel_locals: VarSet.t;
+  f_kernel_local_variables: VarSet.t;
   f_kernel_accesses: cond_access list;
   f_kernel_pre: bexp;
   f_kernel_location: variable;
 }
 
-let u_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
+let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
   let open Phasealign in
   let rec flatten_i (b:bexp) (i:u_inst) : cond_access list =
     match i with
@@ -46,9 +46,13 @@ let u_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
   {
     f_kernel_location = k.l_kernel_location;
     f_kernel_accesses = flatten_i (Bool true) k.l_kernel_code;
-    f_kernel_locals = loop_vars_i k.l_kernel_code k.l_kernel_local_variables;
+    f_kernel_local_variables = loop_vars_i k.l_kernel_code k.l_kernel_local_variables;
     f_kernel_pre = b_and_ex (List.map range_to_cond k.l_kernel_ranges);
   }
+
+let translate2 (stream:l2_kernel Streamutil.stream) : f_kernel Streamutil.stream =
+  let open Streamutil in
+  map l_kernel_to_h_kernel stream
 
 (* Converts a program into an h_program:
   1. we must make all loop variables unique
@@ -161,3 +165,32 @@ let print_kernels (ks : h_kernel Streamutil.stream) : unit =
     Phasesplit.phase_ser p_ser ph |> Serialize.s_list
   in
   print_loc_kernels ph_ser "flat-accesses" ks
+
+let f_kernel_to_s (k:f_kernel) : Serialize.PPrint.t list =
+  let open Serialize in
+  let open PPrint in
+  let acc_val_to_s a : string =
+    mode_to_s a.access_mode ^ index_to_s a.access_index
+  in
+  let acc_to_s (a:cond_access) : t =
+    Line (acc_val_to_s a.ca_access ^ " if " ^ b_to_s a.ca_cond ^";")
+  in
+  [
+      Line ("location: " ^ k.f_kernel_location.var_name ^ ";");
+      Line ("locals: " ^ var_set_to_s k.f_kernel_local_variables ^ ";");
+      Line ("pre: " ^ b_to_s k.f_kernel_pre ^ ";");
+      Line "{";
+      Block (List.map acc_to_s k.f_kernel_accesses);
+      Line "}"
+  ]
+
+let print_kernels2 (ks : f_kernel Streamutil.stream) : unit =
+  print_endline "; locsplit";
+  let count = ref 0 in
+  Streamutil.iter (fun (k:f_kernel) ->
+    let curr = !count + 1 in
+    count := curr;
+    print_endline ("; loc " ^ (string_of_int curr));
+    Serialize.PPrint.print_doc (f_kernel_to_s k)
+  ) ks;
+  print_endline "; end of locsplit"
