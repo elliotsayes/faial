@@ -3,13 +3,16 @@ open Exp
 open Subst
 open Flatacc
 
-type b_phase = bexp Phasesplit.phase
-
 type proof = {
   proof_name: string;
   proof_preds: Predicates.t list;
   proof_decls: string list;
   proof_goal: bexp;
+}
+
+type h_prog = {
+  prog_locals: VarSet.t;
+  prog_accesses: cond_access list;
 }
 
 let mk_proof (location:variable) (goal:bexp) =
@@ -195,12 +198,6 @@ let h_prog_to_bexp (provenance:bool) (cache:LocationCache.t) (h:h_prog) : bexp =
     get_dim h.prog_accesses |> gen_eq_index
   ]
 
-let rec h_phase_to_bexp (h: bexp Phasesplit.phase) : bexp =
-  match h with
-  | Phase b -> b
-  | Pre (b, h) -> h_phase_to_bexp h |> b_and b
-  | Global (_, h) -> h_phase_to_bexp h
-
 let f_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (k:f_kernel) : proof =
   { prog_locals = k.f_kernel_local_variables; prog_accesses = k.f_kernel_accesses }
   |> h_prog_to_bexp provenance cache
@@ -212,28 +209,7 @@ let translate2 (provenance:bool) (stream:f_kernel Streamutil.stream) : (Location
   let c = LocationCache.create 100 in
   c, map (f_kernel_to_proof provenance c) stream
 
-let h_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (k:h_kernel) : proof =
-  Phasesplit.phase_map (h_prog_to_bexp provenance cache) k.loc_kernel_code
-  |> Phasesplit.var_uniq_phase ReplacePair.b_subst VarSet.empty
-  |> h_phase_to_bexp
-  |> Constfold.b_opt (* Optimize the output expression *)
-  |> mk_proof k.loc_kernel_location
-
-let translate (provenance:bool) (stream:h_kernel Streamutil.stream) : (LocationCache.t * proof Streamutil.stream) =
-  let open Streamutil in
-  let c = LocationCache.create 100 in
-  c, map (h_kernel_to_proof provenance c) stream
-
 (* ------------------- SERIALIZE ---------------------- *)
-
-let proof_ser (p:proof) : Smtlib.sexp =
-  let open Smtlib in
-  let open Serialize in
-  List [
-    symbol "proof";
-    call "decls" (atoms p.proof_decls);
-    unop "goal" (b_ser p.proof_goal);
-  ]
 
 let proof_to_s (p:proof) : Serialize.PPrint.t list =
   let open Common in
