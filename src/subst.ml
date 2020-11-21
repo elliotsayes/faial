@@ -46,6 +46,7 @@ module Make (S:SUBST) = struct
         end
       | Bin (o, n1, n2) -> n_bin o (subst n1) (subst n2)
       | NIf (b, n1, n2) -> NIf (b_subst s b, subst n1, subst n2)
+      | NCall (x, a) -> NCall (x, n_subst s a)
     in
     subst n
 

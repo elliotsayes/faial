@@ -6,6 +6,7 @@ open Flatacc
 type proof = {
   proof_name: string;
   proof_preds: Predicates.t list;
+  proof_funcs: Predicates.step_handler list;
   proof_decls: string list;
   proof_goal: bexp;
 }
@@ -25,6 +26,7 @@ let mk_proof (location:variable) (goal:bexp) =
   in
   {
     proof_preds = Predicates.get_predicates goal;
+    proof_funcs = Predicates.get_functions goal;
     proof_decls = decls;
     proof_goal = goal;
     proof_name = location.var_name;
@@ -54,6 +56,7 @@ let proj_accesses (t:task) (h:h_prog) : cond_access list =
     | Bin (o, n1, n2) -> Bin (o, inline_proj_n n1, inline_proj_n n2)
     | Proj (t, x) -> Var (proj_var t x)
     | NIf (b, n1, n2) -> NIf (inline_proj_b b, inline_proj_n n1, inline_proj_n n2)
+    | NCall (x, n) -> NCall (x, inline_proj_n n)
   and inline_proj_b (b: bexp) : bexp =
     match b with
     | Pred _

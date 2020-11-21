@@ -6,6 +6,7 @@ open Common
 module type BASE_GEN = sig
   val preamble : Smtlib.sexp list
   val uint_s : Smtlib.sexp
+  val n_ser : nexp -> Smtlib.sexp
   val b_ser : bexp -> Smtlib.sexp
 end
 
@@ -13,6 +14,7 @@ module StdGen : BASE_GEN =
   struct
     let uint_s = Serialize.symbol "Int"
     let b_ser = Serialize.StdNexp.b_ser
+    let n_ser = Serialize.StdNexp.n_ser
     let preamble = [
       Serialize.flat_call "set-logic" ["QF_NIA"];
       Serialize.flat_call "set-option" [":produce-models"; "true"];
@@ -32,6 +34,7 @@ module BvGen : BASE_GEN =
       ]
 
     let b_ser = Serialize.BvNexp.b_ser
+    let n_ser = Serialize.BvNexp.n_ser
 
     let preamble = [
       Serialize.flat_call "set-logic" ["QF_BV"];
@@ -65,9 +68,9 @@ struct
   let l_assert = List.map b_assert
 
   let ser_predicate p =
-  let open Smtlib in
-  let open Predicates in
-  let open Serialize in
+    let open Smtlib in
+    let open Predicates in
+    let open Serialize in
     let g = Predicates.pred_to_codegen p in
     List [
       symbol "define-fun";
@@ -76,6 +79,20 @@ struct
       symbol "Bool";
       Gen.b_ser g.codegen_body;
     ]
+
+  let ser_step_handler (s:Predicates.step_handler) =
+    let open Smtlib in
+    let open Predicates in
+    let open Serialize in
+    let g = Predicates.step_to_codegen s in
+    List [
+      symbol "define-fun";
+      symbol s.step_handler_name;
+      List [Serialize.unop g.codegen_arg Gen.uint_s];
+      Gen.uint_s;
+      Gen.n_ser g.codegen_body;
+    ]
+
 
   let define_const v ty =
   let open Smtlib in
@@ -116,6 +133,8 @@ struct
       decl_string "$array" p.proof_name;
       (* Predicates: *)
       map ser_predicate p.proof_preds;
+      (* Functions: *)
+      map ser_step_handler p.proof_funcs;
       (* Variable declarations: *)
       map var_make p.proof_decls |> map define_uint32 |> flatten;
       (* Goal of the proof: *)

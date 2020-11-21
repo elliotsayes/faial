@@ -71,6 +71,7 @@ type nexp =
   | Num of int
   | Bin of nbin * nexp * nexp
   | Proj of task * variable
+  | NCall of string * nexp
   | NIf of bexp * nexp * nexp
   [@@deriving hash, compare]
 

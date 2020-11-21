@@ -70,6 +70,7 @@ module StdNexp : NEXP_SERIALIZER = struct
     | Bin (b, a1, a2) ->
       binop (nbin_to_string b) (n_ser a1) (n_ser a2)
     | NIf (b, n1, n2) -> call "if" [b_ser b; n_ser n1; n_ser n2]
+    | NCall (x, n) -> call x [n_ser n]
   and b_ser (b:bexp) : Smtlib.sexp =
     match b with
     | Bool b -> Smtlib.Atom (Smtlib.Bool b)
@@ -112,6 +113,7 @@ module BvNexp : NEXP_SERIALIZER = struct
     | Bin (b, a1, a2) ->
       binop (nbin_to_string b) (n_ser a1) (n_ser a2)
     | NIf (b, n1, n2) -> call "if" [b_ser b; n_ser n1; n_ser n2]
+    | NCall (x, n) -> call x [n_ser n]
 
   and b_ser (b:bexp) : Smtlib.sexp =
     match b with
@@ -223,6 +225,7 @@ module PPrint = struct
     | Proj _
     | Num _
     | Var _
+    | NCall _
       -> n_to_s n
     | NIf _
     | Bin _
@@ -234,6 +237,8 @@ module PPrint = struct
     | Var x -> ident x
     | Bin (b, a1, a2) ->
       n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
+    | NCall (x, arg) ->
+      x ^ "(" ^ n_to_s arg ^ ")"
     | NIf (b, n1, n2) ->
       b_par b ^ " ? " ^ n_par n1 ^ " : " ^ n_par n2
   and b_to_s : bexp -> string = function
@@ -312,18 +317,6 @@ module PPrint = struct
   let prog_to_s (p: prog) : t list =
     List.map inst_to_s p |> List.flatten
 
-(*
-  let acc_inst_to_s : acc_inst -> t list =
-    a_inst_ser expr_acc_ser
-
-  let sync_unsync_to_doc : sync_unsync -> t list =
-    function
-      | Sync -> [Line "sync;"]
-      | Unsync a -> acc_inst_to_s a
-
-  let p_to_s: prog -> t list =
-    base_p_to_s sync_unsync_to_doc
-*)
   let print_p (p: prog) : unit =
     print_doc (prog_to_s p)
 

@@ -29,6 +29,18 @@ let rec n_opt (a : nexp) : nexp =
   | Var _ -> a
   | Num n -> if n < 0 then raise (Failure "Negative number") else a
   | Proj (t, n) -> Proj(t, n)
+  | NCall (x, e) ->
+    begin match n_opt e with
+    | Num _ as n ->
+      (* Try to evaluate the predicate *)
+      begin match Predicates.func_call_opt x n with
+      | Some n ->  (* We found the predicate; call it and optimize the result *)
+        n_opt n
+      | None -> (* Otherwise, leave the predicate unchanged *)
+        NCall (x, n)
+      end
+    | v -> NCall (x, v)
+    end
   | NIf (b, n1, n2) ->
     let b = b_opt b in
     let n1 = n_opt n1 in
@@ -71,7 +83,7 @@ and b_opt (e : bexp) : bexp =
     begin match n_opt e with
     | Num _ as n ->
       (* Try to evaluate the predicate *)
-      begin match Predicates.call_opt x n with
+      begin match Predicates.pred_call_opt x n with
       | Some b ->  (* We found the predicate; call it and optimize the result *)
         b_opt b
       | None -> (* Otherwise, leave the predicate unchanged *)
