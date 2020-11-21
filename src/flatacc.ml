@@ -18,6 +18,36 @@ type h_phase = h_prog Phasesplit.phase
 
 type h_kernel = h_phase loc_kernel
 
+type f_kernel = {
+  f_kernel_locals: VarSet.t;
+  f_kernel_accesses: cond_access list;
+  f_kernel_pre: bexp;
+}
+
+let u_kernel_to_h_kernel (k:Phasesplit.u_kernel) : f_kernel =
+  let open Phasealign in
+  let rec flatten_i (b:bexp) (i:u_inst) : cond_access list =
+    match i with
+    | UAcc (x, e) -> [{ca_location = x.var_loc; ca_access = e; ca_cond = b}]
+    | UCond (b', p) -> flatten_p (b_and b' b) p
+    | ULoop (r, p) -> flatten_p (b_and (range_to_cond r) b) p
+  and flatten_p (b:bexp) (p:u_prog) : cond_access list =
+    List.map (flatten_i b) p |> List.flatten
+  in
+  let rec loop_vars_i (i:u_inst) (vars:VarSet.t) : VarSet.t =
+    match i with
+    | UAcc _ -> vars
+    | UCond (_, p) -> loop_vars_p p vars
+    | ULoop (r, p) -> loop_vars_p p (VarSet.add r.range_var vars)
+  and loop_vars_p (p:u_prog) (vars:VarSet.t) : VarSet.t =
+    List.fold_right loop_vars_i p vars
+  in
+  {
+    f_kernel_accesses = flatten_i (Bool true) k.u_kernel_code;
+    f_kernel_locals = loop_vars_i k.u_kernel_code k.u_kernel_local_variables;
+    f_kernel_pre = b_and_ex (List.map range_to_cond k.u_kernel_ranges);
+  }
+
 (* Converts a program into an h_program:
   1. we must make all loop variables unique
   2. we can then safely elide loop declarations
