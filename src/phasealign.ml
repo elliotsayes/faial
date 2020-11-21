@@ -380,6 +380,72 @@ let n_prog_to_s : n_prog -> PPrint.t list =
       Line "}"
     ]
 
+let rec u_inst_to_s (i: u_inst): PPrint.t list =
+  let open PPrint in
+  match i with
+  | UAcc e -> acc_expr_to_s e
+  | UCond (b, p1) -> [
+      Line ("if (" ^ b_to_s b ^ ") {");
+      Block (u_prog_to_s p1);
+      Line "}"
+    ]
+  | ULoop (r, p) ->
+    [
+      Line ("foreach (" ^ r_to_s r ^ ") {");
+      Block (u_prog_to_s p);
+      Line "}"
+    ]
+and u_prog_to_s (p: u_prog) : PPrint.t list =
+  List.map u_inst_to_s p |> List.flatten
+
+let w_prog_to_s: w_prog -> PPrint.t list =
+  let open PPrint in
+  let rec inst_to_s : w_inst -> PPrint.t list =
+    function
+    | SSync e -> u_prog_to_s e @ [Line "sync;"]
+    | SCond (b, p1) -> [
+        Line ("if* (" ^ b_to_s b ^ ") {");
+        Block (List.map inst_to_s p1 |> List.flatten);
+        Line "}"
+      ]
+    | SLoop (c1, r, p, c2) ->
+      u_prog_to_s c1
+      @
+      [
+        Line ("foreach* (" ^ r_to_s r ^ ") {");
+        Block (
+          (List.map inst_to_s p |> List.flatten)
+          @
+          u_prog_to_s c2
+        );
+        Line "}"
+      ]
+  in
+  let prog_to_s (p: w_prog) : t list =
+    List.map inst_to_s p |> List.flatten
+  in
+  prog_to_s
+
+let a_prog_to_s: a_prog -> PPrint.t list =
+  let open PPrint in
+  let rec inst_to_s : a_inst -> PPrint.t list =
+    function
+    | ASync e -> u_prog_to_s e @ [Line "sync;"]
+    | ALoop (p, r, q) ->
+      (List.map inst_to_s p |> List.flatten)
+      @
+      [
+        Line ("foreach* (" ^ r_to_s r ^ ") {");
+        Block (
+          List.map inst_to_s q |> List.flatten
+        );
+        Line "}"
+      ]
+  in
+  let prog_to_s (p: a_prog) : t list =
+    List.map inst_to_s p |> List.flatten
+  in
+  prog_to_s
 
 (* ---------------- MAKE VARIABLES DISTINCT -------------------------------- *)
 
@@ -529,6 +595,9 @@ let translate (k: Proto.prog kernel) : n_prog kernel stream =
   )
 
 (* ---------------------- SERIALIZATION ------------------------ *)
+let print_kernel (k : a_prog kernel) : unit =
+  Serialize.PPrint.print_kernel a_prog_to_s k
+
 
 let print_kernels (ks : n_prog kernel Streamutil.stream) : unit =
   print_endline "# begin align";

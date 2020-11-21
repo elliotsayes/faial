@@ -227,3 +227,29 @@ let print_kernels (ks : l_kernel Streamutil.stream) : unit =
     phase_ser p_ser ph |> Serialize.s_list
   in
   print_loc_kernels ph_ser "locsplit" ks
+
+let l_kernel_to_s (k:l2_kernel) : Serialize.PPrint.t list =
+  let open Serialize.PPrint in
+  let ranges =
+    List.map r_to_s k.l_kernel_ranges
+    |> Common.join "; "
+  in
+  [
+      Line ("location: " ^ k.l_kernel_location.var_name ^ ";");
+      Line ("locals: " ^ var_set_to_s k.l_kernel_local_variables ^ ";");
+      Line ("ranges: " ^ ranges ^ ";");
+      Line "{";
+      Block (u_inst_to_s k.l_kernel_code);
+      Line "}"
+  ]
+
+let print_kernels2 (ks : l2_kernel Streamutil.stream) : unit =
+  print_endline "; locsplit";
+  let count = ref 0 in
+  Streamutil.iter (fun (k:l2_kernel) ->
+    let curr = !count + 1 in
+    count := curr;
+    print_endline ("; loc " ^ (string_of_int curr));
+    Serialize.PPrint.print_doc (l_kernel_to_s k)
+  ) ks;
+  print_endline "; end of locsplit"

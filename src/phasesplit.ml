@@ -244,9 +244,7 @@ let inline_globals (vars:VarSet.t) (p:'a phase) : 'a phase =
 exception PhasesplitException of (string * Sourceloc.location) list
 
 let translate2 (k: a_prog kernel) (expect_typing_fail:bool) : u_kernel stream =
-  let p_to_k (bi:barrier_interval) : u_kernel =
-    (* Get locations of u_prog *)
-    let locations:VarSet.t = Phasealign.get_locs2 [bi.bi_code] VarSet.empty in
+  let p_to_k ((bi,locations):(barrier_interval * VarSet.t)) : u_kernel =
     (* Check for undefs *)
     (* 1. compute all globals *)
     let globals =
@@ -277,6 +275,12 @@ let translate2 (k: a_prog kernel) (expect_typing_fail:bool) : u_kernel stream =
       }
   in
   a_prog_to_bi k.kernel_pre k.kernel_code
+  |> map_opt (fun b ->
+    (* Get locations of u_prog *)
+    let locations:VarSet.t = Phasealign.get_locs2 [b.bi_code] VarSet.empty in
+    if VarSet.is_empty locations then None
+    else Some (b, locations)
+  )
   |> Streamutil.map p_to_k
 
 
@@ -463,6 +467,33 @@ let print_kernels (ks : p_kernel Streamutil.stream) : unit =
   ) ks;
   print_endline "; end of conc"
 
+let u_kernel_to_s (k:u_kernel) : PPrint.t list =
+  let open PPrint in
+  let ranges =
+    List.map r_to_s k.u_kernel_ranges
+    |> join "; "
+  in
+  [
+      Line ("locations: " ^ var_set_to_s k.u_kernel_locations ^ ";");
+      Line ("globals: " ^ var_set_to_s k.u_kernel_global_variables ^ ";");
+      Line ("locals: " ^ var_set_to_s k.u_kernel_local_variables ^ ";");
+      Line ("ranges: " ^ ranges ^ ";");
+      Line "{";
+      Block (u_inst_to_s k.u_kernel_code);
+      Line "}"
+  ]
+
+
+let print_kernels2 (ks : u_kernel Streamutil.stream) : unit =
+  print_endline "; conc";
+  let count = ref 0 in
+  Streamutil.iter (fun (k:u_kernel) ->
+    let curr = !count + 1 in
+    count := curr;
+    print_endline ("; phase " ^ (string_of_int curr));
+    PPrint.print_doc (u_kernel_to_s k)
+  ) ks;
+  print_endline "; end of conc"
 
 (*
   let rec run (s:t) =
