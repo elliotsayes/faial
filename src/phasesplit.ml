@@ -25,9 +25,10 @@ type u_kernel = {
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
 
 type barrier_interval = {
-  bi_code: u_inst;
-  bi_ranges: range list;
-}
+    bi_code: u_inst;
+    bi_ranges: range list;
+  }
+  [@@deriving hash, compare]
 
 let bi_add (bi:barrier_interval) (r:range) : barrier_interval =
   { bi with bi_ranges = r :: bi.bi_ranges }
@@ -89,6 +90,16 @@ let u_free_names (p:u_prog) : VarSet.t -> VarSet.t =
 
 exception PhasesplitException of (string * Sourceloc.location) list
 
+module BarrierIntervalHash =
+  struct
+    type t = barrier_interval
+    let equal i j : bool = compare_barrier_interval i j = 0
+   let hash i = hash_barrier_interval i
+  end
+
+module BITable = Hashtbl.Make(BarrierIntervalHash)
+
+
 let translate2 (k: a_prog kernel) (expect_typing_fail:bool) : u_kernel stream =
   let p_to_k ((bi,locations):(barrier_interval * VarSet.t)) : u_kernel =
     (* Check for undefs *)
@@ -120,12 +131,19 @@ let translate2 (k: a_prog kernel) (expect_typing_fail:bool) : u_kernel stream =
         u_kernel_code = bi.bi_code;
       }
   in
+  let known:unit BITable.t = BITable.create 100 in
   a_prog_to_bi k.kernel_pre k.kernel_code
   |> map_opt (fun b ->
-    (* Get locations of u_prog *)
-    let locations:VarSet.t = Phasealign.get_locs2 [b.bi_code] VarSet.empty in
-    if VarSet.is_empty locations then None
-    else Some (b, locations)
+    (* if false then *)
+    if BITable.mem known b then
+      None
+    else begin
+      BITable.add known b ();
+      (* Get locations of u_prog *)
+      let locations:VarSet.t = Phasealign.get_locs2 [b.bi_code] VarSet.empty in
+      if VarSet.is_empty locations then None
+      else Some (b, locations)
+    end
   )
   |> Streamutil.map p_to_k
 
