@@ -120,6 +120,39 @@ module SubstAssoc =
   end
 module ReplaceAssoc =  Make(SubstAssoc)
 
+let vars_distinct (p:prog)  (known:VarSet.t) : prog =
+  let open Bindings in
+  let rec uniq_i (i:inst) (xs:VarSet.t) : inst * VarSet.t =
+    match i with
+    | Acc _
+    | Sync
+      -> (i, xs)
+    | Cond (b, p) ->
+      let (p, xs) = uniq_p p xs in
+      (Cond (b, p), xs)
+    | Loop (r, p) ->
+      let x = r.range_var in
+      if VarSet.mem x xs then (
+        let new_x : variable = generate_fresh_name x xs in
+        let new_xs = VarSet.add new_x xs in
+        let s = SubstPair.make (x, Var new_x) in
+        let new_p = ReplacePair.prog_subst s p in
+        let (p, new_xs) = uniq_p new_p new_xs in
+        Loop ({ r with range_var = new_x }, p), new_xs
+      ) else (
+        let (p, new_xs) = uniq_p p (VarSet.add x xs) in
+        Loop (r, p), new_xs
+      )
+  and uniq_p (p:prog) (xs:VarSet.t) : prog * VarSet.t =
+    match p with
+    | [] -> ([], xs)
+    | i::p ->
+      let (i, xs) = uniq_i i xs in
+      let (p, xs) = uniq_p p xs in
+      (i::p, xs)
+  in
+  uniq_p p known |> fst
+
 (** Replace variables by constants. *)
 
 let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =

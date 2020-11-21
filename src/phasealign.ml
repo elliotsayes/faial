@@ -102,6 +102,8 @@ let u_seq (u1:u_prog) (u2:u_prog) =
   (* The order of appending doesn't matter for unsync insts *)
   append_rev u1 u2
 
+
+
 (* Given a regular program, return a well-formed one *)
 let make_well_formed (p:Proto.prog) : w_prog =
   let rec i_infer (i:Proto.inst): w_or_u_inst =
@@ -144,24 +146,10 @@ let make_well_formed (p:Proto.prog) : w_prog =
     | SLoop (c2, r, w1, c3) :: w2 -> SLoop (c::c2, r, w1, c3) :: w2
     | [] -> []
   in
-  match p_infer p with
+  match p_infer p  with
   | Some p, c -> p @ [SSync c]
   | None, c -> [SSync c]
 
-let rec inline_ifs (w:w_prog) : w_prog =
-  let rec i_inline (inside_loops:bool) (b:bexp) (w:w_inst) =
-    match w with
-    | SSync c -> [SSync [UCond (b, c)]]
-    | SCond (b', w) ->
-      if inside_loops then
-        failwith "Synchronized conditionals inside loops are unsupported."
-      else
-        p_inline inside_loops (b_and b b') w
-    | SLoop (c1, r, w, c2) -> [SLoop ([UCond (b, c1)], r, p_inline true b w, [UCond (b, c2)])]
-  and p_inline (inside_loops:bool) (b:bexp) (p:w_prog) =
-    List.concat_map (i_inline inside_loops b) p
-  in
-  p_inline false (Bool true) w
 
 let align (w:w_prog) : a_prog =
   let rec seq (c:u_prog) (w:a_prog) : a_prog =
@@ -194,11 +182,28 @@ let align (w:w_prog) : a_prog =
       i :: seq c1 q, c2
     | [] -> failwith "Unexpected empty synchronized code!"
   in
+  let rec inline_ifs (w:w_prog) : w_prog =
+    let rec i_inline (inside_loops:bool) (b:bexp) (w:w_inst) =
+      match w with
+      | SSync c -> [SSync [UCond (b, c)]]
+      | SCond (b', w) ->
+        if inside_loops then
+          failwith "Synchronized conditionals inside loops are unsupported."
+        else
+          p_inline inside_loops (b_and b b') w
+      | SLoop (c1, r, w, c2) -> [SLoop ([UCond (b, c1)], r, p_inline true b w, [UCond (b, c2)])]
+    and p_inline (inside_loops:bool) (b:bexp) (p:w_prog) =
+      List.concat_map (i_inline inside_loops b) p
+    in
+    p_inline false (Bool true) w
+  in
   match p_align (inline_ifs w) with
   | (p, c) -> ASync c :: p
 
 let translate2 (k: Proto.prog kernel) : a_prog kernel =
-  { k with kernel_code = make_well_formed k.kernel_code |> align }
+  let vars = VarSet.union k.kernel_local_variables k.kernel_global_variables in
+  let p = Subst.vars_distinct k.kernel_code vars in
+  { k with kernel_code = make_well_formed p |> align }
 
 let rec get_locs2 (p:u_prog) (known:VarSet.t) =
   match p with
