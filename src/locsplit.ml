@@ -23,6 +23,71 @@ type l_kernel = l_phase loc_kernel
 
 (* ------------------------ THIRD STAGE OF TRANSLATION ---------------------- *)
 
+type 'a possibility =
+  | Has of 'a
+  | Might of 'a
+  | Nothing
+
+(* Given an input phase, returns a phase with only accesses x.
+   Changes the accesses to not contain the location info. *)
+let filter_by_location (x:variable) (i: u_inst) : u_inst option =
+  let bind p f =
+    match p with
+    | Has p -> Has (f p)
+    | Might p -> Might (f p)
+    | Nothing -> Nothing
+  in
+  let map_has p f =
+    match p with
+    | Has p -> Has (f p)
+    | _ -> Nothing
+  in
+  (* Filter programs *)
+  let rec filter_i (i:u_inst) : u_inst possibility =
+    match i with
+    | UAcc (y, _) -> if var_equal x y then Has i else Nothing
+    | UCond (b, p) -> map_has (filter_p p) (fun p -> UCond (b, p))
+    | ULoop (r, p) -> map_has (filter_p p) (fun p -> ULoop (r, p))
+  and filter_p (p:u_prog) : u_prog possibility =
+    match p with
+    | [] -> Nothing
+    | i :: p ->
+      begin match filter_i i, filter_p p with
+      | Nothing, p
+        -> p
+      | i, Nothing
+        -> bind i (fun i -> [i])
+      | Has i, Has p
+      | Has i, Might p
+      | Might i, Has p
+        -> Has (i::p)
+      | Might i, Might p
+        -> Might p
+      end
+  in
+  match filter_i i with
+  | Has p -> Some p
+  | _ -> None
+
+let translate2 (stream:u_kernel Streamutil.stream) : u_kernel Streamutil.stream =
+  let open Streamutil in
+  stream
+  |> map (fun k ->
+    (* For every kernel *)
+    VarSet.elements k.u_kernel_locations
+    |> from_list
+    |> map_opt (fun x ->
+      (* For every location *)
+      match filter_by_location x k.u_kernel_code with
+      | Some p ->
+        (* Filter out code that does not touch location x *)
+        Some { k with u_kernel_code = p }
+      | None -> None (* No locations being used, so ignore *)
+    )
+  )
+  (* We have a stream of streams, flatten it *)
+  |> concat
+
 
 (* Given an input phase, returns a phase with only accesses x.
    Changes the accesses to not contain the location info. *)
