@@ -201,6 +201,12 @@ let rec h_phase_to_bexp (h: bexp Phasesplit.phase) : bexp =
   | Pre (b, h) -> h_phase_to_bexp h |> b_and b
   | Global (_, h) -> h_phase_to_bexp h
 
+let f_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (k:f_kernel) : proof =
+  { prog_locals = k.f_kernel_locals; prog_accesses = k.f_kernel_accesses }
+  |> h_prog_to_bexp provenance cache
+  |> Constfold.b_opt (* Optimize the output expression *)
+  |> mk_proof k.f_kernel_location
+
 let h_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (k:h_kernel) : proof =
   Phasesplit.phase_map (h_prog_to_bexp provenance cache) k.loc_kernel_code
   |> Phasesplit.var_uniq_phase ReplacePair.b_subst VarSet.empty

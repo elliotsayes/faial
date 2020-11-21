@@ -21,6 +21,18 @@ type 'a loc_kernel = {
 
 type l_kernel = l_phase loc_kernel
 
+type l2_kernel = {
+  (* The shared locations that can be accessed in the kernel. *)
+  l_kernel_location: variable;
+  (* The internal variables are used in the code of the kernel.  *)
+  l_kernel_local_variables: VarSet.t;
+  (* Global ranges *)
+  l_kernel_ranges: range list;
+  (* The code of a kernel performs the actual memory accesses. *)
+  l_kernel_code: u_inst;
+  (* A thread-local pre-condition that is true on all phases. *)
+}
+
 (* ------------------------ THIRD STAGE OF TRANSLATION ---------------------- *)
 
 type 'a possibility =
@@ -69,7 +81,7 @@ let filter_by_location (x:variable) (i: u_inst) : u_inst option =
   | Has p -> Some p
   | _ -> None
 
-let translate2 (stream:u_kernel Streamutil.stream) : u_kernel Streamutil.stream =
+let translate2 (stream:u_kernel Streamutil.stream) : l2_kernel Streamutil.stream =
   let open Streamutil in
   stream
   |> map (fun k ->
@@ -81,7 +93,12 @@ let translate2 (stream:u_kernel Streamutil.stream) : u_kernel Streamutil.stream 
       match filter_by_location x k.u_kernel_code with
       | Some p ->
         (* Filter out code that does not touch location x *)
-        Some { k with u_kernel_code = p }
+        Some {
+          l_kernel_location = x;
+          l_kernel_ranges = k.u_kernel_ranges;
+          l_kernel_local_variables = k.u_kernel_local_variables;
+          l_kernel_code = p;
+        }
       | None -> None (* No locations being used, so ignore *)
     )
   )

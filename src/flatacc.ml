@@ -22,9 +22,10 @@ type f_kernel = {
   f_kernel_locals: VarSet.t;
   f_kernel_accesses: cond_access list;
   f_kernel_pre: bexp;
+  f_kernel_location: variable;
 }
 
-let u_kernel_to_h_kernel (k:Phasesplit.u_kernel) : f_kernel =
+let u_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
   let open Phasealign in
   let rec flatten_i (b:bexp) (i:u_inst) : cond_access list =
     match i with
@@ -43,9 +44,10 @@ let u_kernel_to_h_kernel (k:Phasesplit.u_kernel) : f_kernel =
     List.fold_right loop_vars_i p vars
   in
   {
-    f_kernel_accesses = flatten_i (Bool true) k.u_kernel_code;
-    f_kernel_locals = loop_vars_i k.u_kernel_code k.u_kernel_local_variables;
-    f_kernel_pre = b_and_ex (List.map range_to_cond k.u_kernel_ranges);
+    f_kernel_location = k.l_kernel_location;
+    f_kernel_accesses = flatten_i (Bool true) k.l_kernel_code;
+    f_kernel_locals = loop_vars_i k.l_kernel_code k.l_kernel_local_variables;
+    f_kernel_pre = b_and_ex (List.map range_to_cond k.l_kernel_ranges);
   }
 
 (* Converts a program into an h_program:
