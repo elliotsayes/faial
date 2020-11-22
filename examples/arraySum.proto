@@ -12,7 +12,7 @@ const
 rw sdata[blockIdx.x][threadIdx.x];
 if (i < n) ro A[i];
 sync;
-foreach (s in 0 .. blockDim.x / 2 ; s * 2) {
+foreach (s in 1 .. blockDim.x / 2 ; s * 2) {
     if (threadIdx.x < s) {
       ro sdata[blockIdx.x][threadIdx.x + s];
       rw sdata[blockIdx.x][threadIdx.x];
