@@ -77,6 +77,7 @@ let all_predicates : t list =
   in
   List.map (fun (base:int) ->
     let gen_name = "trunc_" ^ string_of_int base in
+    let pred_name = "pow" ^ string_of_int base in
     let trunc = function
       | Num n -> Num (highest_power base n)
       | e -> NCall (gen_name, e)
@@ -87,18 +88,21 @@ let all_predicates : t list =
         let p = Num (pow base n) in
         NIf (n_gt x p, p, gen (n - 1) x)
     in
+    let trunc_fun (n:nexp) : nexp =
+      NIf (Pred (pred_name, n), n, gen base n)
+    in
     let inc (x:nexp) : nexp = n_mult x (Num base) in
     let dec (x:nexp) : nexp = n_div x (Num base) in
     let handler =
       {
-        step_handler_body = gen base;
+        step_handler_body = trunc_fun;
         step_handler_name = gen_name;
         step_handler_inc = inc;
         step_handler_dec = dec;
         step_handler_trunc = trunc;
       }
     in
-    { pred_name = "pow" ^ string_of_int base;
+    { pred_name = pred_name;
       pred_body = gen_pow base;
       pred_step = Some handler;
     }
@@ -188,7 +192,35 @@ let step_trunc (s:step_expr) : nexp -> nexp =
   | StepName pred_name -> (get_step_handler pred_name).step_handler_trunc
 
 let range_last (r:range) : nexp =
-  step_trunc r.range_step (n_minus r.range_upper_bound (Num 1))
+  let ub = r.range_upper_bound in
+  let init = r.range_lower_bound in
+  match r.range_step with
+  | Default d ->
+    (* (init?; n += 3; n < 10) 
+        0 -> 9
+        1 -> 1 + 3 + 3 = 7
+        2 -> 2 + 3 + 3 = 8
+        3 -> 9
+        ub - init % div
+        init % d
+      *)
+    n_minus ub (n_mod init d)
+  | StepName pred_name ->
+    (* (init?; n *= 3; n < 28)
+        1 -> 1 * 3 * 3 * 3 = 27 <- init * trunc(ub / init) = 1 * 3 ^ floor(log3(28/1))
+        2 -> 2 * 3 * 3 = 18 <- 2 * trunc(14)
+        3 -> 3 * 3 * 3 = 27 <- 3 * trunc(28 / 3)
+        4 -> 4 * 3 = 12     <- 4 * trunc(28/4)
+        5 -> 5 * 3 = 15     <- log3(15) ? log3(5)
+        6 -> 6 * 3 = 18     <- 28 - 10
+        7 -> 7 * 3 = 21     <- 28 - 7
+        8 -> 8 * 3 = 24     <- 28 - 4
+        9 -> 9 * 3 = 27     <- 28 - 1
+        ub /  log2(init)
+        init % d
+      *)
+    n_mult init (step_trunc r.range_step (n_div ub init))
+    (* step_trunc r.range_step (n_minus r.range_upper_bound (Num 1)) *)
 
 let range_inc (r:range) : range =
   { r with range_lower_bound = n_plus r.range_lower_bound (Num 1) }
