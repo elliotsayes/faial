@@ -14,7 +14,8 @@ const
   local blockIdx.x,
 where
   threadIdx.x < blockDim.x &&
-  distinct [blockIdx.x][threadIdx.x]
+  distinct [blockIdx.x][threadIdx.x] &&
+  blockDim.x == 1024
 ;
 
 let i = blockIdx.x*blockDim.x+ threadIdx.x;

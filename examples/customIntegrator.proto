@@ -33,12 +33,13 @@ shared sumBuffer, tempBuffer, result;
 const
   local blockDim_x,
   global SUM_BUFFER_SIZE,
-  global WORK_GROUP_SIZE,
   local tid
 where
   # We must also declare tid as being unique across threads
   # That is: no two threads have the same tid.
   distinct [tid];
+
+let WORK_GROUP_SIZE = 1024; # XXX: it would be great if we could inline a set of values
 
 foreach (index in tid .. SUM_BUFFER_SIZE; index + blockDim_x) {
     ro sumBuffer[index];
