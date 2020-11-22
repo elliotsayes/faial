@@ -38,6 +38,7 @@ let filter_by_location (x:variable) (i: u_inst) : u_inst option =
   (* Filter programs *)
   let rec filter_i (i:u_inst) : u_inst possibility =
     match i with
+    | UAssert b -> Might (UAssert b)
     | UAcc (y, _) -> if var_equal x y then Has i else Nothing
     | UCond (b, p) -> map_has (filter_p p) (fun p -> UCond (b, p))
     | ULoop (r, p) -> map_has (filter_p p) (fun p -> ULoop (r, p))

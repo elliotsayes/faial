@@ -77,6 +77,7 @@ let a_prog_to_bi (pre:bexp) : a_prog -> barrier_interval stream =
 let u_free_names (p:u_prog) : VarSet.t -> VarSet.t =
   let rec fn_i (i:u_inst) (fns:VarSet.t) : VarSet.t =
     match i with
+    | UAssert b -> Freenames.free_names_bexp b fns
     | UAcc (_,e) ->
       Freenames.free_names_access e fns
     | ULoop (r, l) ->
