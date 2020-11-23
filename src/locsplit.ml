@@ -21,6 +21,23 @@ type 'a possibility =
   | Might of 'a
   | Nothing
 
+let possibility_to_option =
+  function
+  | Has p -> Some p
+  | Might p -> Some p
+  | Nothing -> None
+
+let possibility_unwrap =
+  function
+  | Has p -> p
+  | Might p -> p
+  | Nothing -> failwith "possibility_get Nothing"
+
+let is_has =
+  function
+  | Has _ -> true
+  | _ -> false
+
 (* Given an input phase, returns a phase with only accesses x.
    Changes the accesses to not contain the location info. *)
 let filter_by_location (x:variable) (i: u_inst) : u_inst option =
@@ -30,34 +47,25 @@ let filter_by_location (x:variable) (i: u_inst) : u_inst option =
     | Might p -> Might (f p)
     | Nothing -> Nothing
   in
-  let map_has p f =
-    match p with
-    | Has p -> Has (f p)
-    | _ -> Nothing
-  in
   (* Filter programs *)
   let rec filter_i (i:u_inst) : u_inst possibility =
     match i with
     | UAssert b -> Might (UAssert b)
     | UAcc (y, _) -> if var_equal x y then Has i else Nothing
-    | UCond (b, p) -> map_has (filter_p p) (fun p -> UCond (b, p))
-    | ULoop (r, p) -> map_has (filter_p p) (fun p -> ULoop (r, p))
-  and filter_p (p:u_prog) : u_prog possibility =
-    match p with
-    | [] -> Nothing
-    | i :: p ->
-      begin match filter_i i, filter_p p with
-      | Nothing, p
-        -> p
-      | i, Nothing
-        -> bind i (fun i -> [i])
-      | Has i, Has p
-      | Has i, Might p
-      | Might i, Has p
-        -> Has (i::p)
-      | Might i, Might p
-        -> Might p
+    | UCond (b, p) -> begin match filter_p p with
+        | Some p -> Has (UCond (b, p))
+        | None -> Nothing
       end
+    | ULoop (r, p) -> begin match filter_p p with
+        | Some p -> Has (ULoop (r, p))
+        | None -> Nothing
+      end
+  and filter_p (p:u_prog) : u_prog option =
+    let p = List.map filter_i p in
+    if List.exists is_has p then
+      Some (Common.map_opt possibility_to_option p)
+    else
+      None
   in
   match filter_i i with
   | Has p -> Some p
