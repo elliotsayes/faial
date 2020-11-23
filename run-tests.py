@@ -123,7 +123,7 @@ def run_all_tests(verbose=False):
     test("FAIL tests", Path("examples/fail"), faial(Mode.FAIL), verbose=verbose)
     test("INVALID tests", Path("examples/invalid"), faial(Mode.INVALID), verbose=verbose)
 
-def run_one_test(file, solver):
+def run_one_test(file):
     modes = {"examples": Mode.OK, "fail": Mode.FAIL, "invalid": Mode.INVALID}
     mode = modes[file.parent.name]
     cmd = faial(mode)(file)

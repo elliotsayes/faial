@@ -1,0 +1,53 @@
+---
+# .appveyor.yml is the configuration for building Win64 binaries on Appveyor.
+
+platform: x64
+
+environment:
+  # Note: If you change the OCAML version, you'll need to invalidate the cache.
+  OCAML: 4.11.0+mingw64c # >=4.10 required for concat_map in typecheck.ml
+  OPAMYES: yes # if yes, opam says yes to all yes/no questions
+
+install:
+  # Add bash to PATH, and install opam requirements patch and unzip:
+  - set PATH=C:\cygwin64\bin;%PATH%
+  - C:\cygwin64\setup-x86_64.exe -qnNdO -R C:\cygwin64 -P patch -P unzip -l C:\cygwin\var\cache\setup -s http://cygwin.mirror.constant.com
+  # Install OCaml:
+  #  Note: OCaml for Windows expects a cygwin environment, rather than the
+  #  Windows cmd.exe.  As such, OCaml commands are in .appveyor-*.sh files.
+  - bash .appveyor-install.sh
+  # Install Rust:
+  - cinst rust
+  - rustc --version
+  - cargo --version
+
+build_script:
+  # Build faial-bin:
+  - bash .appveyor-build.sh
+  # Build faial-ui:
+  - cd %APPVEYOR_BUILD_FOLDER%\faial-ui
+  - cargo b --release
+  - cp .\target\release\faial ..
+  - cd %APPVEYOR_BUILD_FOLDER%
+  # Package artifacts:
+  - mv faial-bin faial-bin.exe
+  - mv LICENSE LICENSE.txt
+  - 7z a faial-win64.zip faial-bin.exe faial.exe README.md LICENSE.txt
+
+artifacts:
+  - path: faial-win64.zip
+
+deploy:
+  # TODO Implement proper deployment.  Appveyor notes: "Artifacts storage
+  # within AppVeyor is more properly regarded as an intermediary step in the
+  # deployment process, rather than an archival storage solution." See:
+  # https://www.appveyor.com/docs/packaging-artifacts/#artifacts-retention-policy
+
+cache:
+  # For rust and cargo:
+  - C:\ProgramData\chocolatey\bin
+  - C:\ProgramData\chocolatey\lib
+  - '%USERPROFILE%\.cargo'
+  # For ocaml and opam:
+  - C:\cygwin64\usr\local
+  - C:\cygwin64\home\appveyor\.opam
