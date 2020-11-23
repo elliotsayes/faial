@@ -259,6 +259,9 @@ let rec u_inst_to_s (i: u_inst): PPrint.t list =
 and u_prog_to_s (p: u_prog) : PPrint.t list =
   List.map u_inst_to_s p |> List.flatten
 
+let u_prog_to_string (p:u_prog) : string =
+  u_prog_to_s p |> PPrint.doc_to_string
+
 let w_prog_to_s: w_prog -> PPrint.t list =
   let open PPrint in
   let rec inst_to_s : w_inst -> PPrint.t list =
