@@ -19,6 +19,22 @@ type stmt =
 | If of (bexp * stmt * stmt)
 | For of (range * stmt)
 
+let s_block l =
+  Block (
+    List.filter (function
+      | Block [] -> false
+      | _ -> true
+    ) l
+  )
+
+let s_if (b:bexp) (p1:stmt) (p2:stmt) : stmt =
+  match b, p1, p2 with
+  | (Bool false, _, p)
+  | (Bool true, p, _)
+    -> p
+  | (_, Block [], Block []) -> Block []
+  | _ -> If (b, p1, p2)
+
 type p_kernel = {
   (* A kernel precondition of every phase. *)
   p_kernel_pre: bexp;
@@ -143,7 +159,9 @@ let rec reify (p:stmt) : prog =
     Block l
     |> ReplacePair.program_subst (Subst.SubstPair.make (x, n))
     |> reify
-  | Block (i::l) -> reify i @ reify (Block l)
+  | Block (i::l) -> Common.append_tr (reify i) (reify (Block l))
+  | If (b,p, Block []) -> [Cond (b,reify p)]
+  | If (b,Block[],q) -> [Cond(BNot b, reify q)]
   | If (b,p,q) -> [Cond (b,reify p);Cond(BNot b, reify q)]
   | For (r, p) ->
     [Loop (r, reify p)]

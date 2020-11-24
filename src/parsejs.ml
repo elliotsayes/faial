@@ -208,7 +208,7 @@ let rec parse_nexp n : nexp option =
         bind (parse_task n) (fun t -> Some (Proj (t, var_make x)))
       | _ -> None
     );
-    "ConditionalExpr", (["cond"; "thenExpr"; "elseExpr"], function
+    "ConditionalOperator", (["cond"; "thenExpr"; "elseExpr"], function
       | [b; then_expr; else_expr] ->
         bind (parse_bexp b) (fun b ->
           bind (parse_nexp then_expr) (fun n1 ->
@@ -340,9 +340,10 @@ let rec parse_stmt j =
             | `Null -> Block []
             | _ -> abort_error msg j
         in
+        let cond = parse_bexp.run cond in
         let then_stmt = get_branch j "thenStmt" in
         let else_stmt = get_branch j "elseStmt" in
-        Some (If (parse_bexp.run cond, then_stmt, else_stmt))
+        Some (s_if cond then_stmt else_stmt)
       | _ -> None
     );
     "CompoundStmt", (["inner"], function
@@ -352,7 +353,7 @@ let rec parse_stmt j =
           let msg = "When parsing CompoundStmt, could not parse #" ^ idx in
           do_parse_prog j msg
         in
-        Some (Block (enumerate l |> List.map on_elem))
+        Some (enumerate l |> List.map on_elem |> s_block)
       | _ -> None
     );
     "ForEachStmt", (["var"; "range"; "body"], function
