@@ -45,7 +45,7 @@ struct Decl {
 }
 
 impl TryFrom<Sexp> for Decl {
-    type Error = String;
+    type Error = Sexp;
 
     /*
         Parses:
@@ -65,9 +65,9 @@ impl TryFrom<Sexp> for Decl {
                         value:v.clone(),
                         ty:ty.clone(),
                     }),
-                | _ => Err(format!("Error parsing variable declaration: expecting a list with 5 elements, bug got:  {:?}", l)),
+                | s => Err(Sexp::List(Vec::from(s))),
             },
-            Sexp::Atom(a) => Err(format!("Error parsing variable declaration: expecting a list, bug got an atom: {:?}", a)),
+            s => Err(s),
         }
     }
 
@@ -118,8 +118,11 @@ impl TryFrom<Sexp> for Model {
                 let mut it = model.iter();
                 it.next().unwrap();
                 for elem in it {
-                    let d = Decl::try_from(elem.clone())?;
-                    result.insert(d.name, d.value);
+                    match Decl::try_from(elem.clone()) {
+                        Ok(d) => { result.insert(d.name, d.value); ()},
+                        // If we can't parse it
+                        Err(_) => (),
+                    }
                 }
                 Ok(Model{data:result})
             },
