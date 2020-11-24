@@ -12,9 +12,12 @@ type instruction =
 | IAssert of bexp
 | IAcc of variable * access
 
+type alias_expr = {alias_source: variable; alias_target: variable; alias_offset: nexp}
+
 type stmt =
 | Inst of instruction
 | Block of (stmt list)
+| LocationAlias of alias_expr
 | Decl of (variable * locality * nexp option)
 | If of (bexp * stmt * stmt)
 | For of (range * stmt)
@@ -53,6 +56,35 @@ let unblock p =
 
 (** Variable normalization: Makes all variable declarations distinct. *)
 
+let rec loc_subst (alias:alias_expr) (p:stmt) : stmt =
+  let rec subst (p:stmt) =
+    match p with
+    | Inst (IAcc (x, a)) ->
+      if var_equal x alias.alias_target then
+        (match a.access_index with
+        | [n] -> Inst (IAcc (alias.alias_source, { a with access_index = [n_plus alias.alias_offset n] }))
+        | _ -> failwith ("Expecting an index with dimension 1, but got " ^ (string_of_int (List.length a.access_index)))
+        )
+      else
+        p
+
+    | LocationAlias _
+    | Decl _
+    | Inst _
+    | Block [] -> p
+    | Block (i::l) ->
+      let i = subst i in
+      begin match i with
+        | LocationAlias a ->
+          subst (loc_subst a (Block l))
+        | _ ->
+          Block (i :: (subst (Block l) |> unblock))
+      end
+    | If (b, p1, p2) -> If (b, subst p1, subst p2)
+    | For (r, l) -> For (r, subst l)
+  in
+  subst p
+
 module SubstMake(S:Subst.SUBST) = struct
   module M = Subst.Make(S)
 
@@ -66,6 +98,8 @@ module SubstMake(S:Subst.SUBST) = struct
     let rec subst s p =
       match p with
       | Inst ISync -> Inst ISync
+      | LocationAlias a ->
+        LocationAlias {a with alias_offset = M.n_subst s a.alias_offset}
       | Inst (IAssert b) -> Inst (IAssert (M.b_subst s b))
       | Inst (IAcc (x, a)) -> Inst (IAcc (x, M.a_subst s a))
       | Block (p::l) ->
@@ -113,6 +147,7 @@ let normalize_variables (p:stmt) xs =
       )
     in
     match p with
+    | LocationAlias _
     | Inst _ -> (p, xs)
     | Block (p :: l) ->
       begin match p with
@@ -148,16 +183,22 @@ let rec reify (p:stmt) : prog =
     2. Convert structured-loops into protocol Foreach
   *)
   match p with
-  | Decl (_,_,_) -> [] (* Only handled inside a block *)
-  | Inst (IAssert _) -> [] (* Only handled inside a block *)
+  | LocationAlias _
+  | Decl _ (* Only handled inside a block *)
+  | Inst (IAssert _)
+  | Block []
+    -> [] (* Only handled inside a block *)
   | Inst ISync -> [Sync]
   | Inst (IAcc (x,y)) -> [Acc (x,y)]
-  | Block [] -> []
   | Block (Inst (IAssert b)::l) -> [Cond (b, reify (Block l))]
   | Block (Decl (x,_,Some n)::l) ->
     (* When we find a declaration, inline it in the code *)
     Block l
     |> ReplacePair.program_subst (Subst.SubstPair.make (x, n))
+    |> reify
+  | Block (LocationAlias a :: l) ->
+    Block l
+    |> loc_subst a
     |> reify
   | Block (i::l) -> Common.append_tr (reify i) (reify (Block l))
   | If (b,p, Block []) -> [Cond (b,reify p)]
@@ -168,6 +209,7 @@ let rec reify (p:stmt) : prog =
 
 let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
   match p with
+  | LocationAlias _
   | Inst _ -> (locals,globals)
   | Block l -> List.fold_right get_variable_decls l (locals,globals)
   | Decl (x, Local, _) -> VarSet.add x locals, globals

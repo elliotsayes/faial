@@ -330,6 +330,15 @@ let rec parse_stmt j =
       | [b] -> Some (Inst (IAssert (parse_bexp.run b)))
       | _ -> None
     );
+    "LocationAliasStmt", (["source"; "target"; "offset"], function
+      | [src; target; offset] ->
+        Some (LocationAlias {
+          alias_source = parse_var.run src;
+          alias_target = parse_var.run target;
+          alias_offset = parse_nexp.run offset;
+        })
+      | _ -> None
+    );
     "IfStmt", (["cond"], function
       | [cond] ->
         let get_branch (o:Yojson.Basic.t) k =
@@ -347,6 +356,7 @@ let rec parse_stmt j =
       | _ -> None
     );
     "CompoundStmt", (["inner"], function
+      | [`Assoc _ as i] -> parse_stmt i
       | [`List l] ->
         let on_elem (idx, j) : stmt =
           let idx = string_of_int (idx + 1) in
