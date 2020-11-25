@@ -43,6 +43,9 @@ let parse_nbin = make "nbin" (fun m ->
   | `String "*"  -> Some Mult
   | `String "/" -> Some Div
   | `String "%" -> Some Mod
+  | `String "=" ->
+    prerr_endline "WARNING: Can't handle bitwise | converting it to addition";
+    Some Plus
   | `String "|" ->
     prerr_endline "WARNING: Can't handle bitwise | converting it to addition";
     Some Plus
@@ -194,9 +197,12 @@ let parse_brel = make "brel" (fun m ->
   match m with
   | `String "||" -> Some BOr
   | `String "&&" -> Some BAnd
-  | `String "&" ->
-    prerr_endline "WARNING: Can't handle bitwise & converting it to ||";
+  | `String "|" ->
+    prerr_endline "WARNING: Can't handle bitwise & converting it to |";
     Some BOr
+  | `String "&" ->
+    prerr_endline "WARNING: Can't handle bitwise & converting it to &&";
+    Some BAnd
   | _ -> None
 )
 
@@ -255,6 +261,12 @@ let rec parse_nexp n : nexp option =
             )
           )
         )
+      | _ -> None
+    );
+    "FunctionDecl", (["name"],
+      function [`String x] ->
+      prerr_endline ("WARNING: rewriting function pointer '" ^ x ^ "' into 0");
+      Some (Num 0)
       | _ -> None
     );
     "CallExpr", (["func"], function
