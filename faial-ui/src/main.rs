@@ -303,6 +303,7 @@ struct Faial {
     infer_only: bool,
     stage: Stage,
     analyze_json: bool,
+    skip_typecheck: bool,
     infer_output_json: bool,
     block_dim: Vec<usize>,
     grid_dim: Vec<usize>,
@@ -372,6 +373,9 @@ impl Faial {
                 }
                 for (k,v) in &self.defines {
                     cmd.push(format!("-D{}={}", k, v));
+                }
+                if self.skip_typecheck {
+                    cmd.push("--skip-type-check".to_string());
                 }
                 if self.analyze_json {
                     cmd.push("--json".to_string());
@@ -639,6 +643,7 @@ impl Faial {
             defines: parse_key_val(&matches, "defines"),
             input_type: input_type,
             dry_run: matches.is_present("dry_run"),
+            skip_typecheck: true,
         };
         if matches.is_present("parse_gv_args") && opts.input_type == InputType::CUDA {
             let opts = &mut opts;
