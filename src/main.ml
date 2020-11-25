@@ -75,6 +75,11 @@ let main_t =
     Arg.(value & flag & info ["json"] ~doc)
   in
 
+  let skip_typecheck =
+    let doc = "Skip the typechecking stage" in
+    Arg.(value & flag & info ["skip-type-check"] ~doc)
+  in
+
   let decls =
     let doc = "Set the value of certain variables. Formatted as -D<variable>=<value>. For instance, '-DblockDim.x=512'" in
     Arg.(value & opt_all string [] & info ["D"; "set"] ~docv:"KEYVALS" ~doc)
@@ -91,6 +96,7 @@ let main_t =
     (use_bv: bool)
     (use_json: bool)
     (expect_typing_fail: bool)
+    (skip_typecheck: bool)
     (sets: string list) : unit
   =
     let halt_when b f k : unit =
@@ -125,7 +131,7 @@ let main_t =
         exit (1)
       end else
       List.iter (fun k ->
-        if Typecheck.typecheck_kernel k |> Sourceloc.print_errs then
+        if not skip_typecheck && Typecheck.typecheck_kernel k |> Sourceloc.print_errs then
           exit (if expect_typing_fail then 0 else -1)
         else
           ()
@@ -181,7 +187,16 @@ let main_t =
     let sat = Sat, Arg.info ["6"; "sat"] ~doc in
     Arg.(last & vflag_all [Sat] [tc; k1; k2; k3; k4; k5; sat])
   in
-  Term.(const do_main $ get_cmd $ get_fname $ use_bv $ use_json $ expect_typefail $ decls)
+  Term.(
+    const do_main
+    $ get_cmd
+    $ get_fname
+    $ use_bv
+    $ use_json
+    $ expect_typefail
+    $ skip_typecheck
+    $ decls
+  )
 
 let info =
   let doc = "Verifies a GPU contract" in
