@@ -43,6 +43,21 @@ let parse_nbin = make "nbin" (fun m ->
   | `String "*"  -> Some Mult
   | `String "/" -> Some Div
   | `String "%" -> Some Mod
+  | `String "|" ->
+    prerr_endline "WARNING: Can't handle bitwise | converting it to addition";
+    Some Plus
+  | `String ">>" ->
+    prerr_endline "WARNING: Can't handle bitwise >>, converting it to multiplication";
+    Some Mult
+  | `String "<<" ->
+    prerr_endline "WARNING: Can't handle bitwise <<, converting it to multiplication";
+    Some Mult
+  | `String "^" ->
+    prerr_endline "WARNING: Can't handle bitwise ^, converting it to multiplication";
+    Some Mult
+  | `String "&" ->
+    prerr_endline "WARNING: Can't handle bitwise &, converting it to multiplication";
+    Some Mult
   | _ -> None
 )
 
@@ -146,6 +161,9 @@ let binary_operator f =
 let parse_var = make "variable" (fun j ->
     let open Yojson.Basic in
     choose_one_of [
+      "FunctionDecl", (["name"],
+        function [`String x] -> Some (var_make x) | _ -> None
+      );
       "VarDecl", (["name"],
         function [`String x] -> Some (var_make x) | _ -> None
       );
@@ -199,6 +217,18 @@ let rec parse_nexp n : nexp option =
             Some (n_bin (parse_nbin.run o) n1 n2)
           ))
     );
+    "FloatingLiteral", (["value"], function
+      | [`Float n] ->
+        prerr_endline ("WARNING: converting float '" ^ Float.to_string n ^ " to integer");
+        Some (Num (Float.to_int n))
+      | _ -> None
+    );
+    "UnaryOperator", (["subExpr"; "opcode"], function
+      | [n; `String "~"] ->
+        prerr_endline ("WARNING: ignoring bitwise negation");
+        parse_nexp n
+      | _ -> None
+    );
     "IntegerLiteral", (["value"], function
       | [`Int n] -> Some (Num n)
       | _ -> None
@@ -220,11 +250,12 @@ let rec parse_nexp n : nexp option =
       | _ -> None
     );
     "CallExpr", (["func"], function
-    | [`String x] ->
-      print_endline ("ERROR: How to handle function " ^ x );
+    | [f] ->
+      let x = parse_var.run f in
+      prerr_endline ("WARNING: rewriting function call to '" ^ x.var_name ^ "' into 0");
       Some (Num 0)
     | _ -> None
-    )
+    );
   ] n
 
 and parse_bexp b : bexp option =
@@ -266,7 +297,27 @@ and parse_bexp b : bexp option =
           do_call parse_var.run n ("When parsing a DistinctExpr, error parsing argument #" ^ idx)
         in
         Some (enumerate l |> List.map on_elem |> distinct)
-      | _ -> None)
+      | _ -> None
+    );
+    "FunctionDecl", (["name"], function
+    | [`String x] ->
+      prerr_endline ("WARNING: variable (function) '" ^ x ^ "' being used in a boolean context, rewrite to false");
+      Some (Bool false)
+    | _ -> None
+    );
+    "VarDecl", (["name"], function
+    | [`String x] ->
+      prerr_endline ("WARNING: variable '" ^ x ^ "' being used in a boolean context, rewrite to false");
+      Some (Bool false)
+    | _ -> None
+    );
+    "CallExpr", (["func"], function
+    | [f] ->
+      let x = parse_var.run f in
+      prerr_endline ("WARNING: rewriting function call to '" ^ x.var_name ^ "' into 0");
+      Some (Bool false)
+    | _ -> None
+    );
   ] b
 
 let parse_nexp = make "nexp" parse_nexp
@@ -421,15 +472,19 @@ let parse_kernel = make "kernel" (fun k ->
               |> List.map parse_var.run
               |> VarSet.of_list
           in
+          let body = match body with
+          | `Null -> Block []
+          | _ -> parse_stmt.run body
+          in
           Some {
             p_kernel_pre = parse_bexp.run pre;
             p_kernel_locations = get_params is_array_type;
             p_kernel_params = get_params is_int_type;
-            p_kernel_code = parse_stmt.run body;
+            p_kernel_code = body;
           }
         end
       | _ -> None
-    )
+    );
   ] k
   )
 
