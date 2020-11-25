@@ -93,9 +93,9 @@ let get_kind (j:Yojson.Basic.t) : string =
   | `Assoc _ ->
     begin match member "kind" j with
     | `String k -> k
-    | _ -> abort_error "When getting the AST node kind from a JSON object, expecting the type to be a string, but got:" j
+    | _ -> abort_error "get_kind: expecting the type to be a string, but got:" j
     end
-  | _ -> abort_error "When getting the AST node kind from a JSON value, expecting a JSON object, but got:" j
+  | _ -> abort_error "get_kind: expecting a JSON object, but got:" j
 
 let get_fields fields (j:Yojson.Basic.t) : Yojson.Basic.t list  =
   let open Yojson.Basic.Util in
@@ -161,6 +161,9 @@ let binary_operator f =
 let parse_var = make "variable" (fun j ->
     let open Yojson.Basic in
     choose_one_of [
+      "NonTypeTemplateParmDecl", (["name"],
+        function [`String x] -> Some (var_make x) | _ -> None
+      );
       "FunctionDecl", (["name"],
         function [`String x] -> Some (var_make x) | _ -> None
       );
@@ -211,11 +214,13 @@ let rec parse_nexp n : nexp option =
     "ParmVarDecl", (["name"],
       function [`String x] -> Some (Var (var_make x)) | _ -> None
     );
+    "NonTypeTemplateParmDecl", (["name"],
+      function [`String x] -> Some (Var (var_make x)) | _ -> None
+    );
     binary_operator (fun o n1 n2 ->
-      bind (parse_nexp n1) (fun n1 ->
-        bind (parse_nexp n2) (fun n2 ->
-            Some (n_bin (parse_nbin.run o) n1 n2)
-          ))
+      let n1 = do_parse parse_nexp n1 "nbin.lhs" in
+      let n2 = do_parse parse_nexp n2 "nbin.rhs" in
+      Some (n_bin (parse_nbin.run o) n1 n2)
     );
     "FloatingLiteral", (["value"], function
       | [`Float n] ->
@@ -437,6 +442,10 @@ let rec parse_stmt j =
         Some (Block [])
     );
     "CXXOperatorCallExpr", ([], function
+      | [] -> Some (Block [])
+      | _ -> None
+    );
+    "UnaryOperator", ([], function
       | [] -> Some (Block [])
       | _ -> None
     );
