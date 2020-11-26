@@ -43,24 +43,9 @@ let parse_nbin = make "nbin" (fun m ->
   | `String "*"  -> Some Mult
   | `String "/" -> Some Div
   | `String "%" -> Some Mod
-  | `String "=" ->
-    prerr_endline "WARNING: Can't handle bitwise | converting it to addition";
+  | `String x ->
+    prerr_endline ("WARNING: Can't handle '(int, int) int' operator '"^ x ^"' converting it to +");
     Some Plus
-  | `String "|" ->
-    prerr_endline "WARNING: Can't handle bitwise | converting it to addition";
-    Some Plus
-  | `String ">>" ->
-    prerr_endline "WARNING: Can't handle bitwise >>, converting it to multiplication";
-    Some Mult
-  | `String "<<" ->
-    prerr_endline "WARNING: Can't handle bitwise <<, converting it to multiplication";
-    Some Mult
-  | `String "^" ->
-    prerr_endline "WARNING: Can't handle bitwise ^, converting it to multiplication";
-    Some Mult
-  | `String "&" ->
-    prerr_endline "WARNING: Can't handle bitwise &, converting it to multiplication";
-    Some Mult
   | _ -> None
 )
 
