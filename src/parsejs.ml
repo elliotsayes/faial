@@ -463,9 +463,20 @@ let rec parse_stmt j =
          Some (Block [])
       | _ -> None
     );
+    "DoStmt", ([], function
+      | [] ->
+        prerr_endline ("WARNING: we can't analyze unstructure while-loops");
+        Some (Block [])
+      | _ -> None
+    );
     "WhileStmt", ([], function
       | [] ->
         prerr_endline ("WARNING: we can't analyze unstructure while-loops");
+        Some (Block [])
+      | _ -> None
+    );
+    "CXXUnresolvedConstructExpr", ([], function
+      | [] ->
         Some (Block [])
       | _ -> None
     );
