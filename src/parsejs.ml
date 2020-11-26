@@ -251,6 +251,12 @@ let rec parse_nexp n : nexp option =
       Some (Num 0)
       | _ -> None
     );
+    "MemberExpr", (["name"],
+      function [`String x] ->
+      prerr_endline ("WARNING: rewriting lookup of field '" ^ x ^ "' into 0");
+      Some (Num 0)
+      | _ -> None
+    );
     "CallExpr", (["func"], function
     | [f] ->
       let x = parse_var.run f in
