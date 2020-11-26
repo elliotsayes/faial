@@ -182,12 +182,9 @@ let parse_brel = make "brel" (fun m ->
   match m with
   | `String "||" -> Some BOr
   | `String "&&" -> Some BAnd
-  | `String "|" ->
-    prerr_endline "WARNING: Can't handle bitwise & converting it to |";
+  | `String x ->
+    prerr_endline ("WARNING: Can't handle " ^ x ^ " converting it to |");
     Some BOr
-  | `String "&" ->
-    prerr_endline "WARNING: Can't handle bitwise & converting it to &&";
-    Some BAnd
   | _ -> None
 )
 
