@@ -469,10 +469,11 @@ let rec parse_stmt j =
          Some (Block [])
       | _ -> None
     );
-    "DoStmt", ([], function
-      | [] ->
-        prerr_endline ("WARNING: we can't analyze unstructure while-loops");
-        Some (Block [])
+    "DoStmt", (["body"], function
+      | [body] ->
+        bind (parse_stmt body) (fun body ->
+          Some (Loop body)
+        )
       | _ -> None
     );
     "WhileStmt", (["body"], function
