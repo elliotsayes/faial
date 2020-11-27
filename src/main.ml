@@ -136,32 +136,29 @@ let main_t =
         else
           ()
         ;
-        let provenance = false in
-        let k = Subst.replace_constants sets k in
-        halt_when (cmd = Typecheck) Serialize.PPrint.print_k k;
-        let ks = Phasealign.translate2 k in
-        halt_when (cmd = ALang) Phasealign.print_kernel ks;
-        let ks = Phasesplit.translate2 ks expect_typing_fail in
-        halt_when (cmd = PLang) Phasesplit.print_kernels2 ks;
-        let ks = Locsplit.translate2 ks in
-        halt_when (cmd = CLang) Locsplit.print_kernels2 ks;
-        let ks = Flatacc.translate2 ks in
-        halt_when (cmd = HLang) Flatacc.print_kernels2 ks;
-        let ks = Symbexp.translate2 provenance ks in
-        halt_when (cmd = BLang) Symbexp.print_kernels ks;
-        let ks = Gensmtlib2.translate provenance ks in
-        Gensmtlib2.print ks;
-        ()
+        try
+          let provenance = false in
+          let k = Subst.replace_constants sets k in
+          halt_when (cmd = Typecheck) Serialize.PPrint.print_k k;
+          let ks = Phasealign.translate2 k in
+          halt_when (cmd = ALang) Phasealign.print_kernel ks;
+          let ks = Phasesplit.translate2 ks expect_typing_fail in
+          halt_when (cmd = PLang) Phasesplit.print_kernels2 ks;
+          let ks = Locsplit.translate2 ks in
+          halt_when (cmd = CLang) Locsplit.print_kernels2 ks;
+          let ks = Flatacc.translate2 ks in
+          halt_when (cmd = HLang) Flatacc.print_kernels2 ks;
+          let ks = Symbexp.translate2 provenance ks in
+          halt_when (cmd = BLang) Symbexp.print_kernels ks;
+          let ks = Gensmtlib2.translate provenance ks in
+          Gensmtlib2.print ks;
+          ()
+        with Exit -> ()
       ) ks
     with
       | Phasesplit.PhasesplitException errs ->
           let _ = Sourceloc.print_errs errs in
           exit (if expect_typing_fail then 0 else -1)
-      | Exit ->
-        begin
-          if expect_typing_fail then exit(-1)
-          else ()
-        end
       | e ->
       (match fname with
       | Some _ -> close_in_noerr ic
