@@ -212,6 +212,14 @@ type range = {
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
 
+let mk_range (x:variable) (ub:nexp) =
+  {
+    range_var = x;
+    range_lower_bound = Num 0;
+    range_upper_bound = ub;
+    range_step = Default (Num 1)
+  }
+
 let range_to_cond (r:range) : bexp =
   (match r.range_step with
   | Default (Num 1) -> []

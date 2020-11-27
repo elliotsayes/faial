@@ -21,6 +21,7 @@ type stmt =
 | Decl of (variable * locality * nexp option)
 | If of (bexp * stmt * stmt)
 | For of (range * stmt)
+| Loop of stmt
 
 let s_block l =
   Block (
@@ -67,7 +68,7 @@ let rec loc_subst (alias:alias_expr) (p:stmt) : stmt =
         )
       else
         p
-
+    | Loop p -> Loop (loc_subst alias p)
     | LocationAlias _
     | Decl _
     | Inst _
@@ -118,6 +119,7 @@ module SubstMake(S:Subst.SUBST) = struct
             Block (h::l)
         end
       | Block [] -> Block []
+      | Loop p -> Loop (subst s p)
       | Decl (x,v,o) -> Decl (x,v, on_subst s o)
       | If (b, p1, p2) -> If (M.b_subst s b, subst s p1, subst s p2)
       | For (r, p) ->
@@ -147,6 +149,7 @@ let normalize_variables (p:stmt) xs =
       )
     in
     match p with
+    | Loop p -> let (p, xs) = norm p xs in (Loop p, xs)
     | LocationAlias _
     | Inst _ -> (p, xs)
     | Block (p :: l) ->
@@ -204,6 +207,8 @@ let rec reify (p:stmt) : prog =
   | If (b,p, Block []) -> [Cond (b,reify p)]
   | If (b,Block[],q) -> [Cond(BNot b, reify q)]
   | If (b,p,q) -> [Cond (b,reify p);Cond(BNot b, reify q)]
+  | Loop p ->
+     [Loop (mk_range (var_make "X?") (Num 2), reify p)]
   | For (r, p) ->
     [Loop (r, reify p)]
 
@@ -215,6 +220,7 @@ let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSe
   | Decl (x, Local, _) -> VarSet.add x locals, globals
   | Decl (x, Global, _) -> locals, VarSet.add x globals
   | If (_, p1, p2) -> get_variable_decls p1 (locals,globals) |> get_variable_decls p2
+  | Loop p
   | For (_, p) -> get_variable_decls p (locals,globals)
 
 let compile (k:p_kernel) : prog kernel =

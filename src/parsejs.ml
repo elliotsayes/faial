@@ -313,6 +313,12 @@ and parse_bexp b : bexp option =
       Some (Bool false)
     | _ -> None
     );
+    "NonTypeTemplateParmDecl", (["name"], function
+    | [`String x] ->
+      prerr_endline ("WARNING: variable '" ^ x ^ "' being used in a boolean context, rewrite to false");
+      Some (Bool false)
+    | _ -> None
+    );
     "VarDecl", (["name"], function
     | [`String x] ->
       prerr_endline ("WARNING: variable '" ^ x ^ "' being used in a boolean context, rewrite to false");
@@ -469,10 +475,11 @@ let rec parse_stmt j =
         Some (Block [])
       | _ -> None
     );
-    "WhileStmt", ([], function
-      | [] ->
-        prerr_endline ("WARNING: we can't analyze unstructure while-loops");
-        Some (Block [])
+    "WhileStmt", (["body"], function
+      | [body] ->
+        bind (parse_stmt body) (fun body ->
+          Some (Loop body)
+        )
       | _ -> None
     );
     "CXXUnresolvedConstructExpr", ([], function
