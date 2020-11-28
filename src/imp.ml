@@ -31,6 +31,16 @@ let s_block l =
     ) l
   )
 
+let s_for (r:range) (s:stmt) =
+  match s with
+  | Block [] -> Block []
+  | _ -> For (r, s)
+
+let s_loop (s:stmt) =
+  match s with
+  | Block [] -> Block []
+  | _ -> Loop s
+
 let s_if (b:bexp) (p1:stmt) (p2:stmt) : stmt =
   match b, p1, p2 with
   | (Bool false, _, p)
@@ -181,38 +191,45 @@ let normalize_variables (p:stmt) xs =
   in
   norm p xs |> fst
 
-let rec reify (p:stmt) : prog =
-  (**
-    Breaks down syntactic sugar:
-    1. Inlines declarations in code (assumes code is normalized)
-    2. Convert structured-loops into protocol Foreach
-  *)
-  match p with
-  | LocationAlias _
-  | Decl _ (* Only handled inside a block *)
-  | Inst (IAssert _)
-  | Block []
-    -> [] (* Only handled inside a block *)
-  | Inst ISync -> [Sync]
-  | Inst (IAcc (x,y)) -> [Acc (x,y)]
-  | Block (Inst (IAssert b)::l) -> [Cond (b, reify (Block l))]
-  | Block (Decl (x,_,Some n)::l) ->
-    (* When we find a declaration, inline it in the code *)
-    Block l
-    |> ReplacePair.program_subst (Subst.SubstPair.make (x, n))
-    |> reify
-  | Block (LocationAlias a :: l) ->
-    Block l
-    |> loc_subst a
-    |> reify
-  | Block (i::l) -> Common.append_tr (reify i) (reify (Block l))
-  | If (b,p, Block []) -> [Cond (b,reify p)]
-  | If (b,Block[],q) -> [Cond(BNot b, reify q)]
-  | If (b,p,q) -> [Cond (b,reify p);Cond(BNot b, reify q)]
-  | Loop p ->
-     [Loop (mk_range (var_make "X?") (Num 2), reify p)]
-  | For (r, p) ->
-    [Loop (r, reify p)]
+let reify (locations:VarSet.t) (p:stmt) : prog =
+  let rec reify =
+    function
+    | LocationAlias _
+    | Decl _ (* Only handled inside a block *)
+    | Inst (IAssert _)
+    | Block []
+      -> [] (* Only handled inside a block *)
+    | Inst ISync -> [Sync]
+    | Inst (IAcc (x,y)) ->
+      if VarSet.mem x locations
+      then [Acc (x,y)]
+      else []
+    | Block (Inst (IAssert b)::l) -> [Cond (b, reify (Block l))]
+    | Block (Decl (x,_,Some n)::l) ->
+      (* When we find a declaration, inline it in the code *)
+      Block l
+      |> ReplacePair.program_subst (Subst.SubstPair.make (x, n))
+      |> reify
+    | Block (LocationAlias a :: l) ->
+      Block l
+      |> loc_subst a
+      |> reify
+    | Block (i::l) -> Common.append_tr (reify i) (reify (Block l))
+    | If (b,p, Block []) -> [Cond (b,reify p)]
+    | If (b,Block[],q) -> [Cond(BNot b, reify q)]
+    | If (b,p,q) -> [Cond (b,reify p);Cond(BNot b, reify q)]
+    | Loop p ->
+      begin match reify p with
+      | [] -> []
+      | p -> [Loop (mk_range (var_make "X?") (Num 2), p)]
+      end
+    | For (r, p) ->
+      begin match reify p with
+      | [] -> []
+      | p -> [Loop (r, p)]
+      end
+  in
+  reify p
 
 let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
   match p with
@@ -238,7 +255,7 @@ let compile (k:p_kernel) : prog kernel =
   (* Ensures the variable declarations differ from the parameters *)
   let p = normalize_variables k.p_kernel_code (VarSet.union locals globals) in
   let locals, globals = get_variable_decls p (locals, globals)  in
-  let (more_pre, p) = reify p |> pre_from_body in
+  let (more_pre, p) = reify k.p_kernel_locations p |> pre_from_body in
   (**
     1. We rename all variables so that they are all different
     2. We break down for-loops and variable declarations

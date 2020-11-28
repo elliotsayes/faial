@@ -454,7 +454,7 @@ let rec parse_stmt j =
       | [v; r; body] ->
         bind (parse_stmt body) (fun body ->
           let x = parse_var.run v in
-          Some (For ((parse_range x).run r, body))
+          Some (s_for ((parse_range x).run r) body)
         )
       | _ -> None
     );
@@ -491,14 +491,14 @@ let rec parse_stmt j =
     "DoStmt", (["body"], function
       | [body] ->
         bind (parse_stmt body) (fun body ->
-          Some (Loop body)
+          Some (s_loop body)
         )
       | _ -> None
     );
     "WhileStmt", (["body"], function
       | [body] ->
         bind (parse_stmt body) (fun body ->
-          Some (Loop body)
+          Some (s_loop body)
         )
       | _ -> None
     );
