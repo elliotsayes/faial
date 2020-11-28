@@ -246,16 +246,28 @@ let rec parse_nexp n : nexp option =
         )
       | _ -> None
     );
-    "FunctionDecl", (["name"],
-      function [`String x] ->
-      prerr_endline ("WARNING: rewriting function pointer '" ^ x ^ "' into 0");
-      Some (Num 0)
+    "FunctionDecl", (["name"], function
+      | [`String x] ->
+        prerr_endline ("WARNING: rewriting function pointer '" ^ x ^ "' into 0");
+        Some (Num 0)
       | _ -> None
     );
-    "MemberExpr", (["name"],
-      function [`String x] ->
-      prerr_endline ("WARNING: rewriting lookup of field '" ^ x ^ "' into 0");
-      Some (Num 0)
+    "MemberExpr", (["name"], function
+      | [`String x] ->
+        prerr_endline ("WARNING: rewriting lookup of field '" ^ x ^ "' into 0");
+        Some (Num 0)
+      | _ -> None
+    );
+    "DependentScopeDeclRefExpr", ([], function
+      | [] ->
+        prerr_endline ("WARNING: rewriting lookup of field into 0");
+        Some (Num 0)
+      | _ -> None
+    );
+    "CXXDependentScopeMemberExpr", ([], function
+      | [] ->
+        prerr_endline ("WARNING: rewriting lookup of field into 0");
+        Some (Num 0)
       | _ -> None
     );
     "CallExpr", (["func"], function
@@ -488,6 +500,30 @@ let rec parse_stmt j =
         bind (parse_stmt body) (fun body ->
           Some (Loop body)
         )
+      | _ -> None
+    );
+    "SwitchStmt", ([], function
+      | [] ->
+        (* We currently do not interpret switch statments *)
+        Some (Block [])
+      | _ -> None
+    );
+    "GotoStmt", ([], function
+      | [] ->
+        (* We currently do not interpret goto statments *)
+        Some (Block [])
+      | _ -> None
+    );
+    "BreakStmt", ([], function
+      | [] ->
+        (* We currently do not interpret return statments *)
+        Some (Block [])
+      | _ -> None
+    );
+    "ReturnStmt", ([], function
+      | [] ->
+        (* We currently do not interpret return statments *)
+        Some (Block [])
       | _ -> None
     );
     "CXXUnresolvedConstructExpr", ([], function
