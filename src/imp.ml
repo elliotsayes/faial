@@ -40,6 +40,8 @@ let s_if (b:bexp) (p1:stmt) (p2:stmt) : stmt =
   | _ -> If (b, p1, p2)
 
 type p_kernel = {
+  (* The kernel name *)
+  p_kernel_name: string;
   (* A kernel precondition of every phase. *)
   p_kernel_pre: bexp;
   (* The shared locations that can be accessed in the kernel. *)
@@ -223,20 +225,28 @@ let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSe
   | Loop p
   | For (_, p) -> get_variable_decls p (locals,globals)
 
+
 let compile (k:p_kernel) : prog kernel =
+  let rec pre_from_body (l:prog) : (bexp * prog) =
+    match l with
+    | [Cond(b,[Cond(b',l)])] -> pre_from_body [Cond(b_and b b', l)]
+    | [Cond(b, l)] -> (b, l)
+    | l -> (Bool true, l)
+  in
   let globals = k.p_kernel_params in
   let locals = VarSet.empty in
   (* Ensures the variable declarations differ from the parameters *)
   let p = normalize_variables k.p_kernel_code (VarSet.union locals globals) in
   let locals, globals = get_variable_decls p (locals, globals)  in
+  let (more_pre, p) = reify p |> pre_from_body in
   (**
     1. We rename all variables so that they are all different
     2. We break down for-loops and variable declarations
     *)
   {
-    kernel_pre = k.p_kernel_pre;
+    kernel_pre = b_and k.p_kernel_pre more_pre;
     kernel_locations = k.p_kernel_locations;
     kernel_local_variables = locals;
     kernel_global_variables = globals;
-    kernel_code = reify p;
+    kernel_code = p;
   }
