@@ -325,6 +325,12 @@ and parse_bexp b : bexp option =
       Some (Bool false)
     | _ -> None
     );
+    "ParmVarDecl", (["name"],
+      function [`String x] ->
+      prerr_endline ("WARNING: variable '" ^ x ^ "' being used in a boolean context, rewrite to false");
+      Some (Bool false)
+      | _ -> None
+    );
     "CallExpr", (["func"], function
     | [f] ->
       let x = parse_var.run f in
@@ -496,8 +502,8 @@ let parse_kernel = make "kernel" (fun k ->
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
   choose_one_of [
-    "FunctionDecl", (["body"; "pre"; "params"], function
-      | [body; pre; `List params] ->
+    "FunctionDecl", (["body"; "pre"; "params"; "name"], function
+      | [body; pre; `List params; `String name] ->
         begin
           let is_param p l =
             match get_kind_opt l, member "isUsed" l, member "type" l with
@@ -514,6 +520,7 @@ let parse_kernel = make "kernel" (fun k ->
           | _ -> parse_stmt.run body
           in
           Some {
+            p_kernel_name = name;
             p_kernel_pre = parse_bexp.run pre;
             p_kernel_locations = get_params is_array_type;
             p_kernel_params = get_params is_int_type;
