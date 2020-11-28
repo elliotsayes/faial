@@ -140,7 +140,7 @@ let parse_task = function
   | 1 -> Some Task2
   | _ -> None
 
-let binary_operator f =
+let binary_operator (f:Yojson.Basic.t -> Yojson.Basic.t -> Yojson.Basic.t -> 'a option) : string * 'a choose_one_of_handler =
   "BinaryOperator", (["opcode"; "lhs"; "rhs"], function
     | [o; n1; n2] -> f o n1 n2
     | _ -> None
@@ -214,6 +214,7 @@ let rec parse_nexp n : nexp option =
       Some (n_bin (parse_nbin.run o) n1 n2)
     );
     "FloatingLiteral", (["value"], function
+      | [`Int n] -> (* no conversion needed *) Some (Num n)
       | [`Float n] ->
         prerr_endline ("WARNING: converting float '" ^ Float.to_string n ^ " to integer");
         Some (Num (Float.to_int n))
