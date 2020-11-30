@@ -542,9 +542,14 @@ let parse_kernel = make "kernel" (fun k ->
     "FunctionDecl", (["body"; "pre"; "params"; "name"], function
       | [body; pre; `List params; `String name] ->
         begin
+          let is_used j =
+            member "isReferenced" j = `Bool true
+            || member "isUsed" j = `Bool true
+          in
           let is_param p l =
-            match get_kind_opt l, member "isUsed" l, member "type" l with
-            | Some "ParmVarDecl", `Bool true, ty -> p ty
+            match get_kind_opt l, is_used l, member "type" l with
+            | Some "NonTypeTemplateParmDecl", true, ty -> p ty
+            | Some "ParmVarDecl", true, ty -> p ty
             | _, _, _ -> false
           in
           let get_params p =
