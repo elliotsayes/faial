@@ -28,3 +28,19 @@ type 'a kernel = {
   (* The code of a kernel performs the actual memory accesses. *)
   kernel_code: 'a;
 }
+
+let kernel_constants (k:prog kernel) =
+  let rec constants (b: bexp) (kvs:(string*int) list) : (string*int) list =
+    match b with
+    | Bool _ -> kvs
+    | NRel (NEq, Var x, Num n)
+    | NRel (NEq, Num n, Var x) ->
+      (x.var_name, n) :: kvs
+    | BRel (BAnd, b1, b2) ->
+      constants b1 kvs |> constants b2
+    | BNot _
+    | Pred _
+    | NRel _
+    | BRel _ -> kvs
+  in
+  constants k.kernel_pre []

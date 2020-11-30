@@ -138,7 +138,8 @@ let main_t =
         ;
         try
           let provenance = false in
-          let k = Subst.replace_constants sets k in
+          let more_sets = Proto.kernel_constants k in
+          let k = Subst.replace_constants (more_sets @ sets) k in
           halt_when (cmd = Typecheck) Serialize.PPrint.print_k k;
           let ks = Phasealign.translate2 k in
           halt_when (cmd = ALang) Phasealign.print_kernel ks;
