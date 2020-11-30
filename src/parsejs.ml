@@ -43,6 +43,11 @@ let parse_nbin = make "nbin" (fun m ->
   | `String "*"  -> Some Mult
   | `String "/" -> Some Div
   | `String "%" -> Some Mod
+  | `String ">>" -> Some RightShift
+  | `String "<<" -> Some LeftShift
+  | `String "^" -> Some BitXOr
+  | `String "|" -> Some BitOr
+  | `String "&" -> Some BitAnd
   | `String x ->
     prerr_endline ("WARNING: Can't handle '(int, int) int' operator '"^ x ^"' converting it to +");
     Some Plus
@@ -183,7 +188,7 @@ let parse_brel = make "brel" (fun m ->
   | `String "||" -> Some BOr
   | `String "&&" -> Some BAnd
   | `String x ->
-    prerr_endline ("WARNING: Can't handle " ^ x ^ " converting it to |");
+    prerr_endline ("WARNING: brel: Can't handle " ^ x ^ " converting it to |");
     Some BOr
   | _ -> None
 )

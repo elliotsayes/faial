@@ -31,6 +31,11 @@ let tid = "$tid"
 let idx = "idx"
 
 type nbin =
+  | BitOr
+  | BitXOr
+  | BitAnd
+  | LeftShift
+  | RightShift
   | Plus
   | Minus
   | Mult
@@ -85,11 +90,16 @@ and bexp =
 
 let eval_nbin (o:nbin) : int -> int -> int =
   match o with
+  | BitAnd -> (land)
+  | BitXOr -> (lxor)
+  | BitOr -> (lor)
   | Plus -> (+)
   | Minus -> (-)
   | Mult -> ( * )
   | Div -> (/)
   | Mod -> (mod)
+  | LeftShift -> (lsl)
+  | RightShift -> (lsr)
 
 let eval_nrel o: int -> int -> bool =
   match o with

@@ -72,6 +72,8 @@ let rec n_opt (a : nexp) : nexp =
     | Mult, Num 1, a
     | Mult, a, Num 1
     -> a
+    | LeftShift, a, Num n -> n_opt (n_mult a (Num (Predicates.pow 2 n)))
+    | RightShift, a, Num n -> n_opt (n_div a (Num (Predicates.pow 2 n)))
     (* Compute *)
     | _, Num n1, Num n2 -> Num ((eval_nbin b) n1 n2)
     (* Propagate *)

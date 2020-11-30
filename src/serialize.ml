@@ -43,9 +43,32 @@ let brel_to_string (r:brel) =
   | BOr -> "or"
   | BAnd -> "and"
 
+let nbin_to_string : nbin -> string = function
+  | Plus -> "+"
+  | Minus -> "-"
+  | Mult -> "*"
+  | Div -> "/"
+  | Mod -> "%"
+  | LeftShift -> "<<"
+  | RightShift -> ">>"
+  | BitXOr -> "^"
+  | BitOr -> "|"
+  | BitAnd -> "&"
+
+
+
 module StdNexp : NEXP_SERIALIZER = struct
   let nbin_to_string (m:nbin) : string =
     match m with
+    | BitXOr
+    | BitOr
+    | BitAnd
+    | LeftShift
+    | RightShift
+      ->
+      let o = nbin_to_string m in
+      prerr_endline ("WARNING: operator '" ^ o ^ "' unsupported; converting to '+'. Use bit-vector integers instead");
+      "+"
     | Plus -> "+"
     | Minus -> "-"
     | Mult -> "*"
@@ -85,6 +108,11 @@ end
 module BvNexp : NEXP_SERIALIZER = struct
   let nbin_to_string (m:nbin) : string =
     match m with
+    | BitOr -> "bvor"
+    | BitAnd -> "bvand"
+    | BitXOr -> "bvxor"
+    | LeftShift -> "bvshl"
+    | RightShift -> "bvshr"
     | Plus -> "bvadd"
     | Minus -> "bvusub"
     | Mult -> "bvmul"
@@ -214,13 +242,6 @@ module PPrint = struct
   let print_doc = pp_doc Format.std_formatter
 
   let ident (x:variable) : string = x.var_name
-
-  let nbin_to_string : nbin -> string = function
-    | Plus -> "+"
-    | Minus -> "-"
-    | Mult -> "*"
-    | Div -> "/"
-    | Mod -> "%"
 
   let rec nrel_to_string (r:nrel) : string =
     match r with
