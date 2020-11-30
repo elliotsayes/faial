@@ -41,12 +41,6 @@ let is_has =
 (* Given an input phase, returns a phase with only accesses x.
    Changes the accesses to not contain the location info. *)
 let filter_by_location (x:variable) (i: u_inst) : u_inst option =
-  let bind p f =
-    match p with
-    | Has p -> Has (f p)
-    | Might p -> Might (f p)
-    | Nothing -> Nothing
-  in
   (* Filter programs *)
   let rec filter_i (i:u_inst) : u_inst possibility =
     match i with
