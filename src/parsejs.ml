@@ -531,6 +531,11 @@ let rec parse_stmt j =
         Some (Block [])
       | _ -> None
     );
+    "VarDecl", ([], function
+    | [] ->
+      Some (Block [])
+    | _ -> None
+    );
   ] j
 
 let parse_stmt = make "statement" parse_stmt
