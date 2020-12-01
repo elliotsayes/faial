@@ -3,6 +3,7 @@ use sexp::{Sexp,Atom};
 use std::str::FromStr;
 use std::convert::TryFrom;
 use ansi_term::Colour::Red;
+use std::collections::BTreeMap;
 
 use prettytable::format::{TableFormat};
 use prettytable::{Table, Row, Cell, Attr, format};
@@ -734,7 +735,8 @@ fn render_data_race(dr:&DataRace, locs:&Vec<String>) {
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_COLSEP);
         table.add_row(row![b->"Globals", b->"Value"]);
-        for (k, v) in &dr.globals {
+        let globals:BTreeMap<_,_> = dr.globals.iter().collect();
+        for (k, v) in &globals {
             table.add_row(
                 Row::new(vec![
                     Cell::new(k.as_str()),
@@ -746,7 +748,7 @@ fn render_data_race(dr:&DataRace, locs:&Vec<String>) {
         println!("");
     }
 
-    let mut locals = HashMap::new();
+    let mut locals = BTreeMap::new();
     for (k, v1) in &dr.t1.variables {
         if let Some(v2) = dr.t2.variables.get(k.as_str()) {
             locals.insert(k, (v1, v2));
