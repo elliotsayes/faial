@@ -27,7 +27,8 @@ let bexp_to_bool b =
 let rec n_opt (a : nexp) : nexp =
   match a with
   | Var _ -> a
-  | Num n -> if n < 0 then raise (Failure "Negative number") else a
+  | Num n -> Num n
+    (* if n < 0 then raise (Failure "Negative number") else a *)
   | Proj (t, n) -> Proj(t, n)
   | NCall (x, e) ->
     begin match n_opt e with
@@ -72,6 +73,10 @@ let rec n_opt (a : nexp) : nexp =
     | Mult, Num 1, a
     | Mult, a, Num 1
     -> a
+    | (Plus, a, Num n) when n < 0 ->
+      Bin (Minus, a, Num n)
+    | (Plus, Num n, a) when n < 0 ->
+      Bin (Minus, a, Num n)
     | LeftShift, a, Num n -> n_opt (n_mult a (Num (Predicates.pow 2 n)))
     | RightShift, a, Num n -> n_opt (n_div a (Num (Predicates.pow 2 n)))
     (* Compute *)
