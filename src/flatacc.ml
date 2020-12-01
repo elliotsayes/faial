@@ -119,12 +119,12 @@ let f_kernel_to_s (k:f_kernel) : Serialize.PPrint.t list =
   ]
 
 let print_kernels2 (ks : f_kernel Streamutil.stream) : unit =
-  print_endline "; locsplit";
+  print_endline "; flatacc";
   let count = ref 0 in
   Streamutil.iter (fun (k:f_kernel) ->
     let curr = !count + 1 in
     count := curr;
-    print_endline ("; loc " ^ (string_of_int curr));
+    print_endline ("; acc " ^ (string_of_int curr));
     Serialize.PPrint.print_doc (f_kernel_to_s k)
   ) ks;
-  print_endline "; end of locsplit"
+  print_endline "; end of flatacc"
