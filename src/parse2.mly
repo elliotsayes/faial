@@ -98,7 +98,7 @@ prog:
   | s = stmt; p = prog
     { s @ p }
   | LET x = ident ASSIGN n = nexp SEMICOLON p = prog
-    { Subst.ReplacePair.prog_subst (Subst.SubstPair.make (x,n)) p }
+    { Proto.PSubstPair.p_subst (Subst.SubstPair.make (x,n)) p }
   | { [] }
 
 %inline range:

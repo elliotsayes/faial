@@ -221,7 +221,7 @@ let align (w:w_prog) : a_prog =
 
 let translate2 (k: Proto.prog kernel) : a_prog kernel =
   let vars = VarSet.union k.kernel_local_variables k.kernel_global_variables in
-  let p = Subst.vars_distinct k.kernel_code vars in
+  let p = Proto.vars_distinct k.kernel_code vars in
   let p =
     let open Streamutil in
     make_well_formed p |>

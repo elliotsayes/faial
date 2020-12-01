@@ -272,5 +272,8 @@ type mode =
 type access = {access_index: nexp list; access_mode: mode}
   [@@deriving hash, compare]
 
+(* Access expression *)
+type acc_expr = variable * access [@@deriving hash, compare]
+
 let distinct (idx:variable list) : bexp =
   b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)
