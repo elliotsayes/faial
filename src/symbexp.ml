@@ -205,6 +205,7 @@ let h_prog_to_bexp
 
 let f_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (k:f_kernel) : proof =
   h_prog_to_bexp provenance cache k.f_kernel_local_variables k.f_kernel_accesses
+  |> b_and k.f_kernel_pre
   |> Constfold.b_opt (* Optimize the output expression *)
   |> mk_proof k.f_kernel_location
 
