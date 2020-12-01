@@ -32,7 +32,7 @@ let mk_proof (location:variable) (goal:bexp) =
     proof_name = location.var_name;
   }
 
-let proj_accesses (t:task) (h:h_prog) : cond_access list =
+let proj_access (locals:VarSet.t) (t:task) (ca:cond_access) : cond_access =
   (* Add a suffix to a variable *)
   let var_append (x:variable) (suffix:string) : variable =
     {x with var_name = x.var_name ^ suffix }
@@ -43,38 +43,36 @@ let proj_accesses (t:task) (h:h_prog) : cond_access list =
   let proj_var (t:task) (x:variable) : variable =
     var_append x (task_suffix t)
   in
-  (* Create a hash-table of substitutions make each local variable unique *)
-  let make_subst (vars:VarSet.t) : SubstAssoc.t =
-    VarSet.elements vars
-    |> List.map (fun x -> (x.var_name, Var (proj_var t x)))
-    |> SubstAssoc.make
-  in
-  let rec inline_proj_n (n: nexp) : nexp =
+  let rec inline_proj_n (t:task) (n: nexp) : nexp =
     match n with
-    | Num _
+    | Num _ -> n
+    | Var x when VarSet.mem x locals -> Var (proj_var t x)
     | Var _ -> n
-    | Bin (o, n1, n2) -> Bin (o, inline_proj_n n1, inline_proj_n n2)
-    | Proj (t, x) -> Var (proj_var t x)
-    | NIf (b, n1, n2) -> NIf (inline_proj_b b, inline_proj_n n1, inline_proj_n n2)
-    | NCall (x, n) -> NCall (x, inline_proj_n n)
-  and inline_proj_b (b: bexp) : bexp =
+    | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
+    | Proj (t', x) -> Var (proj_var t' x)
+    | NIf (b, n1, n2) -> NIf (inline_proj_b t b, inline_proj_n t n1, inline_proj_n t n2)
+    | NCall (x, n) -> NCall (x, inline_proj_n t n)
+  and inline_proj_b (t:task) (b: bexp) : bexp =
     match b with
-    | Pred _
+    | Pred (x, n) -> Pred (x, inline_proj_n t n)
     | Bool _ -> b
-    | BNot b -> BNot (inline_proj_b b)
-    | BRel (o, b1, b2) -> BRel (o, inline_proj_b b1, inline_proj_b b2)
-    | NRel (o, n1, n2) -> NRel (o, inline_proj_n n1, inline_proj_n n2)
+    | BNot b -> BNot (inline_proj_b t b)
+    | BRel (o, b1, b2) -> BRel (o, inline_proj_b t b1, inline_proj_b t b2)
+    | NRel (o, n1, n2) -> NRel (o, inline_proj_n t n1, inline_proj_n t n2)
   in
-  (* Find and replace under conditional accesses *)
-  let cond_access_subst (s:SubstAssoc.t) (c:cond_access) : cond_access =
+  let inline_acc (a:access) =
     {
-      ca_access = ReplaceAssoc.a_subst s c.ca_access;
-      ca_cond = inline_proj_b c.ca_cond |> ReplaceAssoc.b_subst s;
-      ca_location = c.ca_location;
+      access_index = List.map (inline_proj_n t) a.access_index;
+      access_mode = a.access_mode
     }
   in
-  let s = make_subst h.prog_locals in
-  List.map (cond_access_subst s) h.prog_accesses
+  {
+    ca_access = inline_acc ca.ca_access;
+    ca_cond = inline_proj_b t ca.ca_cond;
+    ca_location = ca.ca_location;
+  }
+
+let proj_accesses locals t = List.map (proj_access locals t)
 
 (* The assign_task datatype creates two constructors.
    - assign_mode: given a mode, returns a boolean expression that represents
@@ -173,11 +171,15 @@ let cond_acc_list_to_bexp (provenance:bool) (t:assign_task) (l:cond_access list)
   List.map (cond_access_to_bexp provenance t) l
   |> b_or_ex
 
-let h_prog_to_bexp (provenance:bool) (cache:LocationCache.t) (h:h_prog) : bexp =
+let h_prog_to_bexp
+  (provenance:bool)
+  (cache:LocationCache.t)
+  (locals:VarSet.t)
+  (accs:cond_access list) : bexp =
   (* Pick one access *)
   let task_to_bexp (t:task) : bexp =
     let gen = mk_task_gen cache t in
-    let accs = proj_accesses t h in
+    let accs = proj_accesses locals t accs in
     cond_acc_list_to_bexp provenance gen accs
   in
   (* Make sure all indexeses match *)
@@ -198,12 +200,11 @@ let h_prog_to_bexp (provenance:bool) (cache:LocationCache.t) (h:h_prog) : bexp =
   b_and_ex [
     task_to_bexp Task1;
     task_to_bexp Task2;
-    get_dim h.prog_accesses |> gen_eq_index
+    get_dim accs |> gen_eq_index
   ]
 
 let f_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (k:f_kernel) : proof =
-  { prog_locals = k.f_kernel_local_variables; prog_accesses = k.f_kernel_accesses }
-  |> h_prog_to_bexp provenance cache
+  h_prog_to_bexp provenance cache k.f_kernel_local_variables k.f_kernel_accesses
   |> Constfold.b_opt (* Optimize the output expression *)
   |> mk_proof k.f_kernel_location
 
