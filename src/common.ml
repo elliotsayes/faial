@@ -30,6 +30,11 @@ let join sep elems =
   in
   List.fold_left on_elem "" elems
 
+let list_is_empty (l:'a list) =
+  match l with
+  | [] -> true
+  | _ -> false
+
 let enumerate l =
   let rec iter idx l =
     match l with

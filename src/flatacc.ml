@@ -46,12 +46,7 @@ let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
         | _ -> None
       ) p
       in
-      let is_empty (l:'a list) =
-        match l with
-        | [] -> true
-        | _ -> false
-      in
-      if is_empty asserts then
+      if Common.list_is_empty asserts then
         p
       else
         [UCond (b_and_ex asserts, List.filter is_not_assert p)]
