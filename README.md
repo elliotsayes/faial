@@ -1,9 +1,12 @@
 # GPU Contracts
 
+[![Build status](https://ci.appveyor.com/api/projects/status/n2uv6o1mpl18w5ir?svg=true)](https://ci.appveyor.com/project/cogumbreiro/faial)
+
 A modeling language to specify and debug GPU programs.
 
 ### [Download `faial` for Linux x86-64bits](https://gitlab.com/umb-svl/faial/-/jobs/artifacts/master/download?job=build-dist)
 
+### [Download `faial` for Windows x86-64bits](https://ci.appveyor.com/api/projects/cogumbreiro/faial/artifacts/faial-win64.zip)
 
 # Compiling from source
 
