@@ -5,13 +5,15 @@ version = "1.0.0"
 authors = ["Tiago Cogumbreiro <cogumbreiro@users.sf.net>"]
 edition = "2018"
 
+[build-dependencies]
+vergen = "3"
+
 [profile.release]
 
 lto = true
 
 [dependencies]
 
-#num_cpus = "1.13.0"
 ansi_term = "0.12.1"
 sexp = "1.1.4"
 duct = "0.13.4"

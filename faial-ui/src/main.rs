@@ -507,8 +507,9 @@ impl Faial {
     fn new() -> Self {
         let inp_choices = InputType::values();
         let inp_choices : Vec<&str> = inp_choices.iter().map(|x| x.as_str()).collect();
+        let version = format!("1.0-rev-{}", env!("VERGEN_SHA"));
         let app = App::new("faial")
-                .version("1.0")
+                .version(version.as_str())
                 .about("Checks if a GPU code is data-race free")
                 .author("UMB-SVL research group: https://umb-svl.gitlab.io/")
                 .arg(Arg::with_name("expect_race")
