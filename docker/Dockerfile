@@ -6,6 +6,7 @@ RUN sudo apk --no-cache add --update \
         build-base \
         libffi \
         m4 \
+        git \
         libffi-dev \
         gmp-dev \
         z3 \
