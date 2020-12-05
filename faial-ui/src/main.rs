@@ -507,7 +507,7 @@ impl Faial {
     fn new() -> Self {
         let inp_choices = InputType::values();
         let inp_choices : Vec<&str> = inp_choices.iter().map(|x| x.as_str()).collect();
-        let version = format!("1.0-rev-{}", env!("VERGEN_SHA"));
+        let version = format!("1.0-rev-{}", env!("GIT_HASH"));
         let app = App::new("faial")
                 .version(version.as_str())
                 .about("Checks if a GPU code is data-race free")

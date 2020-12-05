@@ -5,9 +5,6 @@ version = "1.0.0"
 authors = ["Tiago Cogumbreiro <cogumbreiro@users.sf.net>"]
 edition = "2018"
 
-[build-dependencies]
-vergen = "3"
-
 [profile.release]
 
 lto = true
