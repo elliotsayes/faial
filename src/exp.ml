@@ -115,6 +115,27 @@ let eval_brel o : bool -> bool -> bool =
   | BOr -> (||)
   | BAnd -> (&&)
 
+let rec n_eval (n: nexp) : int =
+  match n with
+  | Var x -> failwith ("n_eval: variable " ^ x.var_name)
+  | Num n -> n
+  | Bin (o, n1, n2) -> eval_nbin o (n_eval n1) (n_eval n2)
+  | Proj _ -> failwith ("n_eval: proj")
+  | NCall (x,_) -> failwith ("n_eval: call " ^ x)
+  | NIf (b, n1, n2) ->
+    if (b_eval b) then (n_eval n1) else (n_eval n2)
+and b_eval (b: bexp) : bool =
+  match b with
+  | Bool b -> b
+  | NRel (o, n1, n2) ->
+    eval_nrel o (n_eval n1) (n_eval n2)
+  | BRel (o, b1, b2) ->
+    eval_brel o (b_eval b1) (b_eval b2)
+  | BNot b ->
+    not (b_eval b)
+  | Pred (x, _) ->
+    failwith ("b_eval: pred " ^ x)
+
 let n_rel o n1 n2 =
   match n1, n2 with
   | Num n1, Num n2 -> Bool (eval_nrel o n1 n2)
@@ -131,6 +152,11 @@ let n_ge = n_rel NGe
 let n_eq = n_rel NEq
 
 let n_neq = n_rel NNeq
+
+let n_if b n1 n2 =
+  match b with
+  | Bool b -> if b then n1 else n2
+  | _ -> NIf (b, n1, n2)
 
 let n_bin o n1 n2 =
   match n1, n2 with

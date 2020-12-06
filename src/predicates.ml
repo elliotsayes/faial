@@ -183,7 +183,7 @@ let step_inc (s:step_expr) : nexp -> nexp =
 
 let step_dec (s:step_expr) : nexp -> nexp =
   match s with
-  | Default n -> n_minus n
+  | Default n -> fun m -> n_minus m n
   | StepName pred_name -> (get_step_handler pred_name).step_handler_dec
 
 let step_trunc (s:step_expr) : nexp -> nexp =
@@ -195,7 +195,7 @@ let range_last (r:range) : nexp =
   let ub = r.range_upper_bound in
   let init = r.range_lower_bound in
   match r.range_step with
-  | Default d ->
+  | Default s ->
     (* (init?; n += 3; n < 10) 
         0 -> 9
         1 -> 1 + 3 + 3 = 7
@@ -204,7 +204,10 @@ let range_last (r:range) : nexp =
         ub - init % div
         init % d
       *)
-    n_minus ub (n_mod init d)
+    let ub_mod_s = n_mod (n_minus ub init) s in
+    n_if (n_eq ub_mod_s (Num 0))
+      (n_minus ub s)
+      (n_minus ub ub_mod_s)
   | StepName pred_name ->
     (* (init?; n *= 3; n < 28)
         1 -> 1 * 3 * 3 * 3 = 27 <- init * trunc(ub / init) = 1 * 3 ^ floor(log3(28/1))

@@ -18,11 +18,13 @@ build-tests:
 	$(OCB) test_common.native
 	$(OCB) test_locsplit.native
 	$(OCB) test_streamutil.native
+	$(OCB) test_predicates.native
 
 test: build-tests
 	$(BUILD)/test_common.native
 	$(BUILD)/test_streamutil.native
 	$(BUILD)/test_locsplit.native
+	$(BUILD)/test_predicates.native
 
 sys-test: build-tests
 	@./run-tests.py
