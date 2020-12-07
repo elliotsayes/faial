@@ -83,4 +83,10 @@ let range (i:int) (j:int) : int list =
   in
   iter j []
 
+(* https://stackoverflow.com/a/46759007/2327050 *)
+let modulo x y =
+  let result = x mod y in
+  if result >= 0 then result
+  else result + y
+
 exception ParseError of (string list)

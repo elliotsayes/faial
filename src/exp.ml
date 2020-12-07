@@ -97,7 +97,7 @@ let eval_nbin (o:nbin) : int -> int -> int =
   | Minus -> (-)
   | Mult -> ( * )
   | Div -> (/)
-  | Mod -> (mod)
+  | Mod -> Common.modulo
   | LeftShift -> (lsl)
   | RightShift -> (lsr)
 
@@ -166,11 +166,13 @@ let n_bin o n1 n2 =
 let n_plus n1 n2 =
   match n1, n2 with
   | Num 0, n | n, Num 0 -> n
+  | Num n1, Num n2 -> Num (n1 + n2)
   | _, _ -> n_bin Plus n1 n2
 
 let n_minus n1 n2 =
   match n1, n2 with
-  | Num 0, n | n, Num 0 -> n
+  | n, Num 0 -> n
+  | Num n1, Num n2 -> Num (n1 - n2)
   | _, _ -> n_bin Minus n1 n2
 
 let n_mult = n_bin Mult
@@ -180,12 +182,14 @@ let n_div n1 n2 =
   | _, Num 1 -> n1
   | Num 0, _ -> Num 0
   | _, Num 0 -> failwith ("Division by 0")
+  | Num n1, Num n2 -> Num (n1 / n2)
   | _, _ -> n_bin Div n1 n2
 
 let n_mod n1 n2 =
   match n1, n2 with
-  | _, Num 1 -> Num 0
-  | _, Num 0 -> failwith ("Modulo by 0")
+  (* | _, Num 1 -> Num 0
+  | _, Num 0 -> failwith ("Modulo by 0") *)
+  | Num n1, Num n2 -> Num (Common.modulo n1 n2)
   | _, _ -> n_bin Mod n1 n2
 
 let b_rel o b1 b2 =
