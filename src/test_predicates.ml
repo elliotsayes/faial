@@ -51,7 +51,21 @@ let assert_equal_int n1 n2 : unit =
   assert_equal n1 n2 ~printer:string_of_int
 
 let assert_last (r:vrange) =
-  assert_equal_int (v_last r) (r_last r)
+  let elems = List.map string_of_int (vrange_to_list r |> List.rev) in
+  let elems = Common.join ", " elems in
+  let rng = "range(" ^
+    "lb=" ^ (string_of_int r.vr_lower_bound) ^
+    ", ub=" ^ (string_of_int r.vr_upper_bound) ^
+    ", step=" ^ (string_of_int r.vr_step) ^")"
+  in
+  let expr = range_last (mk_range r) |> Serialize.PPrint.n_to_s in
+  let expr = "given expr '" ^ expr ^ "'" in
+  let exp = "expected " ^ (string_of_int (v_last r)) in
+  let msg =
+    rng ^ "=[" ^ elems ^ "] " ^ exp ^
+    " " ^ expr ^
+    " given " ^ (string_of_int (r_last r)) in
+  assert_equal (v_last r) (r_last r) ~msg
 
 let tests = "test_predicates" >::: [
   "last" >:: (fun _ ->
@@ -67,7 +81,7 @@ let tests = "test_predicates" >::: [
   );
   "base0" >:: (fun _ ->
     assert_last {vr_upper_bound = 10; vr_lower_bound = 0; vr_step = 1};
-    assert_last {vr_upper_bound = 10; vr_lower_bound = 0; vr_step = 2};
+    assert_last {vr_lower_bound = 0; vr_upper_bound = 10; vr_step = 2};
     assert_last {vr_upper_bound = 10; vr_lower_bound = 0; vr_step = 3};
     assert_last {vr_upper_bound = 10; vr_lower_bound = 0; vr_step = 4};
     assert_last {vr_upper_bound = 10; vr_lower_bound = 0; vr_step = 5};
