@@ -356,6 +356,11 @@ and parse_bexp b : bexp option =
       Some (Bool false)
     | _ -> None
     );
+    "CXXBoolLiteralExpr", (["value"], function
+    | [`Bool b] ->
+      Some (Bool b)
+    | _ -> None
+    );
   ] b
 
 let parse_nexp = make "nexp" parse_nexp
