@@ -512,6 +512,13 @@ let rec parse_stmt j =
         )
       | _ -> None
     );
+    "ForStmt", (["body"], function
+      | [body] ->
+        bind (parse_stmt body) (fun body ->
+          Some (s_loop body)
+        )
+      | _ -> None
+    );
     "SwitchStmt", ([], function
       | [] ->
         (* We currently do not interpret switch statments *)
