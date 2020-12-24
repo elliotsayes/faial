@@ -245,7 +245,7 @@ let rec parse_nexp n : nexp option =
         bind (parse_bexp b) (fun b ->
           bind (parse_nexp then_expr) (fun n1 ->
             bind (parse_nexp else_expr) (fun n2 ->
-              Some (NIf (b, n1, n2))
+              Some (n_if b n1 n2)
             )
           )
         )
