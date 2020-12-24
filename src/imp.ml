@@ -1,5 +1,6 @@
 open Exp
 open Proto
+open Serialize
 
 type var_type = Location | Index
 
@@ -230,6 +231,62 @@ let reify (locations:VarSet.t) (p:stmt) : prog =
       end
   in
   reify p
+
+
+let stmt_to_s: stmt -> PPrint.t list =
+  let open PPrint in
+  let rec stmt_to_s : stmt -> PPrint.t list =
+    function
+    | Inst ISync -> [Line "sync;"]
+    | Inst (IAssert b) -> [Line ("assert (" ^ (b_to_s b) ^ ")")]
+    | Inst (IAcc (x,a)) -> acc_expr_to_s (x,a)
+    | Block l -> [Block (List.map stmt_to_s l |> List.flatten)]
+    | LocationAlias l ->
+      [Line (
+        l.alias_target.var_name ^ " = " ^
+        l.alias_source.var_name ^ " + " ^
+        n_to_s l.alias_offset ^ ";"
+      )]
+    | Decl (x, l, n) -> [Line (
+        (match l with | Global -> "global" | Local ->  "local") ^ " " ^
+        x.var_name ^
+        (match n with | Some n -> " = " ^ n_to_s n | None -> "") ^
+        ";"
+      )]
+    | If (b, s1, s2) -> [
+        Line ("if (" ^ b_to_s b ^ ") {");
+        Block (stmt_to_s s1);
+        Line "} else {";
+        Block (stmt_to_s s2);
+        Line "}"
+      ]
+    | For (r, s) -> [
+        Line ("foreach (" ^ r_to_s r ^ ") {");
+        Block (stmt_to_s s);
+        Line ("}")
+      ]
+    | Loop s -> [
+        Line ("loop {");
+        Block (stmt_to_s s);
+        Line ("}")
+      ]
+  in
+  stmt_to_s
+
+let kernel_to_s (k:p_kernel) : PPrint.t list =
+  let open PPrint in
+  [
+    Line ("arrays: " ^ var_set_to_s k.p_kernel_locations ^ ";");
+    Line ("scalars: " ^ var_set_to_s k.p_kernel_params ^ ";");
+    Line ("pre: " ^ b_to_s k.p_kernel_pre ^";");
+    Line "";
+    Line "code {";
+    Block (stmt_to_s k.p_kernel_code);
+    Line "}"
+  ]
+
+let print_kernel (k: p_kernel) : unit =
+  PPrint.print_doc (kernel_to_s k)
 
 let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
   match p with

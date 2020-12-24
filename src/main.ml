@@ -49,15 +49,7 @@ let safe_run f =
     ) l;
     exit (-1)
 
-let json_parse ic =
-  safe_run (fun () ->
-    Yojson.Basic.from_channel ic
-      |> Parsejs.parse_kernels.run
-      |> List.map Imp.compile
-  )
-
-
-type command = ALang | PLang | CLang | HLang | BLang | Sat | Typecheck
+type command = ALang | PLang | CLang | HLang | BLang | Sat | Typecheck | Parse
 
 let main_t =
   let use_bv =
@@ -118,15 +110,26 @@ let main_t =
     let sets = List.map on_kv sets |> flatten_opt in
     try
       let ks = if use_json
-        then json_parse ic
-        else
+        then begin
+          safe_run (fun () ->
+            let ks = Yojson.Basic.from_channel ic
+              |> Parsejs.parse_kernels.run
+            in
+            if cmd = Parse then
+              (List.iter Imp.print_kernel ks;
+              (* return an empty list of compiled kernels *)
+              [])
+            else
+              List.map Imp.compile ks
+          )
+        end else
           let fname = match fname with
           | Some x -> x
           | None -> "<STDIN>"
           in
           [v2_parse fname ic]
       in
-      if List.length ks = 0 then begin
+      if List.length ks = 0 && cmd != Parse then begin
         print_endline "Error: kernel not found!";
         exit (1)
       end else
@@ -169,21 +172,23 @@ let main_t =
   in
   let get_cmd =
     (* Override the codegeneration (for debugging only). *)
-    let doc = "Step 0: Replace key-values and typecheck the kernel." in
-    let tc = Typecheck, Arg.info ["0"] ~doc in
-    let doc = "Step 1: Align phases" in
-    let k1 = ALang, Arg.info ["1"] ~doc in
-    let doc = "Step 2: Split phases" in
-    let k2 = PLang, Arg.info ["2"] ~doc in
-    let doc = "Step 3: Split per location" in
-    let k3 = CLang, Arg.info ["3"] ~doc in
-    let doc = "Step 4: Flatten phases" in
-    let k4 = HLang, Arg.info ["4"] ~doc in
-    let doc = "Step 5: Generate booleans" in
-    let k5 = BLang, Arg.info ["5"] ~doc in
-    let doc = "Step 6: Generate SMT." in
-    let sat = Sat, Arg.info ["6"; "sat"] ~doc in
-    Arg.(last & vflag_all [Sat] [tc; k1; k2; k3; k4; k5; sat])
+    let doc = "Step 0: Print what was parsed" in
+    let p = Parse, Arg.info ["0"] ~doc in
+    let doc = "Step 1: Replace key-values and typecheck the kernel." in
+    let tc = Typecheck, Arg.info ["1"] ~doc in
+    let doc = "Step 2: Align phases" in
+    let k1 = ALang, Arg.info ["2"] ~doc in
+    let doc = "Step 3: Split phases" in
+    let k2 = PLang, Arg.info ["3"] ~doc in
+    let doc = "Step 4: Split per location" in
+    let k3 = CLang, Arg.info ["4"] ~doc in
+    let doc = "Step 5: Flatten phases" in
+    let k4 = HLang, Arg.info ["5"] ~doc in
+    let doc = "Step 6: Generate booleans" in
+    let k5 = BLang, Arg.info ["6"] ~doc in
+    let doc = "Step 7: Generate SMT." in
+    let sat = Sat, Arg.info ["7"; "sat"] ~doc in
+    Arg.(last & vflag_all [Sat] [p; tc; k1; k2; k3; k4; k5; sat])
   in
   Term.(
     const do_main
