@@ -361,6 +361,12 @@ and parse_bexp b : bexp option =
       Some (Bool b)
     | _ -> None
     );
+    "MemberExpr", ([], function
+    | [] ->
+      prerr_endline ("WARNING: field lookup converted into 0");
+      Some (Bool true)
+    | _ -> None
+    );
   ] b
 
 let parse_nexp = make "nexp" parse_nexp

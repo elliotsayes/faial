@@ -158,24 +158,32 @@ let n_if b n1 n2 =
   | Bool b -> if b then n1 else n2
   | _ -> NIf (b, n1, n2)
 
-let n_bin o n1 n2 =
-  match n1, n2 with
-  | Num n1, Num n2 -> Num (eval_nbin o n1 n2)
-  | _, _ -> Bin (o, n1, n2)
-
 let n_plus n1 n2 =
   match n1, n2 with
   | Num 0, n | n, Num 0 -> n
   | Num n1, Num n2 -> Num (n1 + n2)
-  | _, _ -> n_bin Plus n1 n2
+  | Num n1, Bin (Plus, Num n2, e)
+  | Bin (Plus, Num n1, e), Num n2 ->
+    Bin (Plus, Num (n1 + n2), e)
+  | _, Num _ -> Bin (Plus, n2, n1)
+  | _, _ -> Bin (Plus, n1, n2)
 
 let n_minus n1 n2 =
   match n1, n2 with
   | n, Num 0 -> n
   | Num n1, Num n2 -> Num (n1 - n2)
-  | _, _ -> n_bin Minus n1 n2
+  | _, _ -> Bin (Minus, n1, n2)
 
-let n_mult = n_bin Mult
+let n_mult n1 n2 =
+  match n1, n2 with
+  | Num 1, n | n, Num 1 -> n
+  | Num 0, _ | _, Num 0 -> Num 0
+  | Num n1, Num n2 -> Num (n1 * n2)
+  | Num n1, Bin (Mult, Num n2, e)
+  | Bin (Mult, Num n1, e), Num n2 ->
+    Bin (Mult, Num (n1 * n2), e)
+  | _, Num _ -> Bin (Mult, n2, n1)
+  | _, _ -> Bin (Mult, n1, n2)
 
 let n_div n1 n2 =
   match n1, n2 with
@@ -183,14 +191,25 @@ let n_div n1 n2 =
   | Num 0, _ -> Num 0
   | _, Num 0 -> failwith ("Division by 0")
   | Num n1, Num n2 -> Num (n1 / n2)
-  | _, _ -> n_bin Div n1 n2
+  | _, _ -> Bin (Div, n1, n2)
 
 let n_mod n1 n2 =
   match n1, n2 with
   (* | _, Num 1 -> Num 0
   | _, Num 0 -> failwith ("Modulo by 0") *)
   | Num n1, Num n2 -> Num (Common.modulo n1 n2)
-  | _, _ -> n_bin Mod n1 n2
+  | _, _ -> Bin (Mod, n1, n2)
+
+let n_bin o n1 n2 =
+  match o, n1, n2 with
+  | _, Num n1, Num n2 -> Num (eval_nbin o n1 n2)
+  | Plus, _, _ -> n_plus n1 n2
+  | Minus, _, _ -> n_minus n1 n2
+  | Mult, _, _ -> n_mult n1 n2
+  | Div, _, _ -> n_div n1 n2
+  | Mod, _, _ -> n_mod n1 n2
+  | _, _, _ -> Bin (o, n1, n2)
+
 
 let b_rel o b1 b2 =
   match b1, b2 with

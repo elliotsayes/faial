@@ -1,6 +1,7 @@
 open Exp
 open Proto
 open Serialize
+open Subst
 
 type var_type = Location | Index
 
@@ -206,11 +207,11 @@ let reify (locations:VarSet.t) (p:stmt) : prog =
       then [Acc (x,y)]
       else []
     | Block (Inst (IAssert b)::l) -> [Cond (b, reify (Block l))]
-    | Block (Decl (x,_,Some n)::l) ->
+    (* | Block (Decl (x,_,Some n)::l) ->
       (* When we find a declaration, inline it in the code *)
       Block l
       |> ReplacePair.program_subst (Subst.SubstPair.make (x, n))
-      |> reify
+      |> reify *)
     | Block (LocationAlias a :: l) ->
       Block l
       |> loc_subst a
@@ -232,6 +233,33 @@ let reify (locations:VarSet.t) (p:stmt) : prog =
   in
   reify p
 
+let rec get_var_binders (p:stmt) (kvs: (variable * nexp) list) : (variable * nexp) list =
+  match p with
+  | Decl (x,_,Some n)
+    -> (x,n)::kvs
+  | Decl (_,_,None)
+  | LocationAlias _
+  | Inst (IAssert _)
+  | Inst ISync
+  | Inst (IAcc _)
+  | Block []
+    -> kvs
+  | Block (i::l) -> get_var_binders i kvs |> get_var_binders (Block l)
+  | If (_, p, q) -> get_var_binders p kvs |> get_var_binders q
+  | Loop p
+  | For (_, p)
+    -> get_var_binders p kvs
+
+let rec p_subst (kvs: SubstAssoc.t) (p:prog) =
+  List.map (i_subst kvs) p
+and i_subst (kvs: SubstAssoc.t) (i:inst) =
+  match i with
+  | Acc e -> Acc (ReplaceAssoc.acc_expr_subst kvs e)
+  | Sync -> Sync
+  | Cond (b, l) -> Cond (ReplaceAssoc.b_subst kvs b, p_subst kvs l)
+  | Loop (r, l) -> Loop (ReplaceAssoc.r_subst kvs r, p_subst kvs l)
+
+(* let get_loc_binders (p:stmt) (kvs: (variable  *)
 
 let stmt_to_s: stmt -> PPrint.t list =
   let open PPrint in
@@ -300,6 +328,85 @@ let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSe
   | For (_, p) -> get_variable_decls p (locals,globals)
 
 
+(** Given a list of key-values, where the values may depend on the keys,
+    we want to replace all variables so that the expressions in the keys
+    have no references left. *)
+let normalize_deps (kvs:(variable * nexp) list) : (variable * nexp) list =
+  let defined = List.map fst kvs |> VarSet.of_list in
+  (* Compute free names of each substituion expression *)
+  let deps : (variable * VarSet.t) list =
+    List.map (fun (x,n) ->
+      (x, Freenames.free_names_nexp n VarSet.empty |> VarSet.inter defined)
+    ) kvs
+  in
+  (* Compute where each variable is used *)
+  let used_by : (variable, variable list) Hashtbl.t =
+    let accum : (variable, variable list) Hashtbl.t = Hashtbl.create 100 in
+    let rev_deps ((k,ds):(variable * VarSet.t)) : unit =
+      List.iter (fun d ->
+        Hashtbl.replace accum d (match Hashtbl.find_opt accum d with
+          | Some others -> k::others
+          | None -> [k]
+        )
+      ) (VarSet.elements ds)
+    in
+    List.iter rev_deps deps;
+    accum
+  in
+  (* Convert key-values into a mutable hash table, for performance reasons *)
+  let kvs = Common.hashtbl_from_list kvs in
+  (* Normalize takes a list of variables with dependencies and *)
+  let rec norm (deps: (variable * VarSet.t) list) : unit
+  =
+    if Common.list_is_empty deps then
+      (* no more dependencies to handle return *)
+      ()
+    else
+    let (no_deps, with_deps) =
+      List.partition (fun (_,ds) -> VarSet.is_empty ds) deps
+    in
+    if Common.list_is_empty with_deps then
+      ()
+    else
+    let no_deps_keys = List.map fst no_deps in
+    let no_deps : SubstAssoc.t =
+      no_deps_keys
+      |> List.map (fun x -> (x.var_name, Hashtbl.find kvs x))
+      |> SubstAssoc.make
+    in
+    let used_no_deps : VarSet.t =
+      List.fold_left VarSet.union VarSet.empty (List.map snd deps)
+      |> VarSet.inter (VarSet.of_list no_deps_keys)
+    in
+    if VarSet.is_empty used_no_deps then
+      ()
+    else
+      let replaced : (variable, unit) Hashtbl.t = Hashtbl.create 100 in
+      (* For every variable no_dep wihtout dependencies *)
+      List.iter (fun no_dep ->
+        (* For every variable x that uses no_dep *)
+        List.iter (fun x ->
+          if Hashtbl.mem replaced x then
+            (* Any variable that has been replaced once, has already been
+               replaced by all no-deps *)
+            ()
+          else
+          (* Get the value associated with variable x *)
+          let n = Hashtbl.find kvs x in
+          (* Replace all no-deps in n and update the table *)
+          Hashtbl.replace kvs x (ReplaceAssoc.n_subst no_deps n);
+          (* Mark this variable as being visited *)
+          Hashtbl.replace replaced x ()
+        ) (Hashtbl.find used_by no_dep)
+      ) (VarSet.elements used_no_deps);
+      (* Remove all variables without deps from deps, filtering out empty deps *)
+      with_deps
+      |> List.map (fun (x, ds) -> (x, VarSet.diff ds used_no_deps) )
+      |> norm
+  in
+  norm deps;
+  kvs |> Common.hashtbl_elements
+
 let compile (k:p_kernel) : prog kernel =
   let rec pre_from_body (l:prog) : (bexp * prog) =
     match l with
@@ -311,8 +418,18 @@ let compile (k:p_kernel) : prog kernel =
   let locals = VarSet.empty in
   (* Ensures the variable declarations differ from the parameters *)
   let p = normalize_variables k.p_kernel_code (VarSet.union locals globals) in
+  let kvs : SubstAssoc.t = get_var_binders p []
+    |> normalize_deps
+    |> List.map (fun (k,v) -> (k.var_name, v))
+    |> SubstAssoc.make
+  in
   let locals, globals = get_variable_decls p (locals, globals)  in
   let (more_pre, p) = reify k.p_kernel_locations p |> pre_from_body in
+  let p =
+    if Hashtbl.length kvs > 0
+    then p_subst kvs p
+    else p
+  in
   (**
     1. We rename all variables so that they are all different
     2. We break down for-loops and variable declarations

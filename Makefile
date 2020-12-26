@@ -15,12 +15,14 @@ native: build-tests
 	cp $(BUILD)/main.native faial-bin
 
 build-tests:
+	$(OCB) test_imp.native
 	$(OCB) test_common.native
 	$(OCB) test_locsplit.native
 	$(OCB) test_streamutil.native
 	$(OCB) test_predicates.native
 
 test: build-tests
+	$(BUILD)/test_imp.native
 	$(BUILD)/test_common.native
 	$(BUILD)/test_streamutil.native
 	$(BUILD)/test_locsplit.native
