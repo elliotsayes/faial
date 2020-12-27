@@ -64,8 +64,14 @@ module Make (S:SUBST) = struct
       access_index = List.map (n_subst s) a.access_index
     }
 
+  let s_subst (s:S.t) (se:step_expr) : step_expr =
+    match se with
+    | Default n -> Default (n_subst s n)
+    | StepName _ -> se
+
   let r_subst (s:S.t) (r:range) : range =
     { r with
+      range_step = s_subst s r.range_step;
       range_lower_bound = n_subst s r.range_lower_bound;
       range_upper_bound = n_subst s r.range_upper_bound
     }
