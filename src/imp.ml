@@ -207,11 +207,6 @@ let reify (locations:VarSet.t) (p:stmt) : prog =
       then [Acc (x,y)]
       else []
     | Block (Inst (IAssert b)::l) -> [Cond (b, reify (Block l))]
-    (* | Block (Decl (x,_,Some n)::l) ->
-      (* When we find a declaration, inline it in the code *)
-      Block l
-      |> ReplacePair.program_subst (Subst.SubstPair.make (x, n))
-      |> reify *)
     | Block (LocationAlias a :: l) ->
       Block l
       |> loc_subst a
@@ -258,8 +253,6 @@ and i_subst (kvs: SubstAssoc.t) (i:inst) =
   | Sync -> Sync
   | Cond (b, l) -> Cond (ReplaceAssoc.b_subst kvs b, p_subst kvs l)
   | Loop (r, l) -> Loop (ReplaceAssoc.r_subst kvs r, p_subst kvs l)
-
-(* let get_loc_binders (p:stmt) (kvs: (variable  *)
 
 let stmt_to_s: stmt -> PPrint.t list =
   let open PPrint in
