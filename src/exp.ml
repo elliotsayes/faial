@@ -287,10 +287,11 @@ let range_to_cond (r:range) : bexp =
     let ub = r.range_upper_bound in
     let x = Var r.range_var in
     [
-      (* PUG: pp 7, section 6.1, par 1 *)
-      n_le x (n_div (n_minus x lb) ub);
-      (* (x - lb) % step  == 0 *)
-      (* n_eq (n_mod (n_minus x lb) n) (Num 0); *)
+      (* lb <= x < ub *)
+      n_le lb x;
+      n_lt x ub;
+      (* (x + lb) % step  == 0 *)
+      n_eq (n_mod (n_minus x lb) n) (Num 0);
       (* Ensure that the step is positive *)
       n_gt n (Num 0)
     ]
