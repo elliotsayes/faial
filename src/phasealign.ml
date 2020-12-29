@@ -309,4 +309,4 @@ let a_prog_to_s: a_prog -> PPrint.t list =
 
 (* ---------------------- SERIALIZATION ------------------------ *)
 let print_kernel (k : a_prog kernel) : unit =
-  Serialize.PPrint.print_kernel a_prog_to_s k
+  Proto.print_kernel a_prog_to_s k

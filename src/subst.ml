@@ -1,4 +1,5 @@
 open Exp
+open Serialize
 
 module type SUBST =
   sig
@@ -7,6 +8,8 @@ module type SUBST =
     val find: t -> variable -> nexp option
     (* Removes a variable from the current substitution map *)
     val remove: t -> variable -> t option
+    (* Renders as a string *)
+    val to_string: t -> string
   end
 
 module Make (S:SUBST) = struct
@@ -37,9 +40,13 @@ module Make (S:SUBST) = struct
         begin
           match S.find s x with
           | Some (Var y) -> Proj (t, y)
-          | Some n -> failwith (
-              "Expecting substitution of variable '" ^ x.var_name ^
-              "' by another variable in projection, but got something else"
+          | Some _ ->
+            let exp = PPrint.n_to_s n in
+            let repl = S.to_string s in
+            failwith (
+              "Error: cannot replace thread-local variable " ^ x.var_name ^
+              " by constant\n" ^
+              "substitution(expression=" ^ exp ^ ", replacement=" ^ repl ^ ")"
             )
           | None -> Proj (t, x)
         end
@@ -87,6 +94,7 @@ module SubstPair =
     let make (x, v) : t = (x, v)
     let find (x, v) y = if var_equal x y then Some v else None
     let remove (x, v) y = if var_equal x y then None else Some (x, v)
+    let to_string (x, v) = "[" ^ x.var_name ^ "=" ^ PPrint.n_to_s v ^ "]"
   end
 
 module ReplacePair = Make(SubstPair)
@@ -103,5 +111,10 @@ module SubstAssoc =
       Hashtbl.remove ht k.var_name;
       if Hashtbl.length ht = 0 then None
       else Some ht
+    let to_string ht =
+      Common.hashtbl_elements ht
+      |> List.map (fun (k, v) -> k ^ "=" ^ PPrint.n_to_s v)
+      |> Common.join ", "
+      |> fun x -> "[" ^ x ^ "]"
   end
 module ReplaceAssoc =  Make(SubstAssoc)

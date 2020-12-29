@@ -1,5 +1,4 @@
 open Exp
-open Proto
 open Common
 
 let s_list (elems:Smtlib.sexp list) : Smtlib.sexp =
@@ -195,17 +194,6 @@ let var_set_ser name (s:VarSet.t) =
     |> atoms
     |> call name
 
-let kernel_ser (f:'a -> Smtlib.sexp) (k:'a kernel) =
-  Smtlib.List [
-    symbol "kernel";
-    unop "pre" (b_ser k.kernel_pre);
-    var_set_ser "locations" k.kernel_locations;
-    var_set_ser "locals" k.kernel_local_variables;
-    var_set_ser "globals" k.kernel_global_variables;
-    f k.kernel_code;
-  ]
-
-
 module PPrint = struct
   type t =
     | Line of string
@@ -335,48 +323,9 @@ module PPrint = struct
      ident x ^
      index_to_s a.access_index ^ ";")]
 
-  let rec inst_to_s : inst -> t list =
-    function
-    | Sync -> [Line "sync;"]
-    | Acc e -> acc_expr_to_s e
-    | Cond (b, p1) -> [
-        Line ("if (" ^ b_to_s b ^ ") {");
-        Block (List.map inst_to_s p1 |> List.flatten);
-        Line "}"
-      ]
-    | Loop (r, p) ->
-      [
-        Line ("foreach (" ^ r_to_s r ^ ") {");
-        Block (List.map inst_to_s p |> List.flatten);
-        Line "}"
-      ]
-
-  let prog_to_s (p: prog) : t list =
-    List.map inst_to_s p |> List.flatten
-
-  let print_p (p: prog) : unit =
-    print_doc (prog_to_s p)
-
   let var_set_to_s (vs:VarSet.t) : string =
     VarSet.elements vs
     |> List.map ident
     |> Common.join ", "
 
-  let kernel_to_s (f:'a -> t list) (k:'a kernel) : t list =
-    [
-      Line ("locations: " ^ var_set_to_s k.kernel_locations ^ ";");
-      Line ("globals: " ^ var_set_to_s k.kernel_global_variables ^ ";");
-      Line ("locals: " ^ var_set_to_s k.kernel_local_variables ^ ";");
-      Line ("invariant: " ^ b_to_s k.kernel_pre ^";");
-      Line "";
-      Line "code {";
-      Block (f k.kernel_code);
-      Line "}"
-    ]
-
-  let print_kernel (f:'a -> t list) (k: 'a kernel) : unit =
-    print_doc (kernel_to_s f k)
-
-  let print_k (k:prog kernel) : unit =
-    print_doc (kernel_to_s prog_to_s k)
 end

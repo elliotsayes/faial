@@ -141,9 +141,15 @@ let main_t =
         ;
         try
           let provenance = false in
-          let more_sets = Proto.kernel_constants k in
-          let k = Proto.replace_constants (more_sets @ sets) k in
-          halt_when (cmd = Typecheck) Serialize.PPrint.print_k k;
+          let key_vals =
+            sets @ Proto.kernel_constants k
+            |> List.filter (fun (x,_) ->
+              (* Make sure we only replace thread-global variables *)
+              VarSet.mem (var_make x) k.kernel_global_variables
+            )
+          in
+          let k = Proto.replace_constants key_vals k in
+          halt_when (cmd = Typecheck) Proto.print_k k;
           let ks = Phasealign.translate2 k in
           halt_when (cmd = ALang) Phasealign.print_kernel ks;
           let ks = Phasesplit.translate2 ks expect_typing_fail in

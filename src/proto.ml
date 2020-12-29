@@ -1,6 +1,7 @@
 open Exp
 open Hash_rt
 open Ppx_compare_lib.Builtin
+open Serialize
 
 (* The source instruction uses the base defined above *)
 type inst =
@@ -157,3 +158,55 @@ let vars_distinct (p:prog)  (known:VarSet.t) : prog =
       (i::p, xs)
   in
   uniq_p p known |> fst
+
+
+let rec inst_to_s : inst -> PPrint.t list =
+  function
+  | Sync -> [Line "sync;"]
+  | Acc e -> PPrint.acc_expr_to_s e
+  | Cond (b, p1) -> [
+      Line ("if (" ^ PPrint.b_to_s b ^ ") {");
+      Block (List.map inst_to_s p1 |> List.flatten);
+      Line "}"
+    ]
+  | Loop (r, p) ->
+    [
+      Line ("foreach (" ^ PPrint.r_to_s r ^ ") {");
+      Block (List.map inst_to_s p |> List.flatten);
+      Line "}"
+    ]
+
+let prog_to_s (p: prog) : PPrint.t list =
+  List.map inst_to_s p |> List.flatten
+
+let print_p (p: prog) : unit =
+  PPrint.print_doc (prog_to_s p)
+
+let kernel_to_s (f:'a -> PPrint.t list) (k:'a kernel) : PPrint.t list =
+  let open PPrint in
+  [
+    Line ("locations: " ^ var_set_to_s k.kernel_locations ^ ";");
+    Line ("globals: " ^ var_set_to_s k.kernel_global_variables ^ ";");
+    Line ("locals: " ^ var_set_to_s k.kernel_local_variables ^ ";");
+    Line ("invariant: " ^ b_to_s k.kernel_pre ^";");
+    Line "";
+    Line "code {";
+    Block (f k.kernel_code);
+    Line "}"
+  ]
+
+let print_kernel (f:'a -> PPrint.t list) (k: 'a kernel) : unit =
+  PPrint.print_doc (kernel_to_s f k)
+
+let print_k (k:prog kernel) : unit =
+  PPrint.print_doc (kernel_to_s prog_to_s k)
+
+let kernel_ser (f:'a -> Smtlib.sexp) (k:'a kernel) =
+  Smtlib.List [
+    symbol "kernel";
+    unop "pre" (b_ser k.kernel_pre);
+    var_set_ser "locations" k.kernel_locations;
+    var_set_ser "locals" k.kernel_local_variables;
+    var_set_ser "globals" k.kernel_global_variables;
+    f k.kernel_code;
+  ]
