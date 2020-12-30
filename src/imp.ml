@@ -423,12 +423,18 @@ let compile (k:p_kernel) : prog kernel =
     then p_subst kvs p
     else p
   in
+  let pre = b_and k.p_kernel_pre more_pre in
+  let pre =
+    if Hashtbl.length kvs > 0
+    then ReplaceAssoc.b_subst kvs pre
+    else pre
+  in
   (**
     1. We rename all variables so that they are all different
     2. We break down for-loops and variable declarations
     *)
   {
-    kernel_pre = b_and k.p_kernel_pre more_pre;
+    kernel_pre = pre;
     kernel_locations = k.p_kernel_locations;
     kernel_local_variables = locals;
     kernel_global_variables = globals;
