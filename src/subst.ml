@@ -117,4 +117,4 @@ module SubstAssoc =
       |> Common.join ", "
       |> fun x -> "[" ^ x ^ "]"
   end
-module ReplaceAssoc =  Make(SubstAssoc)
+module ReplaceAssoc = Make(SubstAssoc)
