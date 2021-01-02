@@ -4,6 +4,7 @@ open Common
 open Serialize
 open Subst
 open Streamutil
+open Wellformed
 open Phasealign
 open Hash_rt
 open Ppx_compare_lib.Builtin (* compare_list *)
@@ -100,53 +101,55 @@ module BarrierIntervalHash =
 
 module BITable = Hashtbl.Make(BarrierIntervalHash)
 
-
-let translate2 (k: a_prog kernel) (expect_typing_fail:bool) : u_kernel stream =
-  let p_to_k ((bi,locations):(barrier_interval * VarSet.t)) : u_kernel =
-    (* Check for undefs *)
-    (* 1. compute all globals *)
-    let globals =
-      List.map (fun r -> r.range_var) bi.bi_ranges
-      |> VarSet.of_list
-      |> VarSet.union k.kernel_global_variables
+let translate (ks: a_prog kernel stream) (expect_typing_fail:bool) : u_kernel stream =
+  let translate_k (k: a_prog kernel) : u_kernel stream =
+    let p_to_k ((bi,locations):(barrier_interval * VarSet.t)) : u_kernel =
+      (* Check for undefs *)
+      (* 1. compute all globals *)
+      let globals =
+        List.map (fun r -> r.range_var) bi.bi_ranges
+        |> VarSet.of_list
+        |> VarSet.union k.kernel_global_variables
+      in
+      (* 2. compute all free names in the ranges *)
+      let fns = List.fold_right Freenames.free_names_range bi.bi_ranges VarSet.empty in
+      (* 3. check if there are any locals *)
+      let errs = VarSet.diff fns globals
+        |> VarSet.elements
+        |> List.map (fun (x:variable) ->
+          "Barrier divergence error: cannot use thread-local variable '" ^
+          x.var_name ^ "' in synchronized control flow",
+          x.var_loc
+          )
+      in
+      if List.length errs > 0 then
+        raise (PhasesplitException errs)
+      else
+        {
+          u_kernel_local_variables = k.kernel_local_variables;
+          u_kernel_global_variables = k.kernel_global_variables;
+          u_kernel_locations = locations;
+          u_kernel_ranges = bi.bi_ranges;
+          u_kernel_code = bi.bi_code;
+        }
     in
-    (* 2. compute all free names in the ranges *)
-    let fns = List.fold_right Freenames.free_names_range bi.bi_ranges VarSet.empty in
-    (* 3. check if there are any locals *)
-    let errs = VarSet.diff fns globals
-      |> VarSet.elements
-      |> List.map (fun (x:variable) ->
-        "Barrier divergence error: cannot use thread-local variable '" ^
-        x.var_name ^ "' in synchronized control flow",
-        x.var_loc
-        )
-    in
-    if List.length errs > 0 then
-      raise (PhasesplitException errs)
-    else
-      {
-        u_kernel_local_variables = k.kernel_local_variables;
-        u_kernel_global_variables = k.kernel_global_variables;
-        u_kernel_locations = locations;
-        u_kernel_ranges = bi.bi_ranges;
-        u_kernel_code = bi.bi_code;
-      }
+    let known:unit BITable.t = BITable.create 100 in
+    a_prog_to_bi k.kernel_pre k.kernel_code
+    |> map_opt (fun b ->
+      (* if false then *)
+      if BITable.mem known b then
+        None
+      else begin
+        BITable.add known b ();
+        (* Get locations of u_prog *)
+        let locations:VarSet.t = Wellformed.get_locs [b.bi_code] VarSet.empty in
+        if VarSet.is_empty locations then None
+        else Some (b, locations)
+      end
+    )
+    |> Streamutil.map p_to_k
   in
-  let known:unit BITable.t = BITable.create 100 in
-  a_prog_to_bi k.kernel_pre k.kernel_code
-  |> map_opt (fun b ->
-    (* if false then *)
-    if BITable.mem known b then
-      None
-    else begin
-      BITable.add known b ();
-      (* Get locations of u_prog *)
-      let locations:VarSet.t = Phasealign.get_locs2 [b.bi_code] VarSet.empty in
-      if VarSet.is_empty locations then None
-      else Some (b, locations)
-    end
-  )
-  |> Streamutil.map p_to_k
+  map translate_k ks |> concat
 
 
 (* ---------------------- SERIALIZATION ------------------------ *)

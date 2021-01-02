@@ -49,7 +49,7 @@ let safe_run f =
     ) l;
     exit (-1)
 
-type command = ALang | PLang | CLang | HLang | BLang | Sat | Typecheck | Parse
+type command = WLang | ALang | PLang | CLang | HLang | BLang | Sat | Typecheck | Parse
 
 let main_t =
   let use_bv =
@@ -150,9 +150,11 @@ let main_t =
           in
           let k = Proto.replace_constants key_vals k in
           halt_when (cmd = Typecheck) Proto.print_k k;
-          let ks = Phasealign.translate2 k in
-          halt_when (cmd = ALang) Phasealign.print_kernel ks;
-          let ks = Phasesplit.translate2 ks expect_typing_fail in
+          let ks = Wellformed.translate k in
+          halt_when (cmd = WLang) Wellformed.print_kernels ks;
+          let ks = Phasealign.translate ks in
+          halt_when (cmd = ALang) Phasealign.print_kernels ks;
+          let ks = Phasesplit.translate ks expect_typing_fail in
           halt_when (cmd = PLang) Phasesplit.print_kernels2 ks;
           let ks = Locsplit.translate2 ks in
           halt_when (cmd = CLang) Locsplit.print_kernels2 ks;
@@ -178,23 +180,25 @@ let main_t =
   in
   let get_cmd =
     (* Override the codegeneration (for debugging only). *)
-    let doc = "Step 0: Print what was parsed" in
+    let doc = "Step 0: print what was parsed" in
     let p = Parse, Arg.info ["0"] ~doc in
-    let doc = "Step 1: Replace key-values and typecheck the kernel." in
+    let doc = "Step 1: inline assignments and replace key-values" in
     let tc = Typecheck, Arg.info ["1"] ~doc in
-    let doc = "Step 2: Align phases" in
-    let k1 = ALang, Arg.info ["2"] ~doc in
-    let doc = "Step 3: Split phases" in
-    let k2 = PLang, Arg.info ["3"] ~doc in
-    let doc = "Step 4: Split per location" in
-    let k3 = CLang, Arg.info ["4"] ~doc in
-    let doc = "Step 5: Flatten phases" in
-    let k4 = HLang, Arg.info ["5"] ~doc in
-    let doc = "Step 6: Generate booleans" in
-    let k5 = BLang, Arg.info ["6"] ~doc in
-    let doc = "Step 7: Generate SMT." in
-    let sat = Sat, Arg.info ["7"; "sat"] ~doc in
-    Arg.(last & vflag_all [Sat] [p; tc; k1; k2; k3; k4; k5; sat])
+    let doc = "Step 2: well-formed protocol" in
+    let k1 = WLang, Arg.info ["2"] ~doc in
+    let doc = "Step 2: aligned protocol" in
+    let k2 = ALang, Arg.info ["3"] ~doc in
+    let doc = "Step 3: split protocol per phase" in
+    let k3 = PLang, Arg.info ["4"] ~doc in
+    let doc = "Step 4: split phase per location" in
+    let k4 = CLang, Arg.info ["5"] ~doc in
+    let doc = "Step 5: flatten phases" in
+    let k5 = HLang, Arg.info ["6"] ~doc in
+    let doc = "Step 6: generate booleans" in
+    let k6 = BLang, Arg.info ["7"] ~doc in
+    let doc = "Step 7: generate SMT." in
+    let sat = Sat, Arg.info ["8"; "sat"] ~doc in
+    Arg.(last & vflag_all [Sat] [p; tc; k1; k2; k3; k4; k5; k6; sat])
   in
   Term.(
     const do_main

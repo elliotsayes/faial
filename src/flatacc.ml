@@ -1,3 +1,4 @@
+open Wellformed
 open Locsplit
 open Exp
 

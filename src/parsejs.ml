@@ -275,11 +275,22 @@ let rec parse_nexp n : nexp option =
         Some (Num 0)
       | _ -> None
     );
-    "CallExpr", (["func"], function
-    | [f] ->
+    "CallExpr", (["func"; "args"], function
+    | [f; `List l] ->
       let x = parse_var.run f in
-      prerr_endline ("WARNING: rewriting function call to '" ^ x.var_name ^ "' into 0");
-      Some (Num 0)
+      begin match x.var_name, l with
+      | "min", [n1;n2] ->
+        let n1 = do_parse parse_nexp n1 "min.lhs" in
+        let n2 = do_parse parse_nexp n2 "min.rhs" in
+        Some (n_if (n_lt n1 n2) n1 n2)
+      | "max", [n1;n2] ->
+        let n1 = do_parse parse_nexp n1 "max.lhs" in
+        let n2 = do_parse parse_nexp n2 "max.rhs" in
+        Some (n_if (n_gt n1 n2) n1 n2)
+      | _, _ ->
+        prerr_endline ("WARNING: rewriting function call to '" ^ x.var_name ^ "' into 0");
+        Some (Num 0)
+      end
     | _ -> None
     );
   ] n
@@ -352,7 +363,7 @@ and parse_bexp b : bexp option =
     "CallExpr", (["func"], function
     | [f] ->
       let x = parse_var.run f in
-      prerr_endline ("WARNING: rewriting function call to '" ^ x.var_name ^ "' into 0");
+      prerr_endline ("WARNING: rewriting boolean function call to '" ^ x.var_name ^ "' into 0");
       Some (Bool false)
     | _ -> None
     );
