@@ -16,9 +16,9 @@ module StdGen : BASE_GEN =
     let b_ser = Serialize.StdNexp.b_ser
     let n_ser = Serialize.StdNexp.n_ser
     let preamble = [
-      Serialize.flat_call "set-logic" ["QF_NIA"];
+      Serialize.flat_call "set-logic" ["QF_LIA"];
       Serialize.flat_call "set-option" [":produce-models"; "true"];
-      Serialize.flat_call "set-option" [":interactive-mode"; "true"];
+      Serialize.flat_call "set-option" [":interactive-mode"; "false"];
     ]
   end
 
@@ -39,7 +39,7 @@ module BvGen : BASE_GEN =
     let preamble = [
       Serialize.flat_call "set-logic" ["QF_BV"];
       Serialize.flat_call "set-option" [":produce-models"; "true"];
-      Serialize.flat_call "set-option" [":interactive-mode"; "true"];
+      Serialize.flat_call "set-option" [":interactive-mode"; "false"];
     ]
   end
 
