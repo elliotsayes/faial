@@ -89,7 +89,8 @@ let all_predicates : t list =
         NIf (n_gt x p, p, gen (n - 1) x)
     in
     let trunc_fun (n:nexp) : nexp =
-      NIf (Pred (pred_name, n), n, gen base n)
+      gen base n
+      (* NIf (Pred (pred_name, n), n, gen base n) *)
     in
     let inc (x:nexp) : nexp = n_mult x (Num base) in
     let dec (x:nexp) : nexp = n_div x (Num base) in
@@ -140,15 +141,21 @@ let func_call_opt (name:string) (n:nexp) : nexp option =
   | None -> None
 
 let get_predicates (b:bexp) : t list =
-  let rec get_names (b:bexp) (preds:StringSet.t) : StringSet.t =
+  let rec get_names_b (b:bexp) (preds:StringSet.t) : StringSet.t =
     match b with
     | Pred (x, _) -> StringSet.add x preds
-    | BRel (_, b1, b2) -> get_names b1 preds |> get_names b2
-    | BNot b -> get_names b preds
-    | NRel (_, _, _)
+    | BRel (_, b1, b2) -> get_names_b b1 preds |> get_names_b b2
+    | BNot b -> get_names_b b preds
+    | NRel (_, n1, n2) -> get_names_n n1 preds |> get_names_n n2
     | Bool _ -> preds
+  and get_names_n (n:nexp) (ns:StringSet.t) : StringSet.t =
+    match n with
+    | Var _ | Num _ | Proj _ -> ns
+    | Bin (_, n1, n2) -> get_names_n n1 ns |> get_names_n n2
+    | NIf (b, n1, n2) -> get_names_b b ns |> get_names_n n1 |> get_names_n n2
+    | NCall (_, n) -> get_names_n n ns
   in
-  get_names b StringSet.empty
+  get_names_b b StringSet.empty
   |> StringSet.elements
   |> List.map (Hashtbl.find all_predicates_db)
 
@@ -200,21 +207,7 @@ let range_last (r:range) : nexp =
       (n_minus ub s)
       (n_mod (n_minus lb ub) s)
   | StepName pred_name ->
-    (* (init?; n *= 3; n < 28)
-        1 -> 1 * 3 * 3 * 3 = 27 <- init * trunc(ub / init) = 1 * 3 ^ floor(log3(28/1))
-        2 -> 2 * 3 * 3 = 18 <- 2 * trunc(14)
-        3 -> 3 * 3 * 3 = 27 <- 3 * trunc(28 / 3)
-        4 -> 4 * 3 = 12     <- 4 * trunc(28/4)
-        5 -> 5 * 3 = 15     <- log3(15) ? log3(5)
-        6 -> 6 * 3 = 18     <- 28 - 10
-        7 -> 7 * 3 = 21     <- 28 - 7
-        8 -> 8 * 3 = 24     <- 28 - 4
-        9 -> 9 * 3 = 27     <- 28 - 1
-        ub /  log2(init)
-        init % d
-      *)
     n_mult lb (step_trunc r.range_step (n_div ub lb))
-    (* step_trunc r.range_step (n_minus r.range_upper_bound (Num 1)) *)
 
 let range_inc (r:range) : range =
   { r with range_lower_bound = n_plus r.range_lower_bound (Num 1) }
