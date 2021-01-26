@@ -28,6 +28,9 @@ test: build-tests
 	$(BUILD)/test_locsplit.native
 	$(BUILD)/test_predicates.native
 
+ui:
+	(cd faial-ui/ && cargo b --release)
+
 sys-test: build-tests
 	@./run-tests.py
 
@@ -48,4 +51,4 @@ profile:
 debug:
 	$(OCB) -tag debug main.byte
 
-.PHONY: all clean byte native profile debug sanity test
+.PHONY: all clean byte native profile debug sanity test ui
