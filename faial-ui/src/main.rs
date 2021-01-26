@@ -301,6 +301,7 @@ struct Faial {
     input: Option<String>,
     analyze_only: bool,
     infer_only: bool,
+    parse_only: bool,
     stage: Stage,
     analyze_json: bool,
     skip_typecheck: bool,
@@ -312,6 +313,10 @@ struct Faial {
     input_type: InputType,
     dry_run: bool,
     internal_steps: Option<u8>,
+    faial_bin: String,
+    faial_infer: String,
+    cu_to_json: String,
+    z3: String,
 }
 
 impl Faial {
@@ -319,7 +324,7 @@ impl Faial {
         match stage {
             Stage::Parse => {
                 let mut cmd = Vec::new();
-                cmd.push("cu-to-json".to_string());
+                cmd.push(self.cu_to_json.clone());
                 if let Some(filename) = filename {
                     cmd.push(filename);
                 } else {
@@ -329,7 +334,7 @@ impl Faial {
             },
             Stage::Infer => {
                 let mut cmd = Vec::new();
-                cmd.push("faial-infer".to_string());
+                cmd.push(self.faial_infer.clone());
                 if self.infer_only {
                     if let Some(lvl) = self.internal_steps {
                         // Set the level of the analysis, example: -3
@@ -354,7 +359,7 @@ impl Faial {
                 Cmd::checked(cmd)
             },
             Stage::Analyze => {
-                let mut cmd = vec!["faial-bin".to_string()];
+                let mut cmd = vec![self.faial_bin.clone()];
                 if self.analyze_only {
                     if let Some(lvl) = self.internal_steps {
                         // Set the level of the analysis, example: -3
@@ -386,7 +391,7 @@ impl Faial {
                 Cmd::checked(cmd)
             },
             Stage::Solve => {
-                let mut args = vec!["z3".to_string()];
+                let mut args = vec![self.z3.clone()];
                 if let Some(filename) = filename {
                     args.push("--".to_string());
                     args.push(filename);
@@ -400,7 +405,9 @@ impl Faial {
 
     fn get_stages(&self) -> Vec<Stage> {
         let mut last = Stage::Solve;
-        if self.infer_only {
+        if self.parse_only {
+            last = Stage::Parse;
+        } else if self.infer_only {
             last = Stage::Infer;
         } else if self.analyze_only || self.expect_invalid {
             last = Stage::Analyze;
@@ -530,6 +537,7 @@ impl Faial {
                     .help("Sets exit status according to finding invalid code.")
                     .conflicts_with("solve_only")
                     .conflicts_with("infer_only")
+                    .conflicts_with("parse_only")
                 )
                 .arg(Arg::with_name("analyze_only")
                     .long("analyze-only")
@@ -537,11 +545,21 @@ impl Faial {
                     .help("Halts after analysis")
                     .conflicts_with("solve_only")
                     .conflicts_with("infer_only")
+                    .conflicts_with("parse_only")
                 )
                 .arg(Arg::with_name("solve_only")
                     .long("solve-only")
                     .short("S")
                     .help("Halts after invoking solver")
+                    .conflicts_with("infer_only")
+                    .conflicts_with("analyze_only")
+                    .conflicts_with("parse_only")
+                )
+                .arg(Arg::with_name("parse_only")
+                    .long("parse-only")
+                    .short("P")
+                    .help("Halts after invoking parser")
+                    .conflicts_with("solve_only")
                     .conflicts_with("infer_only")
                     .conflicts_with("analyze_only")
                 )
@@ -551,6 +569,7 @@ impl Faial {
                     .help("Halts after model inference")
                     .conflicts_with("solve_only")
                     .conflicts_with("analyze_only")
+                    .conflicts_with("parse_only")
                 )
                 .arg(Arg::with_name("verbose")
                     .long("verbose")
@@ -606,6 +625,26 @@ impl Faial {
                     .validator(is_key_val)
                     .min_values(0)
                 )
+                .arg(Arg::with_name("faial_infer")
+                    .long("faial-infer")
+                    .help("The path to faial-infer")
+                    .takes_value(true)
+                )
+                .arg(Arg::with_name("z3")
+                    .help("The path to z3")
+                    .long("z3")
+                    .takes_value(true)
+                )
+                .arg(Arg::with_name("cu_to_json")
+                    .help("The path to cu-to-json")
+                    .long("cu-to-json")
+                    .takes_value(true)
+                )
+                .arg(Arg::with_name("faial_bin")
+                    .long("faial-bin")
+                    .help("The path to faial-bin")
+                    .takes_value(true)
+                )
                 .arg(Arg::with_name("input")
                     .help("The code being checked for data-race freedom")
                     .takes_value(true)
@@ -634,6 +673,7 @@ impl Faial {
             input: input,
             analyze_only: matches.is_present("analyze_only"),
             infer_only: matches.is_present("infer_only"),
+            parse_only: matches.is_present("parse_only"),
             grid_dim: get_vec(&matches, "grid_dim").unwrap(),
             block_dim: get_vec(&matches, "block_dim").unwrap(),
             stage: stage,
@@ -644,6 +684,10 @@ impl Faial {
             defines: parse_key_val(&matches, "defines"),
             input_type: input_type,
             dry_run: matches.is_present("dry_run"),
+            faial_bin: matches.value_of("faial_bin").unwrap_or("faial-bin").to_string(),
+            faial_infer: matches.value_of("faial_infer").unwrap_or("faial-infer").to_string(),
+            z3: matches.value_of("z3").unwrap_or("z3").to_string(),
+            cu_to_json: matches.value_of("cu_to_json").unwrap_or("cu-to-json").to_string(),
             skip_typecheck: true,
         };
         if matches.is_present("parse_gv_args") && opts.input_type == InputType::CUDA {
@@ -697,6 +741,17 @@ impl Faial {
     }
 }
 
+fn check_exe(exe:&String) -> bool {
+    match cmd!(exe.clone(), "--help".to_string())
+        .stdout_null()
+        .stderr_null()
+        .unchecked()
+        .run() {
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}
+
 fn main() {
     let faial = Faial::new();
     let pipe = faial.get_pipe();
@@ -711,7 +766,20 @@ fn main() {
     match pipe.spawn() {
         Ok(data) => faial.handle_data(data),
         Err(e) => {
+            // XXX: check that all binaries are accessible
             eprintln!("Internal error running: {}\nReason: {}", pipe_str, e);
+            if ! check_exe(&faial.cu_to_json) {
+                eprintln!("Could not execute cu-to-json: {}", faial.cu_to_json);
+            }
+            if ! check_exe(&faial.faial_infer) {
+                eprintln!("Could not execute faial-infer: {}", faial.faial_infer);
+            }
+            if ! check_exe(&faial.faial_bin) {
+                eprintln!("Could not execute faial-bin: {}", faial.faial_bin);
+            }
+            if ! check_exe(&faial.z3) {
+                eprintln!("Could not execute z3: {}", faial.z3);
+            }
             std::process::exit(255);
         },
     }
