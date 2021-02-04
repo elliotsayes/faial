@@ -186,17 +186,17 @@ let main_t =
     let tc = Typecheck, Arg.info ["1"] ~doc in
     let doc = "Step 2: well-formed protocol" in
     let k1 = WLang, Arg.info ["2"] ~doc in
-    let doc = "Step 2: aligned protocol" in
+    let doc = "Step 3: aligned protocol" in
     let k2 = ALang, Arg.info ["3"] ~doc in
-    let doc = "Step 3: split protocol per phase" in
+    let doc = "Step 4: split protocol per phase" in
     let k3 = PLang, Arg.info ["4"] ~doc in
-    let doc = "Step 4: split phase per location" in
+    let doc = "Step 5: split phase per location" in
     let k4 = CLang, Arg.info ["5"] ~doc in
-    let doc = "Step 5: flatten phases" in
+    let doc = "Step 6: flatten phases" in
     let k5 = HLang, Arg.info ["6"] ~doc in
-    let doc = "Step 6: generate booleans" in
+    let doc = "Step 7: generate booleans" in
     let k6 = BLang, Arg.info ["7"] ~doc in
-    let doc = "Step 7: generate SMT." in
+    let doc = "Step 8: generate SMT." in
     let sat = Sat, Arg.info ["8"; "sat"] ~doc in
     Arg.(last & vflag_all [Sat] [p; tc; k1; k2; k3; k4; k5; k6; sat])
   in
