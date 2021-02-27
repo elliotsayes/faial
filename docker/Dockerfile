@@ -1,14 +1,14 @@
-FROM ocaml/opam2:alpine-3.12-ocaml-4.11
-RUN sudo apk --no-cache add --update \
+FROM ocaml/opam:ubuntu-20.10-ocaml-4.11
+RUN sudo apt-get update && sudo apt-get install --yes \
         python3 \
         python3-dev \
-        py-pip \
-        build-base \
-        libffi \
+        python3-pip \
+        build-essential \
+        libffi8ubuntu1 \
         m4 \
         git \
         libffi-dev \
-        gmp-dev \
+        libgmp-dev \
         z3 \
     && \
     opam repo add opam https://opam.ocaml.org && \
