@@ -20,9 +20,9 @@ variables:
     - ls faial-ui/
 
   cache:
-    key: "$CI_COMMIT_REF_NAME"
+    key: "Ubuntu-$CI_COMMIT_REF_NAME"
     paths:
-    - .cargo
+    - cargo
     - faial-ui/target
     - _build
 
