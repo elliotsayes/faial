@@ -7,6 +7,8 @@ RUN sudo apt-get update && sudo apt-get install --yes \
         libffi8ubuntu1 \
         m4 \
         git \
+        wget \
+        tree \
         libffi-dev \
         libgmp-dev \
         z3 \

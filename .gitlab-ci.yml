@@ -84,6 +84,7 @@ bundle:
     # faial:
     - wget --content-disposition https://gitlab.com/umb-svl/faial/-/jobs/artifacts/master/download?job=build-dist
     - unzip artifacts.zip
+    - rm artifacts.zip
     - mv faial faial-bin  bin/
     # display tree & bundle:
     - tree
