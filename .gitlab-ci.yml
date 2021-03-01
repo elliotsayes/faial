@@ -1,9 +1,5 @@
 ---
 image: registry.gitlab.com/umb-svl/faial/faial:dev
-stages:
-  - test
-  - build
-  - deploy
 variables:
 
 .cache: &global_cache
@@ -33,7 +29,6 @@ variables:
 
 test:
   <<: *global_cache
-  stage: test
   except:
     - pipelines
   script:
@@ -51,7 +46,6 @@ test:
 
 build-dist:
   <<: *global_cache
-  stage: build
   except:
     - pipelines
   script:
