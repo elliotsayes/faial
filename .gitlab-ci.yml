@@ -62,6 +62,8 @@ build-dist:
 
 bundle:
   stage: deploy
+  dependencies: 
+    - build-dist
   only:
     - master
   script:
@@ -78,10 +80,8 @@ bundle:
     - rm artifacts.zip
     - mv faial-infer bin/
     # faial:
-    - wget --content-disposition https://gitlab.com/umb-svl/faial/-/jobs/artifacts/master/download?job=build-dist
-    - unzip artifacts.zip
-    - rm artifacts.zip
-    - mv faial faial-bin  bin/
+    - cp ../faial ../faial-bin  bin/
+    - cp ../README.md ../LICENSE  ./
     # display tree & bundle:
     - tree
     - tar jcvf faial.tar.bz2 *
