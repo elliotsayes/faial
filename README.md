@@ -6,6 +6,8 @@
 
 A modeling language to specify and debug GPU programs.
 
+### [Download `faial` bundle (includes `c-to-json`+`faial-infer`) for Linux x86-64bits](https://gitlab.com/umb-svl/faial/-/jobs/artifacts/master/raw/bundle/faial.tar.bz2?job=bundle)
+
 ### [Download `faial` for Linux x86-64bits](https://gitlab.com/umb-svl/faial/-/jobs/artifacts/master/download?job=build-dist)
 
 ### [Download `faial` for Windows x86-64bits](https://ci.appveyor.com/api/projects/cogumbreiro/faial/artifacts/faial-win64.zip)
