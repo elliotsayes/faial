@@ -1,5 +1,9 @@
 ---
 image: registry.gitlab.com/umb-svl/faial/faial:dev
+stages:
+  - test
+  - build
+  - deploy
 variables:
 
 .cache: &global_cache
@@ -29,6 +33,9 @@ variables:
 
 test:
   <<: *global_cache
+  stage: test
+  except:
+    - pipelines
   script:
     - rm -f ./target/*/faial
     - cd "$CI_PROJECT_DIR"
@@ -44,6 +51,9 @@ test:
 
 build-dist:
   <<: *global_cache
+  stage: build
+  except:
+    - pipelines
   script:
     - cd "$CI_PROJECT_DIR"
     - rm -f ./target/*/faial
@@ -59,3 +69,32 @@ build-dist:
       - faial
       - README.md
       - LICENSE
+
+bundle:
+  stage: deploy
+  only:
+    - master
+  script:
+    - cd "$CI_PROJECT_DIR"
+    - mkdir bundle
+    - cd bundle
+    # c-to-json:
+    - wget --content-disposition https://gitlab.com/umb-svl/c-to-json/-/jobs/artifacts/master/raw/build/c-to-json-bin.tar.bz2?job=build-rh610
+    - tar xf c-to-json-bin.tar.bz2
+    - rm c-to-json-bin.tar.bz2
+    # faial-infer:
+    - wget --content-disposition https://gitlab.com/umb-svl/faial-infer/-/jobs/artifacts/master/download?job=bin
+    - unzip artifacts.zip
+    - rm artifacts.zip
+    - mv faial-infer bin/
+    # faial:
+    - wget --content-disposition https://gitlab.com/umb-svl/faial/-/jobs/artifacts/master/download?job=build-dist
+    - unzip artifacts.zip
+    - mv faial faial-bin  bin/
+    # display tree & bundle:
+    - tree
+    - tar jcvf faial.tar.bz2 *
+
+  artifacts:
+    paths:
+      - bundle/faial.tar.bz2
