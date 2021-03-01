@@ -29,8 +29,6 @@ variables:
 
 test:
   <<: *global_cache
-  except:
-    - pipelines
   script:
     - rm -f ./target/*/faial
     - cd "$CI_PROJECT_DIR"
@@ -46,8 +44,6 @@ test:
 
 build-dist:
   <<: *global_cache
-  except:
-    - pipelines
   script:
     - cd "$CI_PROJECT_DIR"
     - rm -f ./target/*/faial
