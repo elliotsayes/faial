@@ -316,6 +316,7 @@ struct Faial {
     faial_bin: String,
     faial_infer: String,
     cu_to_json: String,
+    includes: Vec<String>,
     z3: String,
 }
 
@@ -329,6 +330,9 @@ impl Faial {
                     cmd.push(filename);
                 } else {
                     cmd.push("/dev/stdin".to_string());
+                }
+                for inc in &self.includes {
+                    cmd.push(format!("-I{}", inc));
                 }
                 Cmd::checked(cmd)
             },
@@ -565,7 +569,7 @@ impl Faial {
                 )
                 .arg(Arg::with_name("infer_only")
                     .long("infer-only")
-                    .short("I")
+                    .short("N")
                     .help("Halts after model inference")
                     .conflicts_with("solve_only")
                     .conflicts_with("analyze_only")
@@ -625,6 +629,14 @@ impl Faial {
                     .validator(is_key_val)
                     .min_values(0)
                 )
+                .arg(Arg::with_name("includes")
+                    .help("Sets a variable")
+                    .short("-I")
+                    .long("include")
+                    .multiple(true)
+                    .takes_value(true)
+                    .min_values(0)
+                )
                 .arg(Arg::with_name("faial_infer")
                     .long("faial-infer")
                     .help("The path to faial-infer")
@@ -676,6 +688,7 @@ impl Faial {
             parse_only: matches.is_present("parse_only"),
             grid_dim: get_vec(&matches, "grid_dim").unwrap(),
             block_dim: get_vec(&matches, "block_dim").unwrap(),
+            includes: get_vec(&matches, "includes").unwrap(),
             stage: stage,
             internal_steps: parse_opt::<u8>(&matches, "steps"),
             infer_output_json: matches.is_present("infer_output_json"),
