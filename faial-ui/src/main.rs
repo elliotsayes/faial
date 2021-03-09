@@ -309,7 +309,8 @@ struct Faial {
     block_dim: Vec<usize>,
     grid_dim: Vec<usize>,
     verbose: bool,
-    defines: HashMap<String,u32>,
+    variables: HashMap<String,u32>,
+    defines: Vec<String>,
     input_type: InputType,
     dry_run: bool,
     internal_steps: Option<u8>,
@@ -333,6 +334,9 @@ impl Faial {
                 }
                 for inc in &self.includes {
                     cmd.push(format!("-I{}", inc));
+                }
+                for def in &self.defines {
+                    cmd.push(format!("-D{}", def));
                 }
                 Cmd::checked(cmd)
             },
@@ -380,7 +384,7 @@ impl Faial {
                 for (idx, d) in self.block_dim.iter().enumerate() {
                     cmd.push(format!("-DblockDim.{}={}", field.get(idx).unwrap(), d));
                 }
-                for (k,v) in &self.defines {
+                for (k,v) in &self.variables {
                     cmd.push(format!("-D{}={}", k, v));
                 }
                 if self.skip_typecheck {
@@ -620,19 +624,26 @@ impl Faial {
                     .long("parse-gv-args")
                     .help("Try to parse GPUVerify arguments present in the input file.")
                 )
-                .arg(Arg::with_name("defines")
+                .arg(Arg::with_name("variables")
                     .help("Sets a variable")
-                    .short("-D")
-                    .long("define")
+                    .long("set")
                     .multiple(true)
                     .takes_value(true)
                     .validator(is_key_val)
                     .min_values(0)
                 )
                 .arg(Arg::with_name("includes")
-                    .help("Sets a variable")
+                    .help("Add an include path")
                     .short("-I")
                     .long("include")
+                    .multiple(true)
+                    .takes_value(true)
+                    .min_values(0)
+                )
+                .arg(Arg::with_name("defines")
+                    .help("Defines a C macro")
+                    .short("-D")
+                    .long("define")
                     .multiple(true)
                     .takes_value(true)
                     .min_values(0)
@@ -689,12 +700,13 @@ impl Faial {
             grid_dim: get_vec(&matches, "grid_dim").unwrap(),
             block_dim: get_vec(&matches, "block_dim").unwrap(),
             includes: get_vec(&matches, "includes").unwrap(),
+            defines: get_vec(&matches, "defines").unwrap(),
             stage: stage,
             internal_steps: parse_opt::<u8>(&matches, "steps"),
             infer_output_json: matches.is_present("infer_output_json"),
             analyze_json: analyze_json,
             verbose: matches.is_present("verbose"),
-            defines: parse_key_val(&matches, "defines"),
+            variables: parse_key_val(&matches, "variables"),
             input_type: input_type,
             dry_run: matches.is_present("dry_run"),
             faial_bin: matches.value_of("faial_bin").unwrap_or("faial-bin").to_string(),
