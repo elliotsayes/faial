@@ -73,22 +73,21 @@ let member_opt k (j:Yojson.Basic.t) =
   | `Assoc _ -> Some (member k j)
   | _ -> None
 
-let get_kind_opt (j:Yojson.Basic.t) =
-  let open Yojson.Basic.Util in
-  match j with
-  | `Assoc _ ->
-    j |> member "kind" |> to_string_option
-  | _ -> None
-
-let get_kind (j:Yojson.Basic.t) : string =
+let get_kind_res (j:Yojson.Basic.t) : (string, string) Result.t =
   let open Yojson.Basic.Util in
   match j with
   | `Assoc _ ->
     begin match member "kind" j with
-    | `String k -> k
-    | _ -> abort_error "get_kind: expecting the type to be a string, but got:" j
+    | `String k -> Ok k
+    | _ -> Result.Error "expecting JSON object's field 'kind' to be a string"
     end
-  | _ -> abort_error "get_kind: expecting a JSON object, but got:" j
+  | _ -> Result.Error "expecting a JSON object"
+
+
+let get_kind (j:Yojson.Basic.t) : string =
+  match get_kind_res j with
+  | Result.Ok k -> k
+  | Result.Error msg -> abort_error ("get_kind: " ^ msg ^ " but got: ") j
 
 let get_fields fields (j:Yojson.Basic.t) : Yojson.Basic.t list  =
   let open Yojson.Basic.Util in
@@ -104,12 +103,20 @@ let get_fields fields (j:Yojson.Basic.t) : Yojson.Basic.t list  =
 type 'a choose_one_of_handler = string list * (Yojson.Basic.t list -> 'a option)
 
 let choose_one_of (l:(string * 'a choose_one_of_handler) list) (j:Yojson.Basic.t) : 'a option =
-  match List.assoc_opt (get_kind j) l with
-  | Some ((fields:string list), kont) -> get_fields fields j |> kont
-  | None ->
-      let keys = List.split l |> fst |> join ", " in
-      abort_error ("Expecting an AST 'kind' in [" ^ keys ^ "], but got:") j
-
+  match get_kind_res j with
+  | Result.Ok k ->
+    List.find_map (fun (k', ((fields:string list), kont)) ->
+      if k = k' then
+        get_fields fields j |> kont
+      else None
+    ) l
+    (* begin match List.assoc_opt k l with
+    | Some ((fields:string list), kont) -> get_fields fields j |> kont
+    | None ->
+        let keys = List.split l |> fst |> join ", " in
+        abort_error ("Expecting an AST 'kind' in [" ^ keys ^ "], but got:") j
+    end *)
+  | _ -> None
 
 let is_array_type o =
   let open Yojson.Basic in
@@ -311,6 +318,14 @@ and parse_bexp b : bexp option =
             bind (parse_bexp e2) (fun b2 ->
               Some (b_rel (parse_brel.run o) b1 b2)))
     );
+    "BinaryOperator", (["opcode"], function
+      | [`String o] ->
+        prerr_endline ("WARNING: boolean binary operation " ^  o ^ " was not inferred correctly, rewrite to false");
+        Some (Bool false)
+      | _ ->
+        prerr_endline ("WARNING: a boolean binary operation was not inferred correctly, rewrite to false");
+        Some (Bool false)
+    );
     "IntegerLiteral", (["value"], function
       | [`Int n] -> Some (Bool (n != 0))
       | _ -> None
@@ -417,8 +432,8 @@ let parse_mode =
   )
 
 let is_var o =
-  let k = get_kind_opt o in
-  k = Some "VarDecl" || k = Some "ParmVarDecl"
+  let k = get_kind_res o in
+  k = Result.Ok "VarDecl" || k = Result.Ok "ParmVarDecl"
 
 let j_to_var j =
   let open Yojson.Basic.Util in
@@ -586,9 +601,9 @@ let parse_kernel = make "kernel" (fun k ->
             || member "isUsed" j = `Bool true
           in
           let is_param p l =
-            match get_kind_opt l, is_used l, member "type" l with
-            | Some "NonTypeTemplateParmDecl", true, ty -> p ty
-            | Some "ParmVarDecl", true, ty -> p ty
+            match get_kind_res l, is_used l, member "type" l with
+            | Result.Ok "NonTypeTemplateParmDecl", true, ty -> p ty
+            | Result.Ok "ParmVarDecl", true, ty -> p ty
             | _, _, _ -> false
           in
           let get_params p =
@@ -620,8 +635,8 @@ let parse_kernels = make "kernels" (fun s ->
     "TranslationUnitDecl", (["inner"], function
       | [`List l] ->
         let is_kernel x =
-          match get_kind_opt x, member "is_kernel" x with
-          | Some "FunctionDecl", `Bool true -> true
+          match get_kind_res x, member "is_kernel" x with
+          | Result.Ok "FunctionDecl", `Bool true -> true
           | _, _ -> false
         in
         Some (List.map parse_kernel.run (List.filter is_kernel l))
