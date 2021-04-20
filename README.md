@@ -79,9 +79,9 @@ $ make
 
 ---
 
-# Building from scratch
+# Building from scratch (Ubuntu 20.04)
 
-These instructions are also available as a dockerfile [`docker/from-scratch.Dockerfile`](docker/from-scratch.Dockerfile)
+These instructions are also available as a dockerfile: [`docker/from-scratch.Dockerfile`](docker/from-scratch.Dockerfile)
 
 Pre-requisites:
 * OCaml `>= 4.11.0`
