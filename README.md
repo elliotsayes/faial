@@ -81,6 +81,8 @@ $ make
 
 # Building from scratch
 
+These instructions are also available as a dockerfile [`docker/from-scratch.Dockerfile`](docker/from-scratch.Dockerfile)
+
 Pre-requisites:
 * OCaml `>= 4.11.0`
 * Rust `>= 1.47.0`
