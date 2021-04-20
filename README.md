@@ -50,7 +50,7 @@ Feel free to access the  [tutorial/](tutorial/)
 
 ## Run-time dependencies
 
-* `z3`
+* [`z3`](https://github.com/Z3Prover/z3/releases)
 * [`c-to-json`](https://gitlab.com/umb-svl/c-to-json)
 * [`faial-infer`](https://gitlab.com/umb-svl/faial-infer/)
 
