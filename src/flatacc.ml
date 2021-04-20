@@ -111,7 +111,7 @@ let f_kernel_to_s (k:f_kernel) : Serialize.PPrint.t list =
     Line (acc_val_to_s a.ca_access ^ " if " ^ b_to_s a.ca_cond ^";")
   in
   [
-      Line ("location: " ^ k.f_kernel_location.var_name ^ ";");
+      Line ("array: " ^ k.f_kernel_location.var_name ^ ";");
       Line ("locals: " ^ var_set_to_s k.f_kernel_local_variables ^ ";");
       Line ("pre: " ^ b_to_s k.f_kernel_pre ^ ";");
       Line "{";

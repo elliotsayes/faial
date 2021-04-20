@@ -161,7 +161,7 @@ let u_kernel_to_s (k:u_kernel) : PPrint.t list =
     |> join "; "
   in
   [
-      Line ("locations: " ^ var_set_to_s k.u_kernel_locations ^ ";");
+      Line ("arrays: " ^ var_set_to_s k.u_kernel_locations ^ ";");
       Line ("globals: " ^ var_set_to_s k.u_kernel_global_variables ^ ";");
       Line ("locals: " ^ var_set_to_s k.u_kernel_local_variables ^ ";");
       Line ("ranges: " ^ ranges ^ ";");

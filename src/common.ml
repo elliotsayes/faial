@@ -53,6 +53,13 @@ let flatten_opt l =
 let map_opt f l =
   List.map f l |> flatten_opt
 
+let starts_with txt prefix =
+  let txt_len = String.length txt in
+  let pre_len = String.length prefix in
+  if txt_len < pre_len then false
+  else
+  String.equal (String.sub txt 0 pre_len) prefix
+
 let ends_with s suffix =
   let suffix_len = String.length suffix in
   let s_len = String.length s in

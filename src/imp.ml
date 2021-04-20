@@ -298,7 +298,7 @@ let kernel_to_s (k:p_kernel) : PPrint.t list =
   let open PPrint in
   [
     Line ("arrays: " ^ var_set_to_s k.p_kernel_locations ^ ";");
-    Line ("scalars: " ^ var_set_to_s k.p_kernel_params ^ ";");
+    Line ("globals: " ^ var_set_to_s k.p_kernel_params ^ ";");
     Line ("pre: " ^ b_to_s k.p_kernel_pre ^";");
     Line "";
     Line "code {";

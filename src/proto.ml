@@ -185,7 +185,7 @@ let print_p (p: prog) : unit =
 let kernel_to_s (f:'a -> PPrint.t list) (k:'a kernel) : PPrint.t list =
   let open PPrint in
   [
-    Line ("locations: " ^ var_set_to_s k.kernel_locations ^ ";");
+    Line ("arrays: " ^ var_set_to_s k.kernel_locations ^ ";");
     Line ("globals: " ^ var_set_to_s k.kernel_global_variables ^ ";");
     Line ("locals: " ^ var_set_to_s k.kernel_local_variables ^ ";");
     Line ("invariant: " ^ b_to_s k.kernel_pre ^";");
@@ -205,7 +205,7 @@ let kernel_ser (f:'a -> Smtlib.sexp) (k:'a kernel) =
   Smtlib.List [
     symbol "kernel";
     unop "pre" (b_ser k.kernel_pre);
-    var_set_ser "locations" k.kernel_locations;
+    var_set_ser "arrays" k.kernel_locations;
     var_set_ser "locals" k.kernel_local_variables;
     var_set_ser "globals" k.kernel_global_variables;
     f k.kernel_code;

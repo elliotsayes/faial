@@ -23,6 +23,13 @@ let tests = "ends_with" >::: [
       assert_bool "" (ends_with "foo" "foo");
       assert_bool "" (not (ends_with "foo" "moo"))
   );
+  "starts_with" >:: (fun _ ->
+      assert_bool "" (starts_with "foo" "");
+      assert_bool "" (starts_with "foo" "f");
+      assert_bool "" (starts_with "foo" "fo");
+      assert_bool "" (starts_with "foo" "foo");
+      assert_bool "" (not (starts_with "foo" "moo"))
+  );
   "hashtbl_elements" >:: (fun _ ->
     let ht = Hashtbl.create 0 in
     assert_equal (Common.hashtbl_elements ht) [];
