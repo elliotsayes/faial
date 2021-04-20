@@ -55,3 +55,46 @@ RUN wget https://sh.rustup.rs -O - | \
 # faial-infer pre-reqs
 RUN cargo install pyoxidizer --version 0.8.0
 USER faial
+
+ARG C_TO_JSON_VERSION=master
+
+RUN git clone https://gitlab.com/umb-svl/c-to-json && \
+    cd c-to-json && \
+    git checkout ${C_TO_JSON_VERSION} && \
+    make
+
+USER root
+RUN cd /home/faial/c-to-json && \
+    make install
+
+ARG FAIL_INFER_VERSION=master
+USER faial
+RUN git clone https://gitlab.com/umb-svl/faial-infer && \
+    cd faial-infer && \
+    git checkout ${FAIAL_INFER_VERSION} && \
+    USER=faial pyoxidizer build --release
+
+USER root
+RUN \
+    cp /home/faial/faial-infer/build/x86_64-unknown-linux-gnu/release/install/faial-infer /usr/local/bin && \
+    chmod a+x /usr/local/bin/faial-infer
+
+USER faial
+
+ARG FAIAL_VERSION=master
+RUN \
+     git clone https://gitlab.com/umb-svl/faial && \
+    cd faial && \
+    ./configure.sh -y && \
+    git checkout ${FAIAL_INFER_VERSION} && \
+    eval $(opam env)  && \
+    make && \
+    make ui
+
+USER root
+RUN \
+  cp /home/faial/faial/faial-bin /usr/local/bin && \
+  cp /home/faial/faial/faial-ui/target/release/faial /usr/local/bin
+
+USER faial
+RUN faial faial/tutorial/saxpy.cu

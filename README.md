@@ -80,3 +80,60 @@ $ make
 ---
 
 # Building from scratch
+
+Pre-requisites:
+* OCaml `>= 4.11.0`
+* Rust `>= 1.47.0`
+
+```
+$ sudo apt-get install \
+        opam \
+        build-essential \
+        m4 \
+        git \
+        wget \
+        tree \
+        libffi-dev \
+        libgmp-dev \
+        z3 \
+        llvm-dev \
+        libclang-dev \
+        build-essential \
+        m4 \
+        git \
+        lld \
+        ninja-build \
+        cmake \
+        upx-ucl \
+        python \
+        python3 \
+        libssl-dev \
+        pkg-config
+$ cargo install pyoxidizer --version 0.8.0
+```
+
+Install `c-to-json`:
+```
+$ git clone https://gitlab.com/umb-svl/c-to-json
+$ cd c-to-json
+$ make
+$ sudo make install # installs to /usr/local/bin
+$ cd ..
+```
+
+Install `faial-infer`:
+```
+$ git clone https://gitlab.com/umb-svl/faial-infer
+$ cd faial-infer
+$ pyoxidizer build --release
+$ sudo cp build/x86_64-unknown-linux-gnu/release/install/faial-infer /usr/local/bin
+$ sudo chmod a+x /usr/local/bin/faial-infer
+$ cd ..
+```
+
+Install `faial`:
+```
+$ cd faial
+$ ./configure.sh
+$ make
+```
