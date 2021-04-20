@@ -1,3 +1,0 @@
-FROM registry.gitlab.com/umb-svl/faial/faial:dev
-ADD . /src
-WORKDIR /src

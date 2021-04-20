@@ -1,13 +1,12 @@
 version: "3.8"
 services:
-    dev:
+    ci:
         build:
-            dockerfile: docker/Dockerfile
+            dockerfile: docker/ci.Dockerfile
             context: ..
-        image: registry.gitlab.com/umb-svl/faial/faial:dev
+        image: registry.gitlab.com/umb-svl/faial/faial:ci
 
-    try:
-        image: registry.gitlab.com/umb-svl/faial/faial:dev
+    from-scratch:
         build:
-            dockerfile: docker/Dockerfile.try
+            dockerfile: docker/from-scratch.Dockerfile
             context: ..

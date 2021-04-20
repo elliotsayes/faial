@@ -2,13 +2,13 @@ DOCKER_COMPOSE = docker-compose
 all: build
 
 build:
-	$(DOCKER_COMPOSE) build dev
+	$(DOCKER_COMPOSE) build ci
 
 run:
-	$(DOCKER_COMPOSE) run dev
+	$(DOCKER_COMPOSE) run ci
 
 push:
-	$(DOCKER_COMPOSE) up --no-start dev
-	$(DOCKER_COMPOSE) push dev
+	$(DOCKER_COMPOSE) up --no-start ci
+	$(DOCKER_COMPOSE) push ci
 
 .PHONY: build run test all

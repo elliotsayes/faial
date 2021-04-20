@@ -1,5 +1,5 @@
 ---
-image: registry.gitlab.com/umb-svl/faial/faial:dev
+image: registry.gitlab.com/umb-svl/faial/faial:ci
 variables:
 
 .cache: &global_cache
@@ -14,7 +14,7 @@ variables:
     - ocamlc --version
     - ls /opt/faial-ui
     - ls faial-ui/
-    - cp -a /home/opam/.cargo "$CARGO_HOME"
+    - cp -a /home/faial/.cargo "$CARGO_HOME"
     - echo "FOUND PACKAGES:"; find "$CARGO_HOME"/registry/ -iname '*.crate' -type f -exec basename '{}' \;
     - cp -a /opt/faial-ui/target "$CI_PROJECT_DIR/faial-ui/target"
     - ls faial-ui/

@@ -4,7 +4,6 @@ import subprocess
 import sys
 import shlex
 import os
-import sexpdata
 from enum import Enum
 
 from pathlib import Path
