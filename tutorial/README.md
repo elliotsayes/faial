@@ -24,7 +24,9 @@ Program is data-race free!
 
 ## Checking a racy protocol
 
-Let us now check a buggy protocol `saxpy-buggy.cu`. The difference between `saxpy.proto` and `saxpy-buggy.cu` is simply changing the last read from `y[i]` into `y[i + 1]`.
+Let us now check a buggy protocol `saxpy-buggy.cu`. The difference between
+`saxpy.cu` and `saxpy-buggy.cu` is simply changing the last read from `y[i]`
+into `y[i + 1]`.
 
 
 ```
