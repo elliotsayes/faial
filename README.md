@@ -136,4 +136,8 @@ Install `faial`:
 $ cd faial
 $ ./configure.sh
 $ make
+$ make ui
+$ sudo cp faial-bin /usr/local/bin
+$ sudo cp faial-ui/target/release/faial /usr/local/bin
+$ cd ..
 ```
