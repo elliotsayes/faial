@@ -44,7 +44,7 @@ Ensure that your CUDA file has all of its includes available and then run:
 $ faial example.cu
 ```
 
-Next, feel free to access the [tutorial](tutorial/)!
+Next, feel free to access the [`tutorial/`](tutorial/) directory!
 
 # Build from source
 
