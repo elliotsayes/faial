@@ -89,7 +89,7 @@ The error report consists of:
 * You can set a define with `-D DEBUG` as you would with a C compiler.
 * You can set the number of threads (`blockDim.x`, `blockDim.y`, `blockDim.z`) with `--block-dim`.
 * You can set the number of blocks (`gridDim.x`, `gridDim.y`, `gridDim.z`) with `--grid-dim`
-* You can set the value of any thread-global with `--set`
+* You can set the value of any thread-global variable with `--set`
 
 # Troubleshooting
 
