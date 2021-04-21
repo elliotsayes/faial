@@ -22,7 +22,7 @@ Program is data-race free!
 ```
 
 
-## Checking a racy protocol
+# Checking a racy CUDA kernel
 
 Let us now check a buggy protocol `saxpy-buggy.cu`. The difference between
 `saxpy.cu` and `saxpy-buggy.cu` is simply changing the last read from `y[i]`
@@ -82,6 +82,22 @@ The error report consists of:
  * the runtime state of thread-local variables (table `Locals`). There is one
    column per thread causing the data-race. In this case one thread
    `threadIdx.x=0` races with tread `threadIdx.x=1`.
+
+# Command-line options
+
+* You can add include paths with `-I` option, as you would with a C compiler. For example `faial saxpy.cu -I /usr/local/include` makes available all headers in `/usr/local/include`.
+* You can set a define with `-D DEBUG` as you would with a C compiler.
+* You can set the number of threads (`blockDim.x`, `blockDim.y`, `blockDim.z`) with `--block-dim`.
+* You can set the number of blocks (`gridDim.x`, `gridDim.y`, `gridDim.z`) with `--grid-dim`
+* You can set the value of any thread-global with `--set`
+
+# Troubleshooting
+
+`faial` should check a kernel fairly quickly. If `faial` takes a while to give an answer, then the usual outcome is that `faial` does not know the answer (if the kernel is or is not DRF).
+
+The root cause of this problem is that `faial` determines if a kernel is DRF by asking questions to a solver (`z3`) and the solver may not know the answer to such questions.
+
+* A common culprit is *multiplication between two variables*, eg `blockIdx.x*blockDim.x`. In such cases, consider setting the value of *one* of the variables in the multiplication. For instance, if you see `blockIdx.x*blockDim.x + threadIdx.x`, then consider setting `blockDim.x` to `512`, with `-b 512`.
 
 
 # The protocol language
