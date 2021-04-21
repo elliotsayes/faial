@@ -10,3 +10,8 @@ services:
         build:
             dockerfile: docker/from-scratch.Dockerfile
             context: ..
+
+    debug-ci:
+        build:
+            dockerfile: docker/debug-ci.Dockerfile
+            context: ..

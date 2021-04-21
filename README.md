@@ -12,7 +12,7 @@
 
 Instructions:
 1. Extract the binary distribution of [`faial.tar.bz2`](https://gitlab.com/umb-svl/c-to-json) and ensure that `bin` is in your `PATH`
-2. Install [`z3`](https://github.com/Z3Prover/z3/releases)
+2. Install [`z3 4.8.8`](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.8)
 
 
 ```
@@ -50,7 +50,7 @@ Feel free to access the  [tutorial/](tutorial/)
 
 ## Run-time dependencies
 
-* [`z3`](https://github.com/Z3Prover/z3/releases)
+* [`z3 4.8.8`](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.8)
 * [`c-to-json`](https://gitlab.com/umb-svl/c-to-json)
 * [`faial-infer`](https://gitlab.com/umb-svl/faial-infer/)
 
@@ -86,6 +86,7 @@ These instructions are also available as a dockerfile: [`docker/from-scratch.Doc
 Pre-requisites:
 * OCaml `>= 4.11.0`
 * Rust `>= 1.47.0`
+* Z3 `4.8.8` (runtime only)
 
 ```
 $ sudo apt-get install \
@@ -97,7 +98,6 @@ $ sudo apt-get install \
         tree \
         libffi-dev \
         libgmp-dev \
-        z3 \
         llvm-dev \
         libclang-dev \
         build-essential \

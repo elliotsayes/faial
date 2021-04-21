@@ -12,6 +12,7 @@ variables:
     - cargo --version
     - opam --version
     - ocamlc --version
+    - z3 --version
     - ls /opt/faial-ui
     - ls faial-ui/
     - cp -a /home/faial/.cargo "$CARGO_HOME"
@@ -40,7 +41,7 @@ test:
     - export PATH="$PATH:$PWD"
     - make
     - make test
-    - ./run-tests.py
+    - ./run-tests.py --verbose
 
 build-dist:
   <<: *global_cache
