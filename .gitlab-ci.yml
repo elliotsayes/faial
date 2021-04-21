@@ -65,17 +65,20 @@ bundle:
   dependencies: 
     - build-dist
   only:
+    # Only add branches that also exist in c-to-json and faial-infer!
+    # Otherwise, this will fail as wget will not find their job artifacts.
     - master
+    - cav21
   script:
-    - cd "$CI_PROJECT_DIR"
+    - cd $CI_PROJECT_DIR
     - mkdir bundle
     - cd bundle
     # c-to-json:
-    - wget --content-disposition https://gitlab.com/umb-svl/c-to-json/-/jobs/artifacts/master/raw/build/c-to-json-bin.tar.bz2?job=build-rh610
+    - wget --content-disposition https://gitlab.com/umb-svl/c-to-json/-/jobs/artifacts/$CI_COMMIT_BRANCH/raw/build/c-to-json-bin.tar.bz2?job=build-rh610
     - tar xf c-to-json-bin.tar.bz2
     - rm c-to-json-bin.tar.bz2
     # faial-infer:
-    - wget --content-disposition https://gitlab.com/umb-svl/faial-infer/-/jobs/artifacts/master/download?job=bin
+    - wget --content-disposition https://gitlab.com/umb-svl/faial-infer/-/jobs/artifacts/$CI_COMMIT_BRANCH/download?job=bin
     - unzip artifacts.zip
     - rm artifacts.zip
     - mv faial-infer bin/
