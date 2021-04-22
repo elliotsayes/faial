@@ -11,7 +11,7 @@
 -->
 
 Instructions:
-1. Extract the binary distribution of [`faial.tar.bz2`](https://gitlab.com/umb-svl/c-to-json) and ensure that `bin` is in your `PATH`
+1. Extract the binary distribution of [`faial.tar.bz2`](https://gitlab.com/umb-svl/faial/-/jobs/artifacts/master/raw/bundle/faial.tar.bz2?job=bundle) and ensure that `bin` is in your `PATH`
 2. Install [`z3 4.8.8`](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.8)
 
 
@@ -44,7 +44,7 @@ Ensure that your CUDA file has all of its includes available and then run:
 $ faial example.cu
 ```
 
-Feel free to access the  [tutorial/](tutorial/)
+Next, feel free to access the [`tutorial/`](tutorial/) directory!
 
 # Build from source
 
