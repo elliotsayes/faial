@@ -118,6 +118,7 @@ Install `c-to-json`:
 ```
 $ git clone https://gitlab.com/umb-svl/c-to-json
 $ cd c-to-json
+$ git checkout cav21
 $ make
 $ sudo make install # installs to /usr/local/bin
 $ cd ..
@@ -127,6 +128,7 @@ Install `faial-infer`:
 ```
 $ git clone https://gitlab.com/umb-svl/faial-infer
 $ cd faial-infer
+$ git checkout cav21
 $ pyoxidizer build --release
 $ sudo cp build/x86_64-unknown-linux-gnu/release/install/faial-infer /usr/local/bin
 $ sudo chmod a+x /usr/local/bin/faial-infer
@@ -136,6 +138,7 @@ $ cd ..
 Install `faial`:
 ```
 $ cd faial
+$ git checkout cav21
 $ ./configure.sh
 $ make
 $ make ui
