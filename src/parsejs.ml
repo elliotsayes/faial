@@ -118,7 +118,14 @@ let choose_one_of (l:(string * 'a choose_one_of_handler) list) (j:Yojson.Basic.t
     end *)
   | _ -> None
 
-let is_array_type o =
+let is_shared o : bool =
+  let open Yojson.Basic in
+  let open Yojson.Basic.Util in
+  match member "shared" o with
+  | `Bool true -> true
+  | _ -> false
+
+let is_array_type o : bool =
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
   match member "qualType" o with
@@ -606,12 +613,12 @@ let parse_kernel = make "kernel" (fun k ->
             | Result.Ok "ParmVarDecl", true, ty -> p ty
             | _, _, _ -> false
           in
-          let get_params p =
+          let get_params p : VarSet.t =
             List.filter (is_param p) params
               |> List.map parse_var.run
               |> VarSet.of_list
           in
-          let body = match body with
+          let body : stmt = match body with
           | `Null -> Block []
           | _ -> parse_stmt.run body
           in
@@ -619,6 +626,9 @@ let parse_kernel = make "kernel" (fun k ->
             p_kernel_name = name;
             p_kernel_pre = parse_bexp.run pre;
             p_kernel_locations = get_params is_array_type;
+            p_kernel_shared_locations = get_params (fun x ->
+              is_array_type x && is_shared x
+            );
             p_kernel_params = get_params is_int_type;
             p_kernel_code = body;
           }

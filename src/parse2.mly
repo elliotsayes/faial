@@ -168,6 +168,7 @@ kernel:
       let gs = List.map snd gs in
       {
         kernel_locations = l1 |> VarSet.of_list;
+        kernel_shared_locations = VarSet.empty;
         kernel_pre = pre;
         kernel_local_variables = ls |> VarSet.of_list;
         kernel_global_variables = gs |> VarSet.of_list;
@@ -184,6 +185,7 @@ kernel:
       {
         kernel_pre = pre;
         kernel_locations = l1 |> VarSet.of_list;
+        kernel_shared_locations = VarSet.empty;
         kernel_local_variables = ls |> VarSet.of_list;
         kernel_global_variables = gs |> VarSet.of_list;
         kernel_code = p;

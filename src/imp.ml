@@ -58,6 +58,8 @@ type p_kernel = {
   p_kernel_pre: bexp;
   (* The shared locations that can be accessed in the kernel. *)
   p_kernel_locations: VarSet.t;
+  (* The set of shared locations. Should be included in locations. *)
+  p_kernel_shared_locations: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
   p_kernel_params: VarSet.t;
   (* The code of a kernel performs the actual memory accesses. *)
@@ -436,6 +438,7 @@ let compile (k:p_kernel) : prog kernel =
   {
     kernel_pre = pre;
     kernel_locations = k.p_kernel_locations;
+    kernel_shared_locations = k.p_kernel_shared_locations;
     kernel_local_variables = locals;
     kernel_global_variables = globals;
     kernel_code = p;

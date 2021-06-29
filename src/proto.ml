@@ -15,8 +15,10 @@ type inst =
 type prog = inst list [@@deriving hash, compare]
 
 type 'a kernel = {
-  (* The shared locations that can be accessed in the kernel. *)
+  (* All available locations that can be accessed in the kernel. *)
   kernel_locations: VarSet.t;
+  (* The shared locations that can be accessed in the kernel. *)
+  kernel_shared_locations: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
   kernel_global_variables: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
@@ -119,6 +121,7 @@ let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =
   let kvs = Subst.SubstAssoc.make kvs in
   {
     kernel_locations = k.kernel_locations;
+    kernel_shared_locations = k.kernel_shared_locations;
     kernel_pre = PSubstAssoc.M.b_subst kvs k.kernel_pre |> Constfold.b_opt;
     kernel_code = PSubstAssoc.p_subst kvs k.kernel_code |> p_opt;
     kernel_global_variables = VarSet.diff k.kernel_global_variables keys;
