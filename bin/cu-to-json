@@ -1,0 +1,17 @@
+#!/bin/bash
+PREFIX="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && cd .. && pwd )"
+if [ $# -lt 1 ]; then
+        echo "Usage: $0 FILENAME ..."
+        echo -e "\t... all remaing command line flags are passed to clang"
+        exit 1
+fi
+
+filename="$1"
+
+shift
+"$PREFIX"/bin/c-to-json "$filename" -- -x c++ \
+  -I"$PREFIX/share/c-to-json/include" \
+  -include "$PREFIX/share/c-to-json/include/cuda.h" \
+  -include "$PREFIX/share/c-to-json/include/cuda_textures.h" \
+  -include "$PREFIX/share/c-to-json/include/cuda_curand.h" \
+  "$@"

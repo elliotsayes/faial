@@ -20,6 +20,7 @@ build-tests:
 	$(OCB) test_locsplit.native
 	$(OCB) test_streamutil.native
 	$(OCB) test_predicates.native
+	$(OCB) test_babycuda.native
 
 test: build-tests
 	$(BUILD)/test_imp.native
