@@ -96,4 +96,25 @@ let modulo x y =
   if result >= 0 then result
   else result + y
 
-exception ParseError of (string list)
+exception ParseError of Buffer.t
+
+let string_to_buffer (s:string) =
+  let b = Buffer.create (String.length s) in
+  Buffer.add_string b s;
+  b
+
+let buffer_prepend b s =
+  let result = Buffer.create (Buffer.length b + String.length s) in
+  Buffer.add_string result s;
+  Buffer.add_buffer result b;
+  result
+
+let mk_parse_error_s s = ParseError (string_to_buffer s)
+
+let mk_parse_error_l ss =
+  let b = Buffer.create (16 * List.length ss) in
+  List.iter (fun x ->
+    Buffer.add_string b x;
+    Buffer.add_char b '\n'
+  ) ss;
+  b

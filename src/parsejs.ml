@@ -11,17 +11,18 @@ let pp_js data =
   else
     result
 
-let parse_error (cause:string list) msg data =
-  raise (Common.ParseError (( "Error parsing '" ^ msg ^"': " ^ pp_js data)::cause))
+let parse_error (b:Buffer.t) msg data =
+  Buffer.add_string b ("Error parsing '" ^ msg ^"': " ^ pp_js data ^ "\n");
+  raise (Common.ParseError b)
 
 let abort_error msg data =
-  raise (Common.ParseError [msg ^ "\n" ^ pp_js data])
+  raise (msg ^ "\n" ^ pp_js data |> Common.mk_parse_error_s)
 
 let call msg f data =
-  let o = (try f data with Common.ParseError l -> parse_error l msg data) in
+  let o = (try f data with Common.ParseError b -> parse_error b msg data) in
   match o with
   | Some m -> m
-  | None ->  parse_error [] msg data
+  | None ->  parse_error (Buffer.create 0) msg data
 
 let is_some o =
   match o with
@@ -618,6 +619,11 @@ let parse_kernel = make "kernel" (fun k ->
               |> List.map parse_var.run
               |> VarSet.of_list
           in
+          let get_shared_params : VarSet.t =
+            List.filter (fun l -> is_param is_array_type l && is_shared l) params
+              |> List.map parse_var.run
+              |> VarSet.of_list
+          in
           let body : stmt = match body with
           | `Null -> Block []
           | _ -> parse_stmt.run body
@@ -626,9 +632,7 @@ let parse_kernel = make "kernel" (fun k ->
             p_kernel_name = name;
             p_kernel_pre = parse_bexp.run pre;
             p_kernel_locations = get_params is_array_type;
-            p_kernel_shared_locations = get_params (fun x ->
-              is_array_type x && is_shared x
-            );
+            p_kernel_shared_locations = get_shared_params;
             p_kernel_params = get_params is_int_type;
             p_kernel_code = body;
           }

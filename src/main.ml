@@ -23,11 +23,13 @@ let v2_parse fname input : prog kernel =
   try Parse2.main Scan.read filebuf with
   | Parse2.Error ->
     let sloc = Sourceloc.of_lexbuf filebuf in
-    Printf.eprintf "%a: syntax error\n" Sourceloc.location_print_start sloc;
+    let b = Buffer.create 1024 in
+    Printf.bprintf b "%a: syntax error\n" Sourceloc.location_bprint_start sloc;
     (try
-      Printf.eprintf "\n%a" Sourceloc.location_print_title sloc
+      Printf.bprintf b "\n%a" Sourceloc.location_bprint_title sloc
     with
       Sys_error _ -> ());
+    Buffer.output_buffer stderr b;
     exit (-1)
 
 (** Machine-readable parser: *)
@@ -42,11 +44,8 @@ let safe_run f =
       Printf.eprintf "Error parsing JSON: %s" e;
       exit (-1)
     end
-  | Common.ParseError l ->
-    List.iter (fun x ->
-      prerr_endline x;
-      prerr_endline ""
-    ) l;
+  | Common.ParseError b ->
+    Buffer.output_buffer stderr b;
     exit (-1)
 
 type command = WLang | ALang | PLang | CLang | HLang | BLang | Sat | Typecheck | Parse
@@ -134,7 +133,14 @@ let main_t =
         exit (1)
       end else
       List.iter (fun k ->
-        if not skip_typecheck && Typecheck.typecheck_kernel k |> Sourceloc.print_errs then
+        let b = Buffer.create 1024 in
+        let type_check_failed =
+          not skip_typecheck
+          && Typecheck.typecheck_kernel k
+          |> Sourceloc.bprint_errs b
+        in
+        Buffer.output_buffer stderr b;
+        if type_check_failed then
           exit (if expect_typing_fail then 0 else -1)
         else
           ()
@@ -169,7 +175,9 @@ let main_t =
       ) ks
     with
       | Phasesplit.PhasesplitException errs ->
-          let _ = Sourceloc.print_errs errs in
+          let b = Buffer.create 1024 in
+          let _ = Sourceloc.bprint_errs b errs in
+          Buffer.output_buffer stderr b;
           exit (if expect_typing_fail then 0 else -1)
       | e ->
       (match fname with

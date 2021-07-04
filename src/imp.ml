@@ -436,6 +436,7 @@ let compile (k:p_kernel) : prog kernel =
     2. We break down for-loops and variable declarations
     *)
   {
+    kernel_name = k.p_kernel_name;
     kernel_pre = pre;
     kernel_locations = k.p_kernel_locations;
     kernel_shared_locations = k.p_kernel_shared_locations;

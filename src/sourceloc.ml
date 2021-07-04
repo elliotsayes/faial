@@ -22,8 +22,8 @@ let pos_to_pair pos = pos.pos_line, pos.pos_column
 
 (** Prints a position *)
 
-let position_print outx pos =
-  Printf.fprintf outx "%d:%d" pos.pos_line pos.pos_column
+let position_bprint b pos =
+  Printf.bprintf b "%d:%d" pos.pos_line pos.pos_column
 
 (** Represents a source code location. *)
 
@@ -56,10 +56,19 @@ let of_lexbuf lb =
 (** Prints the start of the file location:
     filename:start-line:start-col *)
 
-let location_print_start outx loc =
-  Printf.fprintf outx "%s:%a" loc.loc_filename position_print loc.loc_start
+let location_bprint_start (b:Buffer.t) loc =
+  Printf.bprintf b "%s:%a" loc.loc_filename position_bprint loc.loc_start
+(*
+let location_fprint_start outx loc =
+  let b = Buffer.create 1024 in
+  location_bprint_start b loc;
+  Buffer.output_buffer outx b
 
-
+let location_to_string loc =
+  let b = Buffer.create 1024 in
+  location_bprint_start b loc;
+  Buffer.contents b
+*)
 let line_range filename offset count =
   (* Skip the first n-lines *)
   let rec skip_n ic count =
@@ -122,25 +131,37 @@ let location_title loc =
 let make_bold =
    ANSITerminal.sprintf [ANSITerminal.Bold] "%s"
 
-let location_print_title outx (loc:location) : unit =
+let location_bprint_title (outx:Buffer.t) (loc:location) : unit =
   let underline offset count : string =
     (String.make offset ' ') ^ (String.make count '^' |> make_bold)
   in
   let txt, hl = location_title loc in
   let left = String.sub txt 0 hl.range_offset in
-  Printf.fprintf outx "%s" left;
+  Printf.bprintf outx "%s" left;
   let mid = String.sub txt hl.range_offset hl.range_count in
-  Printf.fprintf outx "%s" (make_bold mid);
+  Printf.bprintf outx "%s" (make_bold mid);
   let idx = hl.range_offset + hl.range_count in
   let right = String.sub txt idx (String.length txt - idx) in
-  Printf.fprintf outx "%s\n" right;
-  Printf.fprintf outx "%s\n" (underline hl.range_offset hl.range_count)
+  Printf.bprintf outx "%s\n" right;
+  Printf.bprintf outx "%s\n" (underline hl.range_offset hl.range_count)
+(*
+let location_title_to_string (loc:location) : string =
+  let b = Buffer.create 1024 in
+  location_bprint_title b loc;
+  Buffer.contents b
 
-let print_errs (errs:(string * location) list) : bool =
+
+let location_fprint_title outx (loc:location) : unit =
+  let b = Buffer.create 1024 in
+  location_bprint_title b loc;
+  Buffer.output_buffer outx b
+*)
+
+let bprint_errs b (errs:(string * location) list) : bool =
   let print_err (msg,loc:string * location) =
-    Printf.eprintf "%a: %s" location_print_start loc msg;
+    Printf.bprintf b "%a: %s" location_bprint_start loc msg;
     try
-      (Printf.eprintf "\n\n%a" location_print_title loc)
+      (Printf.bprintf b "\n\n%a" location_bprint_title loc)
     with Sys_error _ -> ()
   in
   List.iter print_err errs;

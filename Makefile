@@ -14,6 +14,10 @@ native: build-tests
 	$(OCB) main.native
 	cp $(BUILD)/main.native faial-bin
 
+bank-conflicts:
+	$(OCB) bankconflicts.native
+	cp $(BUILD)/bankconflicts.native bank-conflicts
+
 build-tests:
 	$(OCB) test_imp.native
 	$(OCB) test_common.native
@@ -51,4 +55,4 @@ profile:
 debug:
 	$(OCB) -tag debug main.byte
 
-.PHONY: all clean byte native profile debug sanity test ui
+.PHONY: all clean byte native profile debug sanity test ui bank-conflicts
