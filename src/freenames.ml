@@ -20,6 +20,10 @@ and fold_bexp f e a =
 
 let free_names_nexp e (fns:VarSet.t) = fold_nexp VarSet.add e fns
 
+let is_closed_nexp e : bool =
+  free_names_nexp e VarSet.empty
+  |> VarSet.is_empty
+
 let free_names_bexp e fns = fold_bexp VarSet.add e fns
 
 let free_names_range (r:range) (fns:VarSet.t) : VarSet.t =

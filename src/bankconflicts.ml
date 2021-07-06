@@ -214,26 +214,54 @@ let i_kernel_to_p_kernel (k:i_kernel) : prog kernel list =
   | JKernel ks -> List.map Imp.compile ks
   | PKernel p -> [p]
 
+(* Return true/false whether we CAN analyze the expression, not if
+   there are bank-conflicts. *)
+let has_bank_conflicts (n:nexp) : bool =
+  let handle_coefficient (n:nexp) : bool =
+    (* TODO: handle variables. We need to check if the variable is
+       a thread-local or thread-global. In case of the *)
+    Freenames.is_closed_nexp n
+  in
+  match n_to_poly (var_make "threadIdx.x") n with
+  | One n ->
+    (* threadIdx.x is not in the expression *)
+    handle_coefficient n
+  | Two (c, k) ->
+    (* The expression is of form:
+       k * threadIdx + c
+       *)
+    handle_coefficient c && handle_coefficient k
+  | Many _ -> false
+
 let _ =
   try
     open_i_kernel_with true None (fun k ->
       let ks = i_kernel_to_p_kernel k in
-      Printf.printf "Found %d kernels.\n" (List.length ks);
+      Printf.printf "L: Found %d kernels.\n" (List.length ks);
       ks |> List.iter (fun k ->
-        Printf.printf "Kernel %s, has %d shared arrays.\n"
+        Printf.printf "L: Kernel %s, has %d shared arrays.\n"
           k.kernel_name
           (VarSet.cardinal k.kernel_shared_locations)
         ;
         VarSet.iter (fun v ->
           let accs = proto_to_acc v (fun x -> x) k.kernel_code in
-          Printf.printf "Listing accesses for shared array %s. Found %d accesses.\n"
+          Printf.printf "L: Listing accesses for shared array %s. Found %d accesses.\n"
             v.var_name (List.length accs);
           List.iter (fun (x:access acc_t) ->
             let x = get_acc x in
-            Serialize.PPrint.index_to_s x.access_index |> print_endline;
-            List.map (n_to_poly (var_make "threadIdx.x")) x.access_index
-            |> List.iter (fun p ->
-              print_endline (poly_to_string "threadIdx.x" p)
+            (* print_string "SOURCE: ";
+            Serialize.PPrint.index_to_s x.access_index |> print_endline; *)
+            x.access_index
+            |> List.iter (fun n ->
+              print_endline (
+              (if has_bank_conflicts n then
+                  "OK: "
+                else
+                  "SKIP: "
+              )
+              ^
+              Serialize.PPrint.n_to_s n
+              )
             )
           ) accs
         ) k.kernel_shared_locations
@@ -243,51 +271,3 @@ let _ =
   | Common.ParseError b ->
     Buffer.output_buffer stderr b;
     exit (-1)
-
-
-(*
-let parse_js_proto fname =
-  let ic = fname_to_ic fname
-          safe_run (fun () ->
-            let ks = Yojson.Basic.from_channel ic
-              |> Parsejs.parse_kernels.run
-            in
-            if cmd = Parse then
-              (List.iter Imp.print_kernel ks;
-              (* return an empty list of compiled kernels *)
-              [])
-            else
-              List.map Imp.compile ks
-          )
-
-let parse_proto fname ks =
-    let ic = match fname with
-      | Some fname -> open_in fname
-      | None -> stdin
-    in
-    let sets = List.map on_kv sets |> flatten_opt in
-    try
-      let ks = if use_json
-        then begin
-          safe_run (fun () ->
-            let ks = Yojson.Basic.from_channel ic
-              |> Parsejs.parse_kernels.run
-            in
-            if cmd = Parse then
-              (List.iter Imp.print_kernel ks;
-              (* return an empty list of compiled kernels *)
-              [])
-            else
-              List.map Imp.compile ks
-          )
-        end else
-          let fname = match fname with
-          | Some x -> x
-          | None -> "<STDIN>"
-          in
-          [v2_parse fname ic]
-      in
-      if List.length ks = 0 && cmd != Parse then begin
-        print_endline "Error: kernel not found!";
-        exit (1)
-      end else*)
