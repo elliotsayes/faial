@@ -36,10 +36,10 @@ let typecheck_kernel (k:prog kernel) : (string * Sourceloc.location) list =
   in
   let errs = [] in
   let all_vars : variable list = List.append (k.kernel_local_variables |> VarSet.elements) (k.kernel_global_variables |> VarSet.elements) in
-  let errs = dup_vars (k.kernel_locations |> VarSet.elements) (fun l -> DuplicateLocs l) errs in
+  let errs = dup_vars (k.kernel_arrays |> var_map_to_set |> VarSet.elements) (fun l -> DuplicateLocs l) errs in
   let errs = dup_vars all_vars (fun l -> DuplicateVars l) errs in
   let errs = undef_vars (VarSet.of_list all_vars) k.kernel_code errs in
-  let errs = undef_locs k.kernel_locations k.kernel_code errs in
+  let errs = undef_locs (k.kernel_arrays |> var_map_to_set) k.kernel_code errs in
   let on_msg msg =
     List.map (fun x -> (msg ^ " '" ^ x.var_name ^ "'", x.var_loc))
   in

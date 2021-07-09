@@ -57,9 +57,7 @@ type p_kernel = {
   (* A kernel precondition of every phase. *)
   p_kernel_pre: bexp;
   (* The shared locations that can be accessed in the kernel. *)
-  p_kernel_locations: VarSet.t;
-  (* The set of shared locations. Should be included in locations. *)
-  p_kernel_shared_locations: VarSet.t;
+  p_kernel_arrays: array_t VarMap.t;
   (* The internal variables are used in the code of the kernel.  *)
   p_kernel_params: VarSet.t;
   (* The code of a kernel performs the actual memory accesses. *)
@@ -299,7 +297,7 @@ let stmt_to_s: stmt -> PPrint.t list =
 let kernel_to_s (k:p_kernel) : PPrint.t list =
   let open PPrint in
   [
-    Line ("arrays: " ^ var_set_to_s k.p_kernel_locations ^ ";");
+    Line ("arrays: " ^ (var_map_to_set k.p_kernel_arrays |> var_set_to_s) ^ ";");
     Line ("globals: " ^ var_set_to_s k.p_kernel_params ^ ";");
     Line ("pre: " ^ b_to_s k.p_kernel_pre ^";");
     Line "";
@@ -419,7 +417,8 @@ let compile (k:p_kernel) : prog kernel =
     |> SubstAssoc.make
   in
   let locals, globals = get_variable_decls p (locals, globals)  in
-  let (more_pre, p) = reify k.p_kernel_locations p |> pre_from_body in
+  let (more_pre, p) = reify (var_map_to_set k.p_kernel_arrays) p
+    |> pre_from_body in
   let p =
     if Hashtbl.length kvs > 0
     then p_subst kvs p
@@ -438,8 +437,7 @@ let compile (k:p_kernel) : prog kernel =
   {
     kernel_name = k.p_kernel_name;
     kernel_pre = pre;
-    kernel_locations = k.p_kernel_locations;
-    kernel_shared_locations = k.p_kernel_shared_locations;
+    kernel_arrays = k.p_kernel_arrays;
     kernel_local_variables = locals;
     kernel_global_variables = globals;
     kernel_code = p;

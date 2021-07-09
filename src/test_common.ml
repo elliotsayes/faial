@@ -1,7 +1,19 @@
 open OUnit2
 open Common
 
+
 let tests = "ends_with" >::: [
+  "rsplit" >:: (fun _ ->
+    let ex1 = "int *" in
+    let ex2 = "int" in
+    let ex3 = "unsigned int [8][8] *" in
+    assert (rsplit ' ' ex1 = Some ("int", "*"));
+    assert (parse_dim "[8][8]" = [8;8]);
+    assert (parse_array_opt ex1 = None);
+    assert (parse_array_opt ex2 = None);
+    assert (parse_array_opt ex3 = Some [8; 8]);
+    ()
+  );
   "app_rev" >:: (fun _ ->
     assert_equal [4; 3; 2; 1] (append_rev [1;2;3;4] []);
     assert_equal [3; 2; 1; 4] (append_rev [1;2;3] [4]);

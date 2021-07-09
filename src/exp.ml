@@ -26,6 +26,22 @@ module VarOT = struct
 end
 
 module VarSet = Set.Make(VarOT)
+module VarMap = Map.Make(VarOT)
+
+let var_set_to_map (s:VarSet.t) (f:variable -> 'a option) : 'a VarMap.t =
+  VarSet.fold (fun k m ->
+    match f k with
+    | Some v -> VarMap.add k v m
+    | None -> m
+  ) s VarMap.empty
+
+let var_map_to_set (m:'a VarMap.t) : VarSet.t =
+  VarMap.bindings m |> List.map fst |> VarSet.of_list
+
+let list_to_var_map (l:(variable * 'a) list) : 'a VarMap.t =
+  List.fold_left (fun m (k,v) ->
+    VarMap.add k v m
+  ) VarMap.empty l
 
 let tid = "$tid"
 let idx = "idx"

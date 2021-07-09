@@ -30,6 +30,37 @@ let join sep elems =
   in
   List.fold_left on_elem "" elems
 
+let rsplit (c:char) (s:string) :  (string * string) option =
+  match String.rindex_opt s c with
+  | Some idx -> Some (String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1))
+  | None -> None
+
+let parse_dim (x:string) : int list =
+  (*
+    let ex3 = "[8][8]" in
+    assert (parse_dim ex3 = Some [8; 8]);
+  *)
+  String.split_on_char '[' x
+  |> List.concat_map (fun (x:string) ->
+      if String.length x = 0 then []
+      else [String.sub x 0 (String.length x - 1)]
+    )
+  |>
+  List.map int_of_string
+
+let parse_array_opt (x:string) : int list option =
+  match rsplit ' ' x with
+  | Some (x, "*") ->
+    begin match rsplit ' ' x with
+    | Some (_, x) ->
+      (try Some (parse_dim x) with
+        Failure _ -> None)
+    | _ -> None
+    end
+  | _ -> None
+
+
+
 let list_is_empty (l:'a list) =
   match l with
   | [] -> true

@@ -14,17 +14,23 @@ type inst =
 (* The source program *)
 type prog = inst list [@@deriving hash, compare]
 
+type size_t =
+  | Unknown
+  | Size of int list
+
+type array_t =
+  | SharedMemory of size_t
+  | GlobalMemory
+
 type 'a kernel = {
   (* The kernel name *)
   kernel_name : string;
-  (* All available locations that can be accessed in the kernel. *)
-  kernel_locations: VarSet.t;
-  (* The shared locations that can be accessed in the kernel. *)
-  kernel_shared_locations: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
   kernel_global_variables: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
   kernel_local_variables: VarSet.t;
+  (* The modifiers of each array *)
+  kernel_arrays: array_t VarMap.t;
   (* A thread-local pre-condition that is true on all phases. *)
   kernel_pre: bexp;
   (* The code of a kernel performs the actual memory accesses. *)
@@ -123,8 +129,7 @@ let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =
   let kvs = Subst.SubstAssoc.make kvs in
   {
     kernel_name = k.kernel_name;
-    kernel_locations = k.kernel_locations;
-    kernel_shared_locations = k.kernel_shared_locations;
+    kernel_arrays = k.kernel_arrays;
     kernel_pre = PSubstAssoc.M.b_subst kvs k.kernel_pre |> Constfold.b_opt;
     kernel_code = PSubstAssoc.p_subst kvs k.kernel_code |> p_opt;
     kernel_global_variables = VarSet.diff k.kernel_global_variables keys;
@@ -191,7 +196,8 @@ let print_p (p: prog) : unit =
 let kernel_to_s (f:'a -> PPrint.t list) (k:'a kernel) : PPrint.t list =
   let open PPrint in
   [
-    Line ("arrays: " ^ var_set_to_s k.kernel_locations ^ ";");
+    (* XXX: print out modifiers *)
+    Line ("arrays: " ^ (var_map_to_set k.kernel_arrays |> var_set_to_s) ^ ";");
     Line ("globals: " ^ var_set_to_s k.kernel_global_variables ^ ";");
     Line ("locals: " ^ var_set_to_s k.kernel_local_variables ^ ";");
     Line ("invariant: " ^ b_to_s k.kernel_pre ^";");
@@ -206,13 +212,3 @@ let print_kernel (f:'a -> PPrint.t list) (k: 'a kernel) : unit =
 
 let print_k (k:prog kernel) : unit =
   PPrint.print_doc (kernel_to_s prog_to_s k)
-
-let kernel_ser (f:'a -> Smtlib.sexp) (k:'a kernel) =
-  Smtlib.List [
-    symbol "kernel";
-    unop "pre" (b_ser k.kernel_pre);
-    var_set_ser "arrays" k.kernel_locations;
-    var_set_ser "locals" k.kernel_local_variables;
-    var_set_ser "globals" k.kernel_global_variables;
-    f k.kernel_code;
-  ]

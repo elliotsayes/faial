@@ -126,11 +126,19 @@ let is_shared o : bool =
   | `Bool true -> true
   | _ -> false
 
+let get_array_length j : (int list) option =
+  let open Yojson.Basic in
+  let open Yojson.Basic.Util in
+  match member "qualType" (member "type" j) with
+  | `String x -> parse_array_opt x
+  | _ -> None
+
 let is_array_type o : bool =
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
   match member "qualType" o with
-  | `String x -> ends_with x " *"
+  | `String x ->
+    ends_with x " *"
   | _ -> false
 
 let is_int_type o =
@@ -602,7 +610,7 @@ let parse_kernel = make "kernel" (fun k ->
   let open Yojson.Basic.Util in
   choose_one_of [
     "FunctionDecl", (["body"; "pre"; "params"; "name"], function
-      | [body; pre; `List params; `String name] ->
+      | [body; pre; `List func_params; `String name] ->
         begin
           let is_used j =
             member "isReferenced" j = `Bool true
@@ -614,15 +622,28 @@ let parse_kernel = make "kernel" (fun k ->
             | Result.Ok "ParmVarDecl", true, ty -> p ty
             | _, _, _ -> false
           in
-          let get_params p : VarSet.t =
-            List.filter (is_param p) params
+          let params : VarSet.t =
+            List.filter (is_param is_int_type) func_params
               |> List.map parse_var.run
               |> VarSet.of_list
           in
-          let get_shared_params : VarSet.t =
-            List.filter (fun l -> is_param is_array_type l && is_shared l) params
-              |> List.map parse_var.run
-              |> VarSet.of_list
+          let parse_array a : variable * Proto.array_t =
+            let open Proto in
+            let k = parse_var.run a in
+            let v = if is_shared a then
+              SharedMemory (match get_array_length a with
+              | Some v ->
+                List.iter (fun x -> string_of_int x |> prerr_endline) v;
+                Size v
+              | None -> Unknown
+              )
+            else GlobalMemory
+            in (k, v)
+          in
+          let arrays : Proto.array_t VarMap.t =
+            List.filter (is_param is_array_type) func_params
+              |> List.map parse_array
+              |> list_to_var_map
           in
           let body : stmt = match body with
           | `Null -> Block []
@@ -631,9 +652,8 @@ let parse_kernel = make "kernel" (fun k ->
           Some {
             p_kernel_name = name;
             p_kernel_pre = parse_bexp.run pre;
-            p_kernel_locations = get_params is_array_type;
-            p_kernel_shared_locations = get_shared_params;
-            p_kernel_params = get_params is_int_type;
+            p_kernel_arrays = arrays;
+            p_kernel_params = params;
             p_kernel_code = body;
           }
         end
