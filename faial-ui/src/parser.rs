@@ -117,7 +117,11 @@ impl TryFrom<Sexp> for Model {
             Sexp::List(model) => {
                 let mut result = HashMap::new();
                 let mut it = model.iter();
-                it.next().unwrap();
+                if let Some(Sexp::Atom(Atom::S(tag))) = model.get(0) {
+                    if tag == "model" {
+                        it.next().unwrap();
+                    }
+                }
                 for elem in it {
                     match Decl::try_from(elem.clone()) {
                         Ok(d) => { result.insert(d.name, d.value); ()},
@@ -205,7 +209,8 @@ impl TryFrom<Sexp> for CommandResponse {
                             _ => Err(format!("Unexpected tag: {}", tag)),
                         }
                     },
-                    _ => Err(format!("Unexpected tag: {:?}", row)),
+                    _ => Ok(CommandResponse::Model(Model::try_from(row)?)),
+//                    _ => Err(format!("Unexpected tag: {:?}", row)),
                 }
             },
             _ => Err(format!("Unexpected sexp: {:?}", row)),
@@ -220,6 +225,24 @@ fn test_decision_parse_one() {
     assert_eq!(CommandResponse::try_from(sexp::parse("unsat").unwrap()), Ok(CommandResponse::Unsat()));
     let l = r#"
 (model
+  (define-fun $T1$mode () Int
+    1)
+  (define-fun $T1$idx$0 () Int
+    0)
+  (define-fun $T2$mode () Int
+    1)
+  (define-fun $T2$idx$0 () Int
+    0)
+  (define-fun SIZE () Int
+    0)
+    )
+"#;
+    match CommandResponse::try_from(sexp::parse(l).unwrap()) {
+        Ok(CommandResponse::Model(_)) => {},
+        _ => assert!(false),
+    }
+    let l = r#"
+(
   (define-fun $T1$mode () Int
     1)
   (define-fun $T1$idx$0 () Int
