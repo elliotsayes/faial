@@ -297,7 +297,7 @@ let stmt_to_s: stmt -> PPrint.t list =
 let kernel_to_s (k:p_kernel) : PPrint.t list =
   let open PPrint in
   [
-    Line ("arrays: " ^ (var_map_to_set k.p_kernel_arrays |> var_set_to_s) ^ ";");
+    Line ("arrays: " ^ array_map_to_s k.p_kernel_arrays ^ ";");
     Line ("globals: " ^ var_set_to_s k.p_kernel_params ^ ";");
     Line ("pre: " ^ b_to_s k.p_kernel_pre ^";");
     Line "";

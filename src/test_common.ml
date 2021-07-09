@@ -9,9 +9,12 @@ let tests = "ends_with" >::: [
     let ex3 = "unsigned int [8][8] *" in
     assert (rsplit ' ' ex1 = Some ("int", "*"));
     assert (parse_dim "[8][8]" = [8;8]);
-    assert (parse_array_opt ex1 = None);
-    assert (parse_array_opt ex2 = None);
-    assert (parse_array_opt ex3 = Some [8; 8]);
+    assert (parse_array_dim_opt ex1 = None);
+    assert (parse_array_dim_opt ex2 = None);
+    assert (parse_array_dim_opt ex3 = Some [8; 8]);
+    assert (parse_array_type_opt ex1 = Some ["int"]);
+    assert (parse_array_type_opt ex2 = None);
+    assert (parse_array_type_opt ex3 = Some ["unsigned"; "init"]);
     ()
   );
   "app_rev" >:: (fun _ ->

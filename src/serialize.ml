@@ -328,4 +328,23 @@ module PPrint = struct
     |> List.map ident
     |> Common.join ", "
 
+  let array_to_s (a:array_t) : string =
+    let ty = a.array_type |> Common.join " " in
+    let ty = if ty = "" then "" else ty ^ "  "
+    in
+    let size =
+      List.map string_of_int a.array_size
+      |> Common.join ", "
+    in
+    let h = match a.array_hierarchy with
+    | SharedMemory -> "shared"
+    | GlobalMemory -> "global"
+    in
+    h ^ " " ^ ty ^ "[" ^ size ^ "]"
+
+  let array_map_to_s (vs:array_t VarMap.t) : string =
+    VarMap.bindings vs
+    |> List.map (fun (k,v) -> k.var_name ^ ": " ^ array_to_s v)
+    |> Common.join ", "
+
 end

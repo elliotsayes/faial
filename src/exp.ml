@@ -343,3 +343,27 @@ type acc_expr = variable * access [@@deriving hash, compare]
 
 let distinct (idx:variable list) : bexp =
   b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)
+
+
+(* ------------------------------------------- *)
+
+type hierarchy_t =
+  | SharedMemory
+  | GlobalMemory
+
+type array_t = {
+  array_hierarchy: hierarchy_t;
+  array_size: int list; (* Empty means unknown *)
+  array_type: string list; (* Empty means unknown *)
+}
+
+let mk_array = {
+  array_hierarchy = SharedMemory;
+  array_size = [];
+  array_type = [];
+}
+
+let mk_array_map (vs:variable list) : array_t VarMap.t =
+  vs
+  |> List.map (fun x -> (x, mk_array))
+  |> list_to_var_map

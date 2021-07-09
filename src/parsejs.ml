@@ -126,19 +126,31 @@ let is_shared o : bool =
   | `Bool true -> true
   | _ -> false
 
-let get_array_length j : (int list) option =
+let get_array_length j : int list =
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
-  match member "qualType" (member "type" j) with
-  | `String x -> parse_array_opt x
+  let x = match member "qualType" (member "type" j) with
+  | `String x -> parse_array_dim_opt x
   | _ -> None
+  in match x with
+  | Some x -> x
+  | None -> []
+
+let get_array_type j : string list =
+  let open Yojson.Basic in
+  let open Yojson.Basic.Util in
+  let x = match member "qualType" (member "type" j) with
+  | `String x -> parse_array_type_opt x
+  | _ -> None
+  in match x with
+  | Some x -> x
+  | None -> []
 
 let is_array_type o : bool =
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
   match member "qualType" o with
-  | `String x ->
-    ends_with x " *"
+  | `String x -> ends_with x "*"
   | _ -> false
 
 let is_int_type o =
@@ -627,23 +639,19 @@ let parse_kernel = make "kernel" (fun k ->
               |> List.map parse_var.run
               |> VarSet.of_list
           in
-          let parse_array a : variable * Proto.array_t =
-            let open Proto in
-            let k = parse_var.run a in
-            let v = if is_shared a then
-              SharedMemory (match get_array_length a with
-              | Some v ->
-                List.iter (fun x -> string_of_int x |> prerr_endline) v;
-                Size v
-              | None -> Unknown
-              )
-            else GlobalMemory
-            in (k, v)
-          in
-          let arrays : Proto.array_t VarMap.t =
+          let arrays : array_t VarMap.t =
+            let parse_array a : variable * array_t =
+              let open Proto in
+              let k = parse_var.run a in
+              (k, {
+                array_hierarchy = if is_shared a then SharedMemory else GlobalMemory;
+                array_size = get_array_length a;
+                array_type = get_array_type a;
+              })
+            in
             List.filter (is_param is_array_type) func_params
-              |> List.map parse_array
-              |> list_to_var_map
+            |> List.map parse_array
+            |> list_to_var_map
           in
           let body : stmt = match body with
           | `Null -> Block []

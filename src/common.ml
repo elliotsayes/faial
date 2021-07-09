@@ -48,7 +48,19 @@ let parse_dim (x:string) : int list =
   |>
   List.map int_of_string
 
-let parse_array_opt (x:string) : int list option =
+let parse_array_type_opt (x:string) : string list option =
+  match rsplit ' ' x with
+  | Some (x, "*") ->
+    let x = begin match rsplit '[' x with
+    | Some (x, _) -> x
+    | None -> x
+    end in
+    Some (String.split_on_char ' ' x
+      |> List.filter (fun x -> String.length x > 0)
+    )
+  | _ -> None
+
+let parse_array_dim_opt (x:string) : int list option =
   match rsplit ' ' x with
   | Some (x, "*") ->
     begin match rsplit ' ' x with

@@ -14,14 +14,6 @@ type inst =
 (* The source program *)
 type prog = inst list [@@deriving hash, compare]
 
-type size_t =
-  | Unknown
-  | Size of int list
-
-type array_t =
-  | SharedMemory of size_t
-  | GlobalMemory
-
 type 'a kernel = {
   (* The kernel name *)
   kernel_name : string;
@@ -38,18 +30,14 @@ type 'a kernel = {
 }
 
 let kernel_shared_arrays (k:'a kernel) : VarSet.t =
-  VarMap.filter (fun k v ->
-    match v with
-    | SharedMemory _ -> true
-    | GlobalMemory -> false
-  ) k.kernel_arrays |> var_map_to_set
+  k.kernel_arrays
+  |> VarMap.filter (fun _ v -> v.array_hierarchy = SharedMemory)
+  |> var_map_to_set
 
 let kernel_global_arrays (k:'a kernel) : VarSet.t =
-  VarMap.filter (fun k v ->
-    match v with
-    | SharedMemory _ -> false
-    | GlobalMemory -> true
-  ) k.kernel_arrays |> var_map_to_set
+  k.kernel_arrays
+  |> VarMap.filter (fun _ v -> v.array_hierarchy = GlobalMemory)
+  |> var_map_to_set
 
 let kernel_constants (k:prog kernel) =
   let rec constants (b: bexp) (kvs:(string*int) list) : (string*int) list =
@@ -209,8 +197,7 @@ let print_p (p: prog) : unit =
 let kernel_to_s (f:'a -> PPrint.t list) (k:'a kernel) : PPrint.t list =
   let open PPrint in
   [
-    (* XXX: print out modifiers *)
-    Line ("arrays: " ^ (var_map_to_set k.kernel_arrays |> var_set_to_s) ^ ";");
+    Line ("arrays: " ^ array_map_to_s k.kernel_arrays ^ ";");
     Line ("globals: " ^ var_set_to_s k.kernel_global_variables ^ ";");
     Line ("locals: " ^ var_set_to_s k.kernel_local_variables ^ ";");
     Line ("invariant: " ^ b_to_s k.kernel_pre ^";");

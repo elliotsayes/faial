@@ -168,7 +168,7 @@ kernel:
       let gs = List.map snd gs in
       {
         kernel_name = "main";
-        kernel_arrays = l1 |> List.map (fun x -> (x, GlobalMemory)) |> list_to_var_map;
+        kernel_arrays = l1 |> mk_array_map;
         kernel_pre = pre;
         kernel_local_variables = ls |> VarSet.of_list;
         kernel_global_variables = gs |> VarSet.of_list;
@@ -185,7 +185,7 @@ kernel:
       {
         kernel_name = "main";
         kernel_pre = pre;
-        kernel_arrays = l1 |> List.map (fun x -> (x, GlobalMemory)) |> list_to_var_map;
+        kernel_arrays = l1 |> mk_array_map;
         kernel_local_variables = ls |> VarSet.of_list;
         kernel_global_variables = gs |> VarSet.of_list;
         kernel_code = p;
