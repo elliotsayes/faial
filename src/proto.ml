@@ -37,6 +37,19 @@ type 'a kernel = {
   kernel_code: 'a;
 }
 
+let kernel_shared_arrays (k:'a kernel) : VarSet.t =
+  VarMap.filter (fun k v ->
+    match v with
+    | SharedMemory _ -> true
+    | GlobalMemory -> false
+  ) k.kernel_arrays |> var_map_to_set
+
+let kernel_global_arrays (k:'a kernel) : VarSet.t =
+  VarMap.filter (fun k v ->
+    match v with
+    | SharedMemory _ -> false
+    | GlobalMemory -> true
+  ) k.kernel_arrays |> var_map_to_set
 
 let kernel_constants (k:prog kernel) =
   let rec constants (b: bexp) (kvs:(string*int) list) : (string*int) list =

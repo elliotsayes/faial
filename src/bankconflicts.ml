@@ -239,9 +239,10 @@ let _ =
       let ks = i_kernel_to_p_kernel k in
       Printf.printf "L: Found %d kernels.\n" (List.length ks);
       ks |> List.iter (fun k ->
+        let shared = kernel_shared_arrays k in
         Printf.printf "L: Kernel %s, has %d shared arrays.\n"
           k.kernel_name
-          (VarSet.cardinal k.kernel_shared_locations)
+          (shared |> VarSet.cardinal)
         ;
         VarSet.iter (fun v ->
           let accs = proto_to_acc v (fun x -> x) k.kernel_code in
@@ -264,7 +265,7 @@ let _ =
               )
             )
           ) accs
-        ) k.kernel_shared_locations
+        ) shared
       )
     )
   with
