@@ -24,6 +24,7 @@ build-tests:
 	$(OCB) test_locsplit.native
 	$(OCB) test_streamutil.native
 	$(OCB) test_predicates.native
+	$(OCB) test_parsejs.native
 
 test: build-tests
 	$(BUILD)/test_imp.native
@@ -31,6 +32,7 @@ test: build-tests
 	$(BUILD)/test_streamutil.native
 	$(BUILD)/test_locsplit.native
 	$(BUILD)/test_predicates.native
+	$(BUILD)/test_parsejs.native
 
 ui:
 	(cd faial-ui/ && cargo b --release)

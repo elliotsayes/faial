@@ -108,7 +108,11 @@ let main_t =
     in
     let sets = List.map on_kv sets |> flatten_opt in
     try
-      let ks = if use_json
+      let fname = match fname with
+      | Some x -> x
+      | None -> "<STDIN>"
+      in
+      let ks : prog kernel list = if use_json
         then begin
           safe_run (fun () ->
             let ks = Yojson.Basic.from_channel ic
@@ -122,10 +126,6 @@ let main_t =
               List.map Imp.compile ks
           )
         end else
-          let fname = match fname with
-          | Some x -> x
-          | None -> "<STDIN>"
-          in
           [v2_parse fname ic]
       in
       if List.length ks = 0 && cmd != Parse then begin
@@ -146,7 +146,7 @@ let main_t =
           ()
         ;
         try
-          let provenance = false in
+          let provenance = true in
           let key_vals =
             sets @ Proto.kernel_constants k
             |> List.filter (fun (x,_) ->

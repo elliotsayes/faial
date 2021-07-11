@@ -14,7 +14,7 @@ let tests = "ends_with" >::: [
     assert (parse_array_dim_opt ex3 = Some [8; 8]);
     assert (parse_array_type_opt ex1 = Some ["int"]);
     assert (parse_array_type_opt ex2 = None);
-    assert (parse_array_type_opt ex3 = Some ["unsigned"; "init"]);
+    assert (parse_array_type_opt ex3 = Some ["unsigned"; "int"]);
     ()
   );
   "app_rev" >:: (fun _ ->

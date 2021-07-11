@@ -5,7 +5,7 @@ open Exp
 
 let generate_fresh_name (x:variable) (xs:VarSet.t) : variable =
   let rec do_fresh_name x n =
-    let new_x = {x with var_name = x.var_name ^ string_of_int n } in
+    let new_x = var_set_name x (var_name x ^ string_of_int n) in
     if VarSet.mem new_x xs
     then do_fresh_name x (n + 1)
     else new_x

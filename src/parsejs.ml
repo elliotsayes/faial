@@ -16,7 +16,7 @@ let parse_error (b:Buffer.t) msg data =
   raise (Common.ParseError b)
 
 let abort_error msg data =
-  raise (msg ^ "\n" ^ pp_js data |> Common.mk_parse_error_s)
+  raise (msg ^ "\n" ^ pp_js data ^ "\n"|> Common.mk_parse_error_s)
 
 let call msg f data =
   let o = (try f data with Common.ParseError b -> parse_error b msg data) in
@@ -28,6 +28,8 @@ let is_some o =
   match o with
   | Some _ -> true
   | None -> false
+
+type 'a builder = Yojson.Basic.t -> 'a option
 
 type 'a parser = {is_valid: Yojson.Basic.t -> bool; run: Yojson.Basic.t -> 'a}
 
@@ -103,7 +105,31 @@ let get_fields fields (j:Yojson.Basic.t) : Yojson.Basic.t list  =
 
 type 'a choose_one_of_handler = string list * (Yojson.Basic.t list -> 'a option)
 
-let choose_one_of (l:(string * 'a choose_one_of_handler) list) (j:Yojson.Basic.t) : 'a option =
+let b_either
+  (f1: 'a builder)
+  (f2: 'a builder)
+  : 'a builder
+=
+  fun j ->
+  match f1 j with
+  | Some r -> Some r
+  | None -> f2 j
+
+let b_map
+  (f: 'a -> 'b)
+  (a: 'a builder)
+  :
+  'b builder
+=
+  fun j ->
+  match a j with
+  | Some o -> Some (f o)
+  | None -> None
+
+let choose_one_of (l:(string * 'a choose_one_of_handler) list)
+  : 'a builder
+  =
+  fun j ->
   match get_kind_res j with
   | Result.Ok k ->
     List.find_map (fun (k', ((fields:string list), kont)) ->
@@ -111,12 +137,6 @@ let choose_one_of (l:(string * 'a choose_one_of_handler) list) (j:Yojson.Basic.t
         get_fields fields j |> kont
       else None
     ) l
-    (* begin match List.assoc_opt k l with
-    | Some ((fields:string list), kont) -> get_fields fields j |> kont
-    | None ->
-        let keys = List.split l |> fst |> join ", " in
-        abort_error ("Expecting an AST 'kind' in [" ^ keys ^ "], but got:") j
-    end *)
   | _ -> None
 
 let is_shared o : bool =
@@ -186,27 +206,88 @@ let binary_operator (f:Yojson.Basic.t -> Yojson.Basic.t -> Yojson.Basic.t -> 'a 
     | _ -> None
   )
 
-let parse_var = make "variable" (fun j ->
+let get_fields fields f j =
+  match j with
+  | `Assoc j ->
+    Common.map_opt (fun field -> List.assoc_opt field j) fields
+    |> f
+  | _ -> None
+
+let has_type_choice types j =
+  let open Yojson.Basic in
+  let open Yojson.Basic.Util in
+  match j with
+  | `Assoc _ ->
+    types
+    |> List.map (fun x -> `String x)
+    |> List.mem (member "kind" j)
+  | _ -> false
+
+let rec build_position : Sourceloc.position builder =
+  fun j ->
+    let open Sourceloc in
     let open Yojson.Basic in
-    choose_one_of [
-      "NonTypeTemplateParmDecl", (["name"],
-        function [`String x] -> Some (var_make x) | _ -> None
-      );
-      "FunctionDecl", (["name"],
-        function [`String x] -> Some (var_make x) | _ -> None
-      );
-      "VarDecl", (["name"],
-        function [`String x] -> Some (var_make x) | _ -> None
-      );
-      "ParmVarDecl", (["name"],
-        function [`String x] -> Some (var_make x) | _ -> None
-      );
-    ] j
+    let open Yojson.Basic.Util in
+    j |> get_fields ["line"; "col"; "file"] (function
+    | [`Int line; `Int col] -> Some {
+        pos_line = line;
+        pos_column = col;
+        pos_filename = "";
+      }
+    | [`Int line; `Int col; `String filename] -> Some {
+        pos_line = line;
+        pos_column = col;
+        pos_filename = filename
+      }
+    | _ ->
+      get_fields ["expansionLoc"] (function
+      | [j] -> build_position j
+      | _ -> None
+      ) j
+    )
+
+
+let parse_position : Sourceloc.position parser =
+  make "position" build_position
+
+let build_loc : Sourceloc.location builder =
+  fun j ->
+    let open Sourceloc in
+    let open Yojson.Basic in
+    let open Yojson.Basic.Util in
+    j |> get_fields ["begin"; "end"] (function
+    | [s; e] ->
+      Some {
+        loc_start = parse_position.run s;
+        loc_end = parse_position.run e;
+      }
+    | _ -> None
   )
 
-let parse_nrel_opt m =
+let parse_loc : Sourceloc.location parser = make "location" build_loc
+
+let build_var : variable builder =
+  fun j ->
+    if has_type_choice [
+      "NonTypeTemplateParmDecl";
+      "FunctionDecl";
+      "VarDecl";
+      "ParmVarDecl";
+    ] j then (
+      j
+      |> get_fields ["name"; "range"] (function
+      | [`String name; l] -> Some (LocVariable (parse_loc.run l, name))
+      | [`String name] -> Some (Variable name)
+      | _ -> None
+      )
+    ) else None
+
+let parse_var : variable parser = make "variable" build_var
+
+let parse_nrel_opt : nrel builder =
+  fun j ->
   let open Yojson.Basic in
-  match m with
+  match j with
   | `String "==" -> Some NEq
   | `String "!=" -> Some NNeq
   | `String "<=" -> Some NLe
@@ -215,9 +296,9 @@ let parse_nrel_opt m =
   | `String ">"  -> Some NGt
   | _ -> None
 
-let parse_nrel = make "nrel" parse_nrel_opt
+let parse_nrel : nrel parser = make "nrel" parse_nrel_opt
 
-let parse_brel = make "brel" (fun m ->
+let parse_brel : brel parser = make "brel" (fun m ->
   let open Yojson.Basic in
   match m with
   | `String "||" -> Some BOr
@@ -236,21 +317,14 @@ let do_parse f k msg =
   | Some p -> p
   | None -> abort_error msg k
 
-let rec parse_nexp n : nexp option =
+let rec build_nexp : nexp builder =
   let open Yojson.Basic in
-  choose_one_of [
-    "VarDecl", (["name"],
-      function [`String x] -> Some (Var (var_make x)) | _ -> None
-    );
-    "ParmVarDecl", (["name"],
-      function [`String x] -> Some (Var (var_make x)) | _ -> None
-    );
-    "NonTypeTemplateParmDecl", (["name"],
-      function [`String x] -> Some (Var (var_make x)) | _ -> None
-    );
+  (fun j ->
+  b_either (build_var |> b_map (fun x -> Var x))
+  (choose_one_of [
     binary_operator (fun o n1 n2 ->
-      let n1 = do_parse parse_nexp n1 "nbin.lhs" in
-      let n2 = do_parse parse_nexp n2 "nbin.rhs" in
+      let n1 = do_parse build_nexp n1 "nbin.lhs" in
+      let n2 = do_parse build_nexp n2 "nbin.rhs" in
       Some (n_bin (parse_nbin.run o) n1 n2)
     );
     "FloatingLiteral", (["value"], function
@@ -263,7 +337,7 @@ let rec parse_nexp n : nexp option =
     "UnaryOperator", (["subExpr"; "opcode"], function
       | [n; `String "~"] ->
         prerr_endline ("WARNING: ignoring bitwise negation");
-        parse_nexp n
+        build_nexp n
       | _ -> None
     );
     "IntegerLiteral", (["value"], function
@@ -277,9 +351,9 @@ let rec parse_nexp n : nexp option =
     );
     "ConditionalOperator", (["cond"; "thenExpr"; "elseExpr"], function
       | [b; then_expr; else_expr] ->
-        bind (parse_bexp b) (fun b ->
-          bind (parse_nexp then_expr) (fun n1 ->
-            bind (parse_nexp else_expr) (fun n2 ->
+        bind (build_bexp b) (fun b ->
+          bind (build_nexp then_expr) (fun n1 ->
+            bind (build_nexp else_expr) (fun n2 ->
               Some (n_if b n1 n2)
             )
           )
@@ -313,37 +387,38 @@ let rec parse_nexp n : nexp option =
     "CallExpr", (["func"; "args"], function
     | [f; `List l] ->
       let x = parse_var.run f in
-      begin match x.var_name, l with
+      begin match (var_name x), l with
       | "min", [n1;n2] ->
-        let n1 = do_parse parse_nexp n1 "min.lhs" in
-        let n2 = do_parse parse_nexp n2 "min.rhs" in
+        let n1 = do_parse build_nexp n1 "min.lhs" in
+        let n2 = do_parse build_nexp n2 "min.rhs" in
         Some (n_if (n_lt n1 n2) n1 n2)
       | "max", [n1;n2] ->
-        let n1 = do_parse parse_nexp n1 "max.lhs" in
-        let n2 = do_parse parse_nexp n2 "max.rhs" in
+        let n1 = do_parse build_nexp n1 "max.lhs" in
+        let n2 = do_parse build_nexp n2 "max.rhs" in
         Some (n_if (n_gt n1 n2) n1 n2)
       | _, _ ->
-        prerr_endline ("WARNING: rewriting function call to '" ^ x.var_name ^ "' into 0");
+        prerr_endline ("WARNING: rewriting function call to '" ^ var_name x ^ "' into 0");
         Some (Num 0)
       end
     | _ -> None
     );
-  ] n
+  ]) j)
 
-and parse_bexp b : bexp option =
+and build_bexp : bexp builder =
   let open Yojson.Basic in
+  fun j ->
   choose_one_of [
     binary_operator (fun o e1 e2 ->
         match parse_nrel_opt o with
         | Some n ->
-          bind (parse_nexp e1) (fun n1 ->
-            bind (parse_nexp e2) (fun n2 ->
+          bind (build_nexp e1) (fun n1 ->
+            bind (build_nexp e2) (fun n2 ->
               Some (n_rel n n1 n2)
             )
           )
         | None ->
-          bind (parse_bexp e1) (fun b1 ->
-            bind (parse_bexp e2) (fun b2 ->
+          bind (build_bexp e1) (fun b1 ->
+            bind (build_bexp e2) (fun b2 ->
               Some (b_rel (parse_brel.run o) b1 b2)))
     );
     "BinaryOperator", (["opcode"], function
@@ -360,12 +435,12 @@ and parse_bexp b : bexp option =
     );
     "UnaryOperator", (["subExpr"; "opcode"], function
       | [b; `String "!"] ->
-        bind (parse_bexp b) (fun b -> Some (b_not b))
+        bind (build_bexp b) (fun b -> Some (b_not b))
       | _ -> None
     );
     "PredicateExpr", (["subExpr"; "opcode"], function
       | [n; `String opcode] ->
-        bind (parse_nexp n) (fun n ->
+        bind (build_nexp n) (fun n ->
           Some (Pred (opcode, n))
         )
       | _ -> None
@@ -406,7 +481,7 @@ and parse_bexp b : bexp option =
     "CallExpr", (["func"], function
     | [f] ->
       let x = parse_var.run f in
-      prerr_endline ("WARNING: rewriting boolean function call to '" ^ x.var_name ^ "' into 0");
+      prerr_endline ("WARNING: rewriting boolean function call to '" ^ var_name x ^ "' into 0");
       Some (Bool false)
     | _ -> None
     );
@@ -421,11 +496,11 @@ and parse_bexp b : bexp option =
       Some (Bool true)
     | _ -> None
     );
-  ] b
+  ] j
 
-let parse_nexp = make "nexp" parse_nexp
+let parse_nexp = make "nexp" build_nexp
 
-let parse_bexp = make "bexp" parse_bexp
+let parse_bexp = make "bexp" build_bexp
 
 let parse_range_kind (n:nexp) =
   let open Yojson.Basic in
@@ -439,11 +514,13 @@ let parse_range_kind (n:nexp) =
 let parse_range (x:variable) = make "range" (fun s ->
     choose_one_of [
       "RangeExpr", (["init"; "upper_bound"; "step"; "opcode"], function
-      | [init; ub; step; k] -> Some {
+      | [init; ub; step; k] ->
+        let n_parse = parse_nexp.run in
+        Some {
           range_var = x;
-          range_lower_bound = parse_nexp.run init;
-          range_upper_bound = parse_nexp.run ub;
-          range_step = (parse_range_kind (parse_nexp.run step)).run k;
+          range_lower_bound = n_parse init;
+          range_upper_bound = n_parse ub;
+          range_step = (parse_range_kind (n_parse step)).run k;
         }
       | _ -> None
       )
@@ -463,33 +540,33 @@ let is_var o =
   let k = get_kind_res o in
   k = Result.Ok "VarDecl" || k = Result.Ok "ParmVarDecl"
 
-let j_to_var j =
-  let open Yojson.Basic.Util in
-  member "name" j |> to_string |> var_make
-
-let rec parse_stmt j =
+let rec build_stmt : stmt builder =
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
-  let do_parse_prog = do_parse parse_stmt in
-
+  fun j ->
+  let s_parse = do_parse build_stmt in
+  let n_parse = parse_nexp.run in
+  let b_parse = parse_bexp.run in
+  let v_parse = parse_var.run in
   choose_one_of [
     "SyncStmt", ([], fun _ -> Some (Inst ISync));
     "AccessStmt", (["location"; "mode"; "index"], function
-      | [`String loc; m; `List idx] -> Some (Inst (IAcc (var_make loc, {
-          access_index = List.map parse_nexp.run idx;
+      | [x; m; `List idx] ->
+        Some (Inst (IAcc (v_parse x, {
           access_mode = parse_mode.run m;
+          access_index = List.map n_parse idx;
         })))
       | _ -> None);
     "AssertStmt", (["cond"], function
-      | [b] -> Some (Inst (IAssert (parse_bexp.run b)))
+      | [b] -> Some (Inst (IAssert (b_parse b)))
       | _ -> None
     );
     "LocationAliasStmt", (["source"; "target"; "offset"], function
       | [src; target; offset] ->
         Some (LocationAlias {
-          alias_source = parse_var.run src;
-          alias_target = parse_var.run target;
-          alias_offset = parse_nexp.run offset;
+          alias_source = v_parse src;
+          alias_target = v_parse target;
+          alias_offset = n_parse offset;
         })
       | _ -> None
     );
@@ -499,31 +576,31 @@ let rec parse_stmt j =
           let msg = "When parsing IfStmt, could not parse branch " ^ k in
           match member k j with
             | `Assoc _ as o ->
-              do_parse_prog o k
+              s_parse o k
             | `Null -> Block []
             | _ -> abort_error msg j
         in
-        let cond = parse_bexp.run cond in
+        let cond = b_parse cond in
         let then_stmt = get_branch j "thenStmt" in
         let else_stmt = get_branch j "elseStmt" in
         Some (s_if cond then_stmt else_stmt)
       | _ -> None
     );
     "CompoundStmt", (["inner"], function
-      | [`Assoc _ as i] -> parse_stmt i
+      | [`Assoc _ as i] -> build_stmt i
       | [`List l] ->
         let on_elem (idx, j) : stmt =
           let idx = string_of_int (idx + 1) in
           let msg = "When parsing CompoundStmt, could not parse #" ^ idx in
-          do_parse_prog j msg
+          s_parse j msg
         in
         Some (enumerate l |> List.map on_elem |> s_block)
       | _ -> None
     );
     "ForEachStmt", (["var"; "range"; "body"], function
       | [v; r; body] ->
-        bind (parse_stmt body) (fun body ->
-          let x = parse_var.run v in
+        bind (build_stmt body) (fun body ->
+          let x = v_parse v in
           Some (s_for ((parse_range x).run r) body)
         )
       | _ -> None
@@ -531,10 +608,10 @@ let rec parse_stmt j =
     "DeclStmt", (["inner"], function
       | [`List [(`Assoc _ ) as j] ] when is_var j && has_type j is_int_type ->
         let o = match member "inner" j with
-          | `List [e] -> Some (parse_nexp.run e)
+          | `List [e] -> Some (n_parse e)
           | _ -> None
         in
-        Some (Decl (j_to_var j, Local, o))
+        Some (Decl (v_parse j, Local, o))
       | _ ->
         (* XXX: Silently ignore any unrecognized declaration*)
         Some (Block [])
@@ -553,28 +630,28 @@ let rec parse_stmt j =
     );
     "BinaryOperator", (["lhs"; "rhs"; "type"; "opcode"], function
       | [lhs; rhs; ty; `String "="] when is_var lhs && is_int_type ty ->
-         Some (Decl (j_to_var lhs, Local, Some (parse_nexp.run rhs)))
+         Some (Decl (v_parse lhs, Local, Some (n_parse rhs)))
       | [_; _; _; _] ->
          Some (Block [])
       | _ -> None
     );
     "DoStmt", (["body"], function
       | [body] ->
-        bind (parse_stmt body) (fun body ->
+        bind (build_stmt body) (fun body ->
           Some (s_loop body)
         )
       | _ -> None
     );
     "WhileStmt", (["body"], function
       | [body] ->
-        bind (parse_stmt body) (fun body ->
+        bind (build_stmt body) (fun body ->
           Some (s_loop body)
         )
       | _ -> None
     );
     "ForStmt", (["body"], function
       | [body] ->
-        bind (parse_stmt body) (fun body ->
+        bind (build_stmt body) (fun body ->
           Some (s_loop body)
         )
       | _ -> None
@@ -615,11 +692,14 @@ let rec parse_stmt j =
     );
   ] j
 
-let parse_stmt = make "statement" parse_stmt
+let parse_stmt = make "statement" build_stmt
 
 let parse_kernel = make "kernel" (fun k ->
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
+  let v_parse = parse_var.run in
+  let b_parse = parse_bexp.run in
+  let s_parse = parse_stmt.run in
   choose_one_of [
     "FunctionDecl", (["body"; "pre"; "params"; "name"], function
       | [body; pre; `List func_params; `String name] ->
@@ -636,13 +716,13 @@ let parse_kernel = make "kernel" (fun k ->
           in
           let params : VarSet.t =
             List.filter (is_param is_int_type) func_params
-              |> List.map parse_var.run
+              |> List.map v_parse
               |> VarSet.of_list
           in
           let arrays : array_t VarMap.t =
             let parse_array a : variable * array_t =
               let open Proto in
-              let k = parse_var.run a in
+              let k = v_parse a in
               (k, {
                 array_hierarchy = if is_shared a then SharedMemory else GlobalMemory;
                 array_size = get_array_length a;
@@ -655,11 +735,11 @@ let parse_kernel = make "kernel" (fun k ->
           in
           let body : stmt = match body with
           | `Null -> Block []
-          | _ -> parse_stmt.run body
+          | _ -> s_parse body
           in
           Some {
             p_kernel_name = name;
-            p_kernel_pre = parse_bexp.run pre;
+            p_kernel_pre = b_parse pre;
             p_kernel_arrays = arrays;
             p_kernel_params = params;
             p_kernel_code = body;

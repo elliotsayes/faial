@@ -44,7 +44,7 @@ module Make (S:SUBST) = struct
             let exp = PPrint.n_to_s n in
             let repl = S.to_string s in
             failwith (
-              "Error: cannot replace thread-local variable " ^ x.var_name ^
+              "Error: cannot replace thread-local variable " ^ var_name x ^
               " by constant\n" ^
               "substitution(expression=" ^ exp ^ ", replacement=" ^ repl ^ ")"
             )
@@ -94,7 +94,7 @@ module SubstPair =
     let make (x, v) : t = (x, v)
     let find (x, v) y = if var_equal x y then Some v else None
     let remove (x, v) y = if var_equal x y then None else Some (x, v)
-    let to_string (x, v) = "[" ^ x.var_name ^ "=" ^ PPrint.n_to_s v ^ "]"
+    let to_string (x, v) = "[" ^ var_name x ^ "=" ^ PPrint.n_to_s v ^ "]"
   end
 
 module ReplacePair = Make(SubstPair)
@@ -105,10 +105,10 @@ module SubstAssoc =
   struct
     type t = (string, nexp) Hashtbl.t
     let make kvs = Common.hashtbl_from_list kvs
-    let find ht k = Hashtbl.find_opt ht k.var_name
+    let find ht k = Hashtbl.find_opt ht (var_name k)
     let remove ht k =
       let ht = Hashtbl.copy ht in
-      Hashtbl.remove ht k.var_name;
+      Hashtbl.remove ht (var_name k);
       if Hashtbl.length ht = 0 then None
       else Some ht
     let to_string ht =

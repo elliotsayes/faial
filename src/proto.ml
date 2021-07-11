@@ -45,7 +45,7 @@ let kernel_constants (k:prog kernel) =
     | Bool _ -> kvs
     | NRel (NEq, Var x, Num n)
     | NRel (NEq, Num n, Var x) ->
-      (x.var_name, n) :: kvs
+      (var_name x, n) :: kvs
     | BRel (BAnd, b1, b2) ->
       constants b1 kvs |> constants b2
     | BNot _

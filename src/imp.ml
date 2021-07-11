@@ -12,7 +12,7 @@ type access_expr = {access_index: nexp list; access_mode: mode}
 type instruction =
 | ISync
 | IAssert of bexp
-| IAcc of variable * access
+| IAcc of acc_expr
 
 type alias_expr = {alias_source: variable; alias_target: variable; alias_offset: nexp}
 
@@ -260,17 +260,17 @@ let stmt_to_s: stmt -> PPrint.t list =
     function
     | Inst ISync -> [Line "sync;"]
     | Inst (IAssert b) -> [Line ("assert (" ^ (b_to_s b) ^ ")")]
-    | Inst (IAcc (x,a)) -> acc_expr_to_s (x,a)
+    | Inst (IAcc e) -> acc_expr_to_s e
     | Block l -> [Block (List.map stmt_to_s l |> List.flatten)]
     | LocationAlias l ->
       [Line (
-        l.alias_target.var_name ^ " = " ^
-        l.alias_source.var_name ^ " + " ^
+        var_name l.alias_target ^ " = " ^
+        var_name l.alias_source ^ " + " ^
         n_to_s l.alias_offset ^ ";"
       )]
     | Decl (x, l, n) -> [Line (
         (match l with | Global -> "global" | Local ->  "local") ^ " " ^
-        x.var_name ^
+        var_name x ^
         (match n with | Some n -> " = " ^ n_to_s n | None -> "") ^
         ";"
       )]
@@ -364,7 +364,7 @@ let normalize_deps (kvs:(variable * nexp) list) : (variable * nexp) list =
     let no_deps_keys = List.map fst no_deps in
     let no_deps : SubstAssoc.t =
       no_deps_keys
-      |> List.map (fun x -> (x.var_name, Hashtbl.find kvs x))
+      |> List.map (fun x -> (var_name x, Hashtbl.find kvs x))
       |> SubstAssoc.make
     in
     let used_no_deps : VarSet.t =
@@ -413,7 +413,7 @@ let compile (k:p_kernel) : prog kernel =
   let p = normalize_variables k.p_kernel_code (VarSet.union locals globals) in
   let kvs : SubstAssoc.t = get_var_binders p []
     |> normalize_deps
-    |> List.map (fun (k,v) -> (k.var_name, v))
+    |> List.map (fun (k,v) -> (var_name k, v))
     |> SubstAssoc.make
   in
   let locals, globals = get_variable_decls p (locals, globals)  in

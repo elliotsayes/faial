@@ -85,6 +85,13 @@ let sequence (stream1:'a stream) (stream2:'a stream) : 'a stream =
         stream2.stream_run f
   }
 
+let lazy_sequence (stream1:'a stream) (stream2:unit -> 'a stream) : 'a stream =
+  {
+      stream_run = fun f ->
+        stream1.stream_run f;
+        (stream2 ()).stream_run f
+  }
+
 let concat (streams:'a stream stream) : 'a stream =
   {
       stream_run = fun handler ->

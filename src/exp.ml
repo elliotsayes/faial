@@ -1,28 +1,43 @@
 open Hash_rt
 open Ppx_compare_lib.Builtin
 
-type variable = {
-  var_loc: Sourceloc.location;
-  var_name: string;
-}
+type variable =
+  | LocVariable of Sourceloc.location * string
+  | Variable of string
   [@@deriving hash, compare]
 
-let var_make (name:string) = {
-  var_loc = Sourceloc.loc_empty;
-  var_name = name;
-}
+let var_make (name:string) : variable = Variable name
+
+let var_set_name (v:variable) (name:string) =
+  match v with
+  | LocVariable(l, _) -> LocVariable(l, name)
+  | Variable _ -> Variable name
 
 let var_of_loc name pair =
-  {
-    var_loc = Sourceloc.of_lex_position_pair pair;
-    var_name = name;
-  }
+  LocVariable (Sourceloc.of_lex_position_pair pair, name)
 
-let var_equal (x:variable) (y:variable) = String.equal x.var_name y.var_name
+let var_name (x:variable) : string =
+  match x with
+  | LocVariable (_, x) -> x
+  | Variable x -> x
+
+let var_loc (x:variable) : Sourceloc.location =
+  match x with
+  | LocVariable (l, _) -> l
+  | Variable _ -> Sourceloc.loc_empty
+
+let var_equal (x:variable) (y:variable) =
+  String.equal (var_name x) (var_name y)
+
+let var_repr (x:variable) : string =
+  match x with
+  | Variable x -> "Variable{name=\""^ x ^"\"}"
+  | LocVariable (l, x) ->
+    "LocVariable{name=\"" ^ x ^ "\", loc="^ Sourceloc.location_repr l ^ "}"
 
 module VarOT = struct
   type t = variable
-  let compare = fun x y -> Stdlib.compare x.var_name y.var_name
+  let compare = fun x y -> Stdlib.compare (var_name x) (var_name y)
 end
 
 module VarSet = Set.Make(VarOT)
@@ -133,7 +148,7 @@ let eval_brel o : bool -> bool -> bool =
 
 let rec n_eval (n: nexp) : int =
   match n with
-  | Var x -> failwith ("n_eval: variable " ^ x.var_name)
+  | Var x -> failwith ("n_eval: variable " ^ (var_name x))
   | Num n -> n
   | Bin (o, n1, n2) -> eval_nbin o (n_eval n1) (n_eval n2)
   | Proj _ -> failwith ("n_eval: proj")

@@ -4,4 +4,5 @@ true: package(cmdliner), package(ANSITerminal), package(yojson), package(ppx_has
 true: explain
 # For files starting with "test_" in directory "src" add package oUnit
 <src/test_*>: package(oUnit)
+<src/testutil.ml>: package(oUnit)
 <faial-ui>: -traverse

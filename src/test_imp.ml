@@ -9,12 +9,12 @@ let assert_norm (given:(string * nexp) list) (expected:(string * nexp) list) : u
   let expected = as_var expected in
   let kv_to_s l =
     l
-    |> List.map (fun (k,v) -> k.var_name ^ "=" ^ PPrint.n_to_s v)
+    |> List.map (fun (k,v) -> var_name k ^ "=" ^ PPrint.n_to_s v)
     |> Common.join ", "
     |> fun n -> "[" ^ n ^ "]"
   in
   let sort_kv =
-    List.sort (fun (x,_) (y,_) -> String.compare x.var_name y.var_name)
+    List.sort (fun (x,_) (y,_) -> String.compare (var_name x) (var_name y))
   in
   let given = normalize_deps given |> sort_kv in
   let expected = expected |> sort_kv in

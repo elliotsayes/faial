@@ -98,7 +98,7 @@ let l_kernel_to_s (k:l2_kernel) : Serialize.PPrint.t list =
     |> Common.join "; "
   in
   [
-      Line ("array: " ^ k.l_kernel_location.var_name ^ ";");
+      Line ("array: " ^ (var_name k.l_kernel_location) ^ ";");
       Line ("locals: " ^ var_set_to_s k.l_kernel_local_variables ^ ";");
       Line ("ranges: " ^ ranges ^ ";");
       Line "{";

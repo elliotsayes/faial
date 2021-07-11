@@ -68,7 +68,7 @@ let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
   let rec flatten_i (b:bexp) (i:u_inst) : cond_access list =
     match i with
     | UAssert _ -> failwith "Internall error: call rm_asserts first!"
-    | UAcc (x, e) -> [{ca_location = x.var_loc; ca_access = e; ca_cond = b}]
+    | UAcc (x, e) -> [{ca_location = var_loc x; ca_access = e; ca_cond = b}]
     | UCond (b', p) -> flatten_p (b_and b' b) p
     | ULoop (r, p) -> flatten_p (b_and (range_to_cond r) b) p
   and flatten_p (b:bexp) (p:u_prog) : cond_access list =
@@ -111,7 +111,7 @@ let f_kernel_to_s (k:f_kernel) : Serialize.PPrint.t list =
     Line (acc_val_to_s a.ca_access ^ " if " ^ b_to_s a.ca_cond ^";")
   in
   [
-      Line ("array: " ^ k.f_kernel_location.var_name ^ ";");
+      Line ("array: " ^ var_name k.f_kernel_location ^ ";");
       Line ("locals: " ^ var_set_to_s k.f_kernel_local_variables ^ ";");
       Line ("pre: " ^ b_to_s k.f_kernel_pre ^ ";");
       Line "{";

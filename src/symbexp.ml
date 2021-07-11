@@ -22,20 +22,20 @@ let mk_proof (location:variable) (goal:bexp) =
   let decls =
     Freenames.free_names_bexp goal VarSet.empty
     |> VarSet.elements
-    |> List.map (fun x -> x.var_name)
+    |> List.map var_name
   in
   {
     proof_preds = Predicates.get_predicates goal;
     proof_funcs = Predicates.get_functions goal;
     proof_decls = decls;
     proof_goal = goal;
-    proof_name = location.var_name;
+    proof_name = var_name location;
   }
 
 let proj_access (locals:VarSet.t) (t:task) (ca:cond_access) : cond_access =
   (* Add a suffix to a variable *)
   let var_append (x:variable) (suffix:string) : variable =
-    {x with var_name = x.var_name ^ suffix }
+    var_set_name x (var_name x ^ suffix)
   in
   (* Add a suffix to all variables to make them unique. Use $ to ensure
     these variables did not come from C *)

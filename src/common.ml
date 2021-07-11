@@ -35,6 +35,11 @@ let rsplit (c:char) (s:string) :  (string * string) option =
   | Some idx -> Some (String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1))
   | None -> None
 
+let split (c:char) (s:string) :  (string * string) option =
+  match String.index_opt s c with
+  | Some idx -> Some (String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1))
+  | None -> None
+
 let parse_dim (x:string) : int list =
   (*
     let ex3 = "[8][8]" in
@@ -51,7 +56,7 @@ let parse_dim (x:string) : int list =
 let parse_array_type_opt (x:string) : string list option =
   match rsplit ' ' x with
   | Some (x, "*") ->
-    let x = begin match rsplit '[' x with
+    let x = begin match split '[' x with
     | Some (x, _) -> x
     | None -> x
     end in

@@ -99,7 +99,7 @@ struct
   let open Serialize in
     List [
       symbol "declare-fun";
-      symbol v.var_name;
+      symbol (var_name v);
       List [];
       ty;
     ]
@@ -159,7 +159,7 @@ let location_to_sexp (l:Sourceloc.location) : Smtlib.sexp =
         Buffer.add_string b (string_of_int p.pos_column)
     in
     let b = Buffer.create 100 in
-    Buffer.add_string b l.loc_filename;
+    Buffer.add_string b l.loc_start.pos_filename;
     Buffer.add_char b ':';
     add_pos b l.loc_start;
     Buffer.add_char b ':';
@@ -187,13 +187,14 @@ let translate (provenance:bool) ((cache, ps):(Symbexp.LocationCache.t * Symbexp.
         List [symbol "pop"; Atom (Int 1);];
       ])
     in
-    if provenance then
-        let locs : Smtlib.sexp Streamutil.stream = LocationCache.all cache
+    if provenance then (
+        let locs : unit -> Smtlib.sexp Streamutil.stream = fun _ ->
+            LocationCache.all cache
             |> Streamutil.from_list
             |> Streamutil.map location_to_sexp
         in
-        Streamutil.sequence proofs locs
-    else
+        Streamutil.lazy_sequence proofs locs
+    ) else
         proofs
 
 let print: Smtlib.sexp Streamutil.stream -> unit =
