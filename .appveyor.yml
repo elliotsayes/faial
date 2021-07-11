@@ -17,7 +17,7 @@ install:
   #  Windows cmd.exe.  As such, OCaml commands are in .appveyor-*.sh files.
   - bash .appveyor-install.sh
   # Install Rust:
-  - cinst rust
+  - cinst rust --version 1.53.0
   - rustc --version
   - cargo --version
 
