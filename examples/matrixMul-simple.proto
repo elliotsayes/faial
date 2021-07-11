@@ -26,7 +26,7 @@ where blockIdx.x < gridDim.x &&
     blockDim.y == blockD &&
     # Assumptions
     pow2(blockD) &&
-    #blockD == 512 &&
+    blockD == 512 &&
     Width == blockD * 1024
     #Width == 512 * 1024
     ;
