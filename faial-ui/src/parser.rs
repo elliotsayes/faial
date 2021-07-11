@@ -3,6 +3,7 @@ use sexp::{Sexp,Atom};
 use std::str::FromStr;
 use std::convert::TryFrom;
 use ansi_term::Colour::Red;
+use ansi_term::Style;
 use std::collections::BTreeMap;
 use std::io::{Lines, BufRead, self};
 use std::fs::File;
@@ -801,7 +802,7 @@ impl FromStr for SourceLocation {
 fn test_source_location_parse() {
     let s = "bitonicMergeShared.cu:55:5:55:37";
     let x = s.parse::<SourceLocation>();
-    if let Ok(x) = x {
+    if let Ok(_) = x {
         //
     } else {
         panic!("{}", x.err().unwrap());
@@ -893,14 +894,25 @@ impl SourceLocation {
         (if self.start.line > 0 { self.start.line - 1 } else { 0 }, self.line_span())
     }
 
-    fn parse_lines<B: BufRead>(&self, padding: usize, it:&mut Lines<B>) -> Result<Vec<String>, String> {
+    fn parse_lines<B: BufRead>(&self, padding: usize, it:&mut Lines<B>) -> Result<Vec<(usize, String)>, String> {
         let (offset, count) = self.line_offset();
         let new_offset = if offset > padding { offset - padding } else { 0 };
-        read_lines(
+        let lines = read_lines(
             new_offset,
             count + padding + (offset - new_offset),
             it
-        )
+        );
+        if let Ok(lines) = lines {
+            let mut result : Vec<(usize, String)> = Vec::new();
+            let mut idx = new_offset + 1;
+            for line in lines {
+                result.push((idx, line));
+                idx += 1;
+            }
+            Ok(result)
+        } else {
+            Err(lines.err().unwrap())
+        }
     }
 
     // Tries to load the code associated with the source location
@@ -908,12 +920,24 @@ impl SourceLocation {
         let file = File::open(self.filename.clone()).unwrap();
         let reader = io::BufReader::new(file);
         let mut it = reader.lines();
-        if let Ok(mut lines) = self.parse_lines(0, &mut it) {
-            let mut idx = self.start.line;
-            for elem in lines.iter_mut() {
-                *elem = format!("{} | {}", idx, elem);
-                idx += 1;
-            }
+        if let Ok(lines) = self.parse_lines(0, &mut it) {
+            let lines : Vec<String> = lines.iter().map(
+                |(idx, elem)| {
+                    let mut data: String = String::from(elem);
+                    if idx == &self.start.line {
+                        if self.start.column > 0 && self.end.line == self.start.line {
+                            let start = self.start.column - 1;
+                            let span = self.end.column - self.start.column;
+                            let mut rest = data.split_off(start);
+                            let tail = rest.split_off(span + 1);
+                            let rest = format!("{}", Style::default().bold().paint(rest));
+                            data.push_str(&rest);
+                            data.push_str(&tail);
+                        }
+                    }
+                    format!("{}. {}", idx, data.trim())
+                }
+            ).collect();
             Some(lines.join("\n"))
         } else {
             None
@@ -942,27 +966,49 @@ fn test_parse_source_location() {
         end: Position { line: 1, column: 10 },
     };
     assert_eq!(src.line_offset(), (0, 1));
-    assert_eq!(src.parse_lines(0, &mut cursor.clone().lines()), Ok(vec!["1".to_string()]));
+    assert_eq!(src.parse_lines(0, &mut cursor.clone().lines()), Ok(vec![(1, "1".to_string())]));
     let src = SourceLocation {
         filename: "foo".to_string(),
         start: Position { line: 1, column: 1 },
         end: Position { line: 1, column: 10 },
     };
-    assert_eq!(src.parse_lines(1, &mut cursor.clone().lines()), Ok(vec!["1".to_string(), "2".to_string()]));
+    assert_eq!(src.parse_lines(1, &mut cursor.clone().lines()), Ok(vec![(1, "1".to_string()), (2, "2".to_string())]));
     let src = SourceLocation {
         filename: "foo".to_string(),
         start: Position { line: 2, column: 1 },
         end: Position { line: 2, column: 10 },
     };
     assert_eq!(src.line_offset(), (1, 1));
-    assert_eq!(src.parse_lines(1, &mut cursor.clone().lines()), Ok(vec!["1".to_string(), "2".to_string(), "3".to_string()]));
+    assert_eq!(src.parse_lines(1, &mut cursor.clone().lines()), Ok(vec![(1, "1".to_string()), (2, "2".to_string()), (3, "3".to_string())]));
     let src = SourceLocation {
         filename: "foo".to_string(),
         start: Position { line: 2, column: 1 },
         end: Position { line: 3, column: 10 },
     };
     assert_eq!(src.line_offset(), (1, 2));
-    assert_eq!(src.parse_lines(1, &mut cursor.clone().lines()), Ok(vec!["1".to_string(), "2".to_string(), "3".to_string(), "4".to_string()]));
+    assert_eq!(src.parse_lines(1, &mut cursor.clone().lines()), Ok(vec![
+        (1, "1".to_string()),
+        (2, "2".to_string()),
+        (3, "3".to_string()),
+        (4, "4".to_string())
+    ]));
+}
+
+fn render_location(label:&str, t:&Task, locs:&Vec<String>) -> Row {
+    let m = t.mode.to_string();
+    let m = format!("{} ({}):", label, m);
+    let l : String = if let Some(lid) = t.location_id {
+        if let Some(lid) = locs.get(lid) {
+            let l = SourceLocation::load_string(lid);
+            format!("{}", l)
+        } else { String::from("unknown location") }
+    } else {
+        String::from("unknown location")
+    };
+    Row::new(vec![
+        Cell::new(m.as_str()).with_style(Attr::Bold),
+        Cell::new(l.as_str()),
+    ])
 }
 
 fn render_data_race(dr:&DataRace, locs:&Vec<String>) {
@@ -981,34 +1027,8 @@ fn render_data_race(dr:&DataRace, locs:&Vec<String>) {
             ),
         ])
     );
-    if let  (Some(lid1), Some(lid2)) = (dr.t1.location_id, dr.t2.location_id) {
-        if let (Some(lid1), Some(lid2)) = (locs.get(lid1), locs.get(lid2)) {
-            table.add_row(
-                Row::new(vec![
-                    Cell::new("T1 location:").with_style(Attr::Bold),
-                    Cell::new(format!("{}", SourceLocation::load_string(lid1).as_str()).as_str()),
-                ])
-            );
-            table.add_row(
-                Row::new(vec![
-                    Cell::new("T2 location:").with_style(Attr::Bold),
-                    Cell::new(format!("{}", SourceLocation::load_string(lid2).as_str()).as_str()),
-                ])
-            );
-        }
-    }
-    table.add_row(
-        Row::new(vec![
-            Cell::new("T1 mode:").with_style(Attr::Bold),
-            Cell::new(dr.t1.mode.to_string().as_str()),
-        ])
-    );
-    table.add_row(
-        Row::new(vec![
-            Cell::new("T2 mode:").with_style(Attr::Bold),
-            Cell::new(dr.t2.mode.to_string().as_str()),
-        ])
-    );
+    table.add_row(render_location("Access #1", &dr.t1, &locs));
+    table.add_row(render_location("Access #2", &dr.t2, &locs));
     table.printstd();
     println!("");
 
