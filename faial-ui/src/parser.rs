@@ -4,6 +4,8 @@ use std::str::FromStr;
 use std::convert::TryFrom;
 use ansi_term::Colour::Red;
 use std::collections::BTreeMap;
+use std::io::{Lines, BufRead, self};
+use std::fs::File;
 
 use prettytable::format::{TableFormat};
 use prettytable::{Table, Row, Cell, Attr, format};
@@ -707,6 +709,262 @@ impl DataRaceFreedom {
     }
 }
 
+#[derive(Debug,Clone,Eq,PartialEq)]
+struct Position {
+    line:usize,
+    column: usize,
+}
+
+impl Position {
+    fn parse(line:&str, column:&str) -> Result<Self, String> {
+        if let Ok (l) = line.parse::<usize>() {
+            if let Ok(c) = column.parse::<usize>() {
+                Ok(Position{line:l, column:c})
+            } else {
+                Err(format!("Error parsing column: expecting a number, bug to {}", column))
+            }
+        } else {
+            Err(format!("Error parsing line: expecting a number, but got {}", line))
+        }
+    }
+    // returns true when current position precedes the next
+    fn precedes(&self, other:&Self) -> bool {
+        return
+            self.line < other.line ||
+            (self.line == other.line && self.column <= other.column)
+    }
+}
+
+impl FromStr for Position {
+    type Err = String;
+    fn from_str(line: &str) -> Result<Self, Self::Err> {
+        if let Some ((l, c)) = line.split_once(':') {
+            Position::parse(l, c)
+        } else {
+            Err(format!("parse::<Position>: could not find separator."))
+        }
+    }
+}
+
+#[test]
+fn test_parse_position() {
+    assert_eq!(Position::from_str("10:20"), Ok(Position{line:10, column:20}));
+    assert_eq!(Position::from_str("20"), Err(format!("parse::<Position>: could not find separator.")));
+}
+
+#[derive(Debug,Clone,Eq,PartialEq)]
+struct SourceLocation {
+    filename : String,
+    start: Position,
+    end: Position,
+}
+
+impl FromStr for SourceLocation {
+    type Err = String;
+    fn from_str(line: &str) -> Result<Self, Self::Err> {
+        // "foo:l1:c1:l2:c2
+        let mut elems : Vec<&str> = line.rsplitn(5, ':').collect();
+        elems.reverse();
+        if elems.len() < 5 {
+            return Err(format!("Source location parser: expecting 4 delimiters, but found {}: {:?}", elems.len(), elems))
+        }
+        let fname = elems.get(0).unwrap();
+        let start = Position::parse(
+            elems.get(1).unwrap(),
+            elems.get(2).unwrap()
+        );
+        let end = Position::parse(
+            elems.get(3).unwrap(),
+            elems.get(4).unwrap()
+        );
+        if let Ok(start) = start {
+            if let Ok(end) = end {
+                if start.precedes(&end) {
+                    Ok(SourceLocation {
+                        filename: fname.to_string(),
+                        start: start,
+                        end: end,
+                    })
+                } else {
+                    Err(format!("Error parsing source location: start does not precede end: {:?} {:?}", start, end))
+                }
+            } else {
+                Err(format!("Error parsing end position: {}", end.err().unwrap()))
+            }
+        } else {
+            Err(format!("Error parsing start position: {}", start.err().unwrap()))
+        }
+    }
+}
+
+#[test]
+fn test_source_location_parse() {
+    let s = "bitonicMergeShared.cu:55:5:55:37";
+    let x = s.parse::<SourceLocation>();
+    if let Ok(x) = x {
+        //
+    } else {
+        panic!("{}", x.err().unwrap());
+    }
+}
+
+fn skip_lines<B: BufRead>(count:usize, it:&mut Lines<B>) -> usize {
+    if count == 0 {
+        return 0;
+    }
+    let mut read = 0;
+    let mut skip = count;
+    while let Some(Ok(_)) = it.next() {
+        skip -= 1;
+        read += 1;
+        if skip == 0 {
+            break;
+        }
+    }
+    return read;
+}
+
+#[test]
+fn test_skip_lines() {
+    let cursor = io::Cursor::new(b"1\n2\n3\n4\n5\n6");
+    assert_eq!(skip_lines(0, &mut cursor.clone().lines()), 0);
+    assert_eq!(skip_lines(1, &mut cursor.clone().lines()), 1);
+    assert_eq!(skip_lines(3, &mut cursor.clone().lines()), 3);
+    assert_eq!(skip_lines(10, &mut cursor.clone().lines()), 6);
+}
+
+
+fn cut_lines<B: BufRead>(count:usize, it:&mut Lines<B>) -> Vec<String> {
+    let mut result: Vec<String> = Vec::new();
+    if count == 0 {
+        return result;
+    }
+    let mut skip = count;
+    while let Some(Ok(line)) = it.next() {
+        result.push(line);
+        skip -= 1;
+        if skip == 0 {
+            break;
+        }
+    }
+    return result;
+}
+
+#[test]
+fn test_cut_lines() {
+    let cursor = io::Cursor::new(b"1\n2\n3\n4");
+    let empty : Vec<String> = vec![];
+    assert_eq!(cut_lines(0, &mut cursor.clone().lines()), empty);
+    assert_eq!(cut_lines(1, &mut cursor.clone().lines()), vec!["1"]);
+    assert_eq!(cut_lines(3, &mut cursor.clone().lines()), vec!["1", "2", "3"]);
+    assert_eq!(cut_lines(10, &mut cursor.clone().lines()), vec!["1", "2", "3", "4"]);
+}
+
+fn read_lines<B: BufRead>(offset:usize, count:usize, it:&mut Lines<B>) -> Result<Vec<String>, String> {
+    let skipped = skip_lines(offset, it);
+    if skipped != offset {
+        return Err(format!("read_lines: could not seek {} lines", offset))
+    }
+    Ok(cut_lines(count, it))
+}
+
+#[test]
+fn test_read_lines() {
+    let cursor = io::Cursor::new(b"1\n2\n3\n4\n5\n6");
+    assert_eq!(read_lines(1,2, &mut cursor.clone().lines()), Ok(vec!["2".to_string(), "3".to_string()]));
+    let empty : Vec<String> = vec![];
+    assert_eq!(read_lines(1,0, &mut cursor.clone().lines()), Ok(empty));
+    assert!(read_lines(10,0, &mut cursor.clone().lines()).is_err());
+    assert_eq!(read_lines(5,1, &mut cursor.clone().lines()), Ok(vec!["6".to_string()]));
+}
+
+
+impl SourceLocation {
+    fn lines(&self) -> (usize, usize) {
+        (self.start.line, self.end.line)
+    }
+
+    fn line_span(&self) -> usize {
+        let (start, end) = self.lines();
+        end - start + 1
+    }
+
+    fn line_offset(&self) -> (usize, usize) {
+        (if self.start.line > 0 { self.start.line - 1 } else { 0 }, self.line_span())
+    }
+
+    fn parse_lines<B: BufRead>(&self, padding: usize, it:&mut Lines<B>) -> Result<Vec<String>, String> {
+        let (offset, count) = self.line_offset();
+        let new_offset = if offset > padding { offset - padding } else { 0 };
+        read_lines(
+            new_offset,
+            count + padding + (offset - new_offset),
+            it
+        )
+    }
+
+    // Tries to load the code associated with the source location
+    pub fn load(&self) -> Option<String> {
+        let file = File::open(self.filename.clone()).unwrap();
+        let reader = io::BufReader::new(file);
+        let mut it = reader.lines();
+        if let Ok(mut lines) = self.parse_lines(0, &mut it) {
+            let mut idx = self.start.line;
+            for elem in lines.iter_mut() {
+                *elem = format!("{} | {}", idx, elem);
+                idx += 1;
+            }
+            Some(lines.join("\n"))
+        } else {
+            None
+        }
+    }
+    pub fn load_string(location: &str) -> String {
+        let l = location.parse::<SourceLocation>();
+        if let Ok(l) = l {
+            if let Some(r) = l.load() {
+                return r
+            }
+            return location.to_string()
+        }
+        l.err().unwrap()
+//        location.to_string()
+    }
+}
+
+
+#[test]
+fn test_parse_source_location() {
+    let mut cursor = io::Cursor::new(b"1\n2\n3\n4\n5\n");
+    let src = SourceLocation {
+        filename: "foo".to_string(),
+        start: Position { line: 1, column: 1 },
+        end: Position { line: 1, column: 10 },
+    };
+    assert_eq!(src.line_offset(), (0, 1));
+    assert_eq!(src.parse_lines(0, &mut cursor.clone().lines()), Ok(vec!["1".to_string()]));
+    let src = SourceLocation {
+        filename: "foo".to_string(),
+        start: Position { line: 1, column: 1 },
+        end: Position { line: 1, column: 10 },
+    };
+    assert_eq!(src.parse_lines(1, &mut cursor.clone().lines()), Ok(vec!["1".to_string(), "2".to_string()]));
+    let src = SourceLocation {
+        filename: "foo".to_string(),
+        start: Position { line: 2, column: 1 },
+        end: Position { line: 2, column: 10 },
+    };
+    assert_eq!(src.line_offset(), (1, 1));
+    assert_eq!(src.parse_lines(1, &mut cursor.clone().lines()), Ok(vec!["1".to_string(), "2".to_string(), "3".to_string()]));
+    let src = SourceLocation {
+        filename: "foo".to_string(),
+        start: Position { line: 2, column: 1 },
+        end: Position { line: 3, column: 10 },
+    };
+    assert_eq!(src.line_offset(), (1, 2));
+    assert_eq!(src.parse_lines(1, &mut cursor.clone().lines()), Ok(vec!["1".to_string(), "2".to_string(), "3".to_string(), "4".to_string()]));
+}
+
 fn render_data_race(dr:&DataRace, locs:&Vec<String>) {
     let mut f = TableFormat::new();
     f.column_separator(' ');
@@ -728,13 +986,13 @@ fn render_data_race(dr:&DataRace, locs:&Vec<String>) {
             table.add_row(
                 Row::new(vec![
                     Cell::new("T1 location:").with_style(Attr::Bold),
-                    Cell::new(format!("{}", lid1.as_str()).as_str()),
+                    Cell::new(format!("{}", SourceLocation::load_string(lid1).as_str()).as_str()),
                 ])
             );
             table.add_row(
                 Row::new(vec![
                     Cell::new("T2 location:").with_style(Attr::Bold),
-                    Cell::new(format!("{}", lid2.as_str()).as_str()),
+                    Cell::new(format!("{}", SourceLocation::load_string(lid2).as_str()).as_str()),
                 ])
             );
         }
