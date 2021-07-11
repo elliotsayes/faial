@@ -378,7 +378,7 @@ impl FromStr for Tid {
     }
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 enum AccessMode {
     Read,
     Write,
@@ -457,11 +457,24 @@ impl TaskBuilder {
     }
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 struct Task {
     location_id: Option<usize>,
     mode: AccessMode,
     variables: HashMap<String, Atom>
+}
+
+impl Task {
+    fn get_location(&self, locs:&Vec<String>) -> Option<SourceLocation> {
+        if let Some(l) = &self.location_id {
+            if let Some(l) = locs.get(l.clone()) {
+                if let Ok(l) = l.parse::<SourceLocation>() {
+                    return Some(l)
+                }
+            }
+        }
+        None
+    }
 }
 
 impl TaskBuilder {
@@ -547,9 +560,11 @@ impl DataRaceBuilder {
             Some(x) => x,
             None => return Err("No array set".to_string()),
         };
+        let t1 = self.t1.build()?;
+        let t2 = self.t2.build()?;
         Ok(DataRace {
-            t1: self.t1.build()?,
-            t2: self.t2.build()?,
+            t1: t1,
+            t2: t2,
             array: array,
             indices: idx1,
             globals: self.globals,
@@ -678,6 +693,7 @@ impl TryFrom<Smtlib2Response> for DataRaceFreedom {
                 v1 => return Err(format!("Expecting a string, got: {:?}", v1)),
             }
         }
+        locations.reverse();
         Ok(DataRaceFreedom{errors:result, locations:locations})
     }
 
@@ -1010,6 +1026,19 @@ fn render_location(label:&str, t:&Task, locs:&Vec<String>) -> Row {
         Cell::new(l.as_str()),
     ])
 }
+fn sort_tasks(t1:Task, t2:Task, locs:&Vec<String>) -> (Task, Task) {
+    if let (Some(l1), Some(l2)) = (t1.get_location(locs), t2.get_location(locs)) {
+        if l1.start.line <= l2.start.line {
+            (t1, t2)
+        } else {
+            (t2, t1)
+        }
+    } else {
+        (t1, t2)
+    }
+}
+
+
 
 fn render_data_race(dr:&DataRace, locs:&Vec<String>) {
     let mut f = TableFormat::new();
@@ -1027,8 +1056,9 @@ fn render_data_race(dr:&DataRace, locs:&Vec<String>) {
             ),
         ])
     );
-    table.add_row(render_location("Access #1", &dr.t1, &locs));
-    table.add_row(render_location("Access #2", &dr.t2, &locs));
+    let (t1, t2) = sort_tasks(dr.t1.clone(), dr.t2.clone(), &locs);
+    table.add_row(render_location("Access #1", &t1, &locs));
+    table.add_row(render_location("Access #2", &t2, &locs));
     table.printstd();
     println!("");
 
@@ -1050,8 +1080,8 @@ fn render_data_race(dr:&DataRace, locs:&Vec<String>) {
     }
 
     let mut locals = BTreeMap::new();
-    for (k, v1) in &dr.t1.variables {
-        if let Some(v2) = dr.t2.variables.get(k.as_str()) {
+    for (k, v1) in &t1.variables {
+        if let Some(v2) = t2.variables.get(k.as_str()) {
             locals.insert(k, (v1, v2));
         }
     }
