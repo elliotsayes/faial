@@ -40,7 +40,7 @@ RUN \
     opam depext -y conf-m4.1
 
 # Install Rust
-ARG RUST_VERSION=1.47.0
+ARG RUST_VERSION=1.53.0
 ENV PATH="$PATH:/home/faial/.cargo/bin"
 RUN wget https://sh.rustup.rs -O - | \
     sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal
