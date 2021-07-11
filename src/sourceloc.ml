@@ -149,12 +149,14 @@ let location_bprint_title (outx:Buffer.t) (loc:location) : unit =
   Printf.bprintf outx "%s\n" right;
   Printf.bprintf outx "%s\n" (underline hl.range_offset hl.range_count)
 
-let bprint_errs b (errs:(string * location) list) : bool =
-  let print_err (msg,loc:string * location) =
-    Printf.bprintf b "%a: %s" location_bprint_start loc msg;
-    try
-      (Printf.bprintf b "\n\n%a" location_bprint_title loc)
-    with Sys_error _ -> ()
+let bprint_errs b (errs:(string * location option) list) : bool =
+  let print_err (msg,loc:string * location option) =
+    match loc with
+    | Some loc -> Printf.bprintf b "%a: %s" location_bprint_start loc msg;
+      (try
+          (Printf.bprintf b "\n\n%a" location_bprint_title loc)
+        with Sys_error _ -> ())
+    | None -> Printf.bprintf b "%s" msg
   in
   List.iter print_err errs;
   List.length errs > 0

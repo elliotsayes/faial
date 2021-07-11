@@ -21,10 +21,10 @@ let var_name (x:variable) : string =
   | LocVariable (_, x) -> x
   | Variable x -> x
 
-let var_loc (x:variable) : Sourceloc.location =
+let var_loc (x:variable) : Sourceloc.location option =
   match x with
-  | LocVariable (l, _) -> l
-  | Variable _ -> Sourceloc.loc_empty
+  | LocVariable (l, _) -> Some l
+  | Variable _ -> None
 
 let var_equal (x:variable) (y:variable) =
   String.equal (var_name x) (var_name y)

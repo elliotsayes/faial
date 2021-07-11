@@ -90,7 +90,7 @@ let u_free_names (p:u_prog) : VarSet.t -> VarSet.t =
   in
   fn_p p
 
-exception PhasesplitException of (string * Sourceloc.location) list
+exception PhasesplitException of (string * Sourceloc.location option) list
 
 module BarrierIntervalHash =
   struct

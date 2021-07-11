@@ -161,8 +161,10 @@ let cond_access_to_bexp (provenance:bool) (t:assign_task) (c:cond_access) :bexp 
         t.assign_mode c.ca_access.access_mode;
     ] in
     let head = if provenance
-        then t.assign_loc c.ca_location :: head
-        else head
+        then (match c.ca_location with
+        | Some x -> t.assign_loc x :: head
+        | None -> head
+        ) else head
     in
     head @ List.mapi t.assign_index c.ca_access.access_index
     |> b_and_ex

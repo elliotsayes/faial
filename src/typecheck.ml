@@ -8,14 +8,16 @@ type type_error =
 | UndefinedLocs of variable list
 | UndefinedVars of variable list
 
-let typecheck_kernel (k:prog kernel) : (string * Sourceloc.location) list =
-  let handle ctr errs l =
+type err_t = string * Sourceloc.location option
+
+let typecheck_kernel (k:prog kernel) : err_t list =
+  let handle (ctr: variable list -> type_error) (errs:type_error list) (l:VarSet.t) : type_error list =
     if not (VarSet.is_empty l)
     then (VarSet.elements l |> ctr)::errs
     else errs
   in
-  let dup_vars (l:variable list) ctr errs =
-    let rec iter (s:VarSet.t) (l:variable list) =
+  let dup_vars (l:variable list) ctr (errs: type_error list) : type_error list =
+    let rec iter (s:VarSet.t) (l:variable list) : VarSet.t =
       match l with
       | [] -> VarSet.empty
       | x::l ->
@@ -26,15 +28,15 @@ let typecheck_kernel (k:prog kernel) : (string * Sourceloc.location) list =
     in
     handle ctr errs (iter (VarSet.of_list l) l)
   in
-  let undef_vars (vars:VarSet.t) (p:prog) errs : type_error list =
+  let undef_vars (vars:VarSet.t) (p:prog) (errs: type_error list) : type_error list =
     VarSet.diff (Freenames.free_names_proto p VarSet.empty) vars
       |> handle (fun l -> UndefinedVars l) errs
   in
-  let undef_locs (locs:VarSet.t) (p:prog) errs =
+  let undef_locs (locs:VarSet.t) (p:prog) (errs:type_error list) : type_error list =
     VarSet.diff (Freenames.free_locs_proto p locs) locs
       |> handle (fun l -> UndefinedLocs l) errs
   in
-  let errs = [] in
+  let errs : type_error list = [] in
   let all_vars : variable list = List.append (k.kernel_local_variables |> VarSet.elements) (k.kernel_global_variables |> VarSet.elements) in
   let errs = dup_vars (k.kernel_arrays |> var_map_to_set |> VarSet.elements) (fun l -> DuplicateLocs l) errs in
   let errs = dup_vars all_vars (fun l -> DuplicateVars l) errs in
