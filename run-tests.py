@@ -31,6 +31,7 @@ def progress_call(f, x, end="", verbose=False):
   try:
     if verbose:
         print("*", x, end="")
+        sys.stdout.flush()
     result = f(x).run()
     if result.returncode == 0:
         if verbose:
