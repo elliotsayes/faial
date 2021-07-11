@@ -77,7 +77,7 @@ let rec loc_subst (alias:alias_expr) (p:stmt) : stmt =
     | Inst (IAcc (x, a)) ->
       if var_equal x alias.alias_target then
         (match a.access_index with
-        | [n] -> Inst (IAcc (alias.alias_source, { a with access_index = [n_plus alias.alias_offset n] }))
+        | [n] -> Inst (IAcc (x, { a with access_index = [n_plus alias.alias_offset n] }))
         | _ -> failwith ("Expecting an index with dimension 1, but got " ^ (string_of_int (List.length a.access_index)))
         )
       else
