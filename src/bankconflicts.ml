@@ -1,16 +1,39 @@
 open Exp
 open Proto
 open Common
+open Subst
 
 type 'a acc_t =
+  (* Question: What is the purpose of Var? proto_to_acc doesn't yield any Var.
   | Var of variable * 'a acc_t
+  *)
   | Range of range * 'a acc_t
   | Cond of bexp * 'a acc_t
   | Acc of 'a
 
+module Make (S:SUBST) = struct
+  module M = Subst.Make(S)
+
+  let rec acc_t_subst (s:S.t) (acc: 'a acc_t) : 'a acc_t =
+    match acc with
+    (*
+    | Var (x, acc) -> ???
+    *)
+    | Range (r, acc) -> Range (M.r_subst s r, acc_t_subst s acc)
+    | Cond (b, acc) -> Cond (M.b_subst s b, acc_t_subst s acc)
+    | Acc a -> Acc (M.a_subst s a)
+
+end
+
+module S1 = Make(SubstPair)
+
+let acc_t_subst = S1.acc_t_subst
+
 let rec get_acc (acc: 'a acc_t) =
   match acc with
+  (*
   | Var (_, acc)
+  *)
   | Range (_, acc)
   | Cond (_, acc) -> get_acc acc
   | Acc a -> a
@@ -18,7 +41,7 @@ let rec get_acc (acc: 'a acc_t) =
 let proto_to_acc (x:variable) (f: access -> 'a) (p: prog) : 'a acc_t list = 
   let rec on_i (i:inst) : 'a acc_t list =
     match i with
-    | Acc (y, e) -> if x = y then [Acc (f e)] else []
+    | Acc (y, e) -> if var_equal x y then [Acc (f e)] else []
     | Sync -> []
     | Cond (b, is) -> on_p is |> List.map (fun i -> (Cond (b, i)))
     | Loop (r, is) -> on_p is |> List.map (fun i -> (Range (r, i)))
@@ -27,6 +50,25 @@ let proto_to_acc (x:variable) (f: access -> 'a) (p: prog) : 'a acc_t list =
     List.concat_map on_i l
   in on_p p
 
+let rec normalize_ranges (acc: 'a acc_t) : 'a acc_t =
+  match acc with
+  (*
+  | Var (x, a) -> ???
+  *)
+  | Range (r, acc) ->
+      (* subst [range_var := range_var + lower_bound]: *)
+      let new_range_var = Bin (Plus, Var r.range_var, r.range_lower_bound) in
+      let acc = acc_t_subst (r.range_var, new_range_var) acc in
+      (* rewrite lower_bound..upper_bound to 0..(upper_bound-lower_bound): *)
+      let r : range = {
+        range_var = r.range_var;
+        range_lower_bound = Num 0;
+        range_upper_bound = Bin (Minus, r.range_upper_bound, r.range_lower_bound);
+        range_step = r.range_step } in
+      (* the resulting normalized range: *)
+      Range (r, normalize_ranges acc)
+  | Cond (b, acc) -> Cond (b, normalize_ranges acc)
+  | Acc _ -> acc
 
 type poly_ht = (int, nexp) Hashtbl.t
 
@@ -246,8 +288,9 @@ let _ =
         ;
         VarSet.iter (fun v ->
           let accs = proto_to_acc v (fun x -> x) k.kernel_code in
+          let accs = List.map normalize_ranges accs in
           Printf.printf "L: Listing accesses for shared array %s. Found %d accesses.\n"
-            v.var_name (List.length accs);
+            (var_name v) (List.length accs);
           List.iter (fun (x:access acc_t) ->
             let x = get_acc x in
             (* print_string "SOURCE: ";
