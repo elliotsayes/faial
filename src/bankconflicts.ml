@@ -38,14 +38,6 @@ let rec get_acc (acc: 'a acc_t) =
   | Cond (_, acc) -> get_acc acc
   | Acc a -> a
 
-let bound_names_acc_t (acc: 'a acc_t) : VarSet.t =
-  let rec get_bound (acc: 'a acc_t) (bns: VarSet.t) : VarSet.t =
-    match acc with
-    | Range (r, acc) -> get_bound acc (VarSet.add r.range_var bns)
-    | Cond (_, acc) -> get_bound acc bns
-    | Acc _ -> bns
-  in get_bound acc VarSet.empty
-
 let proto_to_acc (x:variable) (f: access -> 'a) (p: prog) : 'a acc_t list = 
   let rec on_i (i:inst) : 'a acc_t list =
     match i with
@@ -266,12 +258,13 @@ let i_kernel_to_p_kernel (k:i_kernel) : prog kernel list =
 
 (* Return true/false whether we CAN analyze the expression, not if
    there are bank-conflicts. *)
-let has_bank_conflicts (n:nexp) (bns:VarSet.t) : bool =
+let has_bank_conflicts (n:nexp) : bool =
   let handle_coefficient (n:nexp) : bool =
-    (* TODO: handle variables. We need to check if the variable is
-       a thread-local or thread-global. In case of the *)
+    let tid_vars : VarSet.t = VarSet.of_list
+      [var_make "threadIdx.x"; var_make "threadIdx.y"; var_make "threadIdx.z"]
+    in
     let fns = Freenames.free_names_nexp n VarSet.empty in
-    VarSet.is_empty (VarSet.diff fns bns) (* true iff n is closed by bns *)
+    VarSet.disjoint tid_vars fns
   in
   match n_to_poly (var_make "threadIdx.x") n with
   | One n ->
@@ -301,13 +294,12 @@ let _ =
           Printf.printf "L: Listing accesses for shared array %s. Found %d accesses.\n"
             (var_name v) (List.length accs);
           accs |> List.iter (fun (acc : access acc_t) ->
-            let bns = bound_names_acc_t acc in
             let a = get_acc acc in
             (* print_string "SOURCE: ";
             Serialize.PPrint.index_to_s a.access_index |> print_endline; *)
             a.access_index |> List.iter (fun n ->
               print_endline (
-                (if has_bank_conflicts n bns then
+                (if has_bank_conflicts n then
                     "OK: "
                   else
                     "SKIP: "
