@@ -259,23 +259,25 @@ let i_kernel_to_p_kernel (k:i_kernel) : prog kernel list =
 (* Return true/false whether we CAN analyze the expression, not if
    there are bank-conflicts. *)
 let has_bank_conflicts (n:nexp) : bool =
-  let handle_coefficient (n:nexp) : bool =
-    let tid_vars : VarSet.t = VarSet.of_list
-      [var_make "threadIdx.x"; var_make "threadIdx.y"; var_make "threadIdx.z"]
-    in
-    let fns = Freenames.free_names_nexp n VarSet.empty in
-    VarSet.disjoint tid_vars fns
+  let tid_vars : variable list = List.map var_make
+    ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"]
   in
-  match n_to_poly (var_make "threadIdx.x") n with
-  | One n ->
-    (* threadIdx.x is not in the expression *)
-    handle_coefficient n
-  | Two (c, k) ->
-    (* The expression is of form:
-       k * threadIdx + c
-       *)
-    handle_coefficient c && handle_coefficient k
-  | Many _ -> false
+  let handle_coefficient (n:nexp) : bool =
+    let fns = Freenames.free_names_nexp n VarSet.empty in
+    VarSet.disjoint (VarSet.of_list tid_vars) fns
+  in
+  let handle_poly (x: variable) : bool =
+    match n_to_poly x n with
+    | One n ->
+      (* var x (e.g., threadIdx.x) is not in the expression *)
+      handle_coefficient n
+    | Two (c, k) ->
+      (* The expression is of form:
+         k * x + c
+         *)
+      handle_coefficient c && handle_coefficient k
+    | Many _ -> false
+  in List.exists handle_poly tid_vars
 
 let _ =
   try
