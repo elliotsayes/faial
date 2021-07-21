@@ -96,4 +96,12 @@ let modulo x y =
   if result >= 0 then result
   else result + y
 
+(* https://stackoverflow.com/questions/38819448/generate-a-random-permutation-of-the-elements-of-a-list-ocaml *)
+let shuffle d = begin
+  Random.self_init ();
+  let nd = List.map (fun c -> (Random.bits (), c)) d in
+  let sond = List.sort compare nd in
+  List.map snd sond
+  end
+
 exception ParseError of (string list)

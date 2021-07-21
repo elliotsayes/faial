@@ -268,6 +268,14 @@ type range = {
   range_step: step_expr;
 } [@@deriving hash, compare]
 
+let rec n_contains_var v (n:nexp) =
+  match n with
+  | Var v1 -> v1==v
+  | Num i -> false
+  | Bin (op,n1,n2) -> n_contains_var v n1 || n_contains_var v n2
+  | Proj (t,v1) -> v1==v
+  | NCall (s,n1) -> n_contains_var v n1
+  | NIf (b,n1,n2) -> n_contains_var v n1 || n_contains_var v n2
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
 
