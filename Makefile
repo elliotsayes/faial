@@ -15,7 +15,7 @@ native: build-tests
 	cp $(BUILD)/main.native faial-bin
 
 bank-conflicts:
-	$(OCB) bankconflicts.native
+	$(OCB) -package z3 -tag thread bankconflicts.native
 	cp $(BUILD)/bankconflicts.native bank-conflicts
 
 build-tests:

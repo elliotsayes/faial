@@ -1,39 +1,52 @@
 open Exp
 open Proto
 open Common
-open Subst
+
+
+(* ----------------- constants -------------------- *)
+
+let tid_vars : variable list =
+  List.map var_make
+  ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"]
+
+let num_banks : int = 32
+
+let bc_degrees = [1; 2; 4; 8; 16; 32]
+(* TODO: generate bc_degrees from num_banks *)
+
+
+(* ----------------- acc_t type -------------------- *)
 
 type 'a acc_t =
-  (* Question: What is the purpose of Var? proto_to_acc doesn't yield any Var.
-  | Var of variable * 'a acc_t
-  *)
   | Range of range * 'a acc_t
   | Cond of bexp * 'a acc_t
   | Acc of 'a
 
-module Make (S:SUBST) = struct
+module Make (S:Subst.SUBST) = struct
   module M = Subst.Make(S)
 
   let rec acc_t_subst (s:S.t) (acc: 'a acc_t) : 'a acc_t =
     match acc with
-    (*
-    | Var (x, acc) -> ???
-    *)
     | Range (r, acc) -> Range (M.r_subst s r, acc_t_subst s acc)
     | Cond (b, acc) -> Cond (M.b_subst s b, acc_t_subst s acc)
     | Acc a -> Acc (M.a_subst s a)
 
 end
 
-module S1 = Make(SubstPair)
+module S1 = Make(Subst.SubstPair)
 
 let acc_t_subst = S1.acc_t_subst
 
+let rec acc_t_to_s (v : variable) : 'a acc_t -> string = function
+  | Range (r, acc) ->
+      (Serialize.PPrint.r_to_s r) ^ ": " ^ (acc_t_to_s v acc)
+  | Cond (b, acc) ->
+      "if ( " ^ (Serialize.PPrint.b_to_s b) ^ " ) " ^ (acc_t_to_s v acc)
+  | Acc a ->
+      Serialize.PPrint.doc_to_string (Serialize.PPrint.acc_expr_to_s (v, a))
+
 let rec get_acc (acc: 'a acc_t) =
   match acc with
-  (*
-  | Var (_, acc)
-  *)
   | Range (_, acc)
   | Cond (_, acc) -> get_acc acc
   | Acc a -> a
@@ -50,25 +63,8 @@ let proto_to_acc (x:variable) (f: access -> 'a) (p: prog) : 'a acc_t list =
     List.concat_map on_i l
   in on_p p
 
-let rec normalize_ranges (acc: 'a acc_t) : 'a acc_t =
-  match acc with
-  (*
-  | Var (x, a) -> ???
-  *)
-  | Range (r, acc) ->
-      (* subst [range_var := range_var + lower_bound]: *)
-      let new_range_var = Bin (Plus, Var r.range_var, r.range_lower_bound) in
-      let acc = acc_t_subst (r.range_var, new_range_var) acc in
-      (* rewrite lower_bound..upper_bound to 0..(upper_bound-lower_bound): *)
-      let r : range = {
-        range_var = r.range_var;
-        range_lower_bound = Num 0;
-        range_upper_bound = Bin (Minus, r.range_upper_bound, r.range_lower_bound);
-        range_step = r.range_step } in
-      (* the resulting normalized range: *)
-      Range (r, normalize_ranges acc)
-  | Cond (b, acc) -> Cond (b, normalize_ranges acc)
-  | Acc _ -> acc
+
+(* ----------------- poly_t type -------------------- *)
 
 type poly_ht = (int, nexp) Hashtbl.t
 
@@ -131,7 +127,6 @@ let poly_add e1 e2 =
     let ht2 = Hashtbl.copy ht2 in
     poly_add_ht ht1 ht2;
     Many ht2
-
 
 let rec poly_mult e1 e2 =
   let poly_mult_ht (src:poly_ht) ((i1,n1):int*nexp) : poly_ht =
@@ -199,6 +194,9 @@ let rec n_to_poly v (n:nexp) : poly_t =
 let proto_to_poly x v p : (poly_t list) acc_t list =
   proto_to_acc x (fun (a:access) -> List.map (n_to_poly v) (a.access_index)) p
 
+
+(* ----------------- kernel functions -------------------- *)
+
 let open_ic_with (fname:string option) (f : in_channel -> unit) : unit =
     let ic, (closer: in_channel -> unit) = match fname with
     | Some fname -> (open_in fname, close_in_noerr)
@@ -256,65 +254,146 @@ let i_kernel_to_p_kernel (k:i_kernel) : prog kernel list =
   | JKernel ks -> List.map Imp.compile ks
   | PKernel p -> [p]
 
-(* Return true/false whether we CAN analyze the expression, not if
-   there are bank-conflicts. *)
-let has_bank_conflicts (n:nexp) : bool =
-  let tid_vars : variable list = List.map var_make
-    ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"]
-  in
+
+(* ----------------- transaction cost analysis -------------------- *)
+
+(* This function indicates whether our theory CAN analyze the expression, not
+   if there are bank-conflicts!  Returns None if we CANNOT analyze. *)
+let handle_bank_conflicts (n:nexp) : poly_t option =
   let handle_coefficient (n:nexp) : bool =
     let fns = Freenames.free_names_nexp n VarSet.empty in
     VarSet.disjoint (VarSet.of_list tid_vars) fns
   in
-  let handle_poly (x: variable) : bool =
-    match n_to_poly x n with
+  let handle_poly (x: variable) : poly_t option =
+    let p = n_to_poly x n in
+    match p with
     | One n ->
       (* var x (e.g., threadIdx.x) is not in the expression *)
-      handle_coefficient n
+      if handle_coefficient n then Some p else None
     | Two (c, k) ->
-      (* The expression is of form:
-         k * x + c
-         *)
-      handle_coefficient c && handle_coefficient k
-    | Many _ -> false
-  in List.exists handle_poly tid_vars
+      (* The expression is of form: (k * x + c) *)
+      if handle_coefficient c && handle_coefficient k
+      then Some p else None
+    | Many _ -> None
+  in List.find_map handle_poly tid_vars
 
-let _ =
-  try
-    open_i_kernel_with true None (fun k ->
-      let ks = i_kernel_to_p_kernel k in
-      Printf.printf "L: Found %d kernels.\n" (List.length ks);
-      ks |> List.iter (fun k ->
-        let shared = kernel_shared_arrays k in
-        Printf.printf "L: Kernel %s, has %d shared arrays.\n"
-          k.kernel_name
-          (shared |> VarSet.cardinal)
-        ;
-        shared |> VarSet.iter (fun v ->
-          let accs = proto_to_acc v (fun x -> x) k.kernel_code in
-          let accs = List.map normalize_ranges accs in
-          Printf.printf "L: Listing accesses for shared array %s. Found %d accesses.\n"
-            (var_name v) (List.length accs);
-          accs |> List.iter (fun (acc : access acc_t) ->
-            let a = get_acc acc in
-            (* print_string "SOURCE: ";
-            Serialize.PPrint.index_to_s a.access_index |> print_endline; *)
-            a.access_index |> List.iter (fun n ->
-              print_endline (
-                (if has_bank_conflicts n then
-                    "OK: "
-                  else
-                    "SKIP: "
-                )
-                ^
-                Serialize.PPrint.n_to_s n
-              )
-            )
-          )
-        )
-      )
-    )
-  with
+(* p_cost returns bank conflict degree of a poly p *)
+let p_cost : poly_t -> int = function
+  (* constant access pattern: this is a broadcast *)
+  | One _ -> 1
+  (* linear access pattern: maximize degree with Z3 *)
+  | Two (_, n) ->
+    (* we call Z3 from here to calculate the bank conflict degree *)
+    let open Z3 in
+    let open Z3expr in
+    (* print_endline (Freenames.free_names_nexp n); *)
+    let ctx = mk_context [] in
+    let n_expr = n_to_expr ctx n in
+    let k = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "k") in
+    let d = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "d") in
+    let num (n : int) = Arithmetic.Integer.mk_numeral_i ctx n in
+    let k_eq = Boolean.mk_eq ctx k n_expr in
+    let d_eq = Boolean.mk_or ctx (bc_degrees |> List.map (fun n ->
+      Boolean.mk_eq ctx d (num n))) in
+    let d_divides_k = Boolean.mk_eq ctx
+      (Arithmetic.Integer.mk_mod ctx k d) (num 0) in
+    let opt = Optimize.mk_opt ctx in
+    Optimize.add opt [ k_eq; d_eq; d_divides_k ];
+    let handle = Optimize.maximize opt d in
+    (* print_string (Optimize.to_string opt); *) (* print SMT-LIB *)
+    assert (Optimize.check opt = Solver.SATISFIABLE);
+    Z.to_int (Arithmetic.Integer.get_big_int (Optimize.get_upper handle))
+  (* non-linear access pattern: theory incomplete *)
+  | Many _ -> num_banks
+
+(* n_cost returns bank conflict degree of a poly n *)
+let n_cost (n : nexp) : int =
+  let bc_fail (reason : string) : int =
+    Printf.eprintf
+      "WARNING: %s: %s: assuming worst case bank conflict of %d\n"
+      reason (Serialize.PPrint.n_to_s n) num_banks;
+    num_banks
+  in
+  match handle_bank_conflicts n with
+  | Some p ->
+    begin try p_cost p with
+    | Z3expr.Not_implemented e -> bc_fail e (* Z3expr TODO *)
+    end
+  | None -> bc_fail "pattern not linear"    (* theory TODO *)
+
+(* access_cost returns bank conflict cost of an access *)
+let access_cost (a : access) : int =
+  List.fold_left (+) 0 (List.map n_cost a.access_index)
+
+
+(* ----------------- kernel cost analysis -------------------- *)
+
+(* normalize ranges in acc to start with zero *)
+let rec normalize_ranges (acc: 'a acc_t) : 'a acc_t =
+  match acc with
+  (* TODO: check range for tid in step before normalizing *)
+  | Range (r, acc) ->
+      (* subst [range_var := range_var + lower_bound]: *)
+      let new_range_var = Bin (Plus, Var r.range_var, r.range_lower_bound) in
+      let acc = acc_t_subst (r.range_var, new_range_var) acc in
+      (* rewrite lower_bound..upper_bound to 0..(upper_bound-lower_bound): *)
+      let r : range = {
+        range_var = r.range_var;
+        range_lower_bound = Num 0;
+        range_upper_bound = Bin (Minus, r.range_upper_bound, r.range_lower_bound);
+        range_step = r.range_step } in
+      (* the resulting normalized range: *)
+      Range (r, normalize_ranges acc)
+  | Cond (b, acc) -> Cond (b, normalize_ranges acc)
+  | Acc _ -> acc
+
+(* acc_t_cost returns cost of an acc_t expression *)
+let rec acc_t_cost (acc : 'a acc_t) : nexp =
+  let acc = normalize_ranges acc in
+  match acc with
+  | Range (r, acc) ->
+    begin match r.range_step with
+    | Default step ->
+        let lb = r.range_lower_bound in
+        let ub = r.range_upper_bound in
+          (*  ((ub - lb) / step) * (cost of acc):  *)
+          Bin (Mult, Bin (Div, Bin (Minus, ub, lb), step), acc_t_cost acc)
+    | StepName pred_name ->
+        Printf.eprintf "WARNING: range step %s unsupported in range %s\n"
+          pred_name (Serialize.PPrint.r_to_s r);
+        acc_t_cost acc
+        (* TODO: support more pred_name steps *)
+    end
+  | Cond (b, acc) -> acc_t_cost acc
+  | Acc a -> Num (access_cost a)
+
+(* nexp_sum folds a nexp list into a nexp summation *)
+let nexp_sum : nexp list -> nexp =
+  List.fold_left (fun n1 n2 -> Bin (Plus, n1, n2)) (Num 0)
+
+(* shared_cost returns the cost of all accesses to a shared memory array *)
+let shared_cost (k : prog kernel) (v : variable) : nexp =
+  let accs : 'a acc_t list = proto_to_acc v Fun.id k.kernel_code in
+  nexp_sum (List.map acc_t_cost accs)
+
+(* k_cost returns the cost of a kernel *)
+let k_cost (k : prog kernel) : nexp =
+  let vs : variable list = VarSet.elements (kernel_shared_arrays k) in
+  nexp_sum (List.map (shared_cost k) vs)
+
+(* i_k_cost returns the cost of all kernels in the program source *)
+let i_k_cost (k : i_kernel) : nexp =
+  let ks : prog kernel list = i_kernel_to_p_kernel k in
+  Constfold.n_opt (nexp_sum (List.map k_cost ks))
+
+
+(* ----------------- execution entry point -------------------- *)
+
+let () =
+  let print_cost (k : i_kernel) : unit =
+    print_endline (Serialize.PPrint.n_to_s (i_k_cost k))
+  in
+  try open_i_kernel_with true None print_cost with
   | Common.ParseError b ->
-    Buffer.output_buffer stderr b;
-    exit (-1)
+      Buffer.output_buffer stderr b;
+      exit (-1)
