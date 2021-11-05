@@ -50,6 +50,7 @@ build-dist:
     - rm -f ./target/*/faial
     - eval $(opam config env)
     - make
+    - make bank-conflicts
     - cd faial-ui
     - cargo b --release
     - cp ./target/release/faial ..
@@ -60,6 +61,8 @@ build-dist:
       - faial
       - README.md
       - LICENSE
+      - bank-conflicts
+      - run-bank-conflicts.sh
 
 bundle:
   stage: deploy
@@ -84,7 +87,7 @@ bundle:
     - rm artifacts.zip
     - mv faial-infer bin/
     # faial:
-    - cp ../faial ../faial-bin  bin/
+    - cp ../faial ../faial-bin  ../bank-conflicts ../run-bank-conflicts.sh bin/
     - cp ../README.md ../LICENSE  ./
     # display tree & bundle:
     - tree
