@@ -2,7 +2,31 @@ open OUnit2
 open Parsejs
 open Testutil
 
+let shared_attr : j_object =
+  let open Yojson.Basic in
+  [
+    "kind", `String "AnnotateAttr";
+    "spelling", `String "annotate";
+    "value", `String " __attribute__((annotate(\"shared\")))"
+  ]
+
+let shared_array : j_object =
+  let open Yojson.Basic in
+  [
+    "inner", `List [`Assoc shared_attr];
+    "isUsed", `Bool true;
+    "kind", `String "VarDecl";
+    "name", `String "smem";
+    "type", `Assoc ["qualType", `String "int [128]"];
+  ]
+
 let tests = "tests" >::: [
+  "ojson" >:: (fun _ ->
+    let open Ojson in
+    assert_bool "is_shared_attr" (is_shared_attr shared_attr);
+    assert_bool "has_shared_attr" (has_shared_attr shared_array);
+    assert_bool "is_shared_array" (is_shared_array shared_array);
+  );
   "parse_position" >:: (fun _ ->
     let s = "
       {

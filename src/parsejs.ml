@@ -62,6 +62,11 @@ let bind o1 f =
   | Some x -> f x
   | None -> None
 
+(* Monadic let *)
+let (let*) = bind
+(* Monadic pipe *)
+let (>>=) = bind
+
 let bind_all l f =
   let rec aux l accum =
     match l with
@@ -70,11 +75,64 @@ let bind_all l f =
   in
   aux l []
 
-let member_opt k (j:Yojson.Basic.t) =
+type j_object = (string * Yojson.Basic.t) list
+
+module Ojson = struct
+  let (let*) = Option.bind
+  let (>>=) = Option.bind
+
+  let get_object (j:Yojson.Basic.t) : j_object option =
+    let open Yojson.Basic.Util in
+    match j with
+    | `Assoc l -> Some l
+    | _ -> None
+
+  let get_string (j:Yojson.Basic.t) : string option =
+    let open Yojson.Basic.Util in
+    match j with
+    | `String v -> Some v
+    | _ -> None
+
+  let get_field (k:string) (kv: j_object) : Yojson.Basic.t option =
+    List.assoc_opt k kv
+
+  let get_list (j:Yojson.Basic.t) : Yojson.Basic.t list option =
+    match j with
+    | `List l -> Some l
+    | _ -> None
+
+  let get_nth (i:int) (l: 'a list) : 'a option =
+    List.nth_opt l i
+
+  let get_kind (o:j_object) : string option =
+    get_field "kind" o >>= get_string
+
+  let to_bool (o:bool option) =
+    match o with
+    | Some b -> b
+    | None -> false
+
+  let to_list (o:'a list option) : 'a list =
+    match o with
+    | Some l -> l
+    | None -> []
+
+  let has_kind (ks:string list) (o:j_object) : bool =
+    get_kind o
+    (* Check if the kind is in 'ks' *)
+    |> Option.map (fun (k:string) -> List.mem k ks)
+    (* Convert bool option to bool *)
+    |> to_bool
+end
+
+
+
+let member_opt k (j:Yojson.Basic.t) : Yojson.Basic.t option =
   let open Yojson.Basic.Util in
   match j with
   | `Assoc _ -> Some (member k j)
   | _ -> None
+
 
 let get_kind_res (j:Yojson.Basic.t) : (string, string) Result.t =
   let open Yojson.Basic.Util in
@@ -94,7 +152,7 @@ let get_kind (j:Yojson.Basic.t) : string =
 
 let get_fields fields (j:Yojson.Basic.t) : Yojson.Basic.t list  =
   let open Yojson.Basic.Util in
-  let kv = List.map (fun x -> (x, j |> member_opt x)) fields in
+  let kv = List.map (fun x -> let open Ojson in (x, get_object j >>= get_field x)) fields in
   let missing = List.filter (fun (x,y) -> y = None) kv |> List.split |> fst in
   if List.length missing > 0 then
     let fields = join ", " fields in
@@ -146,26 +204,50 @@ let is_shared o : bool =
   | `Bool true -> true
   | _ -> false
 
-let get_array_length j : int list =
-  let open Yojson.Basic in
-  let open Yojson.Basic.Util in
-  let x = match member "qualType" (member "type" j) with
-  | `String x -> parse_array_dim_opt x
-  | _ -> None
-  in match x with
-  | Some x -> x
-  | None -> []
+module Ctype = struct
+  (* Type-safe representation of a CType *)
+  type t = CType: string -> t
 
-let get_array_type j : string list =
-  let open Yojson.Basic in
-  let open Yojson.Basic.Util in
-  let x = match member "qualType" (member "type" j) with
-  | `String x -> parse_array_type_opt x
-  | _ -> None
-  in match x with
-  | Some x -> x
-  | None -> []
+  let make (ty:string) : t =
+    CType ty
 
+  let to_string (c:t) : string =
+    match c with
+    | CType x -> x
+
+  let get_array_length (c:t) : int list =
+    to_string c
+    |> parse_array_dim_opt
+    |> Ojson.to_list
+
+  let get_array_type (c:t) : string list =
+    to_string c
+    |> parse_array_type_opt
+    |> Ojson.to_list
+end
+
+let get_type (o:j_object) : Ctype.t option =
+  let open Ojson in
+  get_field "type" o
+  >>= get_object
+  >>= get_field "qualType"
+  >>= get_string
+  |> Option.map Ctype.make
+(*
+let get_array_length (o:j_object) : int list =
+  let open Ojson in
+  get_type o
+  >>= parse_array_dim_opt
+  |> to_list
+
+let get_array_type (o:j_object) : string list =
+  let open Ojson in
+  get_type o
+  >>= parse_array_type_opt
+  |> to_list
+*)
+
+(* XXX: what about int [128] *)
 let is_array_type o : bool =
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
@@ -266,14 +348,17 @@ let build_loc : Sourceloc.location builder =
 
 let parse_loc : Sourceloc.location parser = make "location" build_loc
 
+let variable_kind : string list = [
+    "NonTypeTemplateParmDecl";
+    "FunctionDecl";
+    "VarDecl";
+    "ParmVarDecl";
+  ]
+
+
 let build_var : variable builder =
   fun j ->
-    if has_type_choice [
-      "NonTypeTemplateParmDecl";
-      "FunctionDecl";
-      "VarDecl";
-      "ParmVarDecl";
-    ] j then (
+    if has_type_choice variable_kind j then (
       j
       |> get_fields ["name"; "range"] (function
       | [`String name; l] -> Some (LocVariable (parse_loc.run l, name))
@@ -694,74 +779,148 @@ let rec build_stmt : stmt builder =
 
 let parse_stmt = make "statement" build_stmt
 
-let parse_kernel = make "kernel" (fun k ->
-  let open Yojson.Basic in
-  let open Yojson.Basic.Util in
-  let v_parse = parse_var.run in
-  let b_parse = parse_bexp.run in
-  let s_parse = parse_stmt.run in
-  choose_one_of [
-    "FunctionDecl", (["body"; "pre"; "params"; "name"], function
-      | [body; pre; `List func_params; `String name] ->
-        begin
-          let is_used j =
-            member "isReferenced" j = `Bool true
-            || member "isUsed" j = `Bool true
-          in
-          let is_param p l =
-            match get_kind_res l, is_used l, member "type" l with
-            | Result.Ok "NonTypeTemplateParmDecl", true, ty -> p ty
-            | Result.Ok "ParmVarDecl", true, ty -> p ty
-            | _, _, _ -> false
-          in
-          let params : VarSet.t =
-            List.filter (is_param is_int_type) func_params
-              |> List.map v_parse
-              |> VarSet.of_list
-          in
-          let arrays : array_t VarMap.t =
-            let parse_array a : variable * array_t =
-              let open Proto in
-              let k = v_parse a in
-              (k, {
-                array_hierarchy = if is_shared a then SharedMemory else GlobalMemory;
-                array_size = get_array_length a;
-                array_type = get_array_type a;
-              })
+let parse_kernel (shared: (variable * array_t) list) =
+  make "kernel" (fun k ->
+    let open Yojson.Basic in
+    let open Yojson.Basic.Util in
+    let v_parse = parse_var.run in
+    let b_parse = parse_bexp.run in
+    let s_parse = parse_stmt.run in
+    choose_one_of [
+      "FunctionDecl", (["body"; "pre"; "params"; "name"], function
+        | [body; pre; `List func_params; `String name] ->
+          begin
+            let is_used j =
+              member "isReferenced" j = `Bool true
+              || member "isUsed" j = `Bool true
             in
-            List.filter (is_param is_array_type) func_params
-            |> List.map parse_array
-            |> list_to_var_map
-          in
-          let body : stmt = match body with
-          | `Null -> Block []
-          | _ -> s_parse body
-          in
-          Some {
-            p_kernel_name = name;
-            p_kernel_pre = b_parse pre;
-            p_kernel_arrays = arrays;
-            p_kernel_params = params;
-            p_kernel_code = body;
-          }
-        end
-      | _ -> None
-    );
-  ] k
+            let is_param p l =
+              match get_kind_res l, is_used l, member "type" l with
+              | Result.Ok "NonTypeTemplateParmDecl", true, ty -> p ty
+              | Result.Ok "ParmVarDecl", true, ty -> p ty
+              | _, _, _ -> false
+            in
+            let params : VarSet.t =
+              List.filter (is_param is_int_type) func_params
+                |> List.map v_parse
+                |> VarSet.of_list
+            in
+            let arrays : array_t VarMap.t =
+              let parse_array a : (variable * array_t) option =
+                let open Proto in
+                let k = v_parse a in
+                let hiearchy = if is_shared a
+                  then SharedMemory
+                  else GlobalMemory
+                in
+                let* ty = (Ojson.get_object a >>= get_type) in
+                Some (k, {
+                  array_hierarchy = hiearchy;
+                  array_size = Ctype.get_array_length ty;
+                  array_type = Ctype.get_array_type ty;
+                })
+              in
+              List.filter (is_param is_array_type) func_params
+              |> Common.map_opt parse_array
+              |> List.append shared
+              |> list_to_var_map
+            in
+            let body : stmt = match body with
+            | `Null -> Block []
+            | _ -> s_parse body
+            in
+            Some {
+              p_kernel_name = name;
+              p_kernel_pre = b_parse pre;
+              p_kernel_arrays = arrays;
+              p_kernel_params = params;
+              p_kernel_code = body;
+            }
+          end
+        | _ -> None
+      );
+    ] k
   )
 
-let parse_kernels = make "kernels" (fun s ->
+(* kind: AnnotateAttr
+    spelling: annotate
+    value: ' __attribute__((annotate("shared")))'
+*)
+let is_shared_attr (o:j_object) : bool =
+  let open Ojson in
+  (* kind: AnnotateAttr *)
+  let is_attr = has_kind ["AnnotateAttr"] o in
+  (* value: ' __attribute__((annotate("shared"))) *)
+  let is_shared =
+    get_field "value" o
+    >>= get_string
+    |> Option.map (fun k -> k = " __attribute__((annotate(\"shared\")))")
+    |> to_bool
+  in
+  is_attr && is_shared
+
+(*
+inner:
+- kind: AnnotateAttr
+  spelling: annotate
+  value: ' __attribute__((annotate("shared")))'
+isUsed: true
+kind: VarDecl
+name: smem
+type:
+  qualType: int [128]
+*)
+let has_shared_attr (o:j_object) : bool =
+  let open Ojson in
+  get_field "inner" o
+  >>= get_list
+  >>= get_nth 0
+  >>= get_object
+  |> Option.map is_shared_attr
+  |> to_bool
+
+let is_shared_array (o:j_object) : bool =
+  let open Ojson in
+  has_kind variable_kind o && has_shared_attr o
+
+let filter_shared_decl (j:Yojson.Basic.t) : (variable * array_t) list =
   let open Yojson.Basic in
   let open Yojson.Basic.Util in
-  choose_one_of [
-    "TranslationUnitDecl", (["inner"], function
-      | [`List l] ->
-        let is_kernel x =
-          match get_kind_res x, member "is_kernel" x with
-          | Result.Ok "FunctionDecl", `Bool true -> true
-          | _, _ -> false
-        in
-        Some (List.map parse_kernel.run (List.filter is_kernel l))
-      | _ -> None)
-  ] s
-)
+  let parse_array (j: Yojson.Basic.t) : (variable * array_t) option =
+    let open Proto in
+    let* k = build_var j in
+    let* ty = Ojson.get_object j >>= get_type in
+    Some (k, {
+      array_hierarchy = SharedMemory;
+      array_size = Ctype.get_array_length ty;
+      array_type = Ctype.get_array_type ty;
+    })
+  in
+  let open Ojson in
+  match get_list j with
+  | None -> []
+  | Some l ->
+    List.filter (fun j ->
+      get_object j
+      |> Option.map is_shared_array
+      |> to_bool
+    ) l
+    |> Common.map_opt parse_array
+
+let parse_kernels =
+  make "kernels" (fun s ->
+    let shared = filter_shared_decl s in
+    let open Yojson.Basic in
+    let open Yojson.Basic.Util in
+    choose_one_of [
+      "TranslationUnitDecl", (["inner"], function
+        | [`List l] ->
+          let is_kernel x =
+            match get_kind_res x, member "is_kernel" x with
+            | Result.Ok "FunctionDecl", `Bool true -> true
+            | _, _ -> false
+          in
+          Some (List.map (parse_kernel shared).run (List.filter is_kernel l))
+        | _ -> None)
+    ] s
+  )
