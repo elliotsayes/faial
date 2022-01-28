@@ -26,6 +26,13 @@ let tests = "tests" >::: [
     assert_bool "is_shared_attr" (is_shared_attr shared_attr);
     assert_bool "has_shared_attr" (has_shared_attr shared_array);
     assert_bool "is_shared_array" (is_shared_array shared_array);
+    match get_type shared_array with
+    | None -> assert_bool "could not get type" false
+    | Some ty ->
+    assert_equal (Ctype.to_string ty) "int [128]";
+    let a = mk_array SharedMemory ty in
+    assert_equal a.array_type ["int"];
+    assert_equal a.array_size [128];
   );
   "parse_position" >:: (fun _ ->
     let s = "

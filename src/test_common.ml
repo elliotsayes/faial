@@ -3,18 +3,43 @@ open Common
 
 
 let tests = "ends_with" >::: [
+  "split_array_type" >:: (fun _ ->
+    let ex1 = "int *" in
+    let ex2 = "int" in
+    let ex3 = "unsigned int [8][8] *" in
+    let ex4 = "int [128]" in
+    assert_equal (Some ("int", "*")) (split_array_type ex1);
+    assert_equal None (split_array_type ex2);
+    assert_equal (Some ("unsigned int", "[8][8] *")) (split_array_type ex3);
+    assert_equal (Some ("int", "[128]")) (split_array_type ex4)
+  );
+  "parse_array_type_opt" >:: (fun _ ->
+    assert (parse_dim "[8][8]" = [8;8]);
+    assert (parse_dim "[128]" = [128]);
+    ()
+  );
+
+  "parse_array_type_opt" >:: (fun _ ->
+    let ex1 = "int *" in
+    let ex2 = "int" in
+    let ex3 = "unsigned int [8][8] *" in
+    let ex4 = "int [128]" in
+    assert (parse_array_type_opt ex1 = Some ["int"]);
+    assert (parse_array_type_opt ex2 = None);
+    assert (parse_array_type_opt ex3 = Some ["unsigned"; "int"]);
+    assert (parse_array_type_opt ex4 = Some ["int"]);
+    ()
+  );
+
   "rsplit" >:: (fun _ ->
     let ex1 = "int *" in
     let ex2 = "int" in
     let ex3 = "unsigned int [8][8] *" in
-    assert (rsplit ' ' ex1 = Some ("int", "*"));
-    assert (parse_dim "[8][8]" = [8;8]);
+    let ex4 = "int [128]" in
     assert (parse_array_dim_opt ex1 = None);
     assert (parse_array_dim_opt ex2 = None);
     assert (parse_array_dim_opt ex3 = Some [8; 8]);
-    assert (parse_array_type_opt ex1 = Some ["int"]);
-    assert (parse_array_type_opt ex2 = None);
-    assert (parse_array_type_opt ex3 = Some ["unsigned"; "int"]);
+    assert (parse_array_dim_opt ex4 = Some [128]);
     ()
   );
   "app_rev" >:: (fun _ ->

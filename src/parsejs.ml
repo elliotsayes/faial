@@ -233,19 +233,6 @@ let get_type (o:j_object) : Ctype.t option =
   >>= get_field "qualType"
   >>= get_string
   |> Option.map Ctype.make
-(*
-let get_array_length (o:j_object) : int list =
-  let open Ojson in
-  get_type o
-  >>= parse_array_dim_opt
-  |> to_list
-
-let get_array_type (o:j_object) : string list =
-  let open Ojson in
-  get_type o
-  >>= parse_array_type_opt
-  |> to_list
-*)
 
 (* XXX: what about int [128] *)
 let is_array_type o : bool =
@@ -779,6 +766,14 @@ let rec build_stmt : stmt builder =
 
 let parse_stmt = make "statement" build_stmt
 
+
+let mk_array (h:hierarchy_t) (ty:Ctype.t) : array_t =
+  {
+    array_hierarchy = h;
+    array_size = Ctype.get_array_length ty;
+    array_type = Ctype.get_array_type ty;
+  }
+
 let parse_kernel (shared: (variable * array_t) list) =
   make "kernel" (fun k ->
     let open Yojson.Basic in
@@ -809,16 +804,12 @@ let parse_kernel (shared: (variable * array_t) list) =
               let parse_array a : (variable * array_t) option =
                 let open Proto in
                 let k = v_parse a in
-                let hiearchy = if is_shared a
+                let h = if is_shared a
                   then SharedMemory
                   else GlobalMemory
                 in
                 let* ty = (Ojson.get_object a >>= get_type) in
-                Some (k, {
-                  array_hierarchy = hiearchy;
-                  array_size = Ctype.get_array_length ty;
-                  array_type = Ctype.get_array_type ty;
-                })
+                Some (k, mk_array h ty)
               in
               List.filter (is_param is_array_type) func_params
               |> Common.map_opt parse_array
@@ -890,11 +881,7 @@ let filter_shared_decl (j:Yojson.Basic.t) : (variable * array_t) list =
     let open Proto in
     let* k = build_var j in
     let* ty = Ojson.get_object j >>= get_type in
-    Some (k, {
-      array_hierarchy = SharedMemory;
-      array_size = Ctype.get_array_length ty;
-      array_type = Ctype.get_array_type ty;
-    })
+    Some (k, mk_array SharedMemory ty)
   in
   let open Ojson in
   match get_list j with
