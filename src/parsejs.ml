@@ -884,8 +884,9 @@ let filter_shared_decl (j:Yojson.Basic.t) : (variable * array_t) list =
     Some (k, mk_array SharedMemory ty)
   in
   let open Ojson in
-  match get_list j with
-  | None -> []
+  match get_object j >>= get_field "inner" >>= get_list with
+  | None ->
+    []
   | Some l ->
     List.filter (fun j ->
       get_object j
