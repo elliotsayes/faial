@@ -2,6 +2,70 @@ open Exp
 open Imp
 open Common
 
+
+(* Monadic let *)
+let (let*) = Option.bind
+(* Monadic pipe *)
+let (>>=) = Option.bind
+
+(* The following is an abstraction layer on top of Yojson to make it play
+   nicer with the Option monad. *)
+
+type j_object = (string * Yojson.Basic.t) list
+
+module Ojson = struct
+
+  (* --- Helpers for the option type --- *)
+
+  (* Convert an optional boolean into a boolean, where None represents false *)
+  let unwrap_or (default:'a): 'a option -> 'a =
+    function
+    | Some v -> v
+    | None -> default
+
+  (* --- Helpers for lists --- *)
+
+  let get_nth (i:int) (l: 'a list) : 'a option =
+    List.nth_opt l i
+
+  (* --- Helpers for Yojson --- *)
+
+  let cast_object (j:Yojson.Basic.t) : j_object option =
+    let open Yojson.Basic.Util in
+    match j with
+    | `Assoc l -> Some l
+    | _ -> None
+
+  let cast_string (j:Yojson.Basic.t) : string option =
+    let open Yojson.Basic.Util in
+    match j with
+    | `String v -> Some v
+    | _ -> None
+
+  let cast_list (j:Yojson.Basic.t) : Yojson.Basic.t list option =
+    match j with
+    | `List l -> Some l
+    | _ -> None
+
+  let get_field (k:string) (kv: j_object) : Yojson.Basic.t option =
+    List.assoc_opt k kv
+
+  (* Related to our c-to-json representation *)
+
+  let get_kind (o:j_object) : string option =
+    get_field "kind" o
+    >>= cast_string
+
+  let has_kind (ks:string list) (o:j_object) : bool =
+    get_kind o
+    (* Check if the kind is in 'ks' *)
+    |> Option.map (fun (k:string) -> List.mem k ks)
+    (* Convert bool option to bool *)
+    |> unwrap_or false
+end
+
+(* ----------------------------------------------------------------------- *)
+
 let pp_js data =
   let result = Yojson.Basic.to_string data in
   let size = 300 in
@@ -24,17 +88,12 @@ let call msg f data =
   | Some m -> m
   | None ->  parse_error (Buffer.create 0) msg data
 
-let is_some o =
-  match o with
-  | Some _ -> true
-  | None -> false
-
 type 'a builder = Yojson.Basic.t -> 'a option
 
 type 'a parser = {is_valid: Yojson.Basic.t -> bool; run: Yojson.Basic.t -> 'a}
 
 let make name f = {
-  is_valid = (fun x -> is_some (f x));
+  is_valid = (fun x -> Option.is_some (f x));
   run = call name f;
 }
 
@@ -56,76 +115,6 @@ let parse_nbin = make "nbin" (fun m ->
     Some Plus
   | _ -> None
 )
-
-let bind o1 f =
-  match o1 with
-  | Some x -> f x
-  | None -> None
-
-(* Monadic let *)
-let (let*) = bind
-(* Monadic pipe *)
-let (>>=) = bind
-
-let bind_all l f =
-  let rec aux l accum =
-    match l with
-    | [] -> f (List.rev accum)
-    | x::l -> bind x (fun x -> aux l (x::accum))
-  in
-  aux l []
-
-type j_object = (string * Yojson.Basic.t) list
-
-module Ojson = struct
-  let (let*) = Option.bind
-  let (>>=) = Option.bind
-
-  let get_object (j:Yojson.Basic.t) : j_object option =
-    let open Yojson.Basic.Util in
-    match j with
-    | `Assoc l -> Some l
-    | _ -> None
-
-  let get_string (j:Yojson.Basic.t) : string option =
-    let open Yojson.Basic.Util in
-    match j with
-    | `String v -> Some v
-    | _ -> None
-
-  let get_field (k:string) (kv: j_object) : Yojson.Basic.t option =
-    List.assoc_opt k kv
-
-  let get_list (j:Yojson.Basic.t) : Yojson.Basic.t list option =
-    match j with
-    | `List l -> Some l
-    | _ -> None
-
-  let get_nth (i:int) (l: 'a list) : 'a option =
-    List.nth_opt l i
-
-  let get_kind (o:j_object) : string option =
-    get_field "kind" o >>= get_string
-
-  let to_bool (o:bool option) =
-    match o with
-    | Some b -> b
-    | None -> false
-
-  let to_list (o:'a list option) : 'a list =
-    match o with
-    | Some l -> l
-    | None -> []
-
-  let has_kind (ks:string list) (o:j_object) : bool =
-    get_kind o
-    (* Check if the kind is in 'ks' *)
-    |> Option.map (fun (k:string) -> List.mem k ks)
-    (* Convert bool option to bool *)
-    |> to_bool
-end
-
-
 
 let member_opt k (j:Yojson.Basic.t) : Yojson.Basic.t option =
   let open Yojson.Basic.Util in
@@ -152,7 +141,7 @@ let get_kind (j:Yojson.Basic.t) : string =
 
 let get_fields fields (j:Yojson.Basic.t) : Yojson.Basic.t list  =
   let open Yojson.Basic.Util in
-  let kv = List.map (fun x -> let open Ojson in (x, get_object j >>= get_field x)) fields in
+  let kv = List.map (fun x -> let open Ojson in (x, cast_object j >>= get_field x)) fields in
   let missing = List.filter (fun (x,y) -> y = None) kv |> List.split |> fst in
   if List.length missing > 0 then
     let fields = join ", " fields in
@@ -218,20 +207,20 @@ module Ctype = struct
   let get_array_length (c:t) : int list =
     to_string c
     |> parse_array_dim_opt
-    |> Ojson.to_list
+    |> Ojson.unwrap_or []
 
   let get_array_type (c:t) : string list =
     to_string c
     |> parse_array_type_opt
-    |> Ojson.to_list
+    |> Ojson.unwrap_or []
 end
 
 let get_type (o:j_object) : Ctype.t option =
   let open Ojson in
   get_field "type" o
-  >>= get_object
+  >>= cast_object
   >>= get_field "qualType"
-  >>= get_string
+  >>= cast_string
   |> Option.map Ctype.make
 
 (* XXX: what about int [128] *)
@@ -418,18 +407,16 @@ let rec build_nexp : nexp builder =
     );
     "ProjExpr", (["task"; "child"], function
       | [`Int n; `String x] ->
-        bind (parse_task n) (fun t -> Some (Proj (t, var_make x)))
+        let* t = parse_task n in
+        Some (Proj (t, var_make x))
       | _ -> None
     );
     "ConditionalOperator", (["cond"; "thenExpr"; "elseExpr"], function
       | [b; then_expr; else_expr] ->
-        bind (build_bexp b) (fun b ->
-          bind (build_nexp then_expr) (fun n1 ->
-            bind (build_nexp else_expr) (fun n2 ->
-              Some (n_if b n1 n2)
-            )
-          )
-        )
+        let* b = build_bexp b in
+        let* n1 = build_nexp then_expr in
+        let* n2 = build_nexp else_expr in
+        Some (n_if b n1 n2)
       | _ -> None
     );
     "FunctionDecl", (["name"], function
@@ -483,15 +470,13 @@ and build_bexp : bexp builder =
     binary_operator (fun o e1 e2 ->
         match parse_nrel_opt o with
         | Some n ->
-          bind (build_nexp e1) (fun n1 ->
-            bind (build_nexp e2) (fun n2 ->
-              Some (n_rel n n1 n2)
-            )
-          )
+          let* n1 = build_nexp e1 in
+          let* n2 = build_nexp e2 in
+          Some (n_rel n n1 n2)
         | None ->
-          bind (build_bexp e1) (fun b1 ->
-            bind (build_bexp e2) (fun b2 ->
-              Some (b_rel (parse_brel.run o) b1 b2)))
+          let* b1 = build_bexp e1 in
+          let* b2 = build_bexp e2 in
+          Some (b_rel (parse_brel.run o) b1 b2)
     );
     "BinaryOperator", (["opcode"], function
       | [`String o] ->
@@ -507,14 +492,14 @@ and build_bexp : bexp builder =
     );
     "UnaryOperator", (["subExpr"; "opcode"], function
       | [b; `String "!"] ->
-        bind (build_bexp b) (fun b -> Some (b_not b))
+        let* b = build_bexp b in
+        Some (b_not b)
       | _ -> None
     );
     "PredicateExpr", (["subExpr"; "opcode"], function
       | [n; `String opcode] ->
-        bind (build_nexp n) (fun n ->
-          Some (Pred (opcode, n))
-        )
+        let* n = build_nexp n in
+        Some (Pred (opcode, n))
       | _ -> None
     );
     "DistinctExpr", (["args"], function
@@ -671,10 +656,9 @@ let rec build_stmt : stmt builder =
     );
     "ForEachStmt", (["var"; "range"; "body"], function
       | [v; r; body] ->
-        bind (build_stmt body) (fun body ->
-          let x = v_parse v in
-          Some (s_for ((parse_range x).run r) body)
-        )
+        let* body = build_stmt body in
+        let x = v_parse v in
+        Some (s_for ((parse_range x).run r) body)
       | _ -> None
     );
     "DeclStmt", (["inner"], function
@@ -709,23 +693,21 @@ let rec build_stmt : stmt builder =
     );
     "DoStmt", (["body"], function
       | [body] ->
-        bind (build_stmt body) (fun body ->
-          Some (s_loop body)
-        )
+        build_stmt body
+        (* Wrap the body with an s_loop *)
+        |> Option.map s_loop
       | _ -> None
     );
     "WhileStmt", (["body"], function
       | [body] ->
-        bind (build_stmt body) (fun body ->
-          Some (s_loop body)
-        )
+        build_stmt body
+        |> Option.map s_loop
       | _ -> None
     );
     "ForStmt", (["body"], function
       | [body] ->
-        bind (build_stmt body) (fun body ->
-          Some (s_loop body)
-        )
+        build_stmt body
+        |> Option.map s_loop
       | _ -> None
     );
     "SwitchStmt", ([], function
@@ -808,7 +790,7 @@ let parse_kernel (shared: (variable * array_t) list) =
                   then SharedMemory
                   else GlobalMemory
                 in
-                let* ty = (Ojson.get_object a >>= get_type) in
+                let* ty = (Ojson.cast_object a >>= get_type) in
                 Some (k, mk_array h ty)
               in
               List.filter (is_param is_array_type) func_params
@@ -844,9 +826,9 @@ let is_shared_attr (o:j_object) : bool =
   (* value: ' __attribute__((annotate("shared"))) *)
   let is_shared =
     get_field "value" o
-    >>= get_string
+    >>= cast_string
     |> Option.map (fun k -> k = " __attribute__((annotate(\"shared\")))")
-    |> to_bool
+    |> unwrap_or false
   in
   is_attr && is_shared
 
@@ -864,11 +846,11 @@ type:
 let has_shared_attr (o:j_object) : bool =
   let open Ojson in
   get_field "inner" o
-  >>= get_list
+  >>= cast_list
   >>= get_nth 0
-  >>= get_object
+  >>= cast_object
   |> Option.map is_shared_attr
-  |> to_bool
+  |> unwrap_or false
 
 let is_shared_array (o:j_object) : bool =
   let open Ojson in
@@ -880,20 +862,21 @@ let filter_shared_decl (j:Yojson.Basic.t) : (variable * array_t) list =
   let parse_array (j: Yojson.Basic.t) : (variable * array_t) option =
     let open Proto in
     let* k = build_var j in
-    let* ty = Ojson.get_object j >>= get_type in
+    let* ty = Ojson.cast_object j >>= get_type in
     Some (k, mk_array SharedMemory ty)
   in
   let open Ojson in
-  match get_object j >>= get_field "inner" >>= get_list with
-  | None ->
-    []
-  | Some l ->
-    List.filter (fun j ->
-      get_object j
-      |> Option.map is_shared_array
-      |> to_bool
-    ) l
-    |> Common.map_opt parse_array
+  let l = cast_object j
+    >>= get_field "inner"
+    >>= cast_list
+    |> unwrap_or []
+  in
+  List.filter (fun j ->
+    cast_object j
+    |> Option.map is_shared_array
+    |> unwrap_or false
+  ) l
+  |> Common.map_opt parse_array
 
 let parse_kernels =
   make "kernels" (fun s ->
