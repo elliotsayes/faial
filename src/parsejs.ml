@@ -17,11 +17,18 @@ module Ojson = struct
 
   (* --- Helpers for the option type --- *)
 
+  (* Converts a some to a none if the condition is not met *)
+  let ensure (predicate: 'a -> bool) (v:'a) : 'a option =
+    if predicate v then Some v else None
+
   (* Convert an optional boolean into a boolean, where None represents false *)
   let unwrap_or (default:'a): 'a option -> 'a =
     function
     | Some v -> v
     | None -> default
+
+  let unless (first:'a option) (second:'a option) : 'a option =
+    if Option.is_some first then first else second
 
   (* --- Helpers for lists --- *)
 
@@ -213,6 +220,26 @@ module Ctype = struct
     to_string c
     |> parse_array_type_opt
     |> Ojson.unwrap_or []
+
+  let is_array (c:t) : bool =
+    to_string c
+    |> parse_array_type_opt
+    |> Option.is_some
+
+  let is_int (c:t) : bool =
+    List.mem (to_string c) [
+      "int";
+      "const int";
+      "unsigned int";
+      "const unsigned int";
+      "short";
+      "const short";
+      "uint";
+      "const uint";
+      "long";
+      "const long";
+    ]
+
 end
 
 let get_type (o:j_object) : Ctype.t option =
@@ -222,29 +249,6 @@ let get_type (o:j_object) : Ctype.t option =
   >>= get_field "qualType"
   >>= cast_string
   |> Option.map Ctype.make
-
-(* XXX: what about int [128] *)
-let is_array_type o : bool =
-  let open Yojson.Basic in
-  let open Yojson.Basic.Util in
-  match member "qualType" o with
-  | `String x -> ends_with x "*"
-  | _ -> false
-
-let is_int_type o =
-  let open Yojson.Basic in
-  let open Yojson.Basic.Util in
-  match member "qualType" o with
-  | `String "int"
-  | `String "const int"
-  | `String "unsigned int"
-  | `String "const unsigned int"
-  | `String "short"
-  | `String "const short"
-  | `String "uint"
-  | `String "const uint"
-   -> true
-  | _ -> false
 
 let has_type j ty =
   let open Yojson.Basic in
@@ -592,6 +596,22 @@ let parse_mode =
     | `String "rw" -> Some W
     | _ -> None
   )
+
+(* XXX: delete me *)
+let is_int_type o =
+  let open Ojson in
+  cast_object o
+  >>= get_type
+  |> Option.map Ctype.is_int
+  |> unwrap_or false
+
+(* XXX: delete me *)
+let is_array_type o =
+  let open Ojson in
+  cast_object o
+  >>= get_type
+  |> Option.map Ctype.is_array
+  |> unwrap_or false
 
 let is_var o =
   let k = get_kind_res o in
