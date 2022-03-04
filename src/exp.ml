@@ -372,13 +372,13 @@ type array_t = {
   array_type: string list; (* Empty means unknown *)
 }
 
-let mk_array = {
-  array_hierarchy = SharedMemory;
+let mk_array (h:hierarchy_t) : array_t = {
+  array_hierarchy = h;
   array_size = [];
   array_type = [];
 }
 
-let mk_array_map (vs:variable list) : array_t VarMap.t =
+let mk_array_map (h:hierarchy_t) (vs:variable list) : array_t VarMap.t =
   vs
-  |> List.map (fun x -> (x, mk_array))
+  |> List.map (fun x -> (x, mk_array h))
   |> list_to_var_map
