@@ -87,6 +87,96 @@ let tests = "tests" >::: [
     };
     ()
   );
+  "parse_stmt1" >:: (fun _ ->
+    let s = "{
+      \"kind\" : \"BinaryOperator\",
+      \"lhs\" : {
+          \"kind\" : \"VarDecl\",
+          \"name\" : \"mem_ai\",
+          \"type\" : {
+            \"qualType\" : \"int\"
+          }
+      },
+      \"opcode\" : \"=\",
+      \"rhs\" : {
+          \"kind\" : \"BinaryOperator\",
+          \"lhs\" : {
+            \"kind\" : \"ParmVarDecl\",
+            \"name\" : \"baseIndex\",
+            \"type\" : {
+                \"qualType\" : \"int\"
+            }
+          },
+          \"opcode\" : \"+\",
+          \"rhs\" : {
+            \"kind\" : \"VarDecl\",
+            \"name\" : \"threadIdx.x\",
+            \"type\" : {
+                \"qualType\" : \"const unsigned int\"
+            }
+          },
+          \"type\" : {
+            \"qualType\" : \"unsigned int\"
+          }
+      },
+      \"type\" : {
+          \"qualType\" : \"int\"
+      }
+    }
+    "
+    in
+    let open Yojson.Basic in
+    let j = from_string s in
+    let s = parse_stmt.run j in
+    match s with
+    | Decl _ -> ()
+    | _ -> assert false
+  );
+  "parse_multi_decl" >:: (fun _ ->
+    let s = "
+    {\"inner\": [
+      {\"init\": \"call\",
+       \"inner\":
+        [
+          {\"kind\": \"VarDecl\",
+          \"name\": \"threadIdx.x\",
+          \"type\": {\"qualType\": \"const unsigned int\"}
+          }
+        ],
+       \"isUsed\": true,
+       \"kind\": \"VarDecl\",
+       \"name\": \"tid\",
+       \"type\": {\"desugaredQualType\": \"unsigned int\", \"qualType\": \"uint\"}},
+      {\"init\": \"call\",
+       \"inner\": [
+        {\"kind\": \"VarDecl\",
+         \"name\": \"blockIdx.x\",
+         \"type\": {\"qualType\": \"const unsigned int\"}
+        }],
+       \"isUsed\": true,
+       \"kind\": \"VarDecl\",
+       \"name\": \"x\",
+       \"type\": {\"desugaredQualType\": \"unsigned int\", \"qualType\": \"uint\"}},
+      {\"init\": \"call\",
+       \"inner\": [
+        {\"kind\": \"VarDecl\",
+         \"name\": \"blockIdx.y\",
+         \"type\": {\"qualType\": \"const unsigned int\"}}
+        ],
+       \"isUsed\": true,
+       \"kind\": \"VarDecl\",
+       \"name\": \"y\",
+       \"type\": {\"desugaredQualType\": \"unsigned int\", \"qualType\": \"uint\"}
+      }
+      ], \"kind\": \"DeclStmt\"}
+    " in
+    let open Yojson.Basic in
+    let j = from_string s in
+    let s = parse_stmt.run j in
+    match s with
+    | Block [Decl _; Decl _; Decl _]  -> ()
+    | _ -> assert false
+  );
   "parse_var" >:: (fun _ ->
       let s =
       "{
@@ -152,6 +242,22 @@ let tests = "tests" >::: [
     let v = parse_var.run j in
     assert_var_equal v (Variable "t");
     ()
+  );
+  "get_kind_res" >:: (fun _ ->
+    let open Yojson.Basic in
+    [
+        ("{\"kind\":\"ParmVarDecl\",\"name\":\"gridDim.x\",\"type\":{\"qualType\":\"const unsigned int\"},\"isUsed\":true}",
+        "ParmVarDecl");
+    ] |>
+    List.iter (fun (s, k) ->
+        let j = from_string s in
+        let expect_kind k j =
+            match get_kind_res j with
+            | Result.Ok x -> assert_equal k x
+            | Result.Error x -> assert_bool x false
+        in
+    expect_kind k j
+    )
   );
   "access_stmt" >:: (fun _ ->
     let s = "

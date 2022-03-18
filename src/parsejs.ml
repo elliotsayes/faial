@@ -688,8 +688,10 @@ let rec build_stmt : stmt builder =
       | _ -> None
     );
     "DeclStmt", (["inner"], function
-      | [`List [(`Assoc o) as j] ] ->
+      | [`List js ] ->
+        Some (Block (js |> Common.map_opt (fun j ->
         let open Ojson in
+        let* o = cast_object j in
         (if get_type o |> Option.map Ctype.is_int |> unwrap_or false then begin
           let v = match get_field "inner" o >>= cast_list with
             | Some [e] -> Some (n_parse e)
@@ -697,14 +699,25 @@ let rec build_stmt : stmt builder =
           in
           Some (Decl (v_parse j, Local, v))
         end else
-          Some (Block []))
+          None
+        ))))
       | _ ->
         (* XXX: Silently ignore any unrecognized declaration*)
         Some (Block [])
     );
     "BinaryOperator", (["lhs"; "rhs"; "type"; "opcode"], function
-      | [lhs; rhs; ty; `String "="] when is_var lhs && is_int_type ty ->
-         Some (Decl (v_parse lhs, Local, Some (n_parse rhs)))
+      | [lhs; rhs; `Assoc ty; `String "="] ->
+        let open Ojson in
+        let is_an_int =
+          get_field "qualType" ty
+          >>= cast_string
+          |> Option.map Ctype.make
+          |> Option.map Ctype.is_int
+          |> unwrap_or false
+        in
+        if is_var lhs && is_an_int
+        then Some (Decl (v_parse lhs, Local, Some (n_parse rhs)))
+        else Some (Block [])
       | [_; _; _; _] ->
          Some (Block [])
       | _ -> None
