@@ -390,7 +390,7 @@ let normalize_deps (kvs:(variable * nexp) list) : (variable * nexp) list =
           Hashtbl.replace kvs x (ReplaceAssoc.n_subst no_deps n);
           (* Mark this variable as being visited *)
           Hashtbl.replace replaced x ()
-        ) (Hashtbl.find used_by no_dep)
+        ) (match Hashtbl.find_opt used_by no_dep with | Some l -> l | None -> [])
       ) (VarSet.elements used_no_deps);
       (* Remove all variables without deps from deps, filtering out empty deps *)
       with_deps
