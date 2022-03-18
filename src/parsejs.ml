@@ -49,6 +49,12 @@ module Ojson = struct
     | `String v -> Some v
     | _ -> None
 
+  let cast_bool (j:Yojson.Basic.t) : bool option =
+    let open Yojson.Basic.Util in
+    match j with
+    | `Bool v -> Some v
+    | _ -> None
+
   let cast_list (j:Yojson.Basic.t) : Yojson.Basic.t list option =
     match j with
     | `List l -> Some l
@@ -682,15 +688,26 @@ let rec build_stmt : stmt builder =
       | _ -> None
     );
     "DeclStmt", (["inner"], function
-      | [`List [(`Assoc _ ) as j] ] when is_var j && has_type j is_int_type ->
-        let o = match member "inner" j with
-          | `List [e] -> Some (n_parse e)
-          | _ -> None
-        in
-        Some (Decl (v_parse j, Local, o))
+      | [`List [(`Assoc o) as j] ] ->
+        let open Ojson in
+        (if get_type o |> Option.map Ctype.is_int |> unwrap_or false then begin
+          let v = match get_field "inner" o >>= cast_list with
+            | Some [e] -> Some (n_parse e)
+            | _ -> None
+          in
+          Some (Decl (v_parse j, Local, v))
+        end else
+          Some (Block []))
       | _ ->
         (* XXX: Silently ignore any unrecognized declaration*)
         Some (Block [])
+    );
+    "BinaryOperator", (["lhs"; "rhs"; "type"; "opcode"], function
+      | [lhs; rhs; ty; `String "="] when is_var lhs && is_int_type ty ->
+         Some (Decl (v_parse lhs, Local, Some (n_parse rhs)))
+      | [_; _; _; _] ->
+         Some (Block [])
+      | _ -> None
     );
     "CXXOperatorCallExpr", ([], function
       | [] -> Some (Block [])
@@ -702,13 +719,6 @@ let rec build_stmt : stmt builder =
     );
     "CallExpr", ([], function
       | [] -> Some (Block [])
-      | _ -> None
-    );
-    "BinaryOperator", (["lhs"; "rhs"; "type"; "opcode"], function
-      | [lhs; rhs; ty; `String "="] when is_var lhs && is_int_type ty ->
-         Some (Decl (v_parse lhs, Local, Some (n_parse rhs)))
-      | [_; _; _; _] ->
-         Some (Block [])
       | _ -> None
     );
     "DoStmt", (["body"], function
@@ -787,33 +797,47 @@ let parse_kernel (shared: (variable * array_t) list) =
       "FunctionDecl", (["body"; "pre"; "params"; "name"], function
         | [body; pre; `List func_params; `String name] ->
           begin
-            let is_used j =
-              member "isReferenced" j = `Bool true
-              || member "isUsed" j = `Bool true
+            let open Ojson in
+            let is_used (o:j_object) =
+              let has_flag (f:string) : bool =
+                get_field f o >>= cast_bool |> unwrap_or false
+              in
+                has_flag "isReferenced" || has_flag "isUsed"
             in
-            let is_param p l =
-              match get_kind_res l, is_used l, member "type" l with
-              | Result.Ok "NonTypeTemplateParmDecl", true, ty -> p ty
-              | Result.Ok "ParmVarDecl", true, ty -> p ty
+            let func_params : j_object list =
+              func_params
+              |> Common.map_opt cast_object
+            in
+            let is_param (is_ty:Ctype.t->bool) (o:j_object) : bool =
+              match get_kind o, is_used o, get_type o with
+              | Some "NonTypeTemplateParmDecl", true, Some ty -> is_ty ty
+              | Some "ParmVarDecl", true, Some ty -> is_ty ty
               | _, _, _ -> false
             in
             let params : VarSet.t =
-              List.filter (is_param is_int_type) func_params
-                |> List.map v_parse
-                |> VarSet.of_list
+              func_params
+              |> List.filter (is_param Ctype.is_int)
+              |> List.map (fun o -> v_parse (`Assoc o))
+              |> VarSet.of_list
             in
             let arrays : array_t VarMap.t =
-              let parse_array a : (variable * array_t) option =
+              let parse_array (o:j_object) : (variable * array_t) option =
                 let open Proto in
-                let k = v_parse a in
-                let h = if is_shared a
-                  then SharedMemory
-                  else GlobalMemory
+                let k = v_parse (`Assoc o) in
+                let h : hierarchy_t =
+                  get_field "shared" o
+                  >>= cast_bool
+                  |> unwrap_or false
+                  |> (fun x ->
+                    if x then SharedMemory
+                    else GlobalMemory
+                  )
                 in
-                let* ty = (Ojson.cast_object a >>= get_type) in
+                let* ty = get_type o in
                 Some (k, mk_array h ty)
               in
-              List.filter (is_param is_array_type) func_params
+              func_params
+              |> List.filter (is_param Ctype.is_array)
               |> Common.map_opt parse_array
               |> List.append shared
               |> list_to_var_map

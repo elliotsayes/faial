@@ -207,13 +207,11 @@ impl TryFrom<Sexp> for CommandResponse {
                 match l.get(0) {
                     Some(Sexp::Atom(Atom::S(tag))) => {
                         match tag.as_str() {
-                            "model" => Ok(CommandResponse::Model(Model::try_from(row)?)),
                             "error" => CommandResponse::parse_error(row),
-                            _ => Err(format!("Unexpected tag: {}", tag)),
+                            _ => Ok(CommandResponse::Model(Model::try_from(row)?)),
                         }
                     },
                     _ => Ok(CommandResponse::Model(Model::try_from(row)?)),
-//                    _ => Err(format!("Unexpected tag: {:?}", row)),
                 }
             },
             _ => Err(format!("Unexpected sexp: {:?}", row)),
@@ -256,6 +254,44 @@ fn test_decision_parse_one() {
     0)
   (define-fun SIZE () Int
     0)
+    )
+"#;
+    match CommandResponse::try_from(sexp::parse(l).unwrap()) {
+        Ok(CommandResponse::Model(_)) => {},
+        _ => assert!(false),
+    }
+    let l = r#"
+    (
+        (define-fun $T2$mode () Int 1)
+        (define-fun w () Int 512)
+        (define-fun threadIdx.y$T1 () Int 0)
+        (define-fun BlockWidth () Int 80)
+        (define-fun $T1$loc () Int 7)
+        (define-fun blockDim.x () Int 2)
+        (define-fun threadIdx.x$T1 () Int 0)
+        (define-fun gridDim.x () Int 1)
+        (define-fun ib$T1 () Int 0)
+        (define-fun threadIdx.y$T2 () Int 1)
+        (define-fun SharedIdx () Int 0)
+        (define-fun ib1$T1 () Int 0)
+        (define-fun blockDim.y () Int 1)
+        (define-fun ib$T2 () Int 1)
+        (define-fun $array () String LocalBlock)
+        (define-fun threadIdx.x () Int 0)
+        (define-fun threadIdx.x$T2 () Int 1)
+        (define-fun $T2$idx$0 () Int 3)
+        (define-fun $T1$mode () Int 1)
+        (define-fun $T1$idx$0 () Int 3)
+        (define-fun SobelPitch () Int 512)
+        (define-fun $T2$loc () Int 7)
+        (define-fun blockIdx.x () Int 0)
+        (define-fun blockIdx.y () Int 0)
+        (define-fun SharedPitch () Int 384)
+        (define-fun ib1$T2 () Int 0)
+        (define-fun threadIdx.y () Int 0)
+        (define-fun gridDim.y () Int 1)
+        (define-fun div0 ((x!0 Int) (x!1 Int)) Int 0)
+        (define-fun mod0 ((x!0 Int) (x!1 Int)) Int (ite (and (= x!0 1) (= x!1 2)) 1 0) )
     )
 "#;
     match CommandResponse::try_from(sexp::parse(l).unwrap()) {
