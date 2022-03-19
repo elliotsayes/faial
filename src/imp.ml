@@ -261,7 +261,7 @@ let stmt_to_s: stmt -> PPrint.t list =
     | Inst ISync -> [Line "sync;"]
     | Inst (IAssert b) -> [Line ("assert (" ^ (b_to_s b) ^ ")")]
     | Inst (IAcc e) -> acc_expr_to_s e
-    | Block l -> [Block (List.map stmt_to_s l |> List.flatten)]
+    | Block l -> [Line "{"; Block (List.map stmt_to_s l |> List.flatten); Line "}"]
     | LocationAlias l ->
       [Line (
         var_name l.alias_target ^ " = " ^
