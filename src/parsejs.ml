@@ -688,16 +688,25 @@ let rec build_stmt : stmt builder =
       | _ -> None
     );
     "DeclStmt", (["inner"], function
-      | [`List js ] ->
-        Some (Block (js |> Common.map_opt (fun j ->
+      | [`List inner ] ->
+        (* We need to define a mult-level declaration, otherwise these
+           variables are defined in their own scope, thus breaking the lexical
+           scoping. *)
+        Some (Block (inner |> Common.map_opt (fun j ->
         let open Ojson in
         let* o = cast_object j in
-        (if get_type o |> Option.map Ctype.is_int |> unwrap_or false then begin
+        let is_an_int =
+          get_type o
+          |> Option.map Ctype.is_int
+          |> unwrap_or false
+        in
+        (if is_an_int then begin
           let v = match get_field "inner" o >>= cast_list with
             | Some [e] -> Some (n_parse e)
             | _ -> None
           in
-          Some (Decl (v_parse j, Local, v))
+          let x = v_parse j in
+          Some (Decl (x, Local, v))
         end else
           None
         ))))

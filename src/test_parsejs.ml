@@ -87,7 +87,7 @@ let tests = "tests" >::: [
     };
     ()
   );
-  "parse_stmt1" >:: (fun _ ->
+  "parse_decl1" >:: (fun _ ->
     let s = "{
       \"kind\" : \"BinaryOperator\",
       \"lhs\" : {
@@ -130,6 +130,56 @@ let tests = "tests" >::: [
     let s = parse_stmt.run j in
     match s with
     | Decl _ -> ()
+    | _ -> assert false
+  );
+  "parse_var" >:: (fun _ ->
+    let s = "
+          {
+            \"init\": \"c\",
+            \"inner\": [
+              {
+                \"kind\": \"VarDecl\",
+                \"name\": \"n\",
+                \"type\": {\"qualType\": \"const int\"}
+              }
+            ],
+            \"isUsed\": true,
+            \"kind\": \"VarDecl\",
+            \"name\": \"id\",
+            \"type\": {\"qualType\": \"int\"}
+          }"
+    in
+    let open Yojson.Basic in
+    let j = from_string s in
+    let v = parse_var.run j in
+    assert_string_equal "id" (Exp.var_name v)
+  );
+  "parse_decl2" >:: (fun _ ->
+    let s = "
+      {
+        \"inner\": [
+          {
+            \"init\": \"c\",
+            \"inner\": [
+              {
+                \"kind\": \"VarDecl\",
+                \"name\": \"n\",
+                \"type\": {\"qualType\": \"const int\"}
+              }
+            ],
+            \"isUsed\": true,
+            \"kind\": \"VarDecl\",
+            \"name\": \"id\",
+            \"type\": {\"qualType\": \"int\"}
+          }
+        ],
+        \"kind\": \"DeclStmt\"
+      }" in
+    let open Yojson.Basic in
+    let j = from_string s in
+    let s = parse_stmt.run j in
+    match s with
+    | Block [Decl _] -> ()
     | _ -> assert false
   );
   "parse_multi_decl" >:: (fun _ ->
