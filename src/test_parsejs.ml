@@ -348,7 +348,7 @@ let tests = "tests" >::: [
     assert (parse_stmt.is_valid j);
     let i = parse_stmt.run j in
     (match i with
-    | Inst (IAcc _) -> ()
+    | Acc _ -> ()
     | _ -> assert false
     );
     ()

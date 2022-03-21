@@ -9,21 +9,20 @@ type locality = Global | Local
 
 type access_expr = {access_index: nexp list; access_mode: mode}
 
-type instruction =
-| ISync
-| IAssert of bexp
-| IAcc of acc_expr
-
 type alias_expr = {alias_source: variable; alias_target: variable; alias_offset: nexp}
 
 type stmt =
-| Inst of instruction
+| Sync
+| Assert of bexp
+| Acc of acc_expr
 | Block of (stmt list)
 | LocationAlias of alias_expr
 | Decl of (variable * locality * nexp option)
 | If of (bexp * stmt * stmt)
 | For of (range * stmt)
 | Loop of stmt
+
+type prog = stmt list
 
 let s_block l =
   Block (
@@ -64,169 +63,182 @@ type p_kernel = {
   p_kernel_code: stmt;
 }
 
-let unblock p =
-  match p with
-  | Block l -> l
-  | _ -> failwith "unblock: expecting a block!"
-
 (** Variable normalization: Makes all variable declarations distinct. *)
 
-let rec loc_subst (alias:alias_expr) (p:stmt) : stmt =
-  let rec subst (p:stmt) =
-    match p with
-    | Inst (IAcc (x, a)) ->
-      if var_equal x alias.alias_target then
-        (match a.access_index with
-        | [n] -> Inst (IAcc (x, { a with access_index = [n_plus alias.alias_offset n] }))
-        | _ -> failwith ("Expecting an index with dimension 1, but got " ^ (string_of_int (List.length a.access_index)))
-        )
-      else
-        p
-    | Loop p -> Loop (loc_subst alias p)
+let loc_subst (alias:alias_expr) (s:stmt) : stmt =
+  let rec s_subst (alias:alias_expr) (s:stmt) : stmt =
+    match s with
+    | Acc (x, a) ->
+      if var_equal x alias.alias_target
+      then (
+        match a.access_index with
+        | [n] ->
+          Acc (x, { a with access_index = [n_plus alias.alias_offset n] })
+        | _ ->
+          let idx = List.length a.access_index |> string_of_int in
+          failwith ("Expecting an index with dimension 1, but got " ^ idx)
+      )
+      else s
+    | Loop s -> Loop (s_subst alias s)
+    | Block p -> Block (p_subst alias p)
+    | If (b, s1, s2) -> If (b, s_subst alias s1, s_subst alias s2)
+    | For (r, s) -> For (r, s_subst alias s)
     | LocationAlias _
     | Decl _
-    | Inst _
-    | Block [] -> p
-    | Block (i::l) ->
-      let i = subst i in
-      begin match i with
-        | LocationAlias a ->
-          subst (loc_subst a (Block l))
-        | _ ->
-          Block (i :: (subst (Block l) |> unblock))
-      end
-    | If (b, p1, p2) -> If (b, subst p1, subst p2)
-    | For (r, l) -> For (r, subst l)
+    | Sync
+    | Assert _ -> s
+  and p_subst (alias:alias_expr) (p:prog) : prog =
+    match p with
+    | [] -> []
+    | LocationAlias new_alias :: p -> p_subst alias (p_subst new_alias p)
+    | s :: p -> s_subst alias s :: p_subst alias p
   in
-  subst p
+  s_subst alias s
 
 module SubstMake(S:Subst.SUBST) = struct
   module M = Subst.Make(S)
+  let on_subst (st:S.t) (o:nexp option) : nexp option =
+    match o with
+    | Some n -> Some (M.n_subst st n)
+    | None -> None
 
-  let program_subst (s:S.t) p : stmt =
-    let on_subst s o =
-      match o with
-      | Some n -> Some (M.n_subst s n)
-      | None -> None
-    in
-
-    let rec subst s p =
-      match p with
-      | Inst ISync -> Inst ISync
-      | LocationAlias a ->
-        LocationAlias {a with alias_offset = M.n_subst s a.alias_offset}
-      | Inst (IAssert b) -> Inst (IAssert (M.b_subst s b))
-      | Inst (IAcc (x, a)) -> Inst (IAcc (x, M.a_subst s a))
-      | Block (p::l) ->
-        begin match p with
-          | Decl (x,v, o) ->
-            (* When there is a shadowing we stop replacing the rest of the block *)
-            let h = Decl (x,v, on_subst s o) in
-            let l = M.add s x (function
-              | Some s -> subst s (Block l) |> unblock
-              | None -> l
-            ) in
-            Block (h::l)
-          | _ ->
-            let h = subst s p in
-            let l = subst s (Block l) |> unblock in
-            Block (h::l)
-        end
-      | Block [] -> Block []
-      | Loop p -> Loop (subst s p)
-      | Decl (x,v,o) -> Decl (x,v, on_subst s o)
-      | If (b, p1, p2) -> If (M.b_subst s b, subst s p1, subst s p2)
-      | For (r, p) ->
-        For (M.r_subst s r,
-          M.add s r.range_var (function
-          | Some s -> subst s p
-          | None -> p
-          )
+  let rec s_subst (st:S.t) (s:stmt) : stmt =
+    match s with
+    | Sync -> Sync
+    | LocationAlias a ->
+      LocationAlias {a with alias_offset = M.n_subst st a.alias_offset}
+    | Assert b -> Assert (M.b_subst st b)
+    | Acc (x, a) -> Acc (x, M.a_subst st a)
+    | Block p -> Block (p_subst st p)
+    | Loop p -> Loop (s_subst st p)
+    | Decl (x, v, o) -> Decl (x, v, on_subst st o)
+    | If (b, p1, p2) -> If (M.b_subst st b, s_subst st p1, s_subst st p2)
+    | For (r, p) ->
+      For (M.r_subst st r,
+        M.add st r.range_var (function
+        | Some st -> s_subst st p
+        | None -> p
         )
-    in
-    subst s p
+      )
+
+  and p_subst (st:S.t) (p:prog) : prog =
+    match p with
+    | [] -> []
+    | Decl (x, v, o) :: p ->
+      let p = M.add st x (function
+        | Some st' -> p_subst st' p
+        | None -> p
+      )
+      in
+      Decl (x, v, on_subst st o) :: p
+    | s :: p -> s_subst st s :: p_subst st p
+  
   end
 
 module ReplacePair = SubstMake(Subst.SubstPair)
 
-let normalize_variables (p:stmt) xs =
-  let rec norm p xs : stmt * VarSet.t =
-    let do_subst x do_cont : stmt * VarSet.t =
-      if VarSet.mem x xs then (
-        let new_x : variable = Bindings.generate_fresh_name x xs in
-        let new_xs = VarSet.add new_x xs in
-        let si = Subst.SubstPair.make (x, Var new_x) in
-        do_cont new_x new_xs (fun (p:stmt) -> norm (ReplacePair.program_subst si p) new_xs)
-      ) else (
-        let new_xs = VarSet.add x xs in
-        do_cont x new_xs (fun p -> norm p new_xs)
-      )
-    in
-    match p with
-    | Loop p -> let (p, xs) = norm p xs in (Loop p, xs)
-    | LocationAlias _
-    | Inst _ -> (p, xs)
-    | Block (p :: l) ->
-      begin match p with
-      | Decl (x,v,n) ->
-        do_subst x (fun new_x new_xs do_rec ->
-          let p, new_xs = do_rec (Block l) in
-          Block (Decl (new_x,v, n) :: unblock p), new_xs
-        )
-      | _ ->
-        let rest, xs = norm (Block l) xs in
-        Block (p :: unblock rest), xs
-      end
-    | Block [] -> Block [], xs
-    | Decl (x,v, n) -> do_subst x (fun new_x new_xs kont ->
-        Decl (new_x, v, n), new_xs
-      )
-    | If (b, p1, p2) ->
-      let p1, xs = norm p1 xs in
-      let p2, xs = norm p2 xs in
-      If (b, p1, p2), xs
-    | For (r, p) ->
-      do_subst r.range_var (fun new_x new_xs kont ->
-        let p, xs = kont p in
-        For (r, p), xs
-      )
+let normalize_variables (s:stmt) (xs:VarSet.t) : stmt =
+  let add_var x xs =
+    if VarSet.mem x xs then (
+      let new_x : variable = Bindings.generate_fresh_name x xs in
+      let new_xs = VarSet.add new_x xs in
+      let si = Subst.SubstPair.make (x, Var new_x) in
+      (Some (new_x, si), new_xs)
+    ) else (
+      let new_xs = VarSet.add x xs in
+      (None, new_xs)
+    )
   in
-  norm p xs |> fst
-
-let reify (locations:VarSet.t) (p:stmt) : prog =
-  let rec reify =
-    function
+  let rec norm_s (s:stmt) xs : stmt * VarSet.t =
+    match s with
+    | Loop s ->
+      let (s, xs) = norm_s s xs in
+      Loop s, xs
     | LocationAlias _
-    | Decl _ (* Only handled inside a block *)
-    | Inst (IAssert _)
-    | Block []
-      -> [] (* Only handled inside a block *)
-    | Inst ISync -> [Sync]
-    | Inst (IAcc (x,y)) ->
+    | Acc _
+    | Assert _
+    | Sync -> (s, xs)
+    | Block p ->
+      let (p, xs) = norm_p p xs in
+      Block p, xs
+    | Decl (x, v, n) ->
+      (match add_var x xs with
+      | Some (x, si), xs -> Decl (x, v, n), xs
+      | None, xs -> Decl (x, v, n), xs)
+    | If (b, s1, s2) ->
+      let s1, xs = norm_s s1 xs in
+      let s2, xs = norm_s s2 xs in
+      If (b, s1, s2), xs
+    | For (r, s) ->
+      (match add_var r.range_var xs with
+      | Some (x, si), xs ->
+        (* Update loop variable with new var *)
+        let r = { r with range_var = x; } in
+        (* Make sure body uses new variable *)
+        let s, xs = norm_s (ReplacePair.s_subst si s) xs in
+        For (r, s), xs
+      | None, xs ->
+        (* Otherwise, just normalize the loop body *)
+        let s, xs = norm_s s xs in
+        For (r, s), xs 
+      )
+  and norm_p (p:prog) xs =
+    match p with
+    | [] -> [], xs
+    | Decl (x, v, n) :: p ->
+      (match add_var x xs with
+      | (Some (x, si), xs) ->
+        (* Make sure the code that follows uses the new var, and normalize it *)
+        let p, xs = norm_p (ReplacePair.p_subst si p) xs in
+        Decl (x, v, n) :: p, xs
+      | (None, xs) ->
+        (* Otherwise, just normalize the code that follows *)
+        let p, xs = norm_p p xs in
+        Decl (x, v, n) :: p, xs 
+      )
+    | s :: p ->
+        let s, xs = norm_s s xs in
+        let p, xs = norm_p p xs in
+        s :: p, xs
+  in
+  norm_s s xs |> fst
+
+let reify (locations:VarSet.t) (s:stmt) : Proto.prog =
+  let rec reify_s : stmt -> Proto.prog =
+    function
+    | LocationAlias _ (* Only handled inside a block *) 
+    | Decl _ (* Handled by normalize_deps *)
+    | Assert _ -> []
+    | Block p -> reify_p p
+    | Sync -> [Sync]
+    | Acc (x,y) ->
       if VarSet.mem x locations
       then [Acc (x,y)]
       else []
-    | Block (Inst (IAssert b)::l) -> [Cond (b, reify (Block l))]
-    | Block (LocationAlias a :: l) ->
-      Block l
-      |> loc_subst a
-      |> reify
-    | Block (i::l) -> Common.append_tr (reify i) (reify (Block l))
-    | If (b,p, Block []) -> [Cond (b,reify p)]
-    | If (b,Block[],q) -> [Cond(BNot b, reify q)]
-    | If (b,p,q) -> [Cond (b,reify p);Cond(BNot b, reify q)]
-    | Loop p ->
-      begin match reify p with
+    | If (b, s, Block []) -> [Cond (b, reify_s s)]
+    | If (b, Block[], s) -> [Cond(BNot b, reify_s s)]
+    | If (b, s1, s2) -> [Cond (b, reify_s s1); Cond(BNot b, reify_s s2)]
+    | Loop s ->
+      begin match reify_s s with
       | [] -> []
       | p -> [Loop (mk_range (var_make "X?") (Num 2), p)]
       end
-    | For (r, p) ->
-      begin match reify p with
+    | For (r, s) ->
+      begin match reify_s s with
       | [] -> []
       | p -> [Loop (r, p)]
       end
+  and reify_p : prog -> Proto.prog =
+    function
+    | [] -> []
+    | Assert b :: p -> [Cond (b, reify_p p)]
+    | LocationAlias a :: p ->
+      Block p
+      |> loc_subst a
+      |> reify_s
+    | s :: p -> Common.append_tr (reify_s s) (reify_p  p)
   in
-  reify p
+  reify_s s
 
 let rec get_var_binders (p:stmt) (kvs: (variable * nexp) list) : (variable * nexp) list =
   match p with
@@ -234,9 +246,9 @@ let rec get_var_binders (p:stmt) (kvs: (variable * nexp) list) : (variable * nex
     -> (x,n)::kvs
   | Decl (_,_,None)
   | LocationAlias _
-  | Inst (IAssert _)
-  | Inst ISync
-  | Inst (IAcc _)
+  | Assert _
+  | Sync
+  | Acc _
   | Block []
     -> kvs
   | Block (i::l) -> get_var_binders i kvs |> get_var_binders (Block l)
@@ -245,9 +257,9 @@ let rec get_var_binders (p:stmt) (kvs: (variable * nexp) list) : (variable * nex
   | For (_, p)
     -> get_var_binders p kvs
 
-let rec p_subst (kvs: SubstAssoc.t) (p:prog) =
+let rec p_subst (kvs: SubstAssoc.t) (p:Proto.prog) : Proto.prog =
   List.map (i_subst kvs) p
-and i_subst (kvs: SubstAssoc.t) (i:inst) =
+and i_subst (kvs: SubstAssoc.t) (i:Proto.inst) : Proto.inst =
   match i with
   | Acc e -> Acc (ReplaceAssoc.acc_expr_subst kvs e)
   | Sync -> Sync
@@ -258,9 +270,9 @@ let stmt_to_s: stmt -> PPrint.t list =
   let open PPrint in
   let rec stmt_to_s : stmt -> PPrint.t list =
     function
-    | Inst ISync -> [Line "sync;"]
-    | Inst (IAssert b) -> [Line ("assert (" ^ (b_to_s b) ^ ")")]
-    | Inst (IAcc e) -> acc_expr_to_s e
+    | Sync -> [Line "sync;"]
+    | Assert b -> [Line ("assert (" ^ (b_to_s b) ^ ")")]
+    | Acc e -> acc_expr_to_s e
     | Block l -> [Line "{"; Block (List.map stmt_to_s l |> List.flatten); Line "}"]
     | LocationAlias l ->
       [Line (
@@ -312,7 +324,9 @@ let print_kernel (k: p_kernel) : unit =
 let rec get_variable_decls (p:stmt) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
   match p with
   | LocationAlias _
-  | Inst _ -> (locals,globals)
+  | Assert _
+  | Acc _
+  | Sync -> (locals,globals)
   | Block l -> List.fold_right get_variable_decls l (locals,globals)
   | Decl (x, Local, _) -> VarSet.add x locals, globals
   | Decl (x, Global, _) -> locals, VarSet.add x globals
@@ -400,8 +414,8 @@ let normalize_deps (kvs:(variable * nexp) list) : (variable * nexp) list =
   norm deps;
   kvs |> Common.hashtbl_elements
 
-let compile (k:p_kernel) : prog kernel =
-  let rec pre_from_body (l:prog) : (bexp * prog) =
+let compile (k:p_kernel) : Proto.prog kernel =
+  let rec pre_from_body (l:Proto.prog) : (bexp * Proto.prog) =
     match l with
     | [Cond(b,[Cond(b',l)])] -> pre_from_body [Cond(b_and b b', l)]
     | [Cond(b, l)] -> (b, l)

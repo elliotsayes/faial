@@ -632,16 +632,16 @@ let rec build_stmt : stmt builder =
   let b_parse = parse_bexp.run in
   let v_parse = parse_var.run in
   choose_one_of [
-    "SyncStmt", ([], fun _ -> Some (Inst ISync));
+    "SyncStmt", ([], fun _ -> Some Sync);
     "AccessStmt", (["location"; "mode"; "index"], function
       | [x; m; `List idx] ->
-        Some (Inst (IAcc (v_parse x, {
+        Some (Acc (v_parse x, {
           access_mode = parse_mode.run m;
           access_index = List.map n_parse idx;
-        })))
+        }))
       | _ -> None);
     "AssertStmt", (["cond"], function
-      | [b] -> Some (Inst (IAssert (b_parse b)))
+      | [b] -> Some (Assert (b_parse b))
       | _ -> None
     );
     "LocationAliasStmt", (["source"; "target"; "offset"], function
