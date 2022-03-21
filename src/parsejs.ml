@@ -692,7 +692,7 @@ let rec build_stmt : stmt builder =
         (* We need to define a mult-level declaration, otherwise these
            variables are defined in their own scope, thus breaking the lexical
            scoping. *)
-        Some (Block (inner |> Common.map_opt (fun j ->
+        Some (Decl (inner |> Common.map_opt (fun j ->
         let open Ojson in
         let* o = cast_object j in
         let is_an_int =
@@ -706,7 +706,7 @@ let rec build_stmt : stmt builder =
             | _ -> None
           in
           let x = v_parse j in
-          Some (Decl (x, Local, v))
+          Some (x, Local, v)
         end else
           None
         ))))
@@ -725,7 +725,7 @@ let rec build_stmt : stmt builder =
           |> unwrap_or false
         in
         if is_var lhs && is_an_int
-        then Some (Decl (v_parse lhs, Local, Some (n_parse rhs)))
+        then Some (Decl [(v_parse lhs, Local, Some (n_parse rhs))])
         else Some (Block [])
       | [_; _; _; _] ->
          Some (Block [])

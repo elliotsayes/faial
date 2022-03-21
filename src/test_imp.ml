@@ -140,15 +140,15 @@ let tests = "test_predicates" >::: [
     let k = var_make "k" in
     let id = var_make "id" in
     let wr = Acc (var_make "s_Q", {access_index = [Var id]; access_mode = W}) in
-    let inc (x:variable) = Decl (x, Local, Some (n_plus (Num 32) (Var x))) in
+    let inc (x:variable) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
-      Decl(var_make "threadIdx.x", Local, None);
-      Decl(n, Local, Some (Var (var_make "threadIdx.x")));
-      Decl(k, Local, Some (Var (var_make "blockIdx.x")));
-      Decl(m, Local, Some (
+      Decl[(var_make "threadIdx.x", Local, None)];
+      Decl[(n, Local, Some (Var (var_make "threadIdx.x")))];
+      Decl[(k, Local, Some (Var (var_make "blockIdx.x")))];
+      Decl[(m, Local, Some (
         n_plus (Var n) (n_mult (Num 96) (Var k))
-      ));
-      Decl(id, Local, Some (Var n));
+      ))];
+      Decl [(id, Local, Some (Var n))];
       wr;
       inc id;
       wr;
