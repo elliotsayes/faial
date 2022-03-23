@@ -369,14 +369,14 @@ let parse_nrel_opt : nrel builder =
 
 let parse_nrel : nrel parser = make "nrel" parse_nrel_opt
 
-let parse_brel : brel parser = make "brel" (fun m ->
+let parse_brel : (bexp -> bexp -> bexp) parser = make "brel" (fun m ->
   let open Yojson.Basic in
   match m with
-  | `String "||" -> Some BOr
-  | `String "&&" -> Some BAnd
+  | `String "||" -> Some b_or
+  | `String "&&" -> Some b_and
   | `String x ->
     prerr_endline ("WARNING: brel: Can't handle " ^ x ^ " converting it to |");
-    Some BOr
+    Some b_or
   | _ -> None
 )
 
@@ -486,7 +486,7 @@ and build_bexp : bexp builder =
         | None ->
           let* b1 = build_bexp e1 in
           let* b2 = build_bexp e2 in
-          Some (b_rel (parse_brel.run o) b1 b2)
+          Some ((parse_brel.run o) b1 b2)
     );
     "BinaryOperator", (["opcode"], function
       | [`String o] ->
