@@ -304,7 +304,7 @@ let post_to_proto (p: Post.prog) : Proto.prog =
     | Acc (x,e) -> [Acc (x, e)]
     | Skip -> []
     | If (b, p1, p2) ->
-      [Cond (b, post_to_proto_p p1); Cond (BNot b, post_to_proto_p p2)]
+      Proto.p_cond b (post_to_proto_p p1) @ Proto.p_cond (b_not b) (post_to_proto_p p2)
     | For (r, p) ->
       [Loop (r, post_to_proto_p p)]
     | Loop p ->

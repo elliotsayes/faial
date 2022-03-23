@@ -137,6 +137,11 @@ let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =
     kernel_local_variables = VarSet.diff k.kernel_local_variables keys;
   }
 
+let p_cond (b:bexp) (p:prog) : prog =
+  match b, p with
+  | Bool true, _ -> p
+  | _, [] | Bool false, _ -> []
+  | _, _ -> [Cond(b, p)] 
 
 let vars_distinct (p:prog)  (known:VarSet.t) : prog =
   let open Bindings in
