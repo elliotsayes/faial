@@ -6,10 +6,12 @@ module type SUBST =
     type t
     (* Given a substitution map and a variable perform the substitution if possible. *)
     val find: t -> variable -> nexp option
-    (* Removes a variable from the current substitution map *)
+    (* Removes a variable from the current substitution map; return None if the map became empty *)
     val remove: t -> variable -> t option
     (* Renders as a string *)
     val to_string: t -> string
+    (* Tests if the map is empty *)
+    val is_empty: t -> bool
   end
 
 module Make (S:SUBST) = struct
@@ -95,6 +97,7 @@ module SubstPair =
     let find (x, v) y = if var_equal x y then Some v else None
     let remove (x, v) y = if var_equal x y then None else Some (x, v)
     let to_string (x, v) = "[" ^ var_name x ^ "=" ^ PPrint.n_to_s v ^ "]"
+    let is_empty (x, v) = false
   end
 
 module ReplacePair = Make(SubstPair)
@@ -104,13 +107,31 @@ module ReplacePair = Make(SubstPair)
 module SubstAssoc =
   struct
     type t = (string, nexp) Hashtbl.t
+
     let make kvs = Common.hashtbl_from_list kvs
+
     let find ht k = Hashtbl.find_opt ht (var_name k)
-    let remove ht k =
+
+    let put_mut (ht:t) (k:variable) (n:nexp) : unit =
+      Hashtbl.replace ht (var_name k) n
+      
+    let is_empty (ht:t) : bool = Hashtbl.length ht = 0
+
+    let put (ht:t) (k:variable) (n:nexp) : t =
+      let ht = Hashtbl.copy ht in
+      put_mut ht k n;
+      ht
+
+    let del ht k =
       let ht = Hashtbl.copy ht in
       Hashtbl.remove ht (var_name k);
+      ht
+
+    let remove ht k =
+      let ht = del ht k in
       if Hashtbl.length ht = 0 then None
       else Some ht
+
     let to_string ht =
       Common.hashtbl_elements ht
       |> List.map (fun (k, v) -> k ^ "=" ^ PPrint.n_to_s v)

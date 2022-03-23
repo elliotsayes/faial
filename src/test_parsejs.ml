@@ -179,7 +179,7 @@ let tests = "tests" >::: [
     let j = from_string s in
     let s = parse_stmt.run j in
     match s with
-    | Block [Decl _] -> ()
+    | Decl _ -> ()
     | _ -> assert false
   );
   "parse_multi_decl" >:: (fun _ ->
@@ -224,7 +224,7 @@ let tests = "tests" >::: [
     let j = from_string s in
     let s = parse_stmt.run j in
     match s with
-    | Block [Decl _; Decl _; Decl _]  -> ()
+    | Decl [_; _; _]  -> ()
     | _ -> assert false
   );
   "parse_var" >:: (fun _ ->
