@@ -154,6 +154,23 @@ let main_t =
               VarSet.mem (var_make x) k.kernel_global_variables
             )
           in
+          let thread_count : int list = Common.map_opt (fun (k, v) ->
+            if List.mem k ["blockDim.x"; "blockDim.y"; "blockDim.z"] then
+              Some v
+            else
+              None
+          ) sets in
+          let check_drf = if List.length thread_count > 0
+            then (List.fold_left ( * ) 1 thread_count) > 1
+            else true
+          in
+          let k = if check_drf
+            then k
+            else (
+              prerr_endline ("WARNING: skip checks for '" ^ k.kernel_name ^ "', since blockDim <= 1 (no concurrency)");
+              clear_kernel k
+            )
+          in
           let k = Proto.replace_constants key_vals k in
           halt_when (cmd = Typecheck) Proto.print_k k;
           let ks = Wellformed.translate k in

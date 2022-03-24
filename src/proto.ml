@@ -123,19 +123,32 @@ let p_opt (p:prog) : prog =
   in
   opt_p p
 
-let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =
-  if Common.list_is_empty kvs then k else
-  let kvs = List.map (fun (x,n) -> x, Num n) kvs in
-  let keys = List.split kvs |> fst |> List.map var_make |> VarSet.of_list in
-  let kvs = Subst.SubstAssoc.make kvs in
+(* Create a new kernel with same name, but no code to check *)
+let clear_kernel (k:prog kernel) : prog kernel =
   {
     kernel_name = k.kernel_name;
-    kernel_arrays = k.kernel_arrays;
-    kernel_pre = PSubstAssoc.M.b_subst kvs k.kernel_pre |> Constfold.b_opt;
-    kernel_code = PSubstAssoc.p_subst kvs k.kernel_code |> p_opt;
-    kernel_global_variables = VarSet.diff k.kernel_global_variables keys;
-    kernel_local_variables = VarSet.diff k.kernel_local_variables keys;
+    kernel_arrays = VarMap.empty;
+    kernel_pre = Bool true;
+    kernel_code = [];
+    kernel_global_variables = VarSet.empty;
+    kernel_local_variables = VarSet.empty;
   }
+
+let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =
+  if Common.list_is_empty kvs then k else
+  begin
+    let kvs = List.map (fun (x,n) -> x, Num n) kvs in
+    let keys = List.split kvs |> fst |> List.map var_make |> VarSet.of_list in
+    let kvs = Subst.SubstAssoc.make kvs in
+    {
+      kernel_name = k.kernel_name;
+      kernel_arrays = k.kernel_arrays;
+      kernel_pre = PSubstAssoc.M.b_subst kvs k.kernel_pre |> Constfold.b_opt;
+      kernel_code = PSubstAssoc.p_subst kvs k.kernel_code |> p_opt;
+      kernel_global_variables = VarSet.diff k.kernel_global_variables keys;
+      kernel_local_variables = VarSet.diff k.kernel_local_variables keys;
+    }
+  end
 
 let p_cond (b:bexp) (p:prog) : prog =
   match b, p with
