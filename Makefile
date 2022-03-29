@@ -10,6 +10,9 @@ all: native byte
 clean:
 	$(OCB) -clean
 
+cast:
+	$(OCB) cast.native
+
 native: build-tests
 	$(OCB) main.native
 	cp $(BUILD)/main.native faial-bin

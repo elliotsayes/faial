@@ -1,84 +1,13 @@
 open Exp
 open Imp
 open Common
-
+(* The following is an abstraction layer on top of Yojson to make it play
+   nicer with the Option monad. *)
 
 (* Monadic let *)
 let (let*) = Option.bind
 (* Monadic pipe *)
 let (>>=) = Option.bind
-
-(* The following is an abstraction layer on top of Yojson to make it play
-   nicer with the Option monad. *)
-
-type j_object = (string * Yojson.Basic.t) list
-
-module Ojson = struct
-
-  (* --- Helpers for the option type --- *)
-
-  (* Converts a some to a none if the condition is not met *)
-  let ensure (predicate: 'a -> bool) (v:'a) : 'a option =
-    if predicate v then Some v else None
-
-  (* Convert an optional boolean into a boolean, where None represents false *)
-  let unwrap_or (default:'a): 'a option -> 'a =
-    function
-    | Some v -> v
-    | None -> default
-
-  let unless (first:'a option) (second:'a option) : 'a option =
-    if Option.is_some first then first else second
-
-  (* --- Helpers for lists --- *)
-
-  let get_nth (i:int) (l: 'a list) : 'a option =
-    List.nth_opt l i
-
-  (* --- Helpers for Yojson --- *)
-
-  let cast_object (j:Yojson.Basic.t) : j_object option =
-    let open Yojson.Basic.Util in
-    match j with
-    | `Assoc l -> Some l
-    | _ -> None
-
-  let cast_string (j:Yojson.Basic.t) : string option =
-    let open Yojson.Basic.Util in
-    match j with
-    | `String v -> Some v
-    | _ -> None
-
-  let cast_bool (j:Yojson.Basic.t) : bool option =
-    let open Yojson.Basic.Util in
-    match j with
-    | `Bool v -> Some v
-    | _ -> None
-
-  let cast_list (j:Yojson.Basic.t) : Yojson.Basic.t list option =
-    match j with
-    | `List l -> Some l
-    | _ -> None
-
-  let get_field (k:string) (kv: j_object) : Yojson.Basic.t option =
-    List.assoc_opt k kv
-
-  (* Related to our c-to-json representation *)
-
-  let get_kind (o:j_object) : string option =
-    get_field "kind" o
-    >>= cast_string
-
-  let has_kind (ks:string list) (o:j_object) : bool =
-    get_kind o
-    (* Check if the kind is in 'ks' *)
-    |> Option.map (fun (k:string) -> List.mem k ks)
-    (* Convert bool option to bool *)
-    |> unwrap_or false
-end
-
-(* ----------------------------------------------------------------------- *)
-
 let pp_js data =
   let result = Yojson.Basic.to_string data in
   let size = 300 in
@@ -91,9 +20,11 @@ let pp_js data =
 let parse_error (b:Buffer.t) msg data =
   Buffer.add_string b ("Error parsing '" ^ msg ^"': " ^ pp_js data ^ "\n");
   raise (Common.ParseError b)
-
 let abort_error msg data =
   raise (msg ^ "\n" ^ pp_js data ^ "\n"|> Common.mk_parse_error_s)
+
+
+(* ----------------------------------------------------------------------- *)
 
 let call msg f data =
   let o = (try f data with Common.ParseError b -> parse_error b msg data) in
@@ -248,7 +179,7 @@ module Ctype = struct
 
 end
 
-let get_type (o:j_object) : Ctype.t option =
+let get_type (o:Ojson.j_object) : Ctype.t option =
   let open Ojson in
   get_field "type" o
   >>= cast_object
@@ -885,7 +816,7 @@ let parse_kernel (shared: (variable * array_t) list) =
     spelling: annotate
     value: ' __attribute__((annotate("shared")))'
 *)
-let is_shared_attr (o:j_object) : bool =
+let is_shared_attr (o:Ojson.j_object) : bool =
   let open Ojson in
   (* kind: AnnotateAttr *)
   let is_attr = has_kind ["AnnotateAttr"] o in
@@ -909,7 +840,7 @@ name: smem
 type:
   qualType: int [128]
 *)
-let has_shared_attr (o:j_object) : bool =
+let has_shared_attr (o:Ojson.j_object) : bool =
   let open Ojson in
   get_field "inner" o
   >>= cast_list
@@ -918,7 +849,7 @@ let has_shared_attr (o:j_object) : bool =
   |> Option.map is_shared_attr
   |> unwrap_or false
 
-let is_shared_array (o:j_object) : bool =
+let is_shared_array (o:Ojson.j_object) : bool =
   let open Ojson in
   has_kind variable_kind o && has_shared_attr o
 

@@ -2,7 +2,7 @@ open OUnit2
 open Parsejs
 open Testutil
 
-let shared_attr : j_object =
+let shared_attr : Ojson.j_object =
   let open Yojson.Basic in
   [
     "kind", `String "AnnotateAttr";
@@ -10,7 +10,7 @@ let shared_attr : j_object =
     "value", `String " __attribute__((annotate(\"shared\")))"
   ]
 
-let shared_array : j_object =
+let shared_array : Ojson.j_object =
   let open Yojson.Basic in
   [
     "inner", `List [`Assoc shared_attr];
