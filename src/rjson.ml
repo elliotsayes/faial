@@ -17,6 +17,20 @@ let unwrap_or (default:'a): ('a, 'e) Result.t -> 'a =
 let unless (first:('a, 'e) Result.t) (second:('a, 'e) Result.t) : ('a, 'e) Result.t =
   if Result.is_ok first then first else second
 
+(*
+  Takes an ok_handler and an error_handler.
+  Applies ok_handler to v and if there's an error, route it to
+  the error_handler.
+  *)
+let wrap
+  (ok_handler:'a -> ('b,'e) Result.t )
+  (error_handler:'e -> ('b,'e) Result.t)
+  (v:'a)
+: ('b,'e) Result.t =
+  match ok_handler v with
+  | Ok bv -> Ok bv
+  | Error (e:'e) -> error_handler e
+
 
 (* --- Helpers for Yojson --- *)
 
@@ -123,16 +137,17 @@ let get_field (k:string) (kv: j_object) : Yojson.Basic.t j_result =
 
 (* Related to our c-to-json representation *)
 
-let because_get_field (k:string) (kv:j_object) (r: 'a j_result) : 'a j_result = 
-  Result.map_error (fun e -> Because ("field: " ^ k, `Assoc kv, e)) r
+let because_field (k:string) (o:j_object) (e:j_error) : j_error =
+  Because ("field: " ^ k, `Assoc o, e)
 
-let with_field (k:string) (f:Yojson.Basic.t -> 'a j_result) (kv:j_object): 'a j_result =
-  let* field = get_field k kv in
-  f field |> because_get_field k kv
+let with_field (k:string) (f:Yojson.Basic.t -> 'a j_result) (o:j_object): 'a j_result =
+  get_field k o
+  >>= wrap f (* If we can get the field, then pass the field to 'f' *)
+    (fun e -> Error (because_field k o e))
 
-let with_field_or (k:string) (f:Yojson.Basic.t -> 'a j_result) (default:'a) (kv:j_object): 'a j_result =
-  match List.assoc_opt k kv with
-  | Some field -> f field |> because_get_field k kv
+let with_field_or (k:string) (f:Yojson.Basic.t -> 'a j_result) (default:'a) (o:j_object): 'a j_result =
+  match List.assoc_opt k o with
+  | Some field -> f field |> Result.map_error (because_field k o)
   | None -> Ok default
 
 
@@ -153,8 +168,11 @@ let because_get_index (i:int) (l:Yojson.Basic.t list): 'a j_result -> 'a j_resul
   )
 
 let with_index (index:int) (f:Yojson.Basic.t -> 'a j_result) (l:j_list): 'a j_result =
-  let* field = get_index index l in
-  f field |> because_get_index index l
+  get_index index l
+  >>= wrap f (fun e ->
+      Because ("Position #" ^ (string_of_int (index + 1)), `List l, e)
+      |> Result.error
+    )
 
 let get_kind (o:j_object) : string j_result = with_field "kind" cast_string o
 
