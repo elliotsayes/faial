@@ -64,7 +64,7 @@ let rec print_j_error =
     prerr_endline (Yojson.Basic.pretty_to_string j)
   | Because (s, j, e) ->
     prerr_endline (s ^ ": " ^ (pp_js j));
-    print_j_error e;
+    print_j_error e
 
 type 'a j_result = ('a, j_error) Result.t
 

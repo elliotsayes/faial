@@ -17,34 +17,34 @@ type c_exp =
   | CallExpr of {func: c_exp; args: c_exp list}
   | ConditionalOperator of {cond: c_exp; then_expr: c_exp; else_expr: c_exp; ty: c_type}
   | CXXBoolLiteralExpr of bool
-  | CXXConstructExpr of {constructor: c_type; ty: c_type}
+  | CXXConstructExpr of {constructor: c_type; ty: c_type} (* Only in decl *)
   | CXXMethodDecl of {name: variable; ty: c_type}
   | CXXOperatorCallExpr of {func: c_exp; args: c_exp list}
   | FloatingLiteral of float
   | FunctionDecl of {name: variable; ty: c_type}
   | IntegerLiteral of int
-  | InitListExpr of {ty: c_type; args: c_exp list}
+  | InitListExpr of {ty: c_type; args: c_exp list} (* Only in decl *)
   | NonTypeTemplateParmDecl of {name: variable; ty: c_type}
   | MemberExpr of {name: string; base: c_exp}
   | ParmVarDecl of {name: variable; ty: c_type}
   | UnaryOperator of { opcode: string; child: c_exp; ty: c_type}
-  | VarDecl of {name: variable; ty: c_type; init: c_exp option}
+  | VarDecl of {name: variable; ty: c_type; init: c_exp option (* Only in decl *)}
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
   | Unknown of json
 
 type c_range = {init: c_exp; upper_bound: c_exp; step: c_exp; opcode: string}
 
 type c_stmt =
-  | SyncStmt
   | BreakStmt
-  | AccessStmt of {location: c_exp; mode: mode; index: c_exp list }
-  | AssertStmt of c_exp
-  | LocationAliasStmt of {source: c_exp; target: c_exp; offset: c_exp}
   | IfStmt of {cond: c_exp; then_stmt: c_stmt; else_stmt: c_stmt}
   | CompoundStmt of c_stmt list
   | DeclStmt of c_exp list
   | WhileStmt of {cond: c_exp; body: c_stmt}
-  | ForEachStmt of {var: variable; range: c_range; body: c_stmt}
+  | SyncStmt (* faial-infer *)
+  | ForEachStmt of {var: variable; range: c_range; body: c_stmt} (* faial-infer *)
+  | AccessStmt of {location: c_exp; mode: mode; index: c_exp list } (* faial-infer *)
+  | AssertStmt of c_exp (* faial-infer *)
+  | LocationAliasStmt of {source: c_exp; target: c_exp; offset: c_exp} (* faial-infer *)
   | CExp of c_exp
 
 type c_kernel = {
@@ -58,7 +58,7 @@ let parse_mode (j:json) : mode j_result =
   match m with
   | "ro" -> Ok R
   | "rw" -> Ok W
-  | e -> Error (RootCause ("parse_mode: expecting either 'ro' or 'rw', but got '" ^ e ^ "'", j)) 
+  | e -> root_cause ("parse_mode: expecting either 'ro' or 'rw', but got '" ^ e ^ "'") j
 
 let rec parse_position : json -> Sourceloc.position j_result =
   let open Sourceloc in
@@ -66,14 +66,14 @@ let rec parse_position : json -> Sourceloc.position j_result =
   fun (j:json) ->
     let* o = cast_object j in
     match (
-    let* line = with_field "line" cast_int o in
-    let* col = with_field "col" cast_int o in
-    let* filename = with_field_or "file" cast_string "" o in
-    Ok {
-      pos_line = line;
-      pos_column = col;
-      pos_filename = filename
-    }
+      let* line = with_field "line" cast_int o in
+      let* col = with_field "col" cast_int o in
+      let* filename = with_field_or "file" cast_string "" o in
+      Ok {
+        pos_line = line;
+        pos_column = col;
+        pos_filename = filename
+      }
     ) with
     | Ok p -> Ok p
     | Error e -> with_field "expansionLoc" parse_position o
