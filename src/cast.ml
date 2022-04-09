@@ -12,6 +12,8 @@ let (>>=) = Result.bind
 type c_type = json
 
 type c_exp =
+  | CharacterLiteral of int
+  | AnnotateAttr of string
   | ArraySubscriptExpr of {lhs: c_exp; rhs: c_exp; ty: c_type}
   | BinaryOperator of {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
   | CallExpr of {func: c_exp; args: c_exp list}
@@ -27,6 +29,8 @@ type c_exp =
   | NonTypeTemplateParmDecl of {name: variable; ty: c_type}
   | MemberExpr of {name: string; base: c_exp}
   | ParmVarDecl of {name: variable; ty: c_type}
+  | DeclRefExpr of c_type
+  | PredicateExpr of {child: c_exp; opcode: string}
   | UnaryOperator of { opcode: string; child: c_exp; ty: c_type}
   | VarDecl of {name: variable; ty: c_type; init: c_exp option (* Only in decl *)}
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
@@ -36,10 +40,17 @@ type c_range = {init: c_exp; upper_bound: c_exp; step: c_exp; opcode: string}
 
 type c_stmt =
   | BreakStmt
+  | GotoStmt
+  | ReturnStmt
   | IfStmt of {cond: c_exp; then_stmt: c_stmt; else_stmt: c_stmt}
   | CompoundStmt of c_stmt list
   | DeclStmt of c_exp list
   | WhileStmt of {cond: c_exp; body: c_stmt}
+  | ForStmt of {init: c_exp option; cond: c_exp option; inc: c_exp option; body: c_stmt}
+  | DoStmt of {cond: c_exp; body: c_stmt}
+  | SwitchStmt of {cond: c_exp; body: c_stmt}
+  | DefaultStmt of c_stmt
+  | CaseStmt of {case: c_exp; body: c_stmt}
   | SyncStmt (* faial-infer *)
   | ForEachStmt of {var: variable; range: c_range; body: c_stmt} (* faial-infer *)
   | AccessStmt of {location: c_exp; mode: mode; index: c_exp list } (* faial-infer *)
@@ -111,6 +122,20 @@ let rec parse_exp (j:json) : c_exp j_result =
         (fun idx s e -> Because ("error parsing expression #" ^ (string_of_int (idx + 1)), s, e))
   in
   match kind with
+  | "AnnotateAttr" ->
+    let* i = with_field "value" cast_string o in
+    Ok (AnnotateAttr i)
+
+  | "ConstantExpr" ->
+    with_field "inner" (fun f ->
+      let* l = cast_list f in
+      with_index 0 parse_exp l
+    ) o
+
+  | "CharacterLiteral" ->
+    let* i = with_field "value" cast_int o in
+    Ok (CharacterLiteral i)
+
   | "IntegerLiteral" ->
     let* i = with_field "value" cast_int o in
     Ok (IntegerLiteral i)
@@ -121,6 +146,10 @@ let rec parse_exp (j:json) : c_exp j_result =
     | _ ->
       let* f = with_field "value" cast_float o in
       Ok (FloatingLiteral f))
+
+  | "DeclRefExpr" ->
+    let* ty = get_field "type" o in
+    Ok (DeclRefExpr ty)
 
   | "InitListExpr" ->
     let* ty = get_field "type" o in
@@ -184,6 +213,11 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* v = parse_variable j in
     let* tys = get_field "lookups" o >>= cast_list in
     Ok (UnresolvedLookupExpr {name=v; tys=tys})
+
+  | "PredicateExpr" ->
+    let* op = with_field "opcode" cast_string o in
+    let* c = with_field "subExpr" parse_exp o in
+    Ok (PredicateExpr {opcode=op; child=c})
 
   | "UnaryOperator" ->
     let* op = with_field "opcode" cast_string o in
@@ -284,6 +318,27 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     let* t = with_field "target" parse_exp o in
     let* o = with_field "offset" parse_exp o in
     Ok (LocationAliasStmt {source=s; target=t; offset=o})
+  | "DefaultStmt" ->
+    let* c = with_field "inner" (fun i ->
+      cast_list i >>= with_index 0 parse_stmt 
+    ) o in
+    Ok (DefaultStmt c)
+  | "CaseStmt" ->
+    let* (c, b) = with_field "inner" (fun f ->
+      let* l = cast_list f in
+      let* c = with_index 0 parse_exp l in
+      let* b = with_index 1 parse_stmt l in
+      Ok (c, b)
+    ) o in
+    Ok (CaseStmt {case=c; body=b})
+  | "SwitchStmt" ->
+    let* (c, b) = with_field "inner" (fun f ->
+      let* l = cast_list f in
+      let* c = with_index 0 parse_exp l in
+      let* b = with_index 1 parse_stmt l in
+      Ok (c, b)
+    ) o in
+    Ok (SwitchStmt {cond=c; body=b})
   | "CompoundStmt" ->
     let* children : c_stmt list = with_field "inner" (fun (i:json) ->
       match i with
@@ -291,8 +346,22 @@ let rec parse_stmt (j:json) : c_stmt j_result =
       | _ -> parse_stmt_list i
     ) o in
     Ok (CompoundStmt children)
+  | "ReturnStmt" ->
+    Ok ReturnStmt
+  | "GotoStmt" ->
+    Ok GotoStmt
   | "BreakStmt" ->
     Ok BreakStmt
+  | "DoStmt" ->
+    let* c = with_field_or "cond" parse_exp (CXXBoolLiteralExpr true) o in
+    let* b = with_field "body" parse_stmt o in
+    Ok (DoStmt {cond=c; body=b})
+  | "ForStmt" ->
+    let* i = with_opt_field "init" parse_exp o in
+    let* c = with_opt_field "cond" parse_exp o in
+    let* n = with_opt_field "inc" parse_exp o in
+    let* b = with_field "body" parse_stmt o in
+    Ok (ForStmt {init=i; cond=c; inc=i; body=b})
   | "ForEachStmt" ->
     let* v = with_field "var" parse_variable o in
     let* r = with_field "range" parse_range o in
@@ -334,7 +403,9 @@ let parse_kernels (j:Yojson.Basic.t) : c_kernel list j_result =
 let exp_to_s: c_exp -> string =
   let rec exp_to_s : c_exp -> string =
     function
+    | AnnotateAttr a -> a
     | FloatingLiteral f -> string_of_float f
+    | CharacterLiteral i
     | IntegerLiteral i -> string_of_int i
     | ConditionalOperator c ->
       "(" ^ exp_to_s c.cond ^ ") ? (" ^
@@ -354,11 +425,13 @@ let exp_to_s: c_exp -> string =
       | Some e -> " = " ^ exp_to_s e
       | None -> ""
       )
+    | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
     | UnresolvedLookupExpr v -> var_name v.name
     | NonTypeTemplateParmDecl v -> var_name v.name
     | CXXMethodDecl v -> var_name v.name
     | FunctionDecl v -> var_name v.name
     | ParmVarDecl v -> var_name v.name
+    | PredicateExpr p -> p.opcode ^ "(" ^ exp_to_s p.child ^ ")"
     | UnaryOperator u -> u.opcode ^ exp_to_s u.child
     | Unknown s -> Yojson.Basic.pretty_to_string s
   and exp_list_to_s (l:c_exp list): string =
@@ -369,14 +442,24 @@ let range_to_s (r:c_range) : string =
   exp_to_s r.init ^ " .. " ^ exp_to_s r.upper_bound ^ "; " ^ r.opcode ^ exp_to_s r.step
 
 let stmt_to_s: c_stmt -> PPrint.t list =
+  let opt_exp_to_s: c_exp option -> string =
+    function
+    | Some c -> exp_to_s c
+    | None -> ""
+  in
   let open PPrint in
   let rec stmt_to_s : c_stmt -> PPrint.t list =
     function
+    | ReturnStmt -> [Line "return;"]
+    | GotoStmt -> [Line "goto;"]
     | BreakStmt -> [Line "break;"]
     | SyncStmt -> [Line "sync;"]
     | AccessStmt _ -> [Line "access;"]
     | AssertStmt b -> [Line ("assert (" ^ (exp_to_s b) ^ ");")]
     | LocationAliasStmt l -> [Line (exp_to_s l.target ^ " = " ^ exp_to_s l.source ^ " + " ^ exp_to_s l.offset)]
+    | ForStmt f -> [ Line ("for " ^ opt_exp_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
+                    Block(stmt_to_s f.body);
+                    Line ("}")]
     | ForEachStmt {var=v; range=r; body=b} ->
       [ Line ("foreach " ^ (var_name v) ^ " in " ^ range_to_s r ^ " {");
         Block (stmt_to_s b); Line "}"]
@@ -385,6 +468,20 @@ let stmt_to_s: c_stmt -> PPrint.t list =
         Block (stmt_to_s s);
         Line "}"
       ]
+    | DoStmt {cond=b; body=s} -> [
+        Line "}";
+        Block (stmt_to_s s);
+        Line ("do (" ^ exp_to_s b ^ ") {");
+      ]
+    | SwitchStmt {cond=b; body=s} -> [
+        Line ("switch " ^ exp_to_s b ^ " {");
+        Block (stmt_to_s s);
+        Line ("}");
+      ]
+    | CaseStmt c ->
+      [ Line ("case " ^ exp_to_s c.case ^ ":"); Block(stmt_to_s c.body) ]
+    | DefaultStmt d ->
+      [ Line ("default:"); Block(stmt_to_s d) ]
     | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} -> [
         Line ("if (" ^ exp_to_s b ^ ") {");
         Block (stmt_to_s s1);

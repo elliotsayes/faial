@@ -145,6 +145,11 @@ let with_field (k:string) (f:Yojson.Basic.t -> 'a j_result) (o:j_object): 'a j_r
   >>= wrap f (* If we can get the field, then pass the field to 'f' *)
     (fun e -> Error (because_field k o e))
 
+let with_opt_field (k:string) (f:Yojson.Basic.t -> 'a j_result) (o:j_object): 'a option j_result =
+  match List.assoc_opt k o with
+  | Some field -> f field |> Result.map (fun x -> Some x)
+  | None -> Ok None
+
 let with_field_or (k:string) (f:Yojson.Basic.t -> 'a j_result) (default:'a) (o:j_object): 'a j_result =
   match List.assoc_opt k o with
   | Some field -> f field |> Result.map_error (because_field k o)
