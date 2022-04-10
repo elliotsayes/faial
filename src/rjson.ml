@@ -122,6 +122,15 @@ let cast_list (j:Yojson.Basic.t) : Yojson.Basic.t list j_result =
   | `List l -> Ok l
   | _ -> type_mismatch "list" j 
 
+let ensure_length_eq (len:int) (l:Yojson.Basic.t list) : Yojson.Basic.t list j_result =
+  if List.length l = len then (
+    Ok l
+  ) else (
+    let e = string_of_int len in
+    let g = string_of_int (List.length l) in
+    root_cause ("Expecting a list of length " ^ e ^ ", but got length " ^ g) (`List l)
+  )
+
 let get_field (k:string) (kv: j_object) : Yojson.Basic.t j_result =
   match List.assoc_opt k kv with
   | Some v -> Ok v

@@ -128,7 +128,7 @@ let rec parse_exp (j:json) : c_exp j_result =
 
   | "ConstantExpr" ->
     with_field "inner" (fun f ->
-      let* l = cast_list f in
+      let* l = cast_list f >>= ensure_length_eq 1 in
       with_index 0 parse_exp l
     ) o
 
@@ -256,7 +256,7 @@ let rec parse_exp (j:json) : c_exp j_result =
   | "CXXFunctionalCastExpr"
   | "MaterializeTemporaryExpr" ->
     let* body = with_field "inner" (fun b ->
-      cast_list b >>=
+      cast_list b >>= ensure_length_eq 1 >>=
       with_index 0 parse_exp
     ) o in
     Ok body
@@ -320,12 +320,12 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     Ok (LocationAliasStmt {source=s; target=t; offset=o})
   | "DefaultStmt" ->
     let* c = with_field "inner" (fun i ->
-      cast_list i >>= with_index 0 parse_stmt 
+      cast_list i >>= ensure_length_eq 1 >>= with_index 0 parse_stmt 
     ) o in
     Ok (DefaultStmt c)
   | "CaseStmt" ->
     let* (c, b) = with_field "inner" (fun f ->
-      let* l = cast_list f in
+      let* l = cast_list f >>= ensure_length_eq 2 in
       let* c = with_index 0 parse_exp l in
       let* b = with_index 1 parse_stmt l in
       Ok (c, b)
@@ -333,7 +333,7 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     Ok (CaseStmt {case=c; body=b})
   | "SwitchStmt" ->
     let* (c, b) = with_field "inner" (fun f ->
-      let* l = cast_list f in
+      let* l = cast_list f >>= ensure_length_eq 2 in
       let* c = with_index 0 parse_exp l in
       let* b = with_index 1 parse_stmt l in
       Ok (c, b)
