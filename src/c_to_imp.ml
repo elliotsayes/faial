@@ -88,7 +88,7 @@ let rec parse_nexp (e: Cast.c_exp) : nexp c_result =
     let* n2 = parse_n "rhs" n2 in
     Ok (n_bin (parse_nbin o) n1 n2)
   | _ ->
-    prerr_endline ("WARNING: rewriting the following expression as 0: " ^ Cast.exp_to_s e);
+    prerr_endline ("WARNING: parse_nexp: rewriting the following expression as 0: " ^ Cast.exp_to_s e);
     Ok (Num 0)
 and parse_bexp (e: Cast.c_exp) : bexp c_result =
   let parse_b m b = with_exp m e parse_bexp b in
@@ -110,7 +110,12 @@ and parse_bexp (e: Cast.c_exp) : bexp c_result =
   | UnaryOperator u when u.opcode == "!" ->
     let* b = parse_b "child" u.child in
     Ok (b_not b)
-  | _ -> root_cause ("parse_bexp: unknown expression: " ^ Cast.exp_to_s e)
+  | PredicateExpr p ->
+    let* n = parse_n "child" p.child in
+    Ok (Pred(p.opcode, n))
+  | _ ->
+    prerr_endline ("WARNING: parse_bexp: rewriting the following expression as FALSE: " ^ Cast.exp_to_s e);
+    Ok (Bool false)
   
 
 (*
