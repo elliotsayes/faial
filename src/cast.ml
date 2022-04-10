@@ -265,7 +265,10 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* b = with_field "value" cast_bool o in
     Ok (CXXBoolLiteralExpr b)
 
-  | _ -> Ok (Unknown (`Assoc o))
+  | _ -> 
+    prerr_endline (Yojson.Basic.pretty_to_string j);
+    exit (-1);
+    Ok (Unknown (`Assoc o))
 
 let parse_range (j:json) : c_range j_result =
   let open Rjson in
@@ -311,6 +314,7 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     let* body = with_field "body" parse_stmt o in
     Ok (WhileStmt {cond=cond; body=body})
   | "DeclStmt" ->
+    (* prerr_endline (Yojson.Basic.pretty_to_string j); *)
     let* children = with_field "inner" parse_exp_list o in
     Ok (DeclStmt children)
   | "LocationAliasStmt" ->
@@ -502,14 +506,4 @@ let kernel_to_s (k:c_kernel) : PPrint.t list =
 let print_kernel (k: c_kernel) : unit =
   PPrint.print_doc (kernel_to_s k)
 
-(* ------------------------------------------------------------------------ *)
-
-let () =
-  match Yojson.Basic.from_channel stdin |> parse_kernels with
-  | Ok ks ->
-    List.iteri (fun i k ->
-      "Kernel: " ^ string_of_int i |> print_endline;
-      print_kernel k
-    ) ks
-  | Error e -> Rjson.print_j_error e
 

@@ -174,3 +174,24 @@ let mk_parse_error_l ss =
     Buffer.add_char b '\n'
   ) ss;
   b
+
+
+(*
+  Takes an ok_handler and an error_handler.
+  Applies ok_handler to v and if there's an error, route it to
+  the error_handler.
+  *)
+let wrap
+  (ok_handler:'a -> ('b,'e) Result.t )
+  (error_handler:'e -> ('b,'e) Result.t)
+  (v:'a)
+: ('b,'e) Result.t =
+  match ok_handler v with
+  | Ok bv -> Ok bv
+  | Error (e:'e) -> error_handler e
+
+(* Convert an optional boolean into a boolean, where None represents false *)
+let unwrap_or (default:'a): ('a, 'e) Result.t -> 'a =
+  function
+  | Ok v -> v
+  | Error _ -> default

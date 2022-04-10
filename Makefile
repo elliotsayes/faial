@@ -11,7 +11,7 @@ clean:
 	$(OCB) -clean
 
 cast:
-	$(OCB) cast.native
+	$(OCB) test_c.native
 
 native: build-tests
 	$(OCB) main.native

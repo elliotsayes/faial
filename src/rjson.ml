@@ -8,28 +8,11 @@ let (let*) = Result.bind
 (* Monadic pipe *)
 let (>>=) = Result.bind
 
-(* Convert an optional boolean into a boolean, where None represents false *)
-let unwrap_or (default:'a): ('a, 'e) Result.t -> 'a =
-  function
-  | Ok v -> v
-  | Error _ -> default
+let wrap = Common.wrap
+let unwrap_or = Common.unwrap_or
 
 let unless (first:('a, 'e) Result.t) (second:('a, 'e) Result.t) : ('a, 'e) Result.t =
   if Result.is_ok first then first else second
-
-(*
-  Takes an ok_handler and an error_handler.
-  Applies ok_handler to v and if there's an error, route it to
-  the error_handler.
-  *)
-let wrap
-  (ok_handler:'a -> ('b,'e) Result.t )
-  (error_handler:'e -> ('b,'e) Result.t)
-  (v:'a)
-: ('b,'e) Result.t =
-  match ok_handler v with
-  | Ok bv -> Ok bv
-  | Error (e:'e) -> error_handler e
 
 
 (* --- Helpers for Yojson --- *)
@@ -151,7 +134,7 @@ let because_field (k:string) (o:j_object) (e:j_error) : j_error =
 
 let with_field (k:string) (f:Yojson.Basic.t -> 'a j_result) (o:j_object): 'a j_result =
   get_field k o
-  >>= wrap f (* If we can get the field, then pass the field to 'f' *)
+  >>= Common.wrap f (* If we can get the field, then pass the field to 'f' *)
     (fun e -> Error (because_field k o e))
 
 let with_opt_field (k:string) (f:Yojson.Basic.t -> 'a j_result) (o:j_object): 'a option j_result =
@@ -183,7 +166,7 @@ let because_get_index (i:int) (l:Yojson.Basic.t list): 'a j_result -> 'a j_resul
 
 let with_index (index:int) (f:Yojson.Basic.t -> 'a j_result) (l:j_list): 'a j_result =
   get_index index l
-  >>= wrap f (fun e ->
+  >>= Common.wrap f (fun e ->
       Because ("Position #" ^ (string_of_int (index + 1)), `List l, e)
       |> Result.error
     )
