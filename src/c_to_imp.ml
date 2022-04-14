@@ -135,6 +135,25 @@ let parse_range (x:variable) (r:Cast.c_range) : Exp.range c_result =
     range_lower_bound = lb;
     range_upper_bound = ub;
   }
+
+let parse_decl (d:Cast.c_decl) : (variable * Imp.locality * nexp option) option c_result =
+  let parse_n m b = with_msg (m ^ ": " ^ Cast.decl_to_s d) parse_nexp b in
+  let* ty = match Cast.parse_type d.ty with
+  | Ok ty -> Ok ty
+  | Error _ -> root_cause ("parse_decl: error parsing type: " ^ Rjson.pp_js d.ty)
+  in
+  if Ctype.is_int ty
+  then (
+    let* (n:Exp.nexp option) = match d.init with
+    | Some (IExp n) ->
+      let* n = parse_n "init" n in
+      Ok (Some n)
+    | _ -> Ok None
+    in
+    Ok (Some (d.name, Imp.Local, n))
+  )
+  else Ok None
+
 (*
 let parse_init (e:Cast.c_exp) : (variable * locality * nexp option) option c_result =
   match e with
