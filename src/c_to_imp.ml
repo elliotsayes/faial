@@ -48,10 +48,13 @@ let parse_brel: string -> bexp -> bexp -> bexp =
     prerr_endline ("WARNING: parse_brel: Can't handle " ^ x ^ " converting it to |");
     b_or
 
-let with_exp (msg:string) (e: Cast.c_exp) (f:Cast.c_exp -> 'a c_result) (c:Cast.c_exp): 'a c_result =
+let with_msg (msg:string) (f:Cast.c_exp -> 'a c_result) (c:Cast.c_exp): 'a c_result =
   match f c with
   | Ok o -> Ok o
-  | Error err -> Error (Because (msg ^ ": " ^ Cast.exp_to_s e, err))
+  | Error err -> Error (Because (msg, err))
+
+let with_exp (msg:string) (e: Cast.c_exp) : (Cast.c_exp -> 'a c_result) -> Cast.c_exp -> 'a c_result =
+  with_msg (msg ^ ": " ^ Cast.exp_to_s e)
 
 let parse_var: Cast.c_exp -> variable c_result =
   function
@@ -105,8 +108,6 @@ and parse_bexp (e: Cast.c_exp) : bexp c_result =
       let* b2 = parse_b "rhs" o.rhs in
       Ok (parse_brel o.opcode b1 b2)
     )
-  | IntegerLiteral i ->
-    Ok (Bool (i != 0))
   | UnaryOperator u when u.opcode == "!" ->
     let* b = parse_b "child" u.child in
     Ok (b_not b)
@@ -114,10 +115,60 @@ and parse_bexp (e: Cast.c_exp) : bexp c_result =
     let* n = parse_n "child" p.child in
     Ok (Pred(p.opcode, n))
   | _ ->
+    let* n = parse_nexp e in
     prerr_endline ("WARNING: parse_bexp: rewriting the following expression as FALSE: " ^ Cast.exp_to_s e);
-    Ok (Bool false)
+    Ok (n_neq n (Num 0))
   
+let parse_range (x:variable) (r:Cast.c_range) : Exp.range c_result =
+  let parse_n m b = with_msg (m ^ ": " ^ Cast.range_to_s r) parse_nexp b in
+  let* lb = parse_n "lower_bound" r.lower_bound in
+  let* ub = parse_n "upper_bound" r.upper_bound in
+  let* s = match r.opcode with
+    | "+" ->
+      let* n = parse_n "step" r.step in
+      Ok (Default n)
+    | s -> Ok (StepName s)
+  in
+  Ok {
+    range_var = x;
+    range_step = s;
+    range_lower_bound = lb;
+    range_upper_bound = ub;
+  }
+(*
+let parse_init (e:Cast.c_exp) : (variable * locality * nexp option) option c_result =
+  match e with
+  | VarDecl v ->
+  | _ -> 
 
+let parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
+  match c with
+  | BreakStmt
+  | GotoStmt
+  | ReturnStmt -> Ok (Block [])
+  | IfStmt c ->
+    let* b = parse_b "cond" c.cond in
+    let* t = parse_s "then" c.then_stmt in
+    let* e = parse_s "else" c.then_stmt in
+    Ok If (b, t, e)
+  | CompoundStmt c ->
+    let* l = parse_s_l "child" c in
+    Ok (Block l)
+  | DeclStmt c ->
+    
+  | WhileStmt c ->
+  | ForStmt c ->
+  | DoStmt c ->
+  | SwitchStmt c ->
+  | DefaultStmt c ->
+  | CaseStmt c ->
+  | SyncStmt -> Ok Sync
+  | ForEachStmt c ->
+  | AccessStmt c ->
+  | AssertStmt c ->
+  | LocationAliasStmt c ->
+  | CExp c -> 
+*)
 (*
 let parse_task = function
   | 0 -> Ok Task1

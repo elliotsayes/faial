@@ -70,6 +70,7 @@ let map_all (f:'a -> ('b, 'e) Result.t) (err:int -> 'a -> 'e -> 'e) (l:'a list) 
   in
   map 0 l
 
+
 let cast_object (j:Yojson.Basic.t) : j_object j_result =
   let open Yojson.Basic.Util in
   match j with
@@ -104,6 +105,13 @@ let cast_list (j:Yojson.Basic.t) : Yojson.Basic.t list j_result =
   match j with
   | `List l -> Ok l
   | _ -> type_mismatch "list" j 
+
+(* Cast the given json as a list, and then cast every element of the list *)
+let cast_map (f:'a -> ('b, 'e) Result.t) (j:Yojson.Basic.t) =
+  cast_list j
+  >>= map_all f (fun idx s e ->
+    Because ("Error in index #" ^ (string_of_int (idx + 1)), s, e)
+  )
 
 let ensure_length_eq (len:int) (l:Yojson.Basic.t list) : Yojson.Basic.t list j_result =
   if List.length l = len then (

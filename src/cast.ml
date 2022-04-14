@@ -19,24 +19,29 @@ type c_exp =
   | CallExpr of {func: c_exp; args: c_exp list}
   | ConditionalOperator of {cond: c_exp; then_expr: c_exp; else_expr: c_exp; ty: c_type}
   | CXXBoolLiteralExpr of bool
-  | CXXConstructExpr of {constructor: c_type; ty: c_type} (* Only in decl *)
   | CXXMethodDecl of {name: variable; ty: c_type}
   | CXXOperatorCallExpr of {func: c_exp; args: c_exp list}
   | FloatingLiteral of float
   | FunctionDecl of {name: variable; ty: c_type}
   | IntegerLiteral of int
-  | InitListExpr of {ty: c_type; args: c_exp list} (* Only in decl *)
   | NonTypeTemplateParmDecl of {name: variable; ty: c_type}
   | MemberExpr of {name: string; base: c_exp}
   | ParmVarDecl of {name: variable; ty: c_type}
   | DeclRefExpr of c_type
   | PredicateExpr of {child: c_exp; opcode: string}
   | UnaryOperator of { opcode: string; child: c_exp; ty: c_type}
-  | VarDecl of {name: variable; ty: c_type; init: c_exp option (* Only in decl *)}
+  | VarDecl of {name: variable; ty: c_type}
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
-  | Unknown of json
 
-type c_range = {init: c_exp; upper_bound: c_exp; step: c_exp; opcode: string}
+type c_init =
+  | CXXConstructExpr of {constructor: c_type; ty: c_type}
+  | InitListExpr of {ty: c_type; args: c_exp list}
+  | IExp of c_exp
+  
+
+type c_range = {lower_bound: c_exp; upper_bound: c_exp; step: c_exp; opcode: string}
+
+type c_decl = {name: variable; ty:c_type; init: c_init option}
 
 type c_stmt =
   | BreakStmt
@@ -44,7 +49,7 @@ type c_stmt =
   | ReturnStmt
   | IfStmt of {cond: c_exp; then_stmt: c_stmt; else_stmt: c_stmt}
   | CompoundStmt of c_stmt list
-  | DeclStmt of c_exp list
+  | DeclStmt of c_decl list
   | WhileStmt of {cond: c_exp; body: c_stmt}
   | ForStmt of {init: c_exp option; cond: c_exp option; inc: c_exp option; body: c_stmt}
   | DoStmt of {cond: c_exp; body: c_stmt}
@@ -56,7 +61,7 @@ type c_stmt =
   | AccessStmt of {location: c_exp; mode: mode; index: c_exp list } (* faial-infer *)
   | AssertStmt of c_exp (* faial-infer *)
   | LocationAliasStmt of {source: c_exp; target: c_exp; offset: c_exp} (* faial-infer *)
-  | CExp of c_exp
+  | SExp of c_exp
 
 type c_kernel = {
   name: string;
@@ -115,12 +120,6 @@ let rec parse_exp (j:json) : c_exp j_result =
   let open Rjson in
   let* o = cast_object j in
   let* kind = get_kind o in
-  let parse_exp_list = fun f ->
-      cast_list f
-      >>= map_all
-        parse_exp
-        (fun idx s e -> Because ("error parsing expression #" ^ (string_of_int (idx + 1)), s, e))
-  in
   match kind with
   | "AnnotateAttr" ->
     let* i = with_field "value" cast_string o in
@@ -151,15 +150,10 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* ty = get_field "type" o in
     Ok (DeclRefExpr ty)
 
-  | "InitListExpr" ->
-    let* ty = get_field "type" o in
-    let* args = with_field "inner" parse_exp_list o in
-    Ok (InitListExpr {ty=ty; args=args})
-
   | "CXXDependentScopeMemberExpr" ->
     let* n = with_field "member" cast_string o in
     let* b = with_field "inner" (fun i ->
-      match parse_exp_list i with
+      match cast_map parse_exp i with
       | Ok [o] -> Ok o
       | Ok l -> root_cause ("A list of length 1, but got " ^ (List.length l |> string_of_int)) i
       | Error e -> Error e
@@ -174,13 +168,7 @@ let rec parse_exp (j:json) : c_exp j_result =
   | "VarDecl" ->
     let* v = parse_variable j in
     let* ty = get_field "type" o in
-    let* init = match List.assoc_opt "inner" o with
-    | Some (`List [e]) ->
-      let* e = parse_exp e in
-      Ok (Some e)
-    | _ -> Ok None
-    in
-    Ok (VarDecl {name=v; ty=ty; init=init})
+    Ok (VarDecl {name=v; ty=ty})
     
   | "FunctionDecl" ->
     let* v = parse_variable j in
@@ -240,18 +228,13 @@ let rec parse_exp (j:json) : c_exp j_result =
 
   | "CXXOperatorCallExpr" ->
     let* func = with_field "func" parse_exp o in
-    let* args = with_field "args" parse_exp_list o in
+    let* args = with_field "args" (cast_map parse_exp) o in
     Ok (CXXOperatorCallExpr {func=func; args=args})
 
   | "CallExpr" ->
     let* func = with_field "func" parse_exp o in
-    let* args = with_field "args" parse_exp_list o in
+    let* args = with_field "args" (cast_map parse_exp) o in
     Ok (CallExpr {func=func; args=args})
-
-  | "CXXConstructExpr" ->
-    let* ty = get_field "type" o in
-    let* ctor = get_field "ctorType" o in
-    Ok (CXXConstructExpr {constructor=ctor; ty=ty})
 
   | "CXXFunctionalCastExpr"
   | "MaterializeTemporaryExpr" ->
@@ -265,41 +248,75 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* b = with_field "value" cast_bool o in
     Ok (CXXBoolLiteralExpr b)
 
+  | _ ->
+    root_cause "ERROR: parse_exp" j
+
+let rec parse_init (j:json) : c_init j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* kind = get_kind o in
+  match kind with
+    
+  | "InitListExpr" ->
+    let* ty = get_field "type" o in
+    let* args = with_field "inner" (cast_map parse_exp) o in
+    Ok (InitListExpr {ty=ty; args=args})
+
+  | "CXXConstructExpr" ->
+    let* ty = get_field "type" o in
+    let* ctor = get_field "ctorType" o in
+    Ok (CXXConstructExpr {constructor=ctor; ty=ty})
+
+  | _ ->
+    let* e = parse_exp j in
+    Ok (IExp e)
+
+
+let parse_decl (j:json) : c_decl j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* kind = get_kind o in
+  match kind with
+  | "VarDecl" ->
+    let* v = parse_variable j in
+    let* ty = get_field "type" o in
+    let* init = match List.assoc_opt "inner" o with
+    | Some (`List [e]) ->
+      let* e = parse_init e in
+      Ok (Some e)
+    | _ -> Ok None
+    in
+    Ok {name=v; ty=ty; init=init}
   | _ -> 
-    prerr_endline (Yojson.Basic.pretty_to_string j);
-    exit (-1);
-    Ok (Unknown (`Assoc o))
+    root_cause ("ERROR: parse_decl") j
+
+let parse_exp_list = fun f ->
+  let open Rjson in
+  cast_list f
+  >>= map_all
+    parse_exp
+    (fun idx s e -> Because ("error parsing expression #" ^ (string_of_int (idx + 1)), s, e))
+
 
 let parse_range (j:json) : c_range j_result =
   let open Rjson in
   let* o = cast_object j in
-  let* init = with_field "init" parse_exp o in
+  let* lb = with_field "init" parse_exp o in
   let* upper_bound = with_field "upper_bound" parse_exp o in
   let* step = with_field "step" parse_exp o in
   let* opcode = with_field "opcode" cast_string o in
-  Ok {init=init; upper_bound=upper_bound; step=step; opcode=opcode}
+  Ok {lower_bound=lb; upper_bound=upper_bound; step=step; opcode=opcode}
 
 let rec parse_stmt (j:json) : c_stmt j_result =
   let open Rjson in
   let* o = cast_object j in
   let* kind = get_kind o in
-  let parse_exp_list = fun f ->
-      cast_list f
-      >>= map_all
-        parse_exp
-        (fun idx s e -> Because ("error parsing expression #" ^ (string_of_int (idx + 1)), s, e))
-  in
-  let parse_stmt_list = fun inner ->
-      cast_list inner
-      >>= map_all parse_stmt
-        (fun idx s e -> Because ("error parsing statement #" ^ (string_of_int (idx + 1)), s, e))
-  in
   match kind with
   | "SyncStmt" -> Ok SyncStmt
   | "AccessStmt" ->
     let* loc = with_field "location" parse_exp o in
     let* mode = with_field "mode" parse_mode o in
-    let* index = with_field "index" parse_exp_list o in
+    let* index = with_field "index" (cast_map parse_exp) o in
     Ok (AccessStmt {location=loc; mode=R; index=index})
   | "AssertStmt" ->
     let* cond = with_field "cond" parse_exp o in
@@ -315,7 +332,7 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     Ok (WhileStmt {cond=cond; body=body})
   | "DeclStmt" ->
     (* prerr_endline (Yojson.Basic.pretty_to_string j); *)
-    let* children = with_field "inner" parse_exp_list o in
+    let* children = with_field "inner" (cast_map parse_decl) o in
     Ok (DeclStmt children)
   | "LocationAliasStmt" ->
     let* s = with_field "source" parse_exp o in
@@ -373,7 +390,12 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     Ok (ForEachStmt {var=v; range=r; body=b})
   | _ ->
     let* e = parse_exp j in
-    Ok (CExp e)
+    Ok (SExp e)
+and parse_stmt_list = fun inner ->
+  let open Rjson in
+  cast_list inner
+  >>= map_all parse_stmt
+    (fun idx s e -> Because ("error parsing statement #" ^ (string_of_int (idx + 1)), s, e))
 
 let parse_kernel (o:Rjson.j_object) : c_kernel j_result =
   let open Rjson in
@@ -403,47 +425,51 @@ let parse_kernels (j:Yojson.Basic.t) : c_kernel list j_result =
 
 (* ------------------------------------------------------------------------ *)
 
+let list_to_s (f:'a -> string) (l:'a list) : string =
+  List.map f l |> Common.join ", "
 
-let exp_to_s: c_exp -> string =
-  let rec exp_to_s : c_exp -> string =
-    function
-    | AnnotateAttr a -> a
-    | FloatingLiteral f -> string_of_float f
-    | CharacterLiteral i
-    | IntegerLiteral i -> string_of_int i
-    | ConditionalOperator c ->
-      "(" ^ exp_to_s c.cond ^ ") ? (" ^
-            exp_to_s c.then_expr ^ ") : (" ^
-            exp_to_s c.else_expr ^ ")"
-    | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") " ^ b.opcode ^ " (" ^ exp_to_s b.rhs ^ ")"
-    | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
-    | InitListExpr i -> exp_list_to_s i.args
-    | ArraySubscriptExpr b -> exp_to_s b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
-    | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ exp_list_to_s c.args  ^ ")"
-    | CXXConstructExpr c -> "ctor"
-    | CXXBoolLiteralExpr b -> if b then "true" else "false";
-    | CallExpr c -> exp_to_s c.func ^ "(" ^ exp_list_to_s c.args  ^ ")"
-    | VarDecl v ->
-      var_name v.name ^ (
-      match v.init with
-      | Some e -> " = " ^ exp_to_s e
-      | None -> ""
-      )
-    | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
-    | UnresolvedLookupExpr v -> var_name v.name
-    | NonTypeTemplateParmDecl v -> var_name v.name
-    | CXXMethodDecl v -> var_name v.name
-    | FunctionDecl v -> var_name v.name
-    | ParmVarDecl v -> var_name v.name
-    | PredicateExpr p -> p.opcode ^ "(" ^ exp_to_s p.child ^ ")"
-    | UnaryOperator u -> u.opcode ^ exp_to_s u.child
-    | Unknown s -> Yojson.Basic.pretty_to_string s
-  and exp_list_to_s (l:c_exp list): string =
-    List.map exp_to_s l |> Common.join ", "
-  in exp_to_s
+let rec exp_to_s : c_exp -> string =
+  function
+  | AnnotateAttr a -> a
+  | FloatingLiteral f -> string_of_float f
+  | CharacterLiteral i
+  | IntegerLiteral i -> string_of_int i
+  | ConditionalOperator c ->
+    "(" ^ exp_to_s c.cond ^ ") ? (" ^
+          exp_to_s c.then_expr ^ ") : (" ^
+          exp_to_s c.else_expr ^ ")"
+  | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") " ^ b.opcode ^ " (" ^ exp_to_s b.rhs ^ ")"
+  | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
+  | ArraySubscriptExpr b -> exp_to_s b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
+  | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
+  | CXXBoolLiteralExpr b -> if b then "true" else "false";
+  | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
+  | VarDecl v -> var_name v.name
+  | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
+  | UnresolvedLookupExpr v -> var_name v.name
+  | NonTypeTemplateParmDecl v -> var_name v.name
+  | CXXMethodDecl v -> var_name v.name
+  | FunctionDecl v -> var_name v.name
+  | ParmVarDecl v -> var_name v.name
+  | PredicateExpr p -> p.opcode ^ "(" ^ exp_to_s p.child ^ ")"
+  | UnaryOperator u -> u.opcode ^ exp_to_s u.child
+
+let init_to_s : c_init -> string =
+  function
+  | CXXConstructExpr c -> "ctor"
+  | InitListExpr i -> list_to_s exp_to_s i.args
+  | IExp i -> exp_to_s i
+
+let decl_to_s (d: c_decl): string =
+  let i = match d.init with
+    | Some e -> " = " ^ init_to_s e
+    | None -> ""
+  in
+  var_name d.name ^ i
+
 
 let range_to_s (r:c_range) : string =
-  exp_to_s r.init ^ " .. " ^ exp_to_s r.upper_bound ^ "; " ^ r.opcode ^ exp_to_s r.step
+  exp_to_s r.lower_bound ^ " .. " ^ exp_to_s r.upper_bound ^ "; " ^ r.opcode ^ exp_to_s r.step
 
 let stmt_to_s: c_stmt -> PPrint.t list =
   let opt_exp_to_s: c_exp option -> string =
@@ -494,8 +520,8 @@ let stmt_to_s: c_stmt -> PPrint.t list =
         Line "}"
       ]
     | CompoundStmt l -> [Line "{"; Block (List.concat_map stmt_to_s l); Line "}"]
-    | DeclStmt d -> [Line "decl {"; Block (List.map (fun e -> Line (exp_to_s e)) d); Line "}"]
-    | CExp e -> [Line (exp_to_s e)]
+    | DeclStmt d -> [Line "decl {"; Block (List.map (fun e -> Line (decl_to_s e)) d); Line "}"]
+    | SExp e -> [Line (exp_to_s e)]
   in
   stmt_to_s
 
