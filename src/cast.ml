@@ -290,10 +290,11 @@ let parse_decl (j:json) : c_decl j_result =
           (* Tag an annotation *)
           Ok (Right i)
         | _ ->
-          (* Tag an expression *)
+          (* Tag an init *)
           let* e = parse_init j in
           Ok (Left e)
        ) orig
+       (* Partition the list into two according to the tag *)
        |> Result.map (List.partition_map (fun x -> x))
       in
       (* Further enforce that there is _at most_ one init expression. *)
