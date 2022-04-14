@@ -314,13 +314,6 @@ let parse_decl (j:json) : c_decl j_result =
   | _ -> 
     root_cause ("ERROR: parse_decl") j
 
-let parse_exp_list = fun f ->
-  let open Rjson in
-  cast_list f
-  >>= map_all
-    parse_exp
-    (fun idx s e -> Because ("error parsing expression #" ^ (string_of_int (idx + 1)), s, e))
-
 
 let parse_range (j:json) : c_range j_result =
   let open Rjson in
@@ -446,6 +439,16 @@ let parse_kernels (j:Yojson.Basic.t) : c_kernel list j_result =
       (fun k -> cast_object k >>= parse_kernel)
       (* Abort the whole thing if we find a single parsing error *)
       (fun idx k e -> Because ("error parsing kernel " ^ (string_of_int idx), k, e))
+
+let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* ty = with_field "type" (fun f ->
+    cast_object f
+    >>= with_field "qualType" cast_string
+  ) o
+  in
+  Ok (Ctype.make ty)
 
 (* ------------------------------------------------------------------------ *)
 
