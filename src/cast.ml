@@ -13,7 +13,6 @@ type c_type = json
 
 type c_exp =
   | CharacterLiteral of int
-  | AnnotateAttr of string
   | ArraySubscriptExpr of {lhs: c_exp; rhs: c_exp; ty: c_type}
   | BinaryOperator of {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
   | CallExpr of {func: c_exp; args: c_exp list}
@@ -41,7 +40,7 @@ type c_init =
 
 type c_range = {lower_bound: c_exp; upper_bound: c_exp; step: c_exp; opcode: string}
 
-type c_decl = {name: variable; ty:c_type; init: c_init option}
+type c_decl = {name: variable; ty:c_type; init: c_init option; attrs: string list}
 
 type c_stmt =
   | BreakStmt
@@ -121,10 +120,6 @@ let rec parse_exp (j:json) : c_exp j_result =
   let* o = cast_object j in
   let* kind = get_kind o in
   match kind with
-  | "AnnotateAttr" ->
-    let* i = with_field "value" cast_string o in
-    Ok (AnnotateAttr i)
-
   | "ConstantExpr" ->
     with_field "inner" (fun f ->
       let* l = cast_list f >>= ensure_length_eq 1 in
@@ -271,7 +266,6 @@ let rec parse_init (j:json) : c_init j_result =
     let* e = parse_exp j in
     Ok (IExp e)
 
-
 let parse_decl (j:json) : c_decl j_result =
   let open Rjson in
   let* o = cast_object j in
@@ -280,13 +274,42 @@ let parse_decl (j:json) : c_decl j_result =
   | "VarDecl" ->
     let* v = parse_variable j in
     let* ty = get_field "type" o in
-    let* init = match List.assoc_opt "inner" o with
-    | Some (`List [e]) ->
-      let* e = parse_init e in
-      Ok (Some e)
-    | _ -> Ok None
+    let* init, attrs = match List.assoc_opt "inner" o with
+    | None -> Ok (None, [])
+    | Some orig -> begin
+      let* inits, attrs = cast_map (fun j ->
+        (* For each element of the init list, we test if its an annotation
+           or the value being initialized. There may exist many annotations,
+           but only one expression. *)
+        let* o = cast_object j in
+        let* kind = get_kind o in
+        let open Either in
+        match kind with
+        | "AnnotateAttr" ->
+          let* i = with_field "value" cast_string o in
+          (* Tag an annotation *)
+          Ok (Right i)
+        | _ ->
+          (* Tag an expression *)
+          let* e = parse_init j in
+          Ok (Left e)
+       ) orig
+       |> Result.map (List.partition_map (fun x -> x))
+      in
+      (* Further enforce that there is _at most_ one init expression. *)
+      let* init = match inits with
+      | [init] -> Ok (Some init)
+      | [] -> Ok None
+      | _ ->
+        (* Print out a nice error message with provenance. *)
+        let i = List.length inits |> string_of_int in
+        let msg = "Expecting at most one expression, but got " ^ i in
+        Error (Because ("Field 'init'", j, RootCause (msg, orig)))
+      in
+      Ok (init, attrs)
+      end
     in
-    Ok {name=v; ty=ty; init=init}
+    Ok {name=v; ty=ty; init=init; attrs=attrs}
   | _ -> 
     root_cause ("ERROR: parse_decl") j
 
@@ -430,7 +453,6 @@ let list_to_s (f:'a -> string) (l:'a list) : string =
 
 let rec exp_to_s : c_exp -> string =
   function
-  | AnnotateAttr a -> a
   | FloatingLiteral f -> string_of_float f
   | CharacterLiteral i
   | IntegerLiteral i -> string_of_int i
