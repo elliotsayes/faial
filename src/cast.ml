@@ -11,7 +11,9 @@ let (>>=) = Result.bind
 
 type c_type = json
 
+
 type c_exp =
+  | AccessExp of c_access list (* faial-infer *)
   | CharacterLiteral of int
   | ArraySubscriptExpr of {lhs: c_exp; rhs: c_exp; ty: c_type}
   | BinaryOperator of {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
@@ -31,6 +33,30 @@ type c_exp =
   | UnaryOperator of { opcode: string; child: c_exp; ty: c_type}
   | VarDecl of {name: variable; ty: c_type}
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
+and c_access = {location: c_exp; mode: mode; index: c_exp list }
+
+let exp_name = function
+| AccessExp _ -> "AccessExp"
+| CharacterLiteral _ -> "CharacterLiteral"
+| ArraySubscriptExpr _ -> "ArraySubscriptExpr"
+| BinaryOperator _ -> "BinaryOperator"
+| CallExpr _ -> "CallExpr"
+| ConditionalOperator _ -> "ConditionalOperator"
+| CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
+| CXXMethodDecl _ -> "CXXMethodDecl"
+| CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
+| FloatingLiteral _ -> "FloatingLiteral"
+| FunctionDecl _ -> "FunctionDecl"
+| IntegerLiteral _ -> "IntegerLiteral"
+| NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
+| MemberExpr _ -> "MemberExpr"
+| ParmVarDecl _ -> "ParmVarDecl"
+| DeclRefExpr _ -> "DeclRefExpr"
+| PredicateExpr _ -> "PredicateExpr"
+| UnaryOperator _ -> "UnaryOperator"
+| VarDecl _ -> "VarDecl"
+| UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
+
 
 type c_init =
   | CXXConstructExpr of {constructor: c_type; ty: c_type}
@@ -38,9 +64,20 @@ type c_init =
   | IExp of c_exp
   
 
-type c_range = {lower_bound: c_exp; upper_bound: c_exp; step: c_exp; opcode: string}
+type c_range = {
+  name: variable;
+  lower_bound: c_exp;
+  upper_bound: c_exp;
+  step: c_exp;
+  opcode: string
+}
 
-type c_decl = {name: variable; ty:c_type; init: c_init option; attrs: string list}
+type c_decl = {
+  name: variable;
+  ty: c_type;
+  init: c_init option;
+  attrs: string list
+}
 
 type c_stmt =
   | BreakStmt
@@ -56,8 +93,8 @@ type c_stmt =
   | DefaultStmt of c_stmt
   | CaseStmt of {case: c_exp; body: c_stmt}
   | SyncStmt (* faial-infer *)
-  | ForEachStmt of {var: variable; range: c_range; body: c_stmt} (* faial-infer *)
-  | AccessStmt of {location: c_exp; mode: mode; index: c_exp list } (* faial-infer *)
+  | ForEachStmt of {range: c_range; body: c_stmt} (* faial-infer *)
+  | AccessStmt of c_access (* faial-infer *)
   | AssertStmt of c_exp (* faial-infer *)
   | LocationAliasStmt of {source: c_exp; target: c_exp; offset: c_exp} (* faial-infer *)
   | SExp of c_exp
@@ -66,6 +103,12 @@ type c_kernel = {
   name: string;
   code: c_stmt;
 }
+
+let default_type =
+  let open Yojson in
+  `Assoc[
+    "qualType", `String "int"
+  ]
 
 let parse_mode (j:json) : mode j_result =
   let open Rjson in
@@ -209,7 +252,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     Ok (UnaryOperator {ty=ty; opcode=op; child=c})
 
   | "BinaryOperator" ->
-    let* ty = get_field "type" o in
+    let ty = List.assoc_opt "type" o |> Ojson.unwrap_or default_type in
     let* opcode = with_field "opcode" cast_string o in
     let* lhs = with_field "lhs" parse_exp o in
     let* rhs = with_field "rhs" parse_exp o in
@@ -239,12 +282,41 @@ let rec parse_exp (j:json) : c_exp j_result =
     ) o in
     Ok body
 
+  | "AccessStmt" ->
+    let* acc = parse_access j in
+    Ok (AccessExp [acc])
+  | "CompoundStmt" ->
+    let* accs = with_field "inner" (function
+      | `Assoc _ as j->
+        let* a = parse_access j in
+        Ok [a]
+      | `List _ as j ->
+        cast_map parse_access j
+      | j -> root_cause "expecting a list or an object" j
+      ) o
+    in
+    Ok (AccessExp accs)
+
   | "CXXBoolLiteralExpr" ->
     let* b = with_field "value" cast_bool o in
     Ok (CXXBoolLiteralExpr b)
 
   | _ ->
     root_cause "ERROR: parse_exp" j
+and parse_access (j:json) : c_access j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* kind = get_kind o in
+  match kind with
+  | "AccessStmt" ->
+    let* loc = with_field "location" parse_exp o in
+    let* mode = with_field "mode" parse_mode o in
+    let* index = with_field "index" (cast_map parse_exp) o in
+    Ok {location=loc; mode=mode; index=index}
+  | _ ->
+    root_cause ("ERROR: parse_access") j
+
+
 
 let rec parse_init (j:json) : c_init j_result =
   let open Rjson in
@@ -315,14 +387,20 @@ let parse_decl (j:json) : c_decl j_result =
     root_cause ("ERROR: parse_decl") j
 
 
-let parse_range (j:json) : c_range j_result =
+let parse_range (v:variable) (j:json) : c_range j_result =
   let open Rjson in
   let* o = cast_object j in
   let* lb = with_field "init" parse_exp o in
   let* upper_bound = with_field "upper_bound" parse_exp o in
   let* step = with_field "step" parse_exp o in
   let* opcode = with_field "opcode" cast_string o in
-  Ok {lower_bound=lb; upper_bound=upper_bound; step=step; opcode=opcode}
+  Ok {
+    name=v;
+    lower_bound=lb;
+    upper_bound=upper_bound;
+    step=step;
+    opcode=opcode
+  }
 
 let rec parse_stmt (j:json) : c_stmt j_result =
   let open Rjson in
@@ -402,12 +480,13 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     Ok (ForStmt {init=i; cond=c; inc=i; body=b})
   | "ForEachStmt" ->
     let* v = with_field "var" parse_variable o in
-    let* r = with_field "range" parse_range o in
+    let* r = with_field "range" (parse_range v) o in
     let* b = with_field "body" parse_stmt o in
-    Ok (ForEachStmt {var=v; range=r; body=b})
+    Ok (ForEachStmt {range=r; body=b})
   | _ ->
     let* e = parse_exp j in
     Ok (SExp e)
+
 and parse_stmt_list = fun inner ->
   let open Rjson in
   cast_list inner
@@ -443,11 +522,7 @@ let parse_kernels (j:Yojson.Basic.t) : c_kernel list j_result =
 let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
   let open Rjson in
   let* o = cast_object j in
-  let* ty = with_field "type" (fun f ->
-    cast_object f
-    >>= with_field "qualType" cast_string
-  ) o
-  in
+  let* ty = with_field "qualType" cast_string o in
   Ok (Ctype.make ty)
 
 (* ------------------------------------------------------------------------ *)
@@ -466,6 +541,7 @@ let rec exp_to_s : c_exp -> string =
           exp_to_s c.else_expr ^ ")"
   | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") " ^ b.opcode ^ " (" ^ exp_to_s b.rhs ^ ")"
   | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
+  | AccessExp l -> "(" ^ list_to_s access_to_s l ^ ")"
   | ArraySubscriptExpr b -> exp_to_s b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
   | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
@@ -479,6 +555,12 @@ let rec exp_to_s : c_exp -> string =
   | ParmVarDecl v -> var_name v.name
   | PredicateExpr p -> p.opcode ^ "(" ^ exp_to_s p.child ^ ")"
   | UnaryOperator u -> u.opcode ^ exp_to_s u.child
+and access_to_s (a:c_access) : string =
+  let mode = match a.mode with
+  | R -> "ro "
+  | W -> "rw "
+  in
+  mode ^ exp_to_s a.location ^ "[" ^ list_to_s exp_to_s a.index ^ "]"
 
 let init_to_s : c_init -> string =
   function
@@ -513,11 +595,13 @@ let stmt_to_s: c_stmt -> PPrint.t list =
     | AccessStmt _ -> [Line "access;"]
     | AssertStmt b -> [Line ("assert (" ^ (exp_to_s b) ^ ");")]
     | LocationAliasStmt l -> [Line (exp_to_s l.target ^ " = " ^ exp_to_s l.source ^ " + " ^ exp_to_s l.offset)]
-    | ForStmt f -> [ Line ("for " ^ opt_exp_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
-                    Block(stmt_to_s f.body);
-                    Line ("}")]
-    | ForEachStmt {var=v; range=r; body=b} ->
-      [ Line ("foreach " ^ (var_name v) ^ " in " ^ range_to_s r ^ " {");
+    | ForStmt f -> [
+        Line ("for " ^ opt_exp_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
+        Block(stmt_to_s f.body);
+        Line ("}")
+      ]
+    | ForEachStmt {range=r; body=b} ->
+      [ Line ("foreach " ^ (var_name r.name) ^ " in " ^ range_to_s r ^ " {");
         Block (stmt_to_s b); Line "}"]
     | WhileStmt {cond=b; body=s} -> [
         Line ("while (" ^ exp_to_s b ^ ") {");

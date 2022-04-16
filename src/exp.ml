@@ -232,15 +232,17 @@ let n_mod n1 n2 =
   | _, _ -> Bin (Mod, n1, n2)
 
 let n_bin o n1 n2 =
-  match o, n1, n2 with
-  | _, Num n1, Num n2 -> Num (eval_nbin o n1 n2)
-  | Plus, _, _ -> n_plus n1 n2
-  | Minus, _, _ -> n_minus n1 n2
-  | Mult, _, _ -> n_mult n1 n2
-  | Div, _, _ -> n_div n1 n2
-  | Mod, _, _ -> n_mod n1 n2
-  | _, _, _ -> Bin (o, n1, n2)
-
+  try
+    match o, n1, n2 with
+    | _, Num n1, Num n2 -> Num (eval_nbin o n1 n2)
+    | Plus, _, _ -> n_plus n1 n2
+    | Minus, _, _ -> n_minus n1 n2
+    | Mult, _, _ -> n_mult n1 n2
+    | Div, _, _ -> n_div n1 n2
+    | Mod, _, _ -> n_mod n1 n2
+    | _, _, _ -> Bin (o, n1, n2)
+  with
+    Division_by_zero -> Bin (o, n1, n2)
 
 let b_rel o b1 b2 =
   match b1, b2 with

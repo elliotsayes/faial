@@ -24,6 +24,12 @@ type stmt =
 
 type prog = stmt list
 
+
+let block (l:stmt list) =
+  match l with
+  | [x] -> x
+  | _ -> Block l
+
 module Post = struct
   type inst =
   | Skip
