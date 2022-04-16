@@ -1,3 +1,5 @@
+module StackTrace = Common.StackTrace
+
 open Exp
 
 (* Monadic let *)
@@ -5,22 +7,10 @@ let (let*) = Result.bind
 (* Monadic pipe *)
 let (>>=) = Result.bind
 
-type c_error =
-| RootCause of string
-| Because of string * c_error
-
-let rec c_error_to_list: c_error -> string list =
-  function
-  | RootCause x -> [x]
-  | Because (x, e) ->
-    x::c_error_to_list e
+type c_error = string StackTrace.t
 
 let rec print_error : c_error -> unit =
-  function
-  | RootCause x -> prerr_endline x
-  | Because (x, e) ->
-    print_endline x;
-    print_error e
+  StackTrace.iter prerr_endline
 
 type 'a c_result = ('a, c_error) Result.t
 
@@ -128,8 +118,7 @@ let rec parse_nexp (e: Cast.c_exp) : nexp c_result =
     Ok (Num 1)
   | _ ->
     root_cause ("WARNING: parse_nexp: unsupported expression " ^ Cast.exp_name e ^ " : " ^ Cast.exp_to_s e)
-    (* prerr_endline ("WARNING: parse_nexp: rewriting the following expression as 1: " ^ Cast.exp_to_s e); *)
-    (* Ok (Num 1) *)
+
 and parse_bexp (e: Cast.c_exp) : bexp c_result =
   let parse_b m b = with_exp ("parse_bexp: " ^ m) e parse_bexp b in
   let parse_n m n = with_exp ("parse_bexp: " ^ m) e parse_nexp n in
@@ -158,7 +147,17 @@ and parse_bexp (e: Cast.c_exp) : bexp c_result =
     let* n = parse_n (Cast.exp_name e) e in
     prerr_endline ("WARNING: parse_bexp: rewriting '" ^ Cast.exp_to_s e ^ "' to: 0 != " ^ Cast.exp_to_s e);
     Ok (n_neq n (Num 0))
-  
+
+(*
+let j_parse_nexp (j:Yojson.Basic.t) : nexp =
+  match Cast.parse_exp j with
+  | Ok e ->
+    (match parse_nexp e with
+    | Ok e -> e
+    | Error e ->
+    )
+  | Error e ->
+*)
 let parse_range (r:Cast.c_range) : Exp.range c_result =
   let parse_n m b = with_msg (m ^ ": " ^ Cast.range_to_s r) parse_nexp b in
   let* lb = parse_n "lower_bound" r.lower_bound in
@@ -206,7 +205,7 @@ let rec get_accesses (c:Cast.c_exp) : Cast.c_access list =
     -> []
 
 let cast_map f = Rjson.map_all f (fun idx s e ->
-  Because ("Error in index #" ^ (string_of_int (idx + 1)), e))
+  StackTrace.Because ("Error in index #" ^ (string_of_int (idx + 1)), e))
 
 let parse_access (a:Cast.c_access) : Exp.acc_expr c_result =
   let* v = with_msg "parse_access: location" parse_var a.location in
@@ -342,44 +341,3 @@ let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
     let* body = with_msg "default.body" parse_stmt s in
     Ok (body)
 
-
-(*
-let parse_init (e:Cast.c_exp) : (variable * locality * nexp option) option c_result =
-  match e with
-  | VarDecl v ->
-  | _ -> 
-
-let parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
-  match c with
-  | BreakStmt
-  | GotoStmt
-  | ReturnStmt -> Ok (Block [])
-  | IfStmt c ->
-    let* b = parse_b "cond" c.cond in
-    let* t = parse_s "then" c.then_stmt in
-    let* e = parse_s "else" c.then_stmt in
-    Ok If (b, t, e)
-  | CompoundStmt c ->
-    let* l = parse_s_l "child" c in
-    Ok (Block l)
-  | DeclStmt c ->
-    
-  | WhileStmt c ->
-  | ForStmt c ->
-  | DoStmt c ->
-  | SwitchStmt c ->
-  | DefaultStmt c ->
-  | CaseStmt c ->
-  | SyncStmt -> Ok Sync
-  | ForEachStmt c ->
-  | AccessStmt c ->
-  | AssertStmt c ->
-  | LocationAliasStmt c ->
-  | CExp c -> 
-*)
-(*
-let parse_task = function
-  | 0 -> Ok Task1
-  | 1 -> Ok Task2
-  | n -> root_cause ("parse_task: expected 0 or 1, but got " ^ string_of_int n)
-*)

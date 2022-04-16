@@ -1,3 +1,4 @@
+module StackTrace = Common.StackTrace
 type j_object = (string * Yojson.Basic.t) list
 type j_list = Yojson.Basic.t list
 
@@ -14,7 +15,6 @@ let unwrap_or = Common.unwrap_or
 let unless (first:('a, 'e) Result.t) (second:('a, 'e) Result.t) : ('a, 'e) Result.t =
   if Result.is_ok first then first else second
 
-
 (* --- Helpers for Yojson --- *)
 
 let type_name: Yojson.Basic.t -> string =
@@ -27,9 +27,7 @@ let type_name: Yojson.Basic.t -> string =
   | `Null -> "null"
   | `String _ -> "string" 
 
-type j_error =
-| RootCause of string * Yojson.Basic.t
-| Because of string * Yojson.Basic.t * j_error
+type j_error = (string * Yojson.Basic.t) StackTrace.t
 
 let pp_js data =
   let result = Yojson.Basic.to_string data in
@@ -41,13 +39,14 @@ let pp_js data =
     result
 
 let rec print_j_error =
-  function
-  | RootCause (s, j) ->
-    prerr_endline s;
-    prerr_endline (Yojson.Basic.pretty_to_string j)
-  | Because (s, j, e) ->
-    prerr_endline (s ^ ": " ^ (pp_js j));
-    print_j_error e
+  StackTrace.iteri (fun c (s, j) ->
+    match c with
+    | 0 ->
+      prerr_endline s;
+      prerr_endline (Yojson.Basic.pretty_to_string j)
+    | _ ->
+      prerr_endline (s ^ ": " ^ (pp_js j))
+  )
 
 type 'a j_result = ('a, j_error) Result.t
 
@@ -110,7 +109,7 @@ let cast_list (j:Yojson.Basic.t) : Yojson.Basic.t list j_result =
 let cast_map (f:'a -> ('b, 'e) Result.t) (j:Yojson.Basic.t) =
   cast_list j
   >>= map_all f (fun idx s e ->
-    Because ("Error in index #" ^ (string_of_int (idx + 1)), s, e)
+    StackTrace.Because (("Error in index #" ^ (string_of_int (idx + 1)), s), e)
   )
 
 let ensure_length_eq (len:int) (l:Yojson.Basic.t list) : Yojson.Basic.t list j_result =
@@ -138,7 +137,7 @@ let get_field (k:string) (kv: j_object) : Yojson.Basic.t j_result =
 (* Related to our c-to-json representation *)
 
 let because_field (k:string) (o:j_object) (e:j_error) : j_error =
-  Because ("field: " ^ k, `Assoc o, e)
+  StackTrace.Because (("field: " ^ k, `Assoc o), e)
 
 let with_field (k:string) (f:Yojson.Basic.t -> 'a j_result) (o:j_object): 'a j_result =
   get_field k o
@@ -169,13 +168,13 @@ let get_index (i:int) (l: j_list) : Yojson.Basic.t j_result =
 
 let because_get_index (i:int) (l:Yojson.Basic.t list): 'a j_result -> 'a j_result = 
   Result.map_error (fun e ->
-    Because ("Position #" ^ (string_of_int (i + 1)), `List l, e)
+    StackTrace.Because (("Position #" ^ (string_of_int (i + 1)), `List l), e)
   )
 
 let with_index (index:int) (f:Yojson.Basic.t -> 'a j_result) (l:j_list): 'a j_result =
   get_index index l
   >>= Common.wrap f (fun e ->
-      Because ("Position #" ^ (string_of_int (index + 1)), `List l, e)
+      StackTrace.Because (("Position #" ^ (string_of_int (index + 1)), `List l), e)
       |> Result.error
     )
 

@@ -1,3 +1,5 @@
+module StackTrace = Common.StackTrace
+
 open Exp
 open Serialize
 type json = Yojson.Basic.t
@@ -377,7 +379,8 @@ let parse_decl (j:json) : c_decl j_result =
         (* Print out a nice error message with provenance. *)
         let i = List.length inits |> string_of_int in
         let msg = "Expecting at most one expression, but got " ^ i in
-        Error (Because ("Field 'init'", j, RootCause (msg, orig)))
+        let open StackTrace in
+        Error (Because (("Field 'init'", j), RootCause (msg, orig)))
       in
       Ok (init, attrs)
       end
@@ -491,7 +494,7 @@ and parse_stmt_list = fun inner ->
   let open Rjson in
   cast_list inner
   >>= map_all parse_stmt
-    (fun idx s e -> Because ("error parsing statement #" ^ (string_of_int (idx + 1)), s, e))
+    (fun idx s e -> StackTrace.Because (("error parsing statement #" ^ string_of_int (idx + 1), s), e))
 
 let parse_kernel (o:Rjson.j_object) : c_kernel j_result =
   let open Rjson in
@@ -517,7 +520,7 @@ let parse_kernels (j:Yojson.Basic.t) : c_kernel list j_result =
     |> map_all (* for each kernel convert it into an object and parse it *)
       (fun k -> cast_object k >>= parse_kernel)
       (* Abort the whole thing if we find a single parsing error *)
-      (fun idx k e -> Because ("error parsing kernel " ^ (string_of_int idx), k, e))
+      (fun idx k e -> StackTrace.Because (("error parsing kernel " ^ string_of_int idx, k), e))
 
 let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
   let open Rjson in
