@@ -318,10 +318,12 @@ module PPrint = struct
     in
      "[" ^ idx ^ "]"
 
-  let acc_expr_to_s (x, a) : t list =
-    [Line (mode_to_s a.access_mode ^ " " ^
-     ident x ^
-     index_to_s a.access_index ^ ";")]
+  let acc_to_s (x, a) : string =
+    mode_to_s a.access_mode ^ " " ^
+    ident x ^ index_to_s a.access_index
+
+  let acc_expr_to_s a : t list =
+    [Line (acc_to_s a ^ ";")]
 
   let var_set_to_s (vs:VarSet.t) : string =
     VarSet.elements vs

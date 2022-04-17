@@ -9,8 +9,14 @@ let (>>=) = Result.bind
 
 type c_error = string StackTrace.t
 
-let rec print_error : c_error -> unit =
+let print_error : c_error -> unit =
   StackTrace.iter prerr_endline
+
+let error_to_buffer (e: c_error) : Buffer.t =
+  let b = Buffer.create 512 in
+  StackTrace.iter (Buffer.add_string b) e;
+  b
+
 
 type 'a c_result = ('a, c_error) Result.t
 
@@ -148,16 +154,16 @@ and parse_bexp (e: Cast.c_exp) : bexp c_result =
     prerr_endline ("WARNING: parse_bexp: rewriting '" ^ Cast.exp_to_s e ^ "' to: 0 != " ^ Cast.exp_to_s e);
     Ok (n_neq n (Num 0))
 
-(*
 let j_parse_nexp (j:Yojson.Basic.t) : nexp =
   match Cast.parse_exp j with
   | Ok e ->
     (match parse_nexp e with
     | Ok e -> e
-    | Error e ->
+    | Error e -> raise (Common.ParseError (error_to_buffer e))
     )
   | Error e ->
-*)
+    raise (Common.ParseError (Rjson.error_to_buffer e))
+
 let parse_range (r:Cast.c_range) : Exp.range c_result =
   let parse_n m b = with_msg (m ^ ": " ^ Cast.range_to_s r) parse_nexp b in
   let* lb = parse_n "lower_bound" r.lower_bound in
@@ -262,11 +268,11 @@ let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
     let* b = with_msg "if.cond" parse_bexp c.cond in
     let* t = with_msg "if.then" parse_stmt c.then_stmt in
     let* e = with_msg "if.else" parse_stmt c.else_stmt in
-    Ok (Imp.If (b, t, e))
+    Ok (Imp.s_if b t e)
 
   | CompoundStmt l ->
     let* l = cast_map parse_stmt l in
-    Ok (Imp.Block l)
+    Ok (Imp.s_block l)
 
   | DeclStmt l ->
     let* l = cast_map parse_decl l |> Result.map Common.flatten_opt in
@@ -307,7 +313,7 @@ let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
 
   | SExp e ->
     let* accs = with_msg "SExp" parse_accesses e in
-    Ok (Imp.block accs)
+    Ok (Imp.Block accs)
 
   | ForStmt s ->
     let* b = with_msg "for.body" parse_stmt s.body in
@@ -316,28 +322,26 @@ let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
     let* accs2 = get_accs "cond" s.cond in
     let* accs3 = get_accs "inc" s.inc in
     (* let* accs1 = with_msg "for.body" (cast_map parse_access) (get_accesses e) in *)
-    Ok (accs1 @ accs2 @ accs3 @ [Imp.Loop b] |> Imp.block)
+    Ok (Imp.Block (accs1 @ accs2 @ accs3 @ [Imp.Loop b]))
 
   | DoStmt {cond=cond; body=body} ->
     let* body = with_msg "do.body" parse_stmt body in
     let* accs = with_msg "do.cond" parse_accesses cond in
-    Ok (Imp.Loop body :: accs |> Imp.block)
+    Ok (Imp.Block (Imp.Loop body :: accs))
 
   | WhileStmt {cond=cond; body=body} ->
     let* body = with_msg "while.body" parse_stmt body in
     let* accs = with_msg "while.cond" parse_accesses cond in
-    Ok (accs @ [Imp.Loop body] |> Imp.block)
+    Ok (Imp.Block (accs @ [Imp.Loop body]))
 
   | SwitchStmt s ->
     let* accs = with_msg "switch.cond" parse_accesses s.cond in
     let* body = with_msg "switch.body" parse_stmt s.body in
-    Ok (accs @ [Imp.Loop body] |> Imp.block)
+    Ok (Imp.Block (accs @ [Imp.Loop body]))
 
   | CaseStmt s ->
-    let* body = with_msg "case.body" parse_stmt s.body in
-    Ok (body)
+    with_msg "case.body" parse_stmt s.body
 
   | DefaultStmt s ->
-    let* body = with_msg "default.body" parse_stmt s in
-    Ok (body)
+    with_msg "default.body" parse_stmt s
 

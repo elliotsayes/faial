@@ -38,15 +38,23 @@ let pp_js data =
   else
     result
 
-let rec print_j_error =
+let iter_error (on_msg: string -> unit) : j_error -> unit =
   StackTrace.iteri (fun c (s, j) ->
     match c with
     | 0 ->
-      prerr_endline s;
-      prerr_endline (Yojson.Basic.pretty_to_string j)
+      on_msg s;
+      on_msg (Yojson.Basic.pretty_to_string j)
     | _ ->
-      prerr_endline (s ^ ": " ^ (pp_js j))
+      on_msg (s ^ ": " ^ (pp_js j))
   )
+
+let print_error : j_error -> unit =
+  iter_error prerr_endline
+
+let error_to_buffer (e: j_error) : Buffer.t =
+  let b = Buffer.create 512 in
+  iter_error (Buffer.add_string b) e;
+  b
 
 type 'a j_result = ('a, j_error) Result.t
 

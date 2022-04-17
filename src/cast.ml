@@ -13,7 +13,6 @@ let (>>=) = Result.bind
 
 type c_type = json
 
-
 type c_exp =
   | AccessExp of c_access list (* faial-infer *)
   | CharacterLiteral of int
@@ -412,10 +411,8 @@ let rec parse_stmt (j:json) : c_stmt j_result =
   match kind with
   | "SyncStmt" -> Ok SyncStmt
   | "AccessStmt" ->
-    let* loc = with_field "location" parse_exp o in
-    let* mode = with_field "mode" parse_mode o in
-    let* index = with_field "index" (cast_map parse_exp) o in
-    Ok (AccessStmt {location=loc; mode=R; index=index})
+    let* acc = parse_access j in
+    Ok (AccessStmt acc)
   | "AssertStmt" ->
     let* cond = with_field "cond" parse_exp o in
     Ok (AssertStmt cond)

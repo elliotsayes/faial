@@ -25,11 +25,6 @@ type stmt =
 type prog = stmt list
 
 
-let block (l:stmt list) =
-  match l with
-  | [x] -> x
-  | _ -> Block l
-
 module Post = struct
   type inst =
   | Skip
@@ -339,11 +334,13 @@ let s_block l =
 let s_for (r:range) (s:stmt) =
   match s with
   | Block [] -> Block []
+  | Decl [] -> Decl []
   | _ -> For (r, s)
 
 let s_loop (s:stmt) =
   match s with
   | Block [] -> Block []
+  | Decl [] -> Decl []
   | _ -> Loop s
 
 let s_if (b:bexp) (p1:stmt) (p2:stmt) : stmt =
@@ -372,7 +369,7 @@ let stmt_to_s: stmt -> PPrint.t list =
   let rec stmt_to_s : stmt -> PPrint.t list =
     function
     | Sync -> [Line "sync;"]
-    | Assert b -> [Line ("assert (" ^ (b_to_s b) ^ ")")]
+    | Assert b -> [Line ("assert (" ^ (b_to_s b) ^ ");")]
     | Acc e -> acc_expr_to_s e
     | Block l -> [Line "{"; Block (List.map stmt_to_s l |> List.flatten); Line "}"]
     | LocationAlias l ->
@@ -388,7 +385,7 @@ let stmt_to_s: stmt -> PPrint.t list =
         (match n with | Some n -> " = " ^ n_to_s n | None -> "")
       in
       let entries = Common.join "," (List.map entry l) in
-      [Line (entries ^ ";")]
+      [Line ("decl " ^ entries ^ ";")]
     | If (b, s1, s2) -> [
         Line ("if (" ^ b_to_s b ^ ") {");
         Block (stmt_to_s s1);
