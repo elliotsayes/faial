@@ -181,22 +181,49 @@ let parse_range (r:Cast.c_range) : Exp.range c_result =
     range_upper_bound = ub;
   }
 
+let rec make_access (m:Exp.mode) (c:Cast.c_array_subscript) (indices:Cast.c_exp list) =
+  let child = c.lhs in
+  let indices = c.rhs :: indices in
+  match child with
+  | ArraySubscriptExpr a ->
+    make_access m a indices
+  | _ ->
+    let open Cast in
+    {location=child; mode=m; index=indices}
+
 let rec get_accesses (c:Cast.c_exp) : Cast.c_access list =
   match c with
   | AccessExp l -> l
+
+  | CXXOperatorCallExpr {
+      func=CXXMethodDecl{name=v; _};
+      args=[ArraySubscriptExpr a; e]
+    } when var_name v = "operator="
+    ->
+    let write = make_access W a [] in
+    write :: get_accesses e
+
   | CXXOperatorCallExpr {func=f; args=args}
   | CallExpr {func=f; args=args} ->
     get_accesses f @ List.concat_map get_accesses args
+
   | UnaryOperator {child=e; _}
   | PredicateExpr {child=e; _}
   | MemberExpr {base=e; _} ->
     get_accesses e
-  | BinaryOperator {lhs=l; rhs=r; _}
-  | ArraySubscriptExpr {lhs=l; rhs=r; _} ->
-    get_accesses l @ get_accesses r
+
+  | BinaryOperator {lhs=ArraySubscriptExpr a; rhs=r; opcode="="; _} ->
+    let write = make_access W a [] in
+    write :: get_accesses r
+
+  | BinaryOperator {lhs=l; rhs=r; _} -> get_accesses l @ get_accesses r
+
+  | ArraySubscriptExpr a -> [make_access R a []]
+
   | ConditionalOperator {cond=e1; then_expr=e2; else_expr=e3}
     ->
     get_accesses e1 @ get_accesses e2 @ get_accesses e3
+
   | VarDecl _
   | UnresolvedLookupExpr _
   | ParmVarDecl _

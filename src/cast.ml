@@ -16,7 +16,7 @@ type c_type = json
 type c_exp =
   | AccessExp of c_access list (* faial-infer *)
   | CharacterLiteral of int
-  | ArraySubscriptExpr of {lhs: c_exp; rhs: c_exp; ty: c_type}
+  | ArraySubscriptExpr of c_array_subscript
   | BinaryOperator of {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
   | CallExpr of {func: c_exp; args: c_exp list}
   | ConditionalOperator of {cond: c_exp; then_expr: c_exp; else_expr: c_exp; ty: c_type}
@@ -35,6 +35,8 @@ type c_exp =
   | VarDecl of {name: variable; ty: c_type}
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
 and c_access = {location: c_exp; mode: mode; index: c_exp list }
+and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type}
+
 
 let exp_name = function
 | AccessExp _ -> "AccessExp"

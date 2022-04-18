@@ -327,6 +327,7 @@ let s_block l =
   Block (
     List.filter (function
       | Block [] -> false
+      | Decl [] -> false
       | _ -> true
     ) l
   )
