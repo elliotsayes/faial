@@ -220,8 +220,7 @@ let rec get_accesses (c:Cast.c_exp) : Cast.c_access list =
 
   | ArraySubscriptExpr a -> [make_access R a []]
 
-  | ConditionalOperator {cond=e1; then_expr=e2; else_expr=e3}
-    ->
+  | ConditionalOperator {cond=e1; then_expr=e2; else_expr=e3} ->
     get_accesses e1 @ get_accesses e2 @ get_accesses e3
 
   | VarDecl _
@@ -279,7 +278,12 @@ let parse_accesses (e:Cast.c_exp) : (Imp.stmt list) c_result =
   );
   Ok (List.map (fun a -> Imp.Acc a) accs)
 
-
+(*
+let is_pointer (j:Yojson.Basic.t) =
+  match Cast.parse_type j with
+  | Some t -> Ctype.is_pointer t
+  | None -> false
+*)
 let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
   let with_msg (m:string) f b = with_msg ("parse_stmt: " ^ m) f b in
   let parse_accesses_opt = function
@@ -304,6 +308,10 @@ let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
   | DeclStmt l ->
     let* l = cast_map parse_decl l |> Result.map Common.flatten_opt in
     Ok (Imp.Decl l)
+    (*
+  | SExp (BinaryOperator {opcode="="; lhs=VarDecl {name=v; ty=ty}; rhs=rhs})
+  | SExp (BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; ty=ty}; rhs=rhs})
+    ->*)
 
   | SExp (BinaryOperator {opcode="="; lhs=VarDecl {name=v; ty=ty}; rhs=rhs})
   | SExp (BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; ty=ty}; rhs=rhs})
