@@ -8,6 +8,9 @@ let to_string (c:t) : string =
   match c with
   | CType x -> x
 
+let is_pointer (c:t) =
+  to_string c |> Common.ends_with " *"
+
 let get_array_length (c:t) : int list =
   to_string c
   |> Common.parse_array_dim_opt

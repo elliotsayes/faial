@@ -278,12 +278,38 @@ let parse_accesses (e:Cast.c_exp) : (Imp.stmt list) c_result =
   );
   Ok (List.map (fun a -> Imp.Acc a) accs)
 
-(*
 let is_pointer (j:Yojson.Basic.t) =
   match Cast.parse_type j with
-  | Some t -> Ctype.is_pointer t
-  | None -> false
-*)
+  | Ok t -> Ctype.is_pointer t
+  | Error _ -> false
+
+let rec parse_load_expr (target:Cast.c_exp) (exp:Cast.c_exp)
+  : (Cast.c_location_alias, Cast.c_exp) Either.t =
+  let open Imp in
+  let open Either in
+  match exp with
+  | VarDecl {ty=ty; _}
+  | ParmVarDecl {ty=ty; _} when is_pointer ty ->
+    Left {source=exp; target=target; offset=IntegerLiteral 0}
+  | BinaryOperator ({lhs=l; rhs=r; _} as b) ->
+    (match parse_load_expr target l with
+    | Left l -> Left {l with offset =BinaryOperator {b with lhs=l.offset}}
+    | Right _ -> Right exp)
+  | _ ->
+    Right exp
+
+let parse_location_alias (s:Cast.c_location_alias) : Imp.stmt c_result =
+  let* source = with_msg "location_alias.source" parse_var s.source in
+  let* target = with_msg "location_alias.target" parse_var s.target in
+  let* offset = with_msg "location_alias.offset" parse_nexp s.offset in
+  let open Imp in
+  Ok (LocationAlias {
+    alias_source=source;
+    alias_target=target;
+    alias_offset=offset
+  })
+
+
 let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
   let with_msg (m:string) f b = with_msg ("parse_stmt: " ^ m) f b in
   let parse_accesses_opt = function
@@ -308,10 +334,18 @@ let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
   | DeclStmt l ->
     let* l = cast_map parse_decl l |> Result.map Common.flatten_opt in
     Ok (Imp.Decl l)
-    (*
-  | SExp (BinaryOperator {opcode="="; lhs=VarDecl {name=v; ty=ty}; rhs=rhs})
-  | SExp (BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; ty=ty}; rhs=rhs})
-    ->*)
+
+  | SExp ((BinaryOperator {opcode="="; lhs=VarDecl {name=v; ty=ty} as lhs; rhs=rhs}) as orig)
+  | SExp ((BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; ty=ty} as lhs; rhs=rhs}) as orig)
+    when is_pointer ty
+    ->
+    (match parse_load_expr lhs rhs with
+    | Left a ->
+      parse_location_alias a
+    | Right _ -> 
+      let* accs = with_msg "location_alias" parse_accesses orig in
+      Ok (Imp.Block accs)
+    )
 
   | SExp (BinaryOperator {opcode="="; lhs=VarDecl {name=v; ty=ty}; rhs=rhs})
   | SExp (BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; ty=ty}; rhs=rhs})
@@ -337,14 +371,7 @@ let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
     Ok (Imp.Acc (v, {access_index=i; access_mode=s.mode}))
 
   | LocationAliasStmt s ->
-    let* source = with_msg "location_alias.source" parse_var s.source in
-    let* target = with_msg "location_alias.target" parse_var s.target in
-    let* offset = with_msg "location_alias.offset" parse_nexp s.offset in
-    Ok (Imp.LocationAlias {
-      alias_source = source;
-      alias_target=target;
-      alias_offset=offset
-    })
+    parse_location_alias s
 
   | SExp e ->
     let* accs = with_msg "SExp" parse_accesses e in
@@ -356,7 +383,6 @@ let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
     let* accs1 = get_accs "init" s.init in
     let* accs2 = get_accs "cond" s.cond in
     let* accs3 = get_accs "inc" s.inc in
-    (* let* accs1 = with_msg "for.body" (cast_map parse_access) (get_accesses e) in *)
     Ok (Imp.Block (accs1 @ accs2 @ accs3 @ [Imp.Loop b]))
 
   | DoStmt {cond=cond; body=body} ->

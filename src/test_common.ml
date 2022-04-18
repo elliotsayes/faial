@@ -57,11 +57,11 @@ let tests = "ends_with" >::: [
     assert_equal [1; 2; 3; 4] (append_tr [] [1;2;3;4])
   );
   "ends_with" >:: (fun _ ->
-      assert_bool "" (ends_with "foo" "");
-      assert_bool "" (ends_with "foo" "o");
-      assert_bool "" (ends_with "foo" "oo");
+      assert_bool "" (ends_with "" "foo");
+      assert_bool "" (ends_with "o" "foo");
+      assert_bool "" (ends_with "oo" "foo");
       assert_bool "" (ends_with "foo" "foo");
-      assert_bool "" (not (ends_with "foo" "moo"))
+      assert_bool "" (not (ends_with "moo" "foo"))
   );
   "starts_with" >:: (fun _ ->
       assert_bool "" (starts_with "foo" "");

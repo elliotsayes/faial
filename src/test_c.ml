@@ -2,13 +2,14 @@ module PPrint = Serialize.PPrint
 module StackTrace = Common.StackTrace 
 (* ------------------------------------------------------------------------ *)
 
+
 let parse_stmts_v1 j : Imp.stmt list =
   let open Cast in
   let open C_to_imp in
   match Cast.parse_kernels j with
   | Ok ks -> (
     match
-      List.map (fun k -> k.code) ks
+      List.map (fun k -> Cast.print_kernel k; k.code) ks
       |> C_to_imp.cast_map C_to_imp.parse_stmt
     with
     | Ok ss -> ss
@@ -107,14 +108,17 @@ let print_stmt s =
 let () =
   let j = Yojson.Basic.from_channel stdin in
   let ss1 = parse_stmts_v1 j in
-  let ss2 = parse_stmts_v2 j in
+  (* let ss2 = parse_stmts_v2 j in *)
   let open Imp in
+  print_stmt (Imp.Block ss1);
+(*
   match stmt_diff (Block ss1) (Block ss2) with
   | None -> ()
   | Some e ->
     StackTrace.iter print_endline e;
     print_endline ("---------");
-    print_stmt (Imp.Block ss1);
+    ;
     print_endline ("---------");
     print_stmt (Imp.Block ss2);
     exit (-1)
+*)

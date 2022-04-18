@@ -116,7 +116,7 @@ let starts_with txt prefix =
   else
   String.equal (String.sub txt 0 pre_len) prefix
 
-let ends_with s suffix =
+let ends_with suffix s =
   let suffix_len = String.length suffix in
   let s_len = String.length s in
   (suffix_len = 0) ||

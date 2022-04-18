@@ -17,7 +17,7 @@ type c_exp =
   | AccessExp of c_access list (* faial-infer *)
   | CharacterLiteral of int
   | ArraySubscriptExpr of c_array_subscript
-  | BinaryOperator of {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
+  | BinaryOperator of c_binary
   | CallExpr of {func: c_exp; args: c_exp list}
   | ConditionalOperator of {cond: c_exp; then_expr: c_exp; else_expr: c_exp; ty: c_type}
   | CXXBoolLiteralExpr of bool
@@ -34,6 +34,7 @@ type c_exp =
   | UnaryOperator of { opcode: string; child: c_exp; ty: c_type}
   | VarDecl of {name: variable; ty: c_type}
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
+and c_binary = {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
 and c_access = {location: c_exp; mode: mode; index: c_exp list }
 and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type}
 
@@ -82,6 +83,12 @@ type c_decl = {
   attrs: string list
 }
 
+type c_location_alias = {
+  source: c_exp;
+  target: c_exp;
+  offset: c_exp
+}
+
 type c_stmt =
   | BreakStmt
   | GotoStmt
@@ -99,7 +106,7 @@ type c_stmt =
   | ForEachStmt of {range: c_range; body: c_stmt} (* faial-infer *)
   | AccessStmt of c_access (* faial-infer *)
   | AssertStmt of c_exp (* faial-infer *)
-  | LocationAliasStmt of {source: c_exp; target: c_exp; offset: c_exp} (* faial-infer *)
+  | LocationAliasStmt of c_location_alias (* faial-infer *)
   | SExp of c_exp
 
 type c_kernel = {
@@ -527,6 +534,11 @@ let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
   let* ty = with_field "qualType" cast_string o in
   Ok (Ctype.make ty)
 
+let type_to_str (j:Yojson.Basic.t) : string =
+  match parse_type j with
+  | Ok ty -> Ctype.to_string ty
+  | Error _ -> "?"
+
 (* ------------------------------------------------------------------------ *)
 
 let list_to_s (f:'a -> string) (l:'a list) : string =
@@ -541,7 +553,7 @@ let rec exp_to_s : c_exp -> string =
     "(" ^ exp_to_s c.cond ^ ") ? (" ^
           exp_to_s c.then_expr ^ ") : (" ^
           exp_to_s c.else_expr ^ ")"
-  | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") " ^ b.opcode ^ " (" ^ exp_to_s b.rhs ^ ")"
+  | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") (" ^ b.opcode ^ "." ^ type_to_str b.ty ^ ") (" ^ exp_to_s b.rhs ^ ")"
   | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
   | AccessExp l -> "(" ^ list_to_s access_to_s l ^ ")"
   | ArraySubscriptExpr b -> exp_to_s b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
@@ -550,11 +562,11 @@ let rec exp_to_s : c_exp -> string =
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | VarDecl v -> var_name v.name
   | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
-  | UnresolvedLookupExpr v -> var_name v.name
-  | NonTypeTemplateParmDecl v -> var_name v.name
-  | CXXMethodDecl v -> var_name v.name
-  | FunctionDecl v -> var_name v.name
-  | ParmVarDecl v -> var_name v.name
+  | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name
+  | NonTypeTemplateParmDecl v -> "@tpl " ^ var_name v.name
+  | CXXMethodDecl v -> "@meth " ^ var_name v.name
+  | FunctionDecl v -> "@func " ^ var_name v.name
+  | ParmVarDecl v -> "@parm " ^ var_name v.name
   | PredicateExpr p -> p.opcode ^ "(" ^ exp_to_s p.child ^ ")"
   | UnaryOperator u -> u.opcode ^ exp_to_s u.child
 and access_to_s (a:c_access) : string =
