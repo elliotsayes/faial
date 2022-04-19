@@ -3,7 +3,7 @@ open Common
 
 let rec fold_nexp f e a =
   match e with
-  | Num _ -> a
+  | Num _ | NUnknown -> a
   | Proj (_, x) -> f x a
   | Var x -> f x a
   | Bin (_, e1, e2) -> fold_nexp f e1 a |> fold_nexp f e2
@@ -13,7 +13,7 @@ let rec fold_nexp f e a =
 and fold_bexp f e a =
   match e with
   | Pred (_, n) -> fold_nexp f n a
-  | Bool _ -> a
+  | Bool _ | BUnknown -> a
   | NRel (_, n1, n2) -> fold_nexp f n1 a |> fold_nexp f n2
   | BRel (_, b1, b2) -> fold_bexp f b1 a |> fold_bexp f b2
   | BNot b -> fold_bexp f b a

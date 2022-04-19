@@ -37,7 +37,7 @@ module Make (S:SUBST) = struct
           | Some v -> v
           | None -> n
         end
-      | Num _ -> n
+      | Num _ | NUnknown -> n
       | Proj (t, x) ->
         begin
           match S.find s x with
@@ -61,7 +61,7 @@ module Make (S:SUBST) = struct
   and b_subst (s:S.t) (b:bexp) : bexp =
     let rec subst: bexp -> bexp = function
       | Pred (n, v) -> Pred (n, n_subst s v)
-      | Bool _ -> b
+      | Bool _ | BUnknown -> b
       | NRel (o, n1, n2) -> n_rel o (n_subst s n1) (n_subst s n2)
       | BRel (o, b1, b2) -> b_rel o (subst b1) (subst b2)
       | BNot b -> b_not (subst b)
