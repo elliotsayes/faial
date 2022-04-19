@@ -12,7 +12,7 @@ let parse_stmts_v1 j : Imp.stmt list =
       List.map (fun k -> Cast.print_kernel k; k.code) ks
       |> C_to_imp.cast_map C_to_imp.parse_stmt
     with
-    | Ok ss -> ss
+    | Ok ss -> List.map (fun s -> Imp.Block s) ss
     | Error es -> (
         C_to_imp.print_error es;
         exit(-1)

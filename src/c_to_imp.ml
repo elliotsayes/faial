@@ -17,7 +17,6 @@ let error_to_buffer (e: c_error) : Buffer.t =
   StackTrace.iter (Buffer.add_string b) e;
   b
 
-
 type 'a c_result = ('a, c_error) Result.t
 
 let root_cause (msg:string) : 'a c_result =
@@ -81,6 +80,21 @@ let is_variable : Cast.c_exp -> bool =
     -> true
   | _ -> false
 
+type c_access = {location: variable; mode: mode; index: Cast.c_exp list }
+(*
+let access_to_s (a:c_access) : string =
+  let mode = match a.mode with
+  | R -> "ro "
+  | W -> "rw "
+  in
+  mode ^ exp_to_s a.location ^ "[" ^ list_to_s exp_to_s a.index ^ "]"
+*)
+type c_location_alias = {
+  source: Cast.c_exp;
+  target: Cast.c_exp;
+  offset: Cast.c_exp
+}
+
 let rec parse_nexp (e: Cast.c_exp) : nexp c_result =
   let parse_b m b = with_exp m e parse_bexp b in
   let parse_n m n = with_exp m e parse_nexp n in
@@ -111,17 +125,17 @@ let rec parse_nexp (e: Cast.c_exp) : nexp c_result =
     let* n1 = parse_n "lhs" n1 in
     let* n2 = parse_n "rhs" n2 in
     Ok (n_bin (parse_nbin o) n1 n2)
-  | UnaryOperator {opcode="~"; child=n} ->
-    prerr_endline ("WARNING: parse_nexp: bitwise negation unsupported, rewrite expression as: " ^ Cast.exp_to_s n);
-    parse_n "child" n
   | CXXBoolLiteralExpr b ->
     Ok (Num (if b then 1 else 0))
+  | UnaryOperator {opcode="~"; _}
   | DeclRefExpr _
   | MemberExpr _
   | FunctionDecl _ 
+  | ArraySubscriptExpr _
   | CallExpr _ ->
-    prerr_endline ("WARNING: parse_nexp: rewriting '" ^ Cast.exp_to_s e ^ "' call to 1");
-    Ok (Num 1)
+    prerr_endline ("WARNING: parse_nexp: rewriting to unknown: " ^ Cast.exp_to_s e);
+    Ok NUnknown
+
   | _ ->
     root_cause ("WARNING: parse_nexp: unsupported expression " ^ Cast.exp_name e ^ " : " ^ Cast.exp_to_s e)
 
@@ -181,27 +195,37 @@ let parse_range (r:Cast.c_range) : Exp.range c_result =
     range_upper_bound = ub;
   }
 
-let rec make_access (m:Exp.mode) (c:Cast.c_array_subscript) (indices:Cast.c_exp list) =
-  let child = c.lhs in
-  let indices = c.rhs :: indices in
-  match child with
-  | ArraySubscriptExpr a ->
-    make_access m a indices
-  | _ ->
-    let open Cast in
-    {location=child; mode=m; index=indices}
+let make_access (m:Exp.mode) (c:Cast.c_array_subscript) : c_access option =
+  let rec make_access (c:Cast.c_array_subscript) (indices:Cast.c_exp list) : c_access option =
+    let indices = c.rhs :: indices in
+    match c.lhs with
+    | ArraySubscriptExpr a ->
+      make_access a indices
+    | VarDecl {name=n; _}
+    | ParmVarDecl {name=n; _} ->
+      let open Cast in
+      Some {location=n; mode=m; index=indices}
+    | _ -> None
+  in
+  make_access c []
 
-let rec get_accesses (c:Cast.c_exp) : Cast.c_access list =
+let rec get_accesses (c:Cast.c_exp) : c_access list =
   match c with
-  | AccessExp l -> l
 
   | CXXOperatorCallExpr {
       func=CXXMethodDecl{name=v; _};
       args=[ArraySubscriptExpr a; e]
     } when var_name v = "operator="
     ->
-    let write = make_access W a [] in
-    write :: get_accesses e
+    from_access W a @ get_accesses e
+
+  | BinaryOperator {lhs=ArraySubscriptExpr a; rhs=r; opcode="="; _} ->
+    from_access W a @ get_accesses r
+
+  | ArraySubscriptExpr a -> from_access R a
+
+  | BinaryOperator ({lhs=MemberExpr {base=e; _}; rhs=r; opcode="="; _} as b) ->
+    get_accesses (BinaryOperator {b with lhs=e})
 
   | CXXOperatorCallExpr {func=f; args=args}
   | CallExpr {func=f; args=args} ->
@@ -212,13 +236,7 @@ let rec get_accesses (c:Cast.c_exp) : Cast.c_access list =
   | MemberExpr {base=e; _} ->
     get_accesses e
 
-  | BinaryOperator {lhs=ArraySubscriptExpr a; rhs=r; opcode="="; _} ->
-    let write = make_access W a [] in
-    write :: get_accesses r
-
   | BinaryOperator {lhs=l; rhs=r; _} -> get_accesses l @ get_accesses r
-
-  | ArraySubscriptExpr a -> [make_access R a []]
 
   | ConditionalOperator {cond=e1; then_expr=e2; else_expr=e3} ->
     get_accesses e1 @ get_accesses e2 @ get_accesses e3
@@ -236,13 +254,22 @@ let rec get_accesses (c:Cast.c_exp) : Cast.c_access list =
   | CharacterLiteral _
     -> []
 
+  and from_access mode a =
+    match make_access mode a with
+    | Some a -> a::get_accesses_list a.index
+    | None -> []
+
+  and get_accesses_list (l:Cast.c_exp list) =
+    match l with
+    | [] -> []
+    | n :: l -> get_accesses n @ get_accesses_list l
+
 let cast_map f = Rjson.map_all f (fun idx s e ->
   StackTrace.Because ("Error in index #" ^ (string_of_int (idx + 1)), e))
 
-let parse_access (a:Cast.c_access) : Exp.acc_expr c_result =
-  let* v = with_msg "parse_access: location" parse_var a.location in
+let parse_access (a:c_access) : Exp.acc_expr c_result =
   let* i = with_msg "parse_access: index" (cast_map parse_nexp) a.index in
-  Ok (v, {access_index=i; access_mode=a.mode})
+  Ok (a.location, {access_index=i; access_mode=a.mode})
 
 
 let parse_decl (d:Cast.c_decl) : (variable * Imp.locality * nexp option) option c_result =
@@ -284,7 +311,7 @@ let is_pointer (j:Yojson.Basic.t) =
   | Error _ -> false
 
 let rec parse_load_expr (target:Cast.c_exp) (exp:Cast.c_exp)
-  : (Cast.c_location_alias, Cast.c_exp) Either.t =
+  : (c_location_alias, Cast.c_exp) Either.t =
   let open Imp in
   let open Either in
   match exp with
@@ -298,7 +325,7 @@ let rec parse_load_expr (target:Cast.c_exp) (exp:Cast.c_exp)
   | _ ->
     Right exp
 
-let parse_location_alias (s:Cast.c_location_alias) : Imp.stmt c_result =
+let parse_location_alias (s:c_location_alias) : Imp.stmt c_result =
   let* source = with_msg "location_alias.source" parse_var s.source in
   let* target = with_msg "location_alias.target" parse_var s.target in
   let* offset = with_msg "location_alias.offset" parse_nexp s.offset in
@@ -310,7 +337,7 @@ let parse_location_alias (s:Cast.c_location_alias) : Imp.stmt c_result =
   })
 
 
-let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
+let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt list c_result =
   let with_msg (m:string) f b = with_msg ("parse_stmt: " ^ m) f b in
   let parse_accesses_opt = function
   | None -> Ok []
@@ -319,21 +346,22 @@ let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
   match c with
   | BreakStmt
   | GotoStmt
-  | ReturnStmt -> Ok (Block [])
+  | ReturnStmt -> Ok []
 
   | IfStmt c ->
     let* b = with_msg "if.cond" parse_bexp c.cond in
     let* t = with_msg "if.then" parse_stmt c.then_stmt in
     let* e = with_msg "if.else" parse_stmt c.else_stmt in
-    Ok (Imp.s_if b t e)
+    let open Imp in
+    Ok [s_if b (Block t) (Block e)]
 
   | CompoundStmt l ->
     let* l = cast_map parse_stmt l in
-    Ok (Imp.s_block l)
+    Ok (List.concat l)
 
   | DeclStmt l ->
     let* l = cast_map parse_decl l |> Result.map Common.flatten_opt in
-    Ok (Imp.Decl l)
+    Ok [Imp.Decl l]
 
   | SExp ((BinaryOperator {opcode="="; lhs=VarDecl {name=v; ty=ty} as lhs; rhs=rhs}) as orig)
   | SExp ((BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; ty=ty} as lhs; rhs=rhs}) as orig)
@@ -341,41 +369,36 @@ let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
     ->
     (match parse_load_expr lhs rhs with
     | Left a ->
-      parse_location_alias a
+      let* a = parse_location_alias a in
+      Ok [a]
     | Right _ -> 
       let* accs = with_msg "location_alias" parse_accesses orig in
-      Ok (Imp.Block accs)
+      Ok accs
     )
 
   | SExp (BinaryOperator {opcode="="; lhs=VarDecl {name=v; ty=ty}; rhs=rhs})
   | SExp (BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; ty=ty}; rhs=rhs})
     ->
+    let* accs = with_msg "assign.accs" parse_accesses rhs in
     let* rhs = with_msg "assign.rhs" parse_nexp rhs in
     let open Imp in 
-    Ok (Decl [v, Local, Some rhs])
+    Ok (accs @ [Decl [v, Local, Some rhs]])
 
   | ForEachStmt s ->
     let* r = with_msg "foreach.range" parse_range s.range in
     let* b = with_msg "foreach.body" parse_stmt s.body in
-    Ok (Imp.For (r, b))
+    let open Imp in
+    Ok [For (r, Block b)]
 
-  | SyncStmt -> Ok Imp.Sync
+  | SyncStmt -> Ok [Imp.Sync]
 
   | AssertStmt b ->
     let* b = with_msg "assert.cond" parse_bexp b in
-    Ok (Imp.Assert b)
-
-  | AccessStmt s ->
-    let* v = with_msg "access.location" parse_var s.location in
-    let* i = with_msg "access.index" (cast_map parse_nexp) s.index in
-    Ok (Imp.Acc (v, {access_index=i; access_mode=s.mode}))
-
-  | LocationAliasStmt s ->
-    parse_location_alias s
+    Ok [Imp.Assert b]
 
   | SExp e ->
     let* accs = with_msg "SExp" parse_accesses e in
-    Ok (Imp.Block accs)
+    Ok accs
 
   | ForStmt s ->
     let* b = with_msg "for.body" parse_stmt s.body in
@@ -383,22 +406,26 @@ let rec parse_stmt (c:Cast.c_stmt) : Imp.stmt c_result =
     let* accs1 = get_accs "init" s.init in
     let* accs2 = get_accs "cond" s.cond in
     let* accs3 = get_accs "inc" s.inc in
-    Ok (Imp.Block (accs1 @ accs2 @ accs3 @ [Imp.Loop b]))
+    let open Imp in
+    Ok (accs1 @ accs2 @ accs3 @ [Loop (Block b)])
 
   | DoStmt {cond=cond; body=body} ->
     let* body = with_msg "do.body" parse_stmt body in
     let* accs = with_msg "do.cond" parse_accesses cond in
-    Ok (Imp.Block (Imp.Loop body :: accs))
+    let open Imp in
+    Ok (Loop (Block body) :: accs)
 
   | WhileStmt {cond=cond; body=body} ->
     let* body = with_msg "while.body" parse_stmt body in
     let* accs = with_msg "while.cond" parse_accesses cond in
-    Ok (Imp.Block (accs @ [Imp.Loop body]))
+    let open Imp in
+    Ok (accs @ [Loop (Block body)])
 
   | SwitchStmt s ->
     let* accs = with_msg "switch.cond" parse_accesses s.cond in
     let* body = with_msg "switch.body" parse_stmt s.body in
-    Ok (Imp.Block (accs @ [Imp.Loop body]))
+    let open Imp in
+    Ok (accs @ [Loop (Block body)])
 
   | CaseStmt s ->
     with_msg "case.body" parse_stmt s.body
