@@ -28,6 +28,15 @@ let parse_stmts_v2 j : Imp.stmt list =
   parse_kernels.run j
   |> List.map (fun k -> k.p_kernel_code)
 
+let parse_stmts_v3 j : Dlang.d_stmt list =
+  let open Cast in
+  let open C_to_imp in
+  match Cast.parse_kernels j with
+  | Ok ks ->
+    List.map (fun k -> Cast.print_kernel k; k.code |> Dlang.rewrite_stmt) ks
+  | Error e ->
+    Rjson.print_error e;
+    exit(-1)
 
 type s_diff = string StackTrace.t option
 
@@ -104,13 +113,14 @@ let print_stmt s =
   PPrint.print_doc (Imp.stmt_to_s s)
 
 
-
 let () =
   let j = Yojson.Basic.from_channel stdin in
-  let ss1 = parse_stmts_v1 j in
+  let ss1 = parse_stmts_v3 j in
   (* let ss2 = parse_stmts_v2 j in *)
-  let open Imp in
-  print_stmt (Imp.Block ss1);
+  let open Dlang in
+  Dlang.print_stmt (Dlang.CompoundStmt ss1);
+  let open Dlang in
+  ()
 (*
   match stmt_diff (Block ss1) (Block ss2) with
   | None -> ()

@@ -30,7 +30,7 @@ type c_exp =
   | ParmVarDecl of {name: variable; ty: c_type}
   | DeclRefExpr of c_type
   | PredicateExpr of {child: c_exp; opcode: string}
-  | UnaryOperator of { opcode: string; child: c_exp; ty: c_type}
+  | UnaryOperator of {opcode: string; child: c_exp; ty: c_type}
   | VarDecl of {name: variable; ty: c_type}
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
 and c_binary = {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
@@ -102,11 +102,40 @@ type c_kernel = {
   code: c_stmt;
 }
 
-let default_type =
+
+let mk_type name =
   let open Yojson in
   `Assoc[
-    "qualType", `String "int"
+    "qualType", `String name
   ]
+
+let int_type = mk_type "int"
+let char_type = mk_type "char"
+let bool_type = mk_type "bool"
+let float_type = mk_type "float"
+
+let rec exp_type (e:c_exp) : c_type =
+  match e with
+  | CharacterLiteral _ -> char_type
+  | ArraySubscriptExpr a -> a.ty
+  | BinaryOperator a -> a.ty
+  | ConditionalOperator c -> exp_type c.then_expr
+  | CXXBoolLiteralExpr _ -> bool_type
+  | CXXMethodDecl a -> a.ty
+  | FloatingLiteral _ -> float_type
+  | FunctionDecl a -> a.ty
+  | IntegerLiteral _ -> int_type
+  | NonTypeTemplateParmDecl a -> a.ty
+  | ParmVarDecl a -> a.ty
+  | DeclRefExpr ty -> ty
+  | PredicateExpr a -> bool_type
+  | UnaryOperator a -> a.ty
+  | VarDecl a -> a.ty
+  (* ----- *)
+  | CallExpr c -> mk_type "?"
+  | CXXOperatorCallExpr a -> mk_type "?"
+  | MemberExpr a -> mk_type "?"
+  | UnresolvedLookupExpr a -> mk_type "?"
 
 let parse_mode (j:json) : mode j_result =
   let open Rjson in
@@ -250,7 +279,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     Ok (UnaryOperator {ty=ty; opcode=op; child=c})
 
   | "BinaryOperator" ->
-    let ty = List.assoc_opt "type" o |> Ojson.unwrap_or default_type in
+    let ty = List.assoc_opt "type" o |> Ojson.unwrap_or int_type in
     let* opcode = with_field "opcode" cast_string o in
     let* lhs = with_field "lhs" parse_exp o in
     let* rhs = with_field "rhs" parse_exp o in
