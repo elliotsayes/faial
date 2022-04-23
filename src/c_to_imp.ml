@@ -81,14 +81,7 @@ let is_variable : Cast.c_exp -> bool =
   | _ -> false
 
 type c_access = {location: variable; mode: mode; index: Cast.c_exp list }
-(*
-let access_to_s (a:c_access) : string =
-  let mode = match a.mode with
-  | R -> "ro "
-  | W -> "rw "
-  in
-  mode ^ exp_to_s a.location ^ "[" ^ list_to_s exp_to_s a.index ^ "]"
-*)
+
 type c_location_alias = {
   source: Cast.c_exp;
   target: Cast.c_exp;
