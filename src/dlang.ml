@@ -141,6 +141,9 @@ module AccessState = struct
     let x = Bindings.generate_fresh_name (var_make name) st.known in
     ({known = VarSet.add x st.known; side_effects = f x @ st.side_effects}, x)
 
+  let add_stmt (s: d_stmt) (st:t) : t =
+    {st with side_effects = s :: st.side_effects}
+
   let add_exp (source:d_exp) (ty:d_type) (st:t) : t * variable =
     add_var (fun x ->
       [
@@ -150,12 +153,17 @@ module AccessState = struct
 
 
   let add_write (a:d_subscript) (source:d_exp) (st:t) : (t * variable) =
-    add_var (fun x ->
-      [
-        DeclStmt [{name=x; ty=a.ty; init=Some (IExp source); attrs=[]}];
-        WriteAccessStmt {target=a; source=VarDecl {name=x; ty=a.ty}};
-      ]
-    ) st
+    let wr x = WriteAccessStmt {target=a; source=VarDecl {name=x; ty=a.ty}} in
+    match source with
+    | VarDecl {name=x; _} ->
+      (add_stmt (wr x) st, x)
+    | _ ->
+      add_var (fun x ->
+        [
+          wr x;
+          DeclStmt [{name=x; ty=a.ty; init=Some (IExp source); attrs=[]}];
+        ]
+      ) st
 
   let add_read (a:d_subscript) (st:t) : (t * variable) =
     add_var (fun x ->
@@ -272,7 +280,7 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
   in
   let rewrite_exp (e:Cast.c_exp) : (d_stmt list * d_exp) =
     let (st, e) = rewrite_exp e AccessState.make_empty in
-    (st.side_effects, e)
+    (st.side_effects |> List.rev, e)
   in
   let rewrite_exp_list (es:Cast.c_exp list) : (d_stmt list * d_exp list) =
     let (ss, es) = List.map rewrite_exp es |> List.split in
