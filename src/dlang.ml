@@ -131,18 +131,20 @@ let (>>=) = state_bind
 
 
 module AccessState = struct
-  type t = {known: VarSet.t; side_effects: d_stmt list}
+  type t = d_stmt list
 
-  let make_empty =
-    {known=VarSet.empty; side_effects=[]}
+  let counter = ref 1
+
+  let make_empty = []
 
   let add_var (f:variable -> d_stmt list) (st:t) : (t * variable) =
-    let name = "_unknown_" ^ (string_of_int (VarSet.cardinal st.known)) in
-    let x = Bindings.generate_fresh_name (var_make name) st.known in
-    ({known = VarSet.add x st.known; side_effects = f x @ st.side_effects}, x)
+    let count = !counter in
+    counter := count + 1;
+    let name = "_unknown_" ^ string_of_int count in
+    let x = var_make name in
+    (f x @ st, x)
 
-  let add_stmt (s: d_stmt) (st:t) : t =
-    {st with side_effects = s :: st.side_effects}
+  let add_stmt (s: d_stmt) (st:t) : t = s :: st
 
   let add_exp (source:d_exp) (ty:d_type) (st:t) : t * variable =
     add_var (fun x ->
@@ -280,7 +282,7 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
   in
   let rewrite_exp (e:Cast.c_exp) : (d_stmt list * d_exp) =
     let (st, e) = rewrite_exp e AccessState.make_empty in
-    (st.side_effects |> List.rev, e)
+    (st |> List.rev, e)
   in
   let rewrite_exp_list (es:Cast.c_exp list) : (d_stmt list * d_exp list) =
     let (ss, es) = List.map rewrite_exp es |> List.split in
