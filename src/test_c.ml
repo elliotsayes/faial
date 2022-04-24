@@ -27,13 +27,39 @@ let parse_stmts_v2 j : Imp.stmt list =
   let open Parsejs in
   parse_kernels.run j
   |> List.map (fun k -> k.p_kernel_code)
-
+(*
 let parse_stmts_v3 j : Dlang.d_stmt list =
   let open Cast in
-  let open C_to_imp in
+  let open D_to_imp in
   match Cast.parse_kernels j with
   | Ok ks ->
-    List.map (fun k -> Cast.print_kernel k; k.code |> Dlang.rewrite_stmt) ks
+    List.map (fun k ->
+      Cast.print_kernel k; k.code |> Dlang.rewrite_stmt) ks
+  | Error e ->
+    Rjson.print_error e;
+    exit(-1)
+*)
+
+let parse_stmts_v3 j : Imp.stmt =
+  let open Cast in
+  let open D_to_imp in
+  match Cast.parse_kernels j with
+  | Ok ks -> (
+    match
+      List.map (fun k ->
+          Cast.print_kernel k;
+          let s = k.code |> Dlang.rewrite_stmt in
+          Dlang.print_stmt s;
+          s
+      ) ks
+      |> D_to_imp.cast_map D_to_imp.parse_stmt
+    with
+    | Ok (ss:Imp.stmt list) -> Imp.Block ss
+    | Error es -> (
+        C_to_imp.print_error es;
+        exit(-1)
+      )
+    )
   | Error e ->
     Rjson.print_error e;
     exit(-1)
@@ -117,9 +143,7 @@ let () =
   let j = Yojson.Basic.from_channel stdin in
   let ss1 = parse_stmts_v3 j in
   (* let ss2 = parse_stmts_v2 j in *)
-  let open Dlang in
-  Dlang.print_stmt (Dlang.CompoundStmt ss1);
-  let open Dlang in
+  print_stmt ss1;
   ()
 (*
   match stmt_diff (Block ss1) (Block ss2) with
