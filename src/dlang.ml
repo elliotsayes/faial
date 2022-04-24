@@ -418,8 +418,8 @@ let stmt_to_s: d_stmt -> PPrint.t list =
   let open PPrint in
   let rec stmt_to_s : d_stmt -> PPrint.t list =
     function
-    | WriteAccessStmt w -> [Line ("wr " ^ subscript_to_s w.target ^ " = " ^ exp_to_s w.source ^ ";")]
-    | ReadAccessStmt r -> [Line ("rd " ^ var_name r.target ^ " = " ^ subscript_to_s r.source ^ ";")]
+    | WriteAccessStmt w -> [Line ("rw " ^ subscript_to_s w.target ^ " = " ^ exp_to_s w.source ^ ";")]
+    | ReadAccessStmt r -> [Line ("ro " ^ var_name r.target ^ " = " ^ subscript_to_s r.source ^ ";")]
     | ReturnStmt -> [Line "return;"]
     | GotoStmt -> [Line "goto;"]
     | BreakStmt -> [Line "break;"]
