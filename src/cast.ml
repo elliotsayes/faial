@@ -14,19 +14,20 @@ let (>>=) = Result.bind
 type c_type = json
 
 type c_exp =
+  | DistinctExpr of variable
   | CharacterLiteral of int
   | ArraySubscriptExpr of c_array_subscript
   | BinaryOperator of c_binary
-  | CallExpr of {func: c_exp; args: c_exp list}
+  | CallExpr of {func: c_exp; args: c_exp list; ty: c_type}
   | ConditionalOperator of {cond: c_exp; then_expr: c_exp; else_expr: c_exp; ty: c_type}
   | CXXBoolLiteralExpr of bool
   | CXXMethodDecl of {name: variable; ty: c_type}
-  | CXXOperatorCallExpr of {func: c_exp; args: c_exp list}
+  | CXXOperatorCallExpr of {func: c_exp; args: c_exp list; ty: c_type}
   | FloatingLiteral of float
   | FunctionDecl of {name: variable; ty: c_type}
   | IntegerLiteral of int
   | NonTypeTemplateParmDecl of {name: variable; ty: c_type}
-  | MemberExpr of {name: string; base: c_exp}
+  | MemberExpr of {name: string; base: c_exp; ty: c_type}
   | ParmVarDecl of {name: variable; ty: c_type}
   | DeclRefExpr of c_type
   | PredicateExpr of {child: c_exp; opcode: string}
@@ -37,6 +38,7 @@ and c_binary = {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
 and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type}
 
 let exp_name = function
+| DistinctExpr _ -> "DistinctExpr"
 | CharacterLiteral _ -> "CharacterLiteral"
 | ArraySubscriptExpr _ -> "ArraySubscriptExpr"
 | BinaryOperator _ -> "BinaryOperator"
@@ -103,39 +105,28 @@ type c_kernel = {
 }
 
 
-let mk_type name =
-  let open Yojson in
-  `Assoc[
-    "qualType", `String name
-  ]
-
-let int_type = mk_type "int"
-let char_type = mk_type "char"
-let bool_type = mk_type "bool"
-let float_type = mk_type "float"
-
 let rec exp_type (e:c_exp) : c_type =
   match e with
-  | CharacterLiteral _ -> char_type
+  | DistinctExpr _ -> Ctype.j_bool_type
+  | CharacterLiteral _ -> Ctype.j_char_type
   | ArraySubscriptExpr a -> a.ty
   | BinaryOperator a -> a.ty
   | ConditionalOperator c -> exp_type c.then_expr
-  | CXXBoolLiteralExpr _ -> bool_type
+  | CXXBoolLiteralExpr _ -> Ctype.j_bool_type
   | CXXMethodDecl a -> a.ty
-  | FloatingLiteral _ -> float_type
+  | FloatingLiteral _ -> Ctype.j_float_type
   | FunctionDecl a -> a.ty
-  | IntegerLiteral _ -> int_type
+  | IntegerLiteral _ -> Ctype.j_int_type
   | NonTypeTemplateParmDecl a -> a.ty
   | ParmVarDecl a -> a.ty
   | DeclRefExpr ty -> ty
-  | PredicateExpr a -> bool_type
+  | PredicateExpr a -> Ctype.j_bool_type
   | UnaryOperator a -> a.ty
   | VarDecl a -> a.ty
-  (* ----- *)
-  | CallExpr c -> mk_type "?"
-  | CXXOperatorCallExpr a -> mk_type "?"
-  | MemberExpr a -> mk_type "?"
-  | UnresolvedLookupExpr a -> mk_type "?"
+  | CallExpr c -> c.ty
+  | CXXOperatorCallExpr a -> a.ty
+  | MemberExpr a -> a.ty
+  | UnresolvedLookupExpr a -> Ctype.mk_j_type "?"
 
 let parse_mode (j:json) : mode j_result =
   let open Rjson in
@@ -190,30 +181,15 @@ let rec parse_exp (j:json) : c_exp j_result =
   let* o = cast_object j in
   let* kind = get_kind o in
   match kind with
+  | "CharacterLiteral" ->
+    let* i = with_field "value" cast_int o in
+    Ok (CharacterLiteral i)
+
   | "ConstantExpr" ->
     with_field "inner" (fun f ->
       let* l = cast_list f >>= ensure_length_eq 1 in
       with_index 0 parse_exp l
     ) o
-
-  | "CharacterLiteral" ->
-    let* i = with_field "value" cast_int o in
-    Ok (CharacterLiteral i)
-
-  | "IntegerLiteral" ->
-    let* i = with_field "value" cast_int o in
-    Ok (IntegerLiteral i)
-
-  | "FloatingLiteral" ->
-    (match with_field "value" cast_int o with
-    | Ok i -> Ok (FloatingLiteral (Float.of_int i))
-    | _ ->
-      let* f = with_field "value" cast_float o in
-      Ok (FloatingLiteral f))
-
-  | "DeclRefExpr" ->
-    let* ty = get_field "type" o in
-    Ok (DeclRefExpr ty)
 
   | "CXXDependentScopeMemberExpr" ->
     let* n = with_field "member" cast_string o in
@@ -223,12 +199,36 @@ let rec parse_exp (j:json) : c_exp j_result =
       | Ok l -> root_cause ("A list of length 1, but got " ^ (List.length l |> string_of_int)) i
       | Error e -> Error e
     ) o in
-    Ok (MemberExpr {name=n; base=b})
+    let* ty = get_field "type" o in
+    Ok (MemberExpr {name=n; base=b; ty=ty})
+
+  | "DeclRefExpr" ->
+    let* ty = get_field "type" o in
+    Ok (DeclRefExpr ty)
+
+  | "DistinctExpr" ->
+    let* v = with_field "args" (fun b ->
+      cast_list b >>= ensure_length_eq 1 >>=
+      with_index 0 parse_variable
+    ) o in
+    Ok (DistinctExpr v)
+    
+  | "FloatingLiteral" ->
+    (match with_field "value" cast_int o with
+    | Ok i -> Ok (FloatingLiteral (Float.of_int i))
+    | _ ->
+      let* f = with_field "value" cast_float o in
+      Ok (FloatingLiteral f))
+
+  | "IntegerLiteral" ->
+    let* i = with_field "value" cast_int o in
+    Ok (IntegerLiteral i)
 
   | "MemberExpr" ->
     let* n = with_field "name" cast_string o in
     let* b = with_field "base" parse_exp o in
-    Ok (MemberExpr {name=n; base=b})
+    let* ty = get_field "type" o in
+    Ok (MemberExpr {name=n; base=b; ty=ty})
 
   | "VarDecl" ->
     let* v = parse_variable j in
@@ -279,7 +279,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     Ok (UnaryOperator {ty=ty; opcode=op; child=c})
 
   | "BinaryOperator" ->
-    let ty = List.assoc_opt "type" o |> Ojson.unwrap_or int_type in
+    let ty = List.assoc_opt "type" o |> Ojson.unwrap_or Ctype.j_int_type in
     let* opcode = with_field "opcode" cast_string o in
     let* lhs = with_field "lhs" parse_exp o in
     let* rhs = with_field "rhs" parse_exp o in
@@ -294,12 +294,14 @@ let rec parse_exp (j:json) : c_exp j_result =
   | "CXXOperatorCallExpr" ->
     let* func = with_field "func" parse_exp o in
     let* args = with_field "args" (cast_map parse_exp) o in
-    Ok (CXXOperatorCallExpr {func=func; args=args})
+    let* ty = get_field "type" o in
+    Ok (CXXOperatorCallExpr {func=func; args=args; ty=ty})
 
   | "CallExpr" ->
     let* func = with_field "func" parse_exp o in
     let* args = with_field "args" (cast_map parse_exp) o in
-    Ok (CallExpr {func=func; args=args})
+    let* ty = get_field "type" o in
+    Ok (CallExpr {func=func; args=args; ty=ty})
 
   | "CXXFunctionalCastExpr"
   | "MaterializeTemporaryExpr" ->
@@ -485,6 +487,7 @@ let parse_kernel (o:Rjson.j_object) : c_kernel j_result =
   let open Rjson in
   let* body: c_stmt = with_field "body" parse_stmt o in
   let* name: string = with_field "name" cast_string o in
+  let* pre: c_exp = with_field "pre" parse_exp o in
   Ok {
     name = name;
     code = body;
@@ -538,6 +541,7 @@ let rec exp_to_s : c_exp -> string =
   | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
+  | DistinctExpr v -> "distinct(" ^ var_name v ^ ")" 
   | VarDecl v -> var_name v.name
   | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
   | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name

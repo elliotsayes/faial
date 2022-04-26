@@ -41,51 +41,6 @@ let split (c:char) (s:string) :  (string * string) option =
   | None -> None
 
 
-let split_array_type (x:string) : (string * string) option =
-  match split '[' x with
-  | Some (x, y) ->
-    let x = String.sub x 0 (String.length x - 1) in
-    Some (x, "[" ^ y)
-  | None -> (
-    match rsplit ' ' x with
-    | Some (_, "*") as o -> o
-    | _ -> None
-  )
-
-let parse_dim (x:string) : int list =
-  (*
-    let ex3 = "[8][8]" in
-    assert (parse_dim ex3 = Some [8; 8]);
-  *)
-  String.split_on_char '[' x
-  |> List.concat_map (fun (x:string) ->
-      if String.length x = 0 then []
-      else [String.sub x 0 (String.length x - 1)]
-    )
-  |>
-  List.map int_of_string
-
-let rec parse_array_type_opt (x:string) : string list option =
-  match split_array_type x with
-  | Some (x, _) -> Some (
-      String.split_on_char ' ' x
-      |> List.filter (fun x -> String.length x > 0)
-    )
-  | None -> None
-
-let rec parse_array_dim_opt (x:string) : int list option =
-  match split_array_type x with
-  | Some (_, x) -> (
-      let x  = match rsplit ' ' x with
-      | Some (x, "*") -> x
-      | _ -> x
-      in
-      (try Some (parse_dim x) with
-        Failure _ -> None)
-    )
-  | None -> None
-
-
 let list_is_empty (l:'a list) =
   match l with
   | [] -> true

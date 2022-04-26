@@ -9,18 +9,19 @@ type 'a j_result = 'a Rjson.j_result
 type d_type = json
 
 type d_exp =
+  | DistinctExpr of variable
   | CharacterLiteral of int
   | BinaryOperator of d_binary
-  | CallExpr of {func: d_exp; args: d_exp list}
+  | CallExpr of {func: d_exp; args: d_exp list; ty: d_type}
   | ConditionalOperator of {cond: d_exp; then_expr: d_exp; else_expr: d_exp; ty: d_type}
   | CXXBoolLiteralExpr of bool
   | CXXMethodDecl of {name: variable; ty: d_type}
-  | CXXOperatorCallExpr of {func: d_exp; args: d_exp list}
+  | CXXOperatorCallExpr of {func: d_exp; args: d_exp list; ty: d_type}
   | FloatingLiteral of float
   | FunctionDecl of {name: variable; ty: d_type}
   | IntegerLiteral of int
   | NonTypeTemplateParmDecl of {name: variable; ty: d_type}
-  | MemberExpr of {name: string; base: d_exp}
+  | MemberExpr of {name: string; base: d_exp; ty: d_type}
   | ParmVarDecl of {name: variable; ty: d_type}
   | DeclRefExpr of d_type
   | PredicateExpr of {child: d_exp; opcode: string}
@@ -30,6 +31,7 @@ type d_exp =
 and d_binary = {opcode: string; lhs: d_exp; rhs: d_exp; ty: d_type}
 
 let exp_name = function
+| DistinctExpr _ -> "DistinctExpr"
 | CharacterLiteral _ -> "CharacterLiteral"
 | BinaryOperator _ -> "BinaryOperator"
 | CallExpr _ -> "CallExpr"
@@ -100,6 +102,28 @@ type d_kernel = {
   code: d_stmt;
 }
 
+
+let rec exp_type (e:d_exp) : d_type =
+  match e with
+  | CharacterLiteral _ -> Ctype.j_char_type
+  | BinaryOperator a -> a.ty
+  | ConditionalOperator c -> exp_type c.then_expr
+  | DistinctExpr _
+  | CXXBoolLiteralExpr _ -> Ctype.j_bool_type
+  | CXXMethodDecl a -> a.ty
+  | FloatingLiteral _ -> Ctype.j_float_type
+  | FunctionDecl a -> a.ty
+  | IntegerLiteral _ -> Ctype.j_int_type
+  | NonTypeTemplateParmDecl a -> a.ty
+  | ParmVarDecl a -> a.ty
+  | DeclRefExpr ty -> ty
+  | PredicateExpr a -> Ctype.j_bool_type
+  | UnaryOperator a -> a.ty
+  | VarDecl a -> a.ty
+  | CallExpr c -> c.ty
+  | CXXOperatorCallExpr a -> a.ty
+  | MemberExpr a -> a.ty
+  | UnresolvedLookupExpr a -> Ctype.mk_j_type "?"
 (* ------------------------------------------------------------------------ *)
 
 type ('s, 'a) state = 's -> 's * 'a
@@ -188,6 +212,8 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
 
   | ArraySubscriptExpr a -> rewrite_read a
 
+  | DistinctExpr a -> state_pure (DistinctExpr a)
+
   | BinaryOperator {lhs=l; rhs=r; opcode=o; ty=ty} ->
     fun st ->
     let (st, l) = rewrite_exp l st in
@@ -201,16 +227,16 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     let (st, e3) = rewrite_exp e3 st in
     (st, ConditionalOperator {cond=e1; then_expr=e2; else_expr=e3; ty=ty})
 
-  | CXXOperatorCallExpr {func=f; args=args} -> 
+  | CXXOperatorCallExpr {func=f; args=args; ty=ty} -> 
     fun st ->
     let (st, f) = rewrite_exp f st in
     let (st, args) = state_map rewrite_exp args st in
-    (st, CXXOperatorCallExpr {func=f; args=args})
-  | CallExpr {func=f; args=args} -> 
+    (st, CXXOperatorCallExpr {func=f; args=args; ty=ty})
+  | CallExpr {func=f; args=args; ty=ty} -> 
     fun st ->
     let (st, f) = rewrite_exp f st in
     let (st, args) = state_map rewrite_exp args st in
-    (st, CallExpr {func=f; args=args})
+    (st, CallExpr {func=f; args=args; ty=ty})
   | UnaryOperator {child=e; opcode=o; ty=ty} ->
     fun st ->
     let (st, e) = rewrite_exp e st in
@@ -219,10 +245,10 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     fun st ->
     let (st, e) = rewrite_exp e st in
     state_pure (PredicateExpr {child=e; opcode=o}) st
-  | MemberExpr {base=e; name=o} ->
+  | MemberExpr {base=e; name=o; ty=ty} ->
     fun st ->
     let (st, e) = rewrite_exp e st in
-    state_pure (MemberExpr {base=e; name=o}) st
+    state_pure (MemberExpr {base=e; name=o; ty=ty}) st
   | VarDecl {name=n;ty=ty} -> state_pure (VarDecl {name=n;ty=ty})
   | ParmVarDecl {name=n;ty=ty} -> state_pure (ParmVarDecl {name=n;ty=ty})
   | FunctionDecl {name=n;ty=ty} -> state_pure (FunctionDecl {name=n;ty=ty})
@@ -379,6 +405,7 @@ let rec exp_to_s : d_exp -> string =
   | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
+  | DistinctExpr v -> "distinct(" ^ var_name v ^ ")" 
   | VarDecl v -> var_name v.name
   | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
   | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name

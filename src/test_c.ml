@@ -2,7 +2,7 @@ module PPrint = Serialize.PPrint
 module StackTrace = Common.StackTrace 
 (* ------------------------------------------------------------------------ *)
 
-
+(*
 let parse_stmts_v1 j : Imp.stmt list =
   let open Cast in
   let open C_to_imp in
@@ -21,7 +21,7 @@ let parse_stmts_v1 j : Imp.stmt list =
   | Error e ->
     Rjson.print_error e;
     exit(-1)
-
+*)
 let parse_stmts_v2 j : Imp.stmt list =
   let open Imp in
   let open Parsejs in
@@ -56,7 +56,7 @@ let parse_stmts_v3 j : Imp.stmt =
     with
     | Ok (ss:Imp.stmt list) -> Imp.Block ss
     | Error es -> (
-        C_to_imp.print_error es;
+        D_to_imp.print_error es;
         exit(-1)
       )
     )

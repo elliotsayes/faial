@@ -1,5 +1,6 @@
 open OUnit2
 open Common
+open Ctype
 
 
 let tests = "ends_with" >::: [
