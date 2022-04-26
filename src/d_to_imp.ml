@@ -153,6 +153,9 @@ and parse_bexp (e: Dlang.d_exp) : bexp d_result =
     let* b = parse_b "not" u.child in
     Ok (b_not b)
 
+  | DistinctExpr vs ->
+    Ok (Exp.distinct vs)
+
   | PredicateExpr p ->
     let* n = parse_n "child" p.child in
     Ok (Pred(p.opcode, n))

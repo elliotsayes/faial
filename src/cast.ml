@@ -14,7 +14,7 @@ let (>>=) = Result.bind
 type c_type = json
 
 type c_exp =
-  | DistinctExpr of variable
+  | DistinctExpr of variable list
   | CharacterLiteral of int
   | ArraySubscriptExpr of c_array_subscript
   | BinaryOperator of c_binary
@@ -207,11 +207,8 @@ let rec parse_exp (j:json) : c_exp j_result =
     Ok (DeclRefExpr ty)
 
   | "DistinctExpr" ->
-    let* v = with_field "args" (fun b ->
-      cast_list b >>= ensure_length_eq 1 >>=
-      with_index 0 parse_variable
-    ) o in
-    Ok (DistinctExpr v)
+    let* vs = with_field "args" (cast_map parse_variable) o in
+    Ok (DistinctExpr vs)
     
   | "FloatingLiteral" ->
     (match with_field "value" cast_int o with
@@ -541,7 +538,7 @@ let rec exp_to_s : c_exp -> string =
   | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
-  | DistinctExpr v -> "distinct(" ^ var_name v ^ ")" 
+  | DistinctExpr vs -> "distinct(" ^ list_to_s var_name vs ^ ")" 
   | VarDecl v -> var_name v.name
   | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
   | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name
@@ -582,14 +579,14 @@ let stmt_to_s: c_stmt -> PPrint.t list =
     | GotoStmt -> [Line "goto;"]
     | BreakStmt -> [Line "break;"]
     | SyncStmt -> [Line "sync;"]
-    | AssertStmt b -> [Line ("assert (" ^ (exp_to_s b) ^ ");")]
+    | AssertStmt b -> [Line ("assert (" ^ exp_to_s b ^ ");")]
     | ForStmt f -> [
         Line ("for " ^ opt_exp_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
         Block(stmt_to_s f.body);
         Line ("}")
       ]
     | ForEachStmt {range=r; body=b} ->
-      [ Line ("foreach " ^ (var_name r.name) ^ " in " ^ range_to_s r ^ " {");
+      [ Line ("foreach " ^ var_name r.name ^ " in " ^ range_to_s r ^ " {");
         Block (stmt_to_s b); Line "}"]
     | WhileStmt {cond=b; body=s} -> [
         Line ("while (" ^ exp_to_s b ^ ") {");

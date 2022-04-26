@@ -9,7 +9,7 @@ type 'a j_result = 'a Rjson.j_result
 type d_type = json
 
 type d_exp =
-  | DistinctExpr of variable
+  | DistinctExpr of variable list
   | CharacterLiteral of int
   | BinaryOperator of d_binary
   | CallExpr of {func: d_exp; args: d_exp list; ty: d_type}
@@ -405,7 +405,7 @@ let rec exp_to_s : d_exp -> string =
   | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
-  | DistinctExpr v -> "distinct(" ^ var_name v ^ ")" 
+  | DistinctExpr vs -> "distinct(" ^ list_to_s var_name vs ^ ")" 
   | VarDecl v -> var_name v.name
   | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
   | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name
