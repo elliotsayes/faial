@@ -78,13 +78,13 @@ let is_int (c:t) : bool =
     "int";
     "const int";
     "unsigned int";
-	"const unsigned int";
-	"short";
-	"const short";
-	"uint";
-	"const uint";
-	"long";
-	"const long";
+  	"const unsigned int";
+  	"short";
+  	"const short";
+  	"uint";
+  	"const uint";
+  	"long";
+  	"const long";
   ]
 
 (* ------------------------------------- *)
