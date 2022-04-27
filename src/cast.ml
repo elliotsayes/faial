@@ -99,9 +99,13 @@ type c_stmt =
   | AssertStmt of c_exp (* faial-infer *)
   | SExp of c_exp
 
+type c_param = {name: variable; used: bool; shared: bool}
+
 type c_kernel = {
   name: string;
   code: c_stmt;
+  pre: c_exp;
+  params: c_param list;
 }
 
 
@@ -480,14 +484,27 @@ and parse_stmt_list = fun inner ->
   >>= map_all parse_stmt
     (fun idx s e -> StackTrace.Because (("error parsing statement #" ^ string_of_int (idx + 1), s), e))
 
+let parse_param (j:json) : c_param j_result =
+  let open Rjson in
+  let* v = parse_variable j in
+  let* o = cast_object j in
+  let* ty = get_field "type" o in
+  let* is_refed = with_field_or "isReferenced" cast_bool false o in
+  let* is_used =  with_field_or "isUsed" cast_bool false o in
+  let* is_shared = with_field_or "shared" cast_bool false o in
+  Ok {name=v; used=(is_refed || is_used); shared=is_shared}
+
 let parse_kernel (o:Rjson.j_object) : c_kernel j_result =
   let open Rjson in
   let* body: c_stmt = with_field "body" parse_stmt o in
   let* name: string = with_field "name" cast_string o in
   let* pre: c_exp = with_field "pre" parse_exp o in
+  let* ps = with_field "params" (cast_map parse_param) o in
   Ok {
     name = name;
     code = body;
+    pre = pre;
+    params = ps;
   }
 
 let is_kernel (j:Yojson.Basic.t) : bool =
