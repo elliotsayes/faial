@@ -100,6 +100,8 @@ type d_stmt =
 type d_kernel = {
   name: string;
   code: d_stmt;
+  pre: d_exp;
+  params: Cast.c_param list;
 }
 
 
@@ -300,19 +302,20 @@ let map_opt (f:'a -> ('s * 'b)) (o:'a option) : ('s * 'b option) =
     (st, Some v)
   | None -> ([], None)
 
+
+let rewrite_exp (e:Cast.c_exp) : (d_stmt list * d_exp) =
+  let (st, e) = rewrite_exp e AccessState.make_empty in
+  (st |> List.rev, e)
+
+let rewrite_exp_list (es:Cast.c_exp list) : (d_stmt list * d_exp list) =
+  let (ss, es) = List.map rewrite_exp es |> List.split in
+  (List.concat ss, es)
+
 let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
   let block (pre:d_stmt list) (s:d_stmt) =
     match pre with
     | [] -> s
     | _ -> CompoundStmt (pre @ [s])
-  in
-  let rewrite_exp (e:Cast.c_exp) : (d_stmt list * d_exp) =
-    let (st, e) = rewrite_exp e AccessState.make_empty in
-    (st |> List.rev, e)
-  in
-  let rewrite_exp_list (es:Cast.c_exp list) : (d_stmt list * d_exp list) =
-    let (ss, es) = List.map rewrite_exp es |> List.split in
-    (List.concat ss, es)
   in
   match s with
   | BreakStmt -> BreakStmt
@@ -383,7 +386,17 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
     let (pre, e) = rewrite_exp e in
     block pre (AssertStmt e)
 
-
+let rewrite_kernel (k:Cast.c_kernel) : d_kernel option =
+  let (s, pre) = rewrite_exp k.pre in
+  match s with
+  | [] ->
+    Some {
+      name = k.name;
+      code = rewrite_stmt k.code;
+      pre = pre;
+      params = k.params;
+    }
+  | _ -> None
 
 (* ------------------------------------------------------------------------ *)
 
@@ -494,6 +507,16 @@ let stmt_to_s: d_stmt -> PPrint.t list =
 
 let kernel_to_s (k:d_kernel) : PPrint.t list =
   let open PPrint in
+  stmt_to_s k.code
+
+let kernel_to_s (k:d_kernel) : PPrint.t list =
+  let open PPrint in
+  [
+    Line ("name: " ^ k.name);
+    Line ("params: " ^ list_to_s Cast.param_to_s k.params);
+    Line ("pre: " ^ exp_to_s k.pre);
+  ]
+  @
   stmt_to_s k.code
 
 let print_kernel (k: d_kernel) : unit =

@@ -99,7 +99,7 @@ type c_stmt =
   | AssertStmt of c_exp (* faial-infer *)
   | SExp of c_exp
 
-type c_param = {name: variable; used: bool; shared: bool}
+type c_param = {name: variable; is_used: bool; is_shared: bool; ty: c_type}
 
 type c_kernel = {
   name: string;
@@ -492,7 +492,7 @@ let parse_param (j:json) : c_param j_result =
   let* is_refed = with_field_or "isReferenced" cast_bool false o in
   let* is_used =  with_field_or "isUsed" cast_bool false o in
   let* is_shared = with_field_or "shared" cast_bool false o in
-  Ok {name=v; used=(is_refed || is_used); shared=is_shared}
+  Ok {name=v; is_used=(is_refed || is_used); is_shared=is_shared; ty=ty}
 
 let parse_kernel (o:Rjson.j_object) : c_kernel j_result =
   let open Rjson in
@@ -637,8 +637,19 @@ let stmt_to_s: c_stmt -> PPrint.t list =
   in
   stmt_to_s
 
+let param_to_s (p:c_param) : string =
+  let used = if p.is_used then "" else " unsed" in
+  let shared = if p.is_shared then "shared " else "" in
+  used ^ shared ^ var_name p.name
+
 let kernel_to_s (k:c_kernel) : PPrint.t list =
   let open PPrint in
+  [
+    Line ("name: " ^ k.name);
+    Line ("params: " ^ list_to_s param_to_s k.params);
+    Line ("pre: " ^ exp_to_s k.pre);
+  ]
+  @
   stmt_to_s k.code
 
 let print_kernel (k: c_kernel) : unit =

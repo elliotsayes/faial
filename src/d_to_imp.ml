@@ -331,3 +331,42 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt d_result =
   | DefaultStmt s ->
     with_msg "default.body" parse_stmt s
 
+type param = (variable, variable * array_t) Either.t
+
+let from_j_error (e:Rjson.j_error) : d_error =
+  RootCause (Rjson.error_to_string e)
+
+let parse_param (p:Cast.c_param) : param option d_result =
+  let mk_array (h:hierarchy_t) (ty:Ctype.t) : array_t =
+    {
+      array_hierarchy = h;
+      array_size = Ctype.get_array_length ty;
+      array_type = Ctype.get_array_type ty;
+    }
+  in
+  let* ty = Cast.parse_type p.ty |> Result.map_error from_j_error in
+  if Ctype.is_int ty then
+    Ok (Some (Either.Left p.name))
+  else if Ctype.is_array ty then (
+    let h = if p.is_shared then Exp.SharedMemory else Exp.GlobalMemory in
+    Ok (Some (Either.Right (p.name, mk_array h ty)))
+  ) else Ok None
+
+let parse_params (ps:Cast.c_param list) : (VarSet.t * array_t VarMap.t) d_result =
+  let* params = Rjson.map_all parse_param
+    (fun i a e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
+  let globals, arrays = Common.flatten_opt params |> Common.either_split in
+  Ok (VarSet.of_list globals, list_to_var_map arrays)
+
+let parse_kernel (k:Dlang.d_kernel) : Imp.p_kernel d_result =
+  let* pre = parse_bexp k.pre in
+  let* code = parse_stmt k.code in
+  let* (params, arrays) = parse_params k.params in
+  let open Imp in
+  Ok {
+    p_kernel_name = k.name;
+    p_kernel_pre = pre;
+    p_kernel_code = code;
+    p_kernel_params = params;
+    p_kernel_arrays = arrays;
+  }

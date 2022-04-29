@@ -40,26 +40,36 @@ let parse_stmts_v3 j : Dlang.d_stmt list =
     exit(-1)
 *)
 
-let parse_stmts_v3 j : Imp.stmt =
+let parse_stmts_v3 j : Imp.p_kernel list =
   let open Cast in
   let open D_to_imp in
   match Cast.parse_kernels j with
-  | Ok ks -> (
-    match
+  | Ok ks ->
       List.map (fun k ->
           Cast.print_kernel k;
-          let s = k.code |> Dlang.rewrite_stmt in
-          Dlang.print_stmt s;
-          s
+          print_endline "------";
+          match Dlang.rewrite_kernel k with
+          | Some k ->
+            Dlang.print_kernel k;
+            print_endline "-------";
+            (match D_to_imp.parse_kernel k with
+            | Ok k -> k
+            | Error e ->
+              D_to_imp.print_error e;
+              exit(-1)
+            )
+          | None ->
+            print_endline ("Error in kernel " ^ k.name);
+            exit(-1)
       ) ks
-      |> D_to_imp.cast_map D_to_imp.parse_stmt
+    (*
     with
     | Ok (ss:Imp.stmt list) -> Imp.Block ss
     | Error es -> (
         D_to_imp.print_error es;
         exit(-1)
       )
-    )
+    )*)
   | Error e ->
     Rjson.print_error e;
     exit(-1)
@@ -143,7 +153,7 @@ let () =
   let j = Yojson.Basic.from_channel stdin in
   let ss1 = parse_stmts_v3 j in
   (* let ss2 = parse_stmts_v2 j in *)
-  print_stmt ss1;
+  List.iter Imp.print_kernel ss1;
   ()
 (*
   match stmt_diff (Block ss1) (Block ss2) with

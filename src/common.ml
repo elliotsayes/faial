@@ -61,6 +61,9 @@ let opt_to_list = function
 let flatten_opt l =
   List.map opt_to_list l |> List.flatten
 
+let either_split (l: ('a, 'b) Either.t list) : 'a list * 'b list =
+  List.partition_map (fun a -> a) l
+
 let map_opt f l =
   List.map f l |> flatten_opt
 

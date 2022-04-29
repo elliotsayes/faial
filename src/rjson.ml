@@ -56,6 +56,9 @@ let error_to_buffer (e: j_error) : Buffer.t =
   iter_error (Buffer.add_string b) e;
   b
 
+let error_to_string (e:j_error) : string =
+  error_to_buffer e |> Buffer.contents
+
 type 'a j_result = ('a, j_error) Result.t
 
 let root_cause (msg:string) (j:Yojson.Basic.t) : 'a j_result =
