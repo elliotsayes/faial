@@ -2,55 +2,25 @@ module PPrint = Serialize.PPrint
 module StackTrace = Common.StackTrace 
 (* ------------------------------------------------------------------------ *)
 
-(*
-let parse_stmts_v1 j : Imp.stmt list =
-  let open Cast in
-  let open C_to_imp in
-  match Cast.parse_kernels j with
-  | Ok ks -> (
-    match
-      List.map (fun k -> Cast.print_kernel k; k.code) ks
-      |> C_to_imp.cast_map C_to_imp.parse_stmt
-    with
-    | Ok ss -> List.map (fun s -> Imp.Block s) ss
-    | Error es -> (
-        C_to_imp.print_error es;
-        exit(-1)
-      )
-    )
-  | Error e ->
-    Rjson.print_error e;
-    exit(-1)
-*)
-let parse_stmts_v2 j : Imp.stmt list =
-  let open Imp in
-  let open Parsejs in
-  parse_kernels.run j
-  |> List.map (fun k -> k.p_kernel_code)
-(*
-let parse_stmts_v3 j : Dlang.d_stmt list =
+let analyze j : Imp.p_kernel list =
+  let open Indexflow in
   let open Cast in
   let open D_to_imp in
   match Cast.parse_kernels j with
   | Ok ks ->
-    List.map (fun k ->
-      Cast.print_kernel k; k.code |> Dlang.rewrite_stmt) ks
-  | Error e ->
-    Rjson.print_error e;
-    exit(-1)
-*)
-
-let parse_stmts_v3 j : Imp.p_kernel list =
-  let open Cast in
-  let open D_to_imp in
-  match Cast.parse_kernels j with
-  | Ok ks ->
-      List.map (fun k ->
+      ks
+      |> List.map (fun k ->
           Cast.print_kernel k;
           print_endline "------";
           match Dlang.rewrite_kernel k with
           | Some k ->
             Dlang.print_kernel k;
+            (match Indexflow.types_stmt Indexflow.Typing.make k.code with
+            | Ok _ -> print_endline "OK!"
+            | Error e -> Indexflow.print_s_error e;
+              prerr_endline "CHECKME";
+              exit (-1)
+            );
             print_endline "-------";
             (match D_to_imp.parse_kernel k with
             | Ok k -> k
@@ -61,15 +31,8 @@ let parse_stmts_v3 j : Imp.p_kernel list =
           | None ->
             print_endline ("Error in kernel " ^ k.name);
             exit(-1)
-      ) ks
-    (*
-    with
-    | Ok (ss:Imp.stmt list) -> Imp.Block ss
-    | Error es -> (
-        D_to_imp.print_error es;
-        exit(-1)
       )
-    )*)
+
   | Error e ->
     Rjson.print_error e;
     exit(-1)
@@ -140,29 +103,12 @@ let rec stmt_diff (s1: Imp.stmt) (s2: Imp.stmt) : string StackTrace.t option =
     else
       root_cause (stmt_to_s s1 ^ "\n----------------\n" ^ stmt_to_s s2)
 
-  (*
-  | Acc a1, Acc a2 ->
-  | Block s1, Block s2 ->
-    match 
-  *)
 let print_stmt s =
   PPrint.print_doc (Imp.stmt_to_s s)
 
 
 let () =
   let j = Yojson.Basic.from_channel stdin in
-  let ss1 = parse_stmts_v3 j in
-  (* let ss2 = parse_stmts_v2 j in *)
+  let ss1 = analyze j in
   List.iter Imp.print_kernel ss1;
   ()
-(*
-  match stmt_diff (Block ss1) (Block ss2) with
-  | None -> ()
-  | Some e ->
-    StackTrace.iter print_endline e;
-    print_endline ("---------");
-    ;
-    print_endline ("---------");
-    print_stmt (Imp.Block ss2);
-    exit (-1)
-*)

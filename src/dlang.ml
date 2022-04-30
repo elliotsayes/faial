@@ -51,6 +51,14 @@ let exp_name = function
 | VarDecl _ -> "VarDecl"
 | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
 
+let get_variable : d_exp -> variable option = function
+| CXXMethodDecl {name=n}
+| FunctionDecl {name=n}
+| NonTypeTemplateParmDecl {name=n}
+| ParmVarDecl {name=n}
+| VarDecl {name=n}
+| UnresolvedLookupExpr {name=n} -> Some n
+| _ -> None
 
 type d_init =
   | CXXConstructExpr of {constructor: d_type; ty: d_type}
