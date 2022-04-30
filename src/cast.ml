@@ -276,6 +276,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     Ok (match op with
     | "++" -> inc "+"
     | "--" -> inc "-"
+    | "+" -> c
     | "-" -> BinaryOperator {ty=ty; opcode=op; lhs=IntegerLiteral 0; rhs=c}
     | _ -> UnaryOperator {ty=ty; opcode=op; child=c})
 
