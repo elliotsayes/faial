@@ -277,9 +277,18 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* op = with_field "opcode" cast_string o in
     let* c = with_field "subExpr" parse_exp o in
     let* ty = get_field "type" o in
-    Ok (UnaryOperator {ty=ty; opcode=op; child=c})
+    let inc o =
+      BinaryOperator {ty=ty; opcode="="; lhs=c;
+        rhs=BinaryOperator{ty=ty; opcode=o; lhs=c; rhs=IntegerLiteral 1}}
+    in
+    Ok (match op with
+    | "++" -> inc "+"
+    | "--" -> inc "-"
+    | "-" -> BinaryOperator {ty=ty; opcode=op; lhs=IntegerLiteral 0; rhs=c}
+    | _ -> UnaryOperator {ty=ty; opcode=op; child=c})
 
   | "CompoundAssignOperator" ->
+    (* Convert: x += e into x = x + y *)
     let* ty = get_field "computeResultType" o in
     let* lhs = with_field "lhs" parse_exp o in
     let* rhs = with_field "rhs" parse_exp o in
@@ -326,6 +335,7 @@ let rec parse_exp (j:json) : c_exp j_result =
       with_index 0 parse_exp
     ) o in
     Ok body
+
   | "CXXBoolLiteralExpr" ->
     let* b = with_field "value" cast_bool o in
     Ok (CXXBoolLiteralExpr b)
