@@ -132,14 +132,6 @@ let rec exp_type (e:c_exp) : c_type =
   | MemberExpr a -> a.ty
   | UnresolvedLookupExpr a -> Ctype.mk_j_type "?"
 
-let parse_mode (j:json) : mode j_result =
-  let open Rjson in
-  let* m = cast_string j in
-  match m with
-  | "ro" -> Ok R
-  | "rw" -> Ok W
-  | e -> root_cause ("parse_mode: expecting either 'ro' or 'rw', but got '" ^ e ^ "'") j
-
 let rec parse_position : json -> Sourceloc.position j_result =
   let open Sourceloc in
   let open Rjson in
