@@ -279,6 +279,21 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* ty = get_field "type" o in
     Ok (UnaryOperator {ty=ty; opcode=op; child=c})
 
+  | "CompoundAssignOperator" ->
+    let* ty = get_field "computeResultType" o in
+    let* lhs = with_field "lhs" parse_exp o in
+    let* rhs = with_field "rhs" parse_exp o in
+    let* opcode = with_field "opcode" cast_string o in
+    (match Common.rsplit '=' opcode with
+      | Some (opcode, "") ->
+        Ok (BinaryOperator {
+          ty=ty;
+          opcode="=";
+          lhs=lhs;
+          rhs=BinaryOperator {ty=ty; opcode=opcode; lhs=lhs; rhs=rhs}
+        })
+      | _ -> root_cause "ERROR: parse_exp" j)
+
   | "BinaryOperator" ->
     let ty = List.assoc_opt "type" o |> Ojson.unwrap_or Ctype.j_int_type in
     let* opcode = with_field "opcode" cast_string o in
