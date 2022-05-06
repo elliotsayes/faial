@@ -81,7 +81,14 @@ type d_decl = {
   attrs: string list
 }
 
+type d_for_init =
+  | ForDecl of d_decl
+  | ForExp of d_exp
+
+
 type d_subscript = {name: variable; index: d_exp list; ty: d_type}
+type d_write = {target: d_subscript; source: d_exp}
+type d_read = {target: variable; source: d_subscript}
 
 type d_stmt =
   | WriteAccessStmt of d_write
@@ -93,7 +100,7 @@ type d_stmt =
   | CompoundStmt of d_stmt list
   | DeclStmt of d_decl list
   | WhileStmt of {cond: d_exp; body: d_stmt}
-  | ForStmt of {init: d_exp option; cond: d_exp option; inc: d_exp option; body: d_stmt}
+  | ForStmt of d_for
   | DoStmt of {cond: d_exp; body: d_stmt}
   | SwitchStmt of {cond: d_exp; body: d_stmt}
   | DefaultStmt of d_stmt
@@ -102,8 +109,7 @@ type d_stmt =
   | ForEachStmt of {range: d_range; body: d_stmt} (* faial-infer *)
   | AssertStmt of d_exp (* faial-infer *)
   | SExp of d_exp
-  and d_write = {target: d_subscript; source: d_exp}
-  and d_read = {target: variable; source: d_subscript}
+and d_for = {init: d_for_init option; cond: d_exp option; inc: d_exp option; body: d_stmt}
 
 type d_kernel = {
   name: string;
@@ -319,6 +325,30 @@ let rewrite_exp_list (es:Cast.c_exp list) : (d_stmt list * d_exp list) =
   let (ss, es) = List.map rewrite_exp es |> List.split in
   (List.concat ss, es)
 
+let rewrite_decl (d:Cast.c_decl) : (d_stmt list * d_decl) =
+  let rewrite_init (c:Cast.c_init) : (d_stmt list * d_init) =
+    match c with
+    | CXXConstructExpr {constructor=c1; ty=ty} ->
+      ([], CXXConstructExpr {constructor=c1; ty=ty})
+    | InitListExpr {ty=ty; args=args} ->
+      let (pre, args) = rewrite_exp_list args in
+      (pre, InitListExpr {ty=ty; args=args})
+    | IExp e ->
+      let (pre, e) = rewrite_exp e in
+      (pre, IExp e)
+  in
+  let (pre, o) = map_opt rewrite_init d.init in
+  (pre, {name=d.name; ty=d.ty; init=o; attrs=d.attrs})
+
+let rewrite_for_init (f:Cast.c_for_init) : (d_stmt list * d_for_init) =
+  match f with
+  | ForDecl d ->
+    let (s, d) = rewrite_decl d in
+    (s, ForDecl d)
+  | ForExp e ->
+    let (s, e) = rewrite_exp e in
+    (s, ForExp e)
+
 let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
   let block (pre:d_stmt list) (s:d_stmt) =
     match pre with
@@ -336,21 +366,6 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
   | CompoundStmt l -> CompoundStmt (List.map rewrite_stmt l)
 
   | DeclStmt d ->
-    let rewrite_decl (d:Cast.c_decl) : (d_stmt list * d_decl) =
-      let rewrite_init (c:Cast.c_init) : (d_stmt list * d_init) =
-        match c with
-        | CXXConstructExpr {constructor=c1; ty=ty} ->
-          ([], CXXConstructExpr {constructor=c1; ty=ty})
-        | InitListExpr {ty=ty; args=args} ->
-          let (pre, args) = rewrite_exp_list args in
-          (pre, InitListExpr {ty=ty; args=args})
-        | IExp e ->
-          let (pre, e) = rewrite_exp e in
-          (pre, IExp e)
-      in
-      let (pre, o) = map_opt rewrite_init d.init in
-      (pre, {name=d.name; ty=d.ty; init=o; attrs=d.attrs})
-    in
     let (pre, d) = List.map rewrite_decl d |> List.split in
     block (List.concat pre) (DeclStmt d)
 
@@ -359,7 +374,7 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
     block pre (WhileStmt {cond=c; body=rewrite_stmt b})
 
   | ForStmt {init=e1; cond=e2; inc=e3; body=b} ->
-    let (pre1, e1) = map_opt rewrite_exp e1 in
+    let (pre1, e1) = map_opt rewrite_for_init e1 in
     let (pre2, e2) = map_opt rewrite_exp e2 in
     let (pre3, e3) = map_opt rewrite_exp e3 in
     block (pre1 @ pre2 @ pre3) (ForStmt {init=e1; cond=e2; inc=e3; body=rewrite_stmt b})
@@ -457,6 +472,16 @@ let range_to_s (r:d_range) : string =
 let subscript_to_s (s:d_subscript) : string =
   var_name s.name ^ "[" ^ list_to_s exp_to_s s.index ^ "]"
 
+let for_init_to_s (f:d_for_init) : string =
+  match f with
+  | ForDecl d -> decl_to_s d
+  | ForExp e -> exp_to_s e
+
+let opt_for_init_to_s (o:d_for_init option) : string =
+  match o with
+  | Some o -> for_init_to_s o
+  | None -> ""
+
 let stmt_to_s: d_stmt -> PPrint.t list =
   let opt_exp_to_s: d_exp option -> string =
     function
@@ -474,7 +499,7 @@ let stmt_to_s: d_stmt -> PPrint.t list =
     | SyncStmt -> [Line "sync;"]
     | AssertStmt b -> [Line ("assert (" ^ (exp_to_s b) ^ ");")]
     | ForStmt f -> [
-        Line ("for " ^ opt_exp_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
+        Line ("for " ^ opt_for_init_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
         Block(stmt_to_s f.body);
         Line ("}")
       ]

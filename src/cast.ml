@@ -64,7 +64,6 @@ type c_init =
   | CXXConstructExpr of {constructor: c_type; ty: c_type}
   | InitListExpr of {ty: c_type; args: c_exp list}
   | IExp of c_exp
-  
 
 type c_range = {
   name: variable;
@@ -81,6 +80,10 @@ type c_decl = {
   attrs: string list
 }
 
+type c_for_init =
+  | ForDecl of c_decl
+  | ForExp of c_exp
+
 type c_stmt =
   | BreakStmt
   | GotoStmt
@@ -89,7 +92,7 @@ type c_stmt =
   | CompoundStmt of c_stmt list
   | DeclStmt of c_decl list
   | WhileStmt of {cond: c_exp; body: c_stmt}
-  | ForStmt of {init: c_exp option; cond: c_exp option; inc: c_exp option; body: c_stmt}
+  | ForStmt of {init: c_for_init option; cond: c_exp option; inc: c_exp option; body: c_stmt}
   | DoStmt of {cond: c_exp; body: c_stmt}
   | SwitchStmt of {cond: c_exp; body: c_stmt}
   | DefaultStmt of c_stmt
@@ -405,6 +408,21 @@ let parse_decl (j:json) : c_decl j_result =
   | _ -> 
     root_cause ("ERROR: parse_decl") j
 
+let parse_for_init (j:json) : c_for_init j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* kind = get_kind o in
+  match kind with
+  | "DeclStmt" ->
+    let* d = with_field "inner" (fun j ->
+      cast_list j >>= ensure_length_eq 1 >>=
+      with_index 0 parse_decl
+    ) o in
+    Ok (ForDecl d)
+  | _ ->
+    let* e = parse_exp j in
+    Ok (ForExp e)
+
 
 let parse_range (v:variable) (j:json) : c_range j_result =
   let open Rjson in
@@ -482,11 +500,11 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     let* b = with_field "body" parse_stmt o in
     Ok (DoStmt {cond=c; body=b})
   | "ForStmt" ->
-    let* i = with_opt_field "init" parse_exp o in
+    let* i = with_opt_field "init" parse_for_init o in
     let* c = with_opt_field "cond" parse_exp o in
     let* n = with_opt_field "inc" parse_exp o in
     let* b = with_field "body" parse_stmt o in
-    Ok (ForStmt {init=i; cond=c; inc=i; body=b})
+    Ok (ForStmt {init=i; cond=c; inc=n; body=b})
   | "ForEachStmt" ->
     let* v = with_field "var" parse_variable o in
     let* r = with_field "range" (parse_range v) o in
@@ -601,6 +619,16 @@ let decl_to_s (d: c_decl): string =
 let range_to_s (r:c_range) : string =
   exp_to_s r.lower_bound ^ " .. " ^ exp_to_s r.upper_bound ^ "; " ^ r.opcode ^ exp_to_s r.step
 
+let for_init_to_s (f:c_for_init) : string =
+  match f with
+  | ForDecl d -> decl_to_s d
+  | ForExp e -> exp_to_s e
+
+let opt_for_init_to_s (o:c_for_init option) : string =
+  match o with
+  | Some o -> for_init_to_s o
+  | None -> ""
+
 let stmt_to_s: c_stmt -> PPrint.t list =
   let opt_exp_to_s: c_exp option -> string =
     function
@@ -616,7 +644,7 @@ let stmt_to_s: c_stmt -> PPrint.t list =
     | SyncStmt -> [Line "sync;"]
     | AssertStmt b -> [Line ("assert (" ^ exp_to_s b ^ ");")]
     | ForStmt f -> [
-        Line ("for " ^ opt_exp_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
+        Line ("for " ^ opt_for_init_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
         Block(stmt_to_s f.body);
         Line ("}")
       ]
