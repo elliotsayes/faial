@@ -137,6 +137,9 @@ and parse_bexp (e: Dlang.d_exp) : bexp d_result =
   let parse_b m b = with_exp ("parse_bexp: " ^ m) e parse_bexp b in
   let parse_n m n = with_exp ("parse_bexp: " ^ m) e parse_nexp n in
   match e with
+  | BinaryOperator {lhs=l; opcode="&"; rhs=IntegerLiteral 1} ->
+    let* n = parse_nexp l in
+    Ok (n_eq (n_mod n (Num 2)) (Num 0))
   | BinaryOperator o ->
     (match parse_nrel_opt o.opcode with
     | Some r ->
