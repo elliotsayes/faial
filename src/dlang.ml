@@ -82,7 +82,7 @@ type d_decl = {
 }
 
 type d_for_init =
-  | ForDecl of d_decl
+  | ForDecl of d_decl list
   | ForExp of d_exp
 
 
@@ -343,8 +343,8 @@ let rewrite_decl (d:Cast.c_decl) : (d_stmt list * d_decl) =
 let rewrite_for_init (f:Cast.c_for_init) : (d_stmt list * d_for_init) =
   match f with
   | ForDecl d ->
-    let (s, d) = rewrite_decl d in
-    (s, ForDecl d)
+    let (pre, d) = List.map rewrite_decl d |> List.split in
+    (List.concat pre, ForDecl d)
   | ForExp e ->
     let (s, e) = rewrite_exp e in
     (s, ForExp e)
@@ -474,7 +474,7 @@ let subscript_to_s (s:d_subscript) : string =
 
 let for_init_to_s (f:d_for_init) : string =
   match f with
-  | ForDecl d -> decl_to_s d
+  | ForDecl d -> list_to_s decl_to_s d
   | ForExp e -> exp_to_s e
 
 let opt_for_init_to_s (o:d_for_init option) : string =

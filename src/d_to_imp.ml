@@ -1,5 +1,7 @@
 module StackTrace = Common.StackTrace
 
+type xzy = Loops.increment
+
 open Exp
 
 (* Monadic let *)
@@ -247,6 +249,69 @@ let parse_location_alias (s:d_location_alias) : Imp.stmt d_result =
   })
 
 
+type 'a unop =
+  {op: 'a; arg: nexp}
+
+type for_range = {
+  name: variable;
+  init: nexp;
+  cond: Loops.comparator unop;
+  inc: Loops.increment unop;
+}
+
+let parse_unop (u:'a Loops.unop) : 'a unop d_result =
+  let* arg = parse_nexp u.arg in
+  Ok {op=u.op; arg=arg}
+
+let infer_range (r:Dlang.d_for) : Exp.range option d_result =
+  let parse_for_range (r:Loops.d_for_range) : for_range d_result =
+    let* init = parse_nexp r.init in
+    let* cond = parse_unop r.cond in
+    let* inc = parse_unop r.inc in
+    Ok {name = r.name; init=init; cond=cond; inc=inc}
+  in
+  let infer_range (r:for_range) : Exp.range option =
+    let open Loops in
+    let open Exp in
+    let (let*) = Option.bind in
+    let (lb, ub) = match r with
+    (* (int i = 0; i < 4; i++) *)
+    | {init=lb; cond={op=Lt; arg=ub}} ->
+      (lb,ub)
+    (* (int i = 4; i >= 0; i--) *)
+    | {init=ub; cond={op=GtEq; arg=lb}}
+    (* (int i = 0; i <= 4; i++) *)
+    | {init=lb; cond={op=LtEq; arg=ub}} ->
+      (lb, n_plus (Num 1) ub)
+    (* (int i = 4; i > 0; i--) *)
+    | {init=ub; cond={op=Gt; arg=lb}} ->
+      (n_plus (Num 1) lb, n_plus (Num 1) ub)
+    in
+    let* step = match r.inc with
+    | {op=Plus; arg=a}
+    | {op=Minus; arg=a} -> Some (Default a)
+    | {op=Mult; arg=Num a}
+    | {op=Div; arg=Num a} ->
+      Some (StepName (Printf.sprintf "pow%d" a))
+    | {op=LShift; arg=Num a}
+    | {op=RShift; arg=Num a} ->
+      Some (StepName (Printf.sprintf "pow%d" (Predicates.pow 2 a)))
+    | _ -> None
+    in
+    Some {
+      range_var=r.name;
+      range_lower_bound=lb;
+      range_upper_bound=ub;
+      range_step=step;
+    }
+  in
+  match Loops.parse_for r with
+  | Some r ->
+    let* r = parse_for_range r in
+    Ok (infer_range r)
+  | None -> Ok None
+
+
 let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt d_result =
   let with_msg (m:string) f b = with_msg ("parse_stmt: " ^ m) f b in
 
@@ -297,6 +362,7 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt d_result =
     let* r = with_msg "foreach.range" parse_range s.range in
     let* b = with_msg "foreach.body" parse_stmt s.body in
     let open Imp in
+    print_endline (Serialize.PPrint.r_to_s r);
     Ok (For (r, b))
 
   | SyncStmt -> Ok Imp.Sync
@@ -311,9 +377,14 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt d_result =
   | SExp _ -> Ok (Imp.Block [])
 
   | ForStmt s ->
+    let* r = infer_range s in
     let* b = with_msg "for.body" parse_stmt s.body in
     let open Imp in
-    Ok (Loop b)
+    (match r with
+    | Some r ->
+      print_endline (Serialize.PPrint.r_to_s r);
+      Ok (For (r, b))
+    | None -> Ok (Loop b))
 
   | DoStmt {cond=cond; body=body} ->
     let* body = with_msg "do.body" parse_stmt body in

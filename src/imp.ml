@@ -96,13 +96,7 @@ module Post = struct
       List.map (subst_i st) p
   
   end
-(*
-  let rec inline_unknowns_p (fns:VarSet.t) (p:prog) =
-  and inline_unknowns_i (fns:VarSet.t) (i:inst) =
-    match i with
-    | Skip | Sync -> i
-    | Acc a ->
-*)
+
   module ReplacePair = SubstMake(Subst.SubstPair)
   let subst_i = ReplacePair.subst_i
   let subst_p = ReplacePair.subst_p

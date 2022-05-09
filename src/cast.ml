@@ -81,7 +81,7 @@ type c_decl = {
 }
 
 type c_for_init =
-  | ForDecl of c_decl
+  | ForDecl of c_decl list
   | ForExp of c_exp
 
 type c_stmt =
@@ -414,11 +414,8 @@ let parse_for_init (j:json) : c_for_init j_result =
   let* kind = get_kind o in
   match kind with
   | "DeclStmt" ->
-    let* d = with_field "inner" (fun j ->
-      cast_list j >>= ensure_length_eq 1 >>=
-      with_index 0 parse_decl
-    ) o in
-    Ok (ForDecl d)
+    let* ds = with_field "inner" (cast_map parse_decl) o in
+    Ok (ForDecl ds)
   | _ ->
     let* e = parse_exp j in
     Ok (ForExp e)
@@ -621,7 +618,7 @@ let range_to_s (r:c_range) : string =
 
 let for_init_to_s (f:c_for_init) : string =
   match f with
-  | ForDecl d -> decl_to_s d
+  | ForDecl d -> list_to_s decl_to_s d
   | ForExp e -> exp_to_s e
 
 let opt_for_init_to_s (o:c_for_init option) : string =
