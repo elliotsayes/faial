@@ -14,7 +14,6 @@ let (>>=) = Result.bind
 type c_type = json
 
 type c_exp =
-  | DistinctExpr of variable list
   | CharacterLiteral of int
   | ArraySubscriptExpr of c_array_subscript
   | BinaryOperator of c_binary
@@ -30,7 +29,6 @@ type c_exp =
   | MemberExpr of {name: string; base: c_exp; ty: c_type}
   | ParmVarDecl of {name: variable; ty: c_type}
   | DeclRefExpr of c_type
-  | PredicateExpr of {child: c_exp; opcode: string}
   | UnaryOperator of {opcode: string; child: c_exp; ty: c_type}
   | VarDecl of {name: variable; ty: c_type}
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
@@ -38,7 +36,6 @@ and c_binary = {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
 and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type}
 
 let exp_name = function
-| DistinctExpr _ -> "DistinctExpr"
 | CharacterLiteral _ -> "CharacterLiteral"
 | ArraySubscriptExpr _ -> "ArraySubscriptExpr"
 | BinaryOperator _ -> "BinaryOperator"
@@ -54,7 +51,6 @@ let exp_name = function
 | MemberExpr _ -> "MemberExpr"
 | ParmVarDecl _ -> "ParmVarDecl"
 | DeclRefExpr _ -> "DeclRefExpr"
-| PredicateExpr _ -> "PredicateExpr"
 | UnaryOperator _ -> "UnaryOperator"
 | VarDecl _ -> "VarDecl"
 | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
@@ -64,14 +60,6 @@ type c_init =
   | CXXConstructExpr of {constructor: c_type; ty: c_type}
   | InitListExpr of {ty: c_type; args: c_exp list}
   | IExp of c_exp
-
-type c_range = {
-  name: variable;
-  lower_bound: c_exp;
-  upper_bound: c_exp;
-  step: c_exp;
-  opcode: string
-}
 
 type c_decl = {
   name: variable;
@@ -97,9 +85,6 @@ type c_stmt =
   | SwitchStmt of {cond: c_exp; body: c_stmt}
   | DefaultStmt of c_stmt
   | CaseStmt of {case: c_exp; body: c_stmt}
-  | SyncStmt (* faial-infer *)
-  | ForEachStmt of {range: c_range; body: c_stmt} (* faial-infer *)
-  | AssertStmt of c_exp (* faial-infer *)
   | SExp of c_exp
 
 type c_param = {name: variable; is_used: bool; is_shared: bool; ty: c_type}
@@ -107,14 +92,12 @@ type c_param = {name: variable; is_used: bool; is_shared: bool; ty: c_type}
 type c_kernel = {
   name: string;
   code: c_stmt;
-  pre: c_exp;
   params: c_param list;
 }
 
 
 let rec exp_type (e:c_exp) : c_type =
   match e with
-  | DistinctExpr _ -> Ctype.j_bool_type
   | CharacterLiteral _ -> Ctype.j_char_type
   | ArraySubscriptExpr a -> a.ty
   | BinaryOperator a -> a.ty
@@ -127,7 +110,6 @@ let rec exp_type (e:c_exp) : c_type =
   | NonTypeTemplateParmDecl a -> a.ty
   | ParmVarDecl a -> a.ty
   | DeclRefExpr ty -> ty
-  | PredicateExpr a -> Ctype.j_bool_type
   | UnaryOperator a -> a.ty
   | VarDecl a -> a.ty
   | CallExpr c -> c.ty
@@ -205,10 +187,6 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* ty = get_field "type" o in
     Ok (DeclRefExpr ty)
 
-  | "DistinctExpr" ->
-    let* vs = with_field "args" (cast_map parse_variable) o in
-    Ok (DistinctExpr vs)
-    
   | "FloatingLiteral" ->
     (match with_field "value" cast_int o with
     | Ok i -> Ok (FloatingLiteral (Float.of_int i))
@@ -262,11 +240,6 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* v = parse_variable j in
     let* tys = get_field "lookups" o >>= cast_list in
     Ok (UnresolvedLookupExpr {name=v; tys=tys})
-
-  | "PredicateExpr" ->
-    let* op = with_field "opcode" cast_string o in
-    let* c = with_field "subExpr" parse_exp o in
-    Ok (PredicateExpr {opcode=op; child=c})
 
   | "UnaryOperator" ->
     let* op = with_field "opcode" cast_string o in
@@ -420,31 +393,11 @@ let parse_for_init (j:json) : c_for_init j_result =
     let* e = parse_exp j in
     Ok (ForExp e)
 
-
-let parse_range (v:variable) (j:json) : c_range j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* lb = with_field "init" parse_exp o in
-  let* upper_bound = with_field "upper_bound" parse_exp o in
-  let* step = with_field "step" parse_exp o in
-  let* opcode = with_field "opcode" cast_string o in
-  Ok {
-    name=v;
-    lower_bound=lb;
-    upper_bound=upper_bound;
-    step=step;
-    opcode=opcode
-  }
-
 let rec parse_stmt (j:json) : c_stmt j_result =
   let open Rjson in
   let* o = cast_object j in
   let* kind = get_kind o in
   match kind with
-  | "SyncStmt" -> Ok SyncStmt
-  | "AssertStmt" ->
-    let* cond = with_field "cond" parse_exp o in
-    Ok (AssertStmt cond)
   | "IfStmt" ->
     let* cond = with_field "cond" parse_exp o in
     let* then_stmt = with_field "thenStmt" parse_stmt o in
@@ -502,11 +455,6 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     let* n = with_opt_field "inc" parse_exp o in
     let* b = with_field "body" parse_stmt o in
     Ok (ForStmt {init=i; cond=c; inc=n; body=b})
-  | "ForEachStmt" ->
-    let* v = with_field "var" parse_variable o in
-    let* r = with_field "range" (parse_range v) o in
-    let* b = with_field "body" parse_stmt o in
-    Ok (ForEachStmt {range=r; body=b})
   | _ ->
     let* e = parse_exp j in
     Ok (SExp e)
@@ -531,14 +479,41 @@ let parse_kernel (o:Rjson.j_object) : c_kernel j_result =
   let open Rjson in
   let* body: c_stmt = with_field "body" parse_stmt o in
   let* name: string = with_field "name" cast_string o in
-  let* pre: c_exp = with_field "pre" parse_exp o in
   let* ps = with_field "params" (cast_map parse_param) o in
   Ok {
     name = name;
     code = body;
-    pre = pre;
     params = ps;
   }
+
+
+let c_attr (k:string) : string =
+  " __attribute__((annotate(\"" ^ k ^ "\")))"
+
+let c_attr_shared = c_attr "shared"
+let c_attr_global = c_attr "global"
+
+let parse_attr (j:Yojson.Basic.t) : string j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* k = get_kind o in
+  if k = "AnnotateAttr" then
+    with_field "value" cast_string o
+  else
+    root_cause ("parse_attr: unexpected kind " ^ k) j
+
+
+let is_kernel2 (j:Yojson.Basic.t) : bool =
+  let open Rjson in
+  let is_kernel =
+    let* o = cast_object j in
+    let* k = get_kind o in
+    if k = "FunctionDecl" then
+      let* attrs =  with_field "attrs" (cast_map parse_attr) o in
+      Ok (List.mem c_attr_global attrs)
+    else Ok false
+  in
+  is_kernel |> unwrap_or false
 
 let is_kernel (j:Yojson.Basic.t) : bool =
   let open Rjson in
@@ -546,12 +521,13 @@ let is_kernel (j:Yojson.Basic.t) : bool =
   >>= with_field "is_kernel" cast_bool
   |> unwrap_or false
 
+
 let parse_kernels (j:Yojson.Basic.t) : c_kernel list j_result =
   let open Rjson in
   cast_object j
     >>= with_field "inner" cast_list
     |> unwrap_or [] (* ignore errors and convert it to an empty list *)
-    |> List.filter is_kernel (* only keep things that look like kernels *)
+    |> List.filter is_kernel2 (* only keep things that look like kernels *)
     |> map_all (* for each kernel convert it into an object and parse it *)
       (fun k -> cast_object k >>= parse_kernel)
       (* Abort the whole thing if we find a single parsing error *)
@@ -588,7 +564,6 @@ let rec exp_to_s : c_exp -> string =
   | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
-  | DistinctExpr vs -> "distinct(" ^ list_to_s var_name vs ^ ")" 
   | VarDecl v -> var_name v.name
   | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
   | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name
@@ -596,7 +571,6 @@ let rec exp_to_s : c_exp -> string =
   | CXXMethodDecl v -> "@meth " ^ var_name v.name
   | FunctionDecl v -> "@func " ^ var_name v.name
   | ParmVarDecl v -> "@parm " ^ var_name v.name
-  | PredicateExpr p -> p.opcode ^ "(" ^ exp_to_s p.child ^ ")"
   | UnaryOperator u -> u.opcode ^ exp_to_s u.child
 
 let init_to_s : c_init -> string =
@@ -612,9 +586,6 @@ let decl_to_s (d: c_decl): string =
   in
   var_name d.name ^ i
 
-
-let range_to_s (r:c_range) : string =
-  exp_to_s r.lower_bound ^ " .. " ^ exp_to_s r.upper_bound ^ "; " ^ r.opcode ^ exp_to_s r.step
 
 let for_init_to_s (f:c_for_init) : string =
   match f with
@@ -638,16 +609,11 @@ let stmt_to_s: c_stmt -> PPrint.t list =
     | ReturnStmt -> [Line "return;"]
     | GotoStmt -> [Line "goto;"]
     | BreakStmt -> [Line "break;"]
-    | SyncStmt -> [Line "sync;"]
-    | AssertStmt b -> [Line ("assert (" ^ exp_to_s b ^ ");")]
     | ForStmt f -> [
         Line ("for " ^ opt_for_init_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
         Block(stmt_to_s f.body);
         Line ("}")
       ]
-    | ForEachStmt {range=r; body=b} ->
-      [ Line ("foreach " ^ var_name r.name ^ " in " ^ range_to_s r ^ " {");
-        Block (stmt_to_s b); Line "}"]
     | WhileStmt {cond=b; body=s} -> [
         Line ("while (" ^ exp_to_s b ^ ") {");
         Block (stmt_to_s s);
@@ -690,7 +656,6 @@ let kernel_to_s (k:c_kernel) : PPrint.t list =
   [
     Line ("name: " ^ k.name);
     Line ("params: " ^ list_to_s param_to_s k.params);
-    Line ("pre: " ^ exp_to_s k.pre);
   ]
   @
   stmt_to_s k.code

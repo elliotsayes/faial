@@ -90,10 +90,23 @@ type d_location_alias = {
   offset: Dlang.d_exp
 }
 
+let cuda_vars = [
+  "blockIdx"; "blockDim";
+  "threadIdx"; "threadDim";
+  "gridIdx"; "gridDim";
+]
+
 let rec parse_nexp (e: Dlang.d_exp) : nexp d_result =
   let parse_b m b = with_exp m e parse_bexp b in
   let parse_n m n = with_exp m e parse_nexp n in
   match e with
+  (* ---------------- CUDA SPECIFIC ----------- *)
+  | MemberExpr {base=VarDecl{name=x}; name=y} 
+    when List.mem (var_name x) cuda_vars ->
+      let x = var_name x ^ "." ^ y |> var_make in
+      Ok (Var x)
+
+  (* ------------------------------------------ *)
   | NonTypeTemplateParmDecl { name = v ; _ }
   | ParmVarDecl { name = v ; _ }
   | VarDecl { name = v ; _ }
@@ -158,35 +171,10 @@ and parse_bexp (e: Dlang.d_exp) : bexp d_result =
     let* b = parse_b "not" u.child in
     Ok (b_not b)
 
-  | DistinctExpr vs ->
-    Ok (Exp.distinct vs)
-
-  | PredicateExpr p ->
-    let* n = parse_n "child" p.child in
-    Ok (Pred(p.opcode, n))
-
   | _ ->
     let* n = parse_n (Dlang.exp_name e) e in
     prerr_endline ("WARNING: parse_bexp: rewriting '" ^ Dlang.exp_to_s e ^ "' to: 0 != " ^ Dlang.exp_to_s e);
     Ok (n_neq n (Num 0))
-
-
-let parse_range (r:Dlang.d_range) : Exp.range d_result =
-  let parse_n m b = with_msg (m ^ ": " ^ Dlang.range_to_s r) parse_nexp b in
-  let* lb = parse_n "lower_bound" r.lower_bound in
-  let* ub = parse_n "upper_bound" r.upper_bound in
-  let* s = match r.opcode with
-    | "+" ->
-      let* n = parse_n "step" r.step in
-      Ok (Default n)
-    | s -> Ok (StepName s)
-  in
-  Ok {
-    range_var = r.name;
-    range_step = s;
-    range_lower_bound = lb;
-    range_upper_bound = ub;
-  }
 
 
 let cast_map f = Rjson.map_all f (fun idx s e ->
@@ -358,19 +346,6 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt d_result =
     let open Imp in 
     Ok (Decl [v, Local, Some rhs])
 
-  | ForEachStmt s ->
-    let* r = with_msg "foreach.range" parse_range s.range in
-    let* b = with_msg "foreach.body" parse_stmt s.body in
-    let open Imp in
-    print_endline (Serialize.PPrint.r_to_s r);
-    Ok (For (r, b))
-
-  | SyncStmt -> Ok Imp.Sync
-
-  | AssertStmt b ->
-    let* b = with_msg "assert.cond" parse_bexp b in
-    Ok (Imp.Assert b)
-
   | BreakStmt
   | GotoStmt
   | ReturnStmt 
@@ -381,9 +356,7 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt d_result =
     let* b = with_msg "for.body" parse_stmt s.body in
     let open Imp in
     (match r with
-    | Some r ->
-      print_endline (Serialize.PPrint.r_to_s r);
-      Ok (For (r, b))
+    | Some r -> Ok (For (r, b))
     | None -> Ok (Loop b))
 
   | DoStmt {cond=cond; body=body} ->
@@ -433,13 +406,12 @@ let parse_params (ps:Cast.c_param list) : (VarSet.t * array_t VarMap.t) d_result
   Ok (VarSet.of_list globals, list_to_var_map arrays)
 
 let parse_kernel (k:Dlang.d_kernel) : Imp.p_kernel d_result =
-  let* pre = parse_bexp k.pre in
   let* code = parse_stmt k.code in
   let* (params, arrays) = parse_params k.params in
   let open Imp in
   Ok {
     p_kernel_name = k.name;
-    p_kernel_pre = pre;
+    p_kernel_pre = Exp.b_true; (* TODO: implement this *)
     p_kernel_code = code;
     p_kernel_params = params;
     p_kernel_arrays = arrays;

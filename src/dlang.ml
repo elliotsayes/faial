@@ -9,7 +9,6 @@ type 'a j_result = 'a Rjson.j_result
 type d_type = json
 
 type d_exp =
-  | DistinctExpr of variable list
   | CharacterLiteral of int
   | BinaryOperator of d_binary
   | CallExpr of {func: d_exp; args: d_exp list; ty: d_type}
@@ -24,14 +23,12 @@ type d_exp =
   | MemberExpr of {name: string; base: d_exp; ty: d_type}
   | ParmVarDecl of {name: variable; ty: d_type}
   | DeclRefExpr of d_type
-  | PredicateExpr of {child: d_exp; opcode: string}
   | UnaryOperator of { opcode: string; child: d_exp; ty: d_type}
   | VarDecl of {name: variable; ty: d_type}
   | UnresolvedLookupExpr of {name: variable; tys: d_type list}
 and d_binary = {opcode: string; lhs: d_exp; rhs: d_exp; ty: d_type}
 
 let exp_name = function
-| DistinctExpr _ -> "DistinctExpr"
 | CharacterLiteral _ -> "CharacterLiteral"
 | BinaryOperator _ -> "BinaryOperator"
 | CallExpr _ -> "CallExpr"
@@ -46,7 +43,6 @@ let exp_name = function
 | MemberExpr _ -> "MemberExpr"
 | ParmVarDecl _ -> "ParmVarDecl"
 | DeclRefExpr _ -> "DeclRefExpr"
-| PredicateExpr _ -> "PredicateExpr"
 | UnaryOperator _ -> "UnaryOperator"
 | VarDecl _ -> "VarDecl"
 | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
@@ -64,15 +60,6 @@ type d_init =
   | CXXConstructExpr of {constructor: d_type; ty: d_type}
   | InitListExpr of {ty: d_type; args: d_exp list}
   | IExp of d_exp
-  
-
-type d_range = {
-  name: variable;
-  lower_bound: d_exp;
-  upper_bound: d_exp;
-  step: d_exp;
-  opcode: string
-}
 
 type d_decl = {
   name: variable;
@@ -84,7 +71,6 @@ type d_decl = {
 type d_for_init =
   | ForDecl of d_decl list
   | ForExp of d_exp
-
 
 type d_subscript = {name: variable; index: d_exp list; ty: d_type}
 type d_write = {target: d_subscript; source: d_exp}
@@ -105,16 +91,61 @@ type d_stmt =
   | SwitchStmt of {cond: d_exp; body: d_stmt}
   | DefaultStmt of d_stmt
   | CaseStmt of {case: d_exp; body: d_stmt}
-  | SyncStmt (* faial-infer *)
-  | ForEachStmt of {range: d_range; body: d_stmt} (* faial-infer *)
-  | AssertStmt of d_exp (* faial-infer *)
   | SExp of d_exp
 and d_for = {init: d_for_init option; cond: d_exp option; inc: d_exp option; body: d_stmt}
+
+
+(* ------------------------------------- *)
+
+let init_to_exp (i:d_init) : d_exp list =
+  match i with
+  | CXXConstructExpr _ -> []
+  | InitListExpr i -> i.args
+  | IExp e -> [e]
+
+let decl_to_exp (d:d_decl) : d_exp list =
+  match d.init with
+  | Some i -> init_to_exp i
+  | None -> []
+
+let for_init_to_exp (f:d_for_init) : d_exp list =
+  match f with
+  | ForDecl l -> List.fold_left
+    (fun l d -> Common.append_rev (decl_to_exp d) l)
+    []
+    l
+  | ForExp e -> [e]
+
+let for_to_exp (f:d_for) : d_exp list =
+  let l1 = f.init |> Option.map for_init_to_exp |> Ojson.unwrap_or [] in
+  let l2 = f.cond |> Option.map (fun x -> [x]) |> Ojson.unwrap_or [] in
+  let l3 = f.inc |> Option.map (fun x -> [x]) |> Ojson.unwrap_or [] in
+  l1
+  |> Common.append_rev l2
+  |> Common.append_rev l3
+
+let for_loop_vars (f:d_for) : variable list =
+  let rec exp_var (e:d_exp) : variable list =
+    match e with
+    | BinaryOperator {lhs=l; opcode=","; rhs=r} ->
+      exp_var l |> Common.append_rev (exp_var r)
+    | BinaryOperator {lhs=l; opcode="="; rhs=r} ->
+      (match get_variable l with
+      | Some x -> [x]
+      | None -> [])
+    | _ -> []
+  in
+  match f.init with
+  | Some (ForDecl l) -> List.map (fun (d:d_decl) -> d.name) l
+  | Some (ForExp e) -> exp_var e
+  | None -> []
+
+(* ------------------------------------- *)
+
 
 type d_kernel = {
   name: string;
   code: d_stmt;
-  pre: d_exp;
   params: Cast.c_param list;
 }
 
@@ -124,7 +155,6 @@ let rec exp_type (e:d_exp) : d_type =
   | CharacterLiteral _ -> Ctype.j_char_type
   | BinaryOperator a -> a.ty
   | ConditionalOperator c -> exp_type c.then_expr
-  | DistinctExpr _
   | CXXBoolLiteralExpr _ -> Ctype.j_bool_type
   | CXXMethodDecl a -> a.ty
   | FloatingLiteral _ -> Ctype.j_float_type
@@ -133,7 +163,6 @@ let rec exp_type (e:d_exp) : d_type =
   | NonTypeTemplateParmDecl a -> a.ty
   | ParmVarDecl a -> a.ty
   | DeclRefExpr ty -> ty
-  | PredicateExpr a -> Ctype.j_bool_type
   | UnaryOperator a -> a.ty
   | VarDecl a -> a.ty
   | CallExpr c -> c.ty
@@ -228,8 +257,6 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
 
   | ArraySubscriptExpr a -> rewrite_read a
 
-  | DistinctExpr a -> state_pure (DistinctExpr a)
-
   | BinaryOperator {lhs=l; rhs=r; opcode=o; ty=ty} ->
     fun st ->
     let (st, l) = rewrite_exp l st in
@@ -257,10 +284,6 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     fun st ->
     let (st, e) = rewrite_exp e st in
     (st, UnaryOperator {child=e; opcode=o; ty=ty})
-  | PredicateExpr {child=e; opcode=o} ->
-    fun st ->
-    let (st, e) = rewrite_exp e st in
-    state_pure (PredicateExpr {child=e; opcode=o}) st
   | MemberExpr {base=e; name=o; ty=ty} ->
     fun st ->
     let (st, e) = rewrite_exp e st in
@@ -359,7 +382,6 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
   | BreakStmt -> BreakStmt
   | GotoStmt -> GotoStmt
   | ReturnStmt -> ReturnStmt
-  | SyncStmt -> SyncStmt
   | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
     let (pre, c) = rewrite_exp c in
     block pre (IfStmt {cond=c; then_stmt=rewrite_stmt s1; else_stmt=rewrite_stmt s2})
@@ -379,16 +401,6 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
     let (pre3, e3) = map_opt rewrite_exp e3 in
     block (pre1 @ pre2 @ pre3) (ForStmt {init=e1; cond=e2; inc=e3; body=rewrite_stmt b})
 
-  | ForEachStmt {range=r; body=b} ->
-    let rewrite_range (r:Cast.c_range) : (d_stmt list * d_range)  =
-      let (pre1, l) = rewrite_exp r.lower_bound in
-      let (pre2, u) = rewrite_exp r.upper_bound in
-      let (pre3, s) = rewrite_exp r.step in
-      (pre1 @ pre2 @ pre3, {name=r.name; lower_bound=l; upper_bound=u; step=s; opcode=r.opcode})
-    in
-    let (pre, r) = rewrite_range r in
-    block pre (ForEachStmt {range=r; body=rewrite_stmt b})
-
   | DoStmt {cond=c; body=b} ->
     let (pre, c) = rewrite_exp c in
     block pre (DoStmt {cond=c; body=rewrite_stmt b})
@@ -405,21 +417,13 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
   | SExp e ->
     let (pre, e) = rewrite_exp e in
     block pre (SExp e)
-  | AssertStmt e ->
-    let (pre, e) = rewrite_exp e in
-    block pre (AssertStmt e)
 
-let rewrite_kernel (k:Cast.c_kernel) : d_kernel option =
-  let (s, pre) = rewrite_exp k.pre in
-  match s with
-  | [] ->
-    Some {
-      name = k.name;
-      code = rewrite_stmt k.code;
-      pre = pre;
-      params = k.params;
-    }
-  | _ -> None
+let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
+  {
+    name = k.name;
+    code = rewrite_stmt k.code;
+    params = k.params;
+  }
 
 (* ------------------------------------------------------------------------ *)
 
@@ -441,7 +445,6 @@ let rec exp_to_s : d_exp -> string =
   | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
-  | DistinctExpr vs -> "distinct(" ^ list_to_s var_name vs ^ ")" 
   | VarDecl v -> var_name v.name
   | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
   | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name
@@ -449,7 +452,6 @@ let rec exp_to_s : d_exp -> string =
   | CXXMethodDecl v -> "@meth " ^ var_name v.name
   | FunctionDecl v -> "@func " ^ var_name v.name
   | ParmVarDecl v -> "@parm " ^ var_name v.name
-  | PredicateExpr p -> p.opcode ^ "(" ^ exp_to_s p.child ^ ")"
   | UnaryOperator u -> u.opcode ^ exp_to_s u.child
 
 let init_to_s : d_init -> string =
@@ -464,10 +466,6 @@ let decl_to_s (d: d_decl): string =
     | None -> ""
   in
   var_name d.name ^ i
-
-
-let range_to_s (r:d_range) : string =
-  exp_to_s r.lower_bound ^ " .. " ^ exp_to_s r.upper_bound ^ "; " ^ r.opcode ^ exp_to_s r.step
 
 let subscript_to_s (s:d_subscript) : string =
   var_name s.name ^ "[" ^ list_to_s exp_to_s s.index ^ "]"
@@ -496,16 +494,11 @@ let stmt_to_s: d_stmt -> PPrint.t list =
     | ReturnStmt -> [Line "return;"]
     | GotoStmt -> [Line "goto;"]
     | BreakStmt -> [Line "break;"]
-    | SyncStmt -> [Line "sync;"]
-    | AssertStmt b -> [Line ("assert (" ^ (exp_to_s b) ^ ");")]
     | ForStmt f -> [
         Line ("for " ^ opt_for_init_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
         Block(stmt_to_s f.body);
         Line ("}")
       ]
-    | ForEachStmt {range=r; body=b} ->
-      [ Line ("foreach " ^ (var_name r.name) ^ " in " ^ range_to_s r ^ " {");
-        Block (stmt_to_s b); Line "}"]
     | WhileStmt {cond=b; body=s} -> [
         Line ("while (" ^ exp_to_s b ^ ") {");
         Block (stmt_to_s s);
@@ -547,7 +540,6 @@ let kernel_to_s (k:d_kernel) : PPrint.t list =
   [
     Line ("name: " ^ k.name);
     Line ("params: " ^ list_to_s Cast.param_to_s k.params);
-    Line ("pre: " ^ exp_to_s k.pre);
   ]
   @
   stmt_to_s k.code

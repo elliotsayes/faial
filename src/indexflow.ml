@@ -75,10 +75,8 @@ let rec types_exp (env:Typing.t) (e:Dlang.d_exp) : (Typing.t * Index.t) =
     ret [ c.cond; c.then_expr; c.else_expr ]
   
   | MemberExpr {base=e; _}
-  | PredicateExpr {child=e; _} 
   | UnaryOperator {child=e; _} -> types_exp env e
 
-  | DistinctExpr _
   | UnresolvedLookupExpr _
   | NonTypeTemplateParmDecl _
   | FunctionDecl _
@@ -151,33 +149,41 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t s_result =
 
   | SExp _
   | DeclStmt []
-  | AssertStmt _
   | BreakStmt
   | GotoStmt
-  | ReturnStmt
-  | SyncStmt -> Ok env
+  | ReturnStmt -> Ok env
   
 
   | CaseStmt {body=s}
   | SwitchStmt {body=s}
   | DefaultStmt s
   | WhileStmt {body=s}
-  | DoStmt {body=s}
-  | ForStmt {body=s} -> types_stmt env s
+  | DoStmt {body=s} -> types_stmt env s
   | WriteAccessStmt d ->
+
     let* env = ensure_i_exp_list env d.target.index "write" in
     Ok env
   
   | CompoundStmt s ->
     types_stmt_list env s
 
-  | ForEachStmt s ->
-    let* env = ensure_i_exp env s.range.lower_bound "for-each.lb" in
-    let* env = ensure_i_exp env s.range.upper_bound "for-each.ub" in
-    let x = s.range.name in
-    let old = Typing.get_opt x env in
-    let* env1 = types_stmt (Typing.add_i x env) s.body in
-    Ok (Typing.update x old env1)
+  | ForStmt s ->
+    let orig_env = env in
+    (* 1. Make sure that all variables used in the loop range are independent *)
+    let* env = ensure_i_exp_list env (for_to_exp s) "for.range" in
+    (* 2. Get all loop variables being "declared" *)
+    let xs = for_loop_vars s in
+    (* 3. Get the old values of each loop variable (if any) *)
+    let old = List.map (fun x -> Typing.get_opt x env) xs in
+    (* 4. Mark each loop variable as independent *)
+    let env = List.fold_left (fun e x -> Typing.add_i x e) env xs in
+    (* 5. Typecheck the loop body *)
+    let* env = types_stmt env s.body in
+    (* 6. Undo the bindings of the loop variables *)
+    let bindings = Common.zip xs old in
+    let env = List.fold_left (fun e (x,o) -> Typing.update x o e) env bindings in
+    (* 7. Merge the original with the final one *)
+    Ok (env |> Typing.add orig_env)
 
   | DeclStmt (d::is) ->
     let x = d.name in

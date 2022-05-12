@@ -12,25 +12,22 @@ let analyze j : Imp.p_kernel list =
       |> List.map (fun k ->
           Cast.print_kernel k;
           print_endline "------";
-          match Dlang.rewrite_kernel k with
-          | Some k ->
+          let k = Dlang.rewrite_kernel k in
             Dlang.print_kernel k;
-            (match Indexflow.types_stmt Indexflow.Typing.make k.code with
-            | Ok _ -> print_endline "OK!"
+(*             (match Indexflow.types_stmt Indexflow.Typing.make k.code with
+            | Ok _ -> 
+              print_endline "OK!"
             | Error e -> Indexflow.print_s_error e;
               prerr_endline "CHECKME";
               exit (-1)
             );
-            print_endline "-------";
+ *)         print_endline "-------";
             (match D_to_imp.parse_kernel k with
             | Ok k -> k
             | Error e ->
               D_to_imp.print_error e;
               exit(-1)
             )
-          | None ->
-            print_endline ("Error in kernel " ^ k.name);
-            exit(-1)
       )
 
   | Error e ->
