@@ -338,54 +338,50 @@ let rec parse_init (j:json) : c_init j_result =
     let* e = parse_exp j in
     Ok (IExp e)
 
-let parse_decl (j:json) : c_decl j_result =
+let parse_attr (j:Yojson.Basic.t) : string j_result =
   let open Rjson in
   let* o = cast_object j in
+  let* k = get_kind o in
+  with_field "value" cast_string o
+
+let is_valid_j : json -> bool =
+  function
+  | `Assoc o -> List.assoc_opt "kind" o |> Option.is_some
+  | _ -> false
+
+let parse_decl (j:json) : c_decl j_result =
+  let open Rjson in
+  let* v = parse_variable j in
+  let* o = cast_object j in
+  let* ty = get_field "type" o in
   let* kind = get_kind o in
-  match kind with
-  | "VarDecl" ->
-    let* v = parse_variable j in
-    let* ty = get_field "type" o in
-    let* init, attrs = match List.assoc_opt "inner" o with
-    | None -> Ok (None, [])
-    | Some orig -> begin
-      let* inits, attrs = cast_map (fun j ->
-        (* For each element of the init list, we test if its an annotation
-           or the value being initialized. There may exist many annotations,
-           but only one expression. *)
-        let* o = cast_object j in
-        let* kind = get_kind o in
-        let open Either in
-        match kind with
-        | "AnnotateAttr" ->
-          let* i = with_field "value" cast_string o in
-          (* Tag an annotation *)
-          Ok (Right i)
-        | _ ->
-          (* Tag an init *)
-          let* e = parse_init j in
-          Ok (Left e)
-       ) orig
-       (* Partition the list into two according to the tag *)
-       |> Result.map (List.partition_map (fun x -> x))
-      in
-      (* Further enforce that there is _at most_ one init expression. *)
-      let* init = match inits with
-      | [init] -> Ok (Some init)
-      | [] -> Ok None
-      | _ ->
-        (* Print out a nice error message with provenance. *)
-        let i = List.length inits |> string_of_int in
-        let msg = "Expecting at most one expression, but got " ^ i in
-        let open StackTrace in
-        Error (Because (("Field 'init'", j), RootCause (msg, orig)))
-      in
-      Ok (init, attrs)
-      end
-    in
-    Ok {name=v; ty=ty; init=init; attrs=attrs}
-  | _ -> 
-    root_cause ("ERROR: parse_decl") j
+  let inner = List.assoc_opt "inner" o |> Ojson.unwrap_or (`List []) in
+  let* inner = cast_list inner in
+  let inner = List.filter is_valid_j inner in
+  let attrs, inits = List.partition (fun j ->
+    (
+      let* o = cast_object j in
+      let* k = get_kind o in
+      Ok (match k with 
+        | "AnnotateAttr" -> true
+        | _ -> false
+      )
+    ) |> unwrap_or false
+  ) inner in
+  let* attrs = map parse_attr attrs in
+  let* inits = map parse_init inits in
+  (* Further enforce that there is _at most_ one init expression. *)
+  let* init = match inits with
+  | [init] -> Ok (Some init)
+  | [] -> Ok None
+  | _ ->
+    (* Print out a nice error message with provenance. *)
+    let i = List.length inits |> string_of_int in
+    let msg = "Expecting at most one expression, but got " ^ i in
+    let open StackTrace in
+    Error (Because (("Field 'init'", j), RootCause (msg, `List inner)))
+  in
+  Ok {name=v; ty=ty; init=init; attrs=attrs}
 
 let parse_for_init (j:json) : c_for_init j_result =
   let open Rjson in
@@ -402,9 +398,8 @@ let parse_for_init (j:json) : c_for_init j_result =
 let rec parse_stmt (j:json) : c_stmt j_result =
   let open Rjson in
   let* o = cast_object j in
-  let* kind = get_kind o in
-  match kind with
-  | "IfStmt" ->
+  match get_kind o |> Result.to_option with
+  | Some "IfStmt" ->
     let* (cond, then_stmt, else_stmt) = with_field "inner" (fun j ->
       let* l = cast_list j in
       let wrap handle_ok (m:string) = wrap handle_ok (fun _ -> (m, j)) in
@@ -424,20 +419,20 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     ) o
     in
     Ok (IfStmt {cond=cond; then_stmt=then_stmt; else_stmt=else_stmt})
-  | "WhileStmt" ->
+  | Some "WhileStmt" ->
     let* cond = with_field "cond" parse_exp o in
     let* body = with_field "body" parse_stmt o in
     Ok (WhileStmt {cond=cond; body=body})
-  | "DeclStmt" ->
+  | Some "DeclStmt" ->
     (* prerr_endline (Yojson.Basic.pretty_to_string j); *)
     let* children = with_field "inner" (cast_map parse_decl) o in
     Ok (DeclStmt children)
-  | "DefaultStmt" ->
+  | Some "DefaultStmt" ->
     let* c = with_field "inner" (fun i ->
       cast_list i >>= ensure_length_eq 1 >>= with_index 0 parse_stmt 
     ) o in
     Ok (DefaultStmt c)
-  | "CaseStmt" ->
+  | Some "CaseStmt" ->
     let* (c, b) = with_field "inner" (fun f ->
       let* l = cast_list f >>= ensure_length_eq 2 in
       let* c = with_index 0 parse_exp l in
@@ -445,7 +440,7 @@ let rec parse_stmt (j:json) : c_stmt j_result =
       Ok (c, b)
     ) o in
     Ok (CaseStmt {case=c; body=b})
-  | "SwitchStmt" ->
+  | Some "SwitchStmt" ->
     let* (c, b) = with_field "inner" (fun f ->
       let* l = cast_list f >>= ensure_length_eq 2 in
       let* c = with_index 0 parse_exp l in
@@ -453,24 +448,24 @@ let rec parse_stmt (j:json) : c_stmt j_result =
       Ok (c, b)
     ) o in
     Ok (SwitchStmt {cond=c; body=b})
-  | "CompoundStmt" ->
+  | Some "CompoundStmt" ->
     let* children : c_stmt list = with_field "inner" (fun (i:json) ->
       match i with
       | `Assoc _ -> let* o = parse_stmt i in Ok [o]
       | _ -> parse_stmt_list i
     ) o in
     Ok (CompoundStmt children)
-  | "ReturnStmt" ->
+  | Some "ReturnStmt" ->
     Ok ReturnStmt
-  | "GotoStmt" ->
+  | Some "GotoStmt" ->
     Ok GotoStmt
-  | "BreakStmt" ->
+  | Some "BreakStmt" ->
     Ok BreakStmt
-  | "DoStmt" ->
+  | Some "DoStmt" ->
     let* c = with_field_or "cond" parse_exp (CXXBoolLiteralExpr true) o in
     let* b = with_field "body" parse_stmt o in
     Ok (DoStmt {cond=c; body=b})
-  | "ForStmt" ->
+  | Some "ForStmt" ->
     let* (init, cond, inc, body) = with_field "inner" (fun j ->
       let* l = cast_list j in
       let wrap handle_ok (m:string) = wrap handle_ok (fun _ -> (m, j)) in
@@ -493,10 +488,10 @@ let rec parse_stmt (j:json) : c_stmt j_result =
         root_cause ("Expecting a list of length 5, but got a length of list " ^ g) j
     ) o in
     Ok (ForStmt {init=init; cond=cond; inc=inc; body=body})
-  | "FullComment" -> Ok (CompoundStmt [])
-  | _ ->
+  | Some _ ->
     let* e = parse_exp j in
     Ok (SExp e)
+  | None -> Ok (CompoundStmt [])
 
 and parse_stmt_list = fun inner ->
   let open Rjson in
@@ -519,12 +514,6 @@ let c_attr (k:string) : string =
 
 let c_attr_shared = c_attr "shared"
 let c_attr_global = c_attr "global"
-
-let parse_attr (j:Yojson.Basic.t) : string j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* k = get_kind o in
-  with_field "value" cast_string o
 
 let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
   let open Rjson in
