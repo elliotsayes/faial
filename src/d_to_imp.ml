@@ -90,20 +90,26 @@ type d_location_alias = {
   offset: Dlang.d_exp
 }
 
-let cuda_vars = [
+let cuda_global_vars = [
+  "threadDim";
   "blockIdx"; "blockDim";
-  "threadIdx"; "threadDim";
   "gridIdx"; "gridDim";
 ]
+
+let cuda_local_vars = ["threadIdx"]
+
+let cuda_vars = cuda_local_vars @ cuda_global_vars
+
+let cuda_dims = ["x"; "y"; "z"]
 
 let rec parse_nexp (e: Dlang.d_exp) : nexp d_result =
   let parse_b m b = with_exp m e parse_bexp b in
   let parse_n m n = with_exp m e parse_nexp n in
   match e with
   (* ---------------- CUDA SPECIFIC ----------- *)
-  | MemberExpr {base=VarDecl{name=x}; name=y} 
-    when List.mem (var_name x) cuda_vars ->
-      let x = var_name x ^ "." ^ y |> var_make in
+  | MemberExpr {base=VarDecl{name=base}; name=dim} 
+    when List.mem (var_name base) cuda_vars && List.mem dim cuda_dims->
+      let x = var_name base ^ "." ^ dim |> var_make in
       Ok (Var x)
 
   (* ------------------------------------------ *)
@@ -138,7 +144,7 @@ let rec parse_nexp (e: Dlang.d_exp) : nexp d_result =
   | CXXBoolLiteralExpr b ->
     Ok (Num (if b then 1 else 0))
   | UnaryOperator {opcode="~"; _}
-  | DeclRefExpr _
+  | CXXConstructExpr _
   | MemberExpr _
   | FunctionDecl _ 
   | CallExpr _ ->
@@ -305,6 +311,10 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt d_result =
 
   match c with
 
+  | SExp (CallExpr {func=FunctionDecl{name=n}; args=[]})
+    when var_name n = "__syncthreads" ->
+    Ok Imp.Sync
+
   | WriteAccessStmt w ->
     let x = w.target.name in
     let* idx = with_msg "write.idx" (cast_map parse_nexp) w.target.index in
@@ -405,6 +415,46 @@ let parse_params (ps:Cast.c_param list) : (VarSet.t * array_t VarMap.t) d_result
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
   Ok (VarSet.of_list globals, list_to_var_map arrays)
 
+let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
+  let open Exp in
+  let open Imp in
+  let mk_dims h (name:string) : (variable * locality * nexp option) list =
+    List.map (fun x -> (var_make (name ^ "." ^ x), h, None) ) cuda_dims
+  in
+  let all_vars =
+    List.concat_map (mk_dims Global) cuda_global_vars
+    @
+    List.concat_map (mk_dims Local) cuda_local_vars
+  in
+  let mk_var (name:string) (suffix:string) (x:string) : nexp =
+    Var (var_make (name ^ suffix ^ "." ^ x))
+  in
+  let idx_lt_dim name : bexp list =
+    List.map (fun x ->
+      n_lt (mk_var name "Idx" x) (mk_var name "Dim" x)
+    ) cuda_dims
+  in
+  let local_vars : variable list =
+    cuda_dims
+    |> List.concat_map (fun (x:string) ->
+      cuda_local_vars
+      |> List.map (fun (name:string) ->
+          var_make (name ^ "." ^ x)
+      )
+    )
+  in 
+  let open Imp in
+  Block [
+    Decl all_vars;
+    Assert (
+      (Exp.distinct local_vars ::
+        List.concat_map idx_lt_dim ["thread"; "block"; "grid"]
+      )
+      |> b_and_ex
+    );
+    tail
+  ]
+
 let parse_kernel (k:Dlang.d_kernel) : Imp.p_kernel d_result =
   let* code = parse_stmt k.code in
   let* (params, arrays) = parse_params k.params in
@@ -412,7 +462,7 @@ let parse_kernel (k:Dlang.d_kernel) : Imp.p_kernel d_result =
   Ok {
     p_kernel_name = k.name;
     p_kernel_pre = Exp.b_true; (* TODO: implement this *)
-    p_kernel_code = code;
+    p_kernel_code = cuda_preamble code;
     p_kernel_params = params;
     p_kernel_arrays = arrays;
   }

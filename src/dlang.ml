@@ -13,6 +13,7 @@ type d_exp =
   | BinaryOperator of d_binary
   | CallExpr of {func: d_exp; args: d_exp list; ty: d_type}
   | ConditionalOperator of {cond: d_exp; then_expr: d_exp; else_expr: d_exp; ty: d_type}
+  | CXXConstructExpr of {args: d_exp list; ty: d_type}
   | CXXBoolLiteralExpr of bool
   | CXXMethodDecl of {name: variable; ty: d_type}
   | CXXOperatorCallExpr of {func: d_exp; args: d_exp list; ty: d_type}
@@ -22,7 +23,6 @@ type d_exp =
   | NonTypeTemplateParmDecl of {name: variable; ty: d_type}
   | MemberExpr of {name: string; base: d_exp; ty: d_type}
   | ParmVarDecl of {name: variable; ty: d_type}
-  | DeclRefExpr of d_type
   | UnaryOperator of { opcode: string; child: d_exp; ty: d_type}
   | VarDecl of {name: variable; ty: d_type}
   | UnresolvedLookupExpr of {name: variable; tys: d_type list}
@@ -33,6 +33,7 @@ let exp_name = function
 | BinaryOperator _ -> "BinaryOperator"
 | CallExpr _ -> "CallExpr"
 | ConditionalOperator _ -> "ConditionalOperator"
+| CXXConstructExpr _ -> "CXXConstructExpr"
 | CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
 | CXXMethodDecl _ -> "CXXMethodDecl"
 | CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
@@ -42,7 +43,6 @@ let exp_name = function
 | NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
 | MemberExpr _ -> "MemberExpr"
 | ParmVarDecl _ -> "ParmVarDecl"
-| DeclRefExpr _ -> "DeclRefExpr"
 | UnaryOperator _ -> "UnaryOperator"
 | VarDecl _ -> "VarDecl"
 | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
@@ -157,12 +157,12 @@ let rec exp_type (e:d_exp) : d_type =
   | ConditionalOperator c -> exp_type c.then_expr
   | CXXBoolLiteralExpr _ -> Ctype.j_bool_type
   | CXXMethodDecl a -> a.ty
+  | CXXConstructExpr c -> c.ty
   | FloatingLiteral _ -> Ctype.j_float_type
   | FunctionDecl a -> a.ty
   | IntegerLiteral _ -> Ctype.j_int_type
   | NonTypeTemplateParmDecl a -> a.ty
   | ParmVarDecl a -> a.ty
-  | DeclRefExpr ty -> ty
   | UnaryOperator a -> a.ty
   | VarDecl a -> a.ty
   | CallExpr c -> c.ty
@@ -275,19 +275,28 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     let (st, f) = rewrite_exp f st in
     let (st, args) = state_map rewrite_exp args st in
     (st, CXXOperatorCallExpr {func=f; args=args; ty=ty})
+
   | CallExpr {func=f; args=args; ty=ty} -> 
     fun st ->
     let (st, f) = rewrite_exp f st in
     let (st, args) = state_map rewrite_exp args st in
     (st, CallExpr {func=f; args=args; ty=ty})
+
+  | CXXConstructExpr c ->
+    fun st ->
+    let (st, args) = state_map rewrite_exp c.args st in
+    (st, CXXConstructExpr {args=args; ty=c.ty})
+
   | UnaryOperator {child=e; opcode=o; ty=ty} ->
     fun st ->
     let (st, e) = rewrite_exp e st in
     (st, UnaryOperator {child=e; opcode=o; ty=ty})
+
   | MemberExpr {base=e; name=o; ty=ty} ->
     fun st ->
     let (st, e) = rewrite_exp e st in
     state_pure (MemberExpr {base=e; name=o; ty=ty}) st
+
   | VarDecl {name=n;ty=ty} -> state_pure (VarDecl {name=n;ty=ty})
   | ParmVarDecl {name=n;ty=ty} -> state_pure (ParmVarDecl {name=n;ty=ty})
   | FunctionDecl {name=n;ty=ty} -> state_pure (FunctionDecl {name=n;ty=ty})
@@ -297,7 +306,6 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
   | FloatingLiteral f -> state_pure (FloatingLiteral f)
   | IntegerLiteral i -> state_pure (IntegerLiteral i)
   | CharacterLiteral c -> state_pure (CharacterLiteral c)
-  | DeclRefExpr c -> state_pure (DeclRefExpr c)
   | CXXBoolLiteralExpr b -> state_pure (CXXBoolLiteralExpr b)
 
 and rewrite_subscript (c:Cast.c_array_subscript) : (AccessState.t, d_subscript) state =
@@ -351,8 +359,6 @@ let rewrite_exp_list (es:Cast.c_exp list) : (d_stmt list * d_exp list) =
 let rewrite_decl (d:Cast.c_decl) : (d_stmt list * d_decl) =
   let rewrite_init (c:Cast.c_init) : (d_stmt list * d_init) =
     match c with
-    | CXXConstructExpr {constructor=c1; ty=ty} ->
-      ([], CXXConstructExpr {constructor=c1; ty=ty})
     | InitListExpr {ty=ty; args=args} ->
       let (pre, args) = rewrite_exp_list args in
       (pre, InitListExpr {ty=ty; args=args})
@@ -442,14 +448,14 @@ let rec exp_to_s : d_exp -> string =
           exp_to_s c.else_expr ^ ")"
   | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") (" ^ b.opcode ^ "." ^ type_to_str b.ty ^ ") (" ^ exp_to_s b.rhs ^ ")"
   | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
-  | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
+  | CXXConstructExpr c -> "@ctor " ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")" 
+  | CXXMethodDecl v -> "@meth " ^ var_name v.name
+  | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | VarDecl v -> var_name v.name
-  | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
   | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name
   | NonTypeTemplateParmDecl v -> "@tpl " ^ var_name v.name
-  | CXXMethodDecl v -> "@meth " ^ var_name v.name
   | FunctionDecl v -> "@func " ^ var_name v.name
   | ParmVarDecl v -> "@parm " ^ var_name v.name
   | UnaryOperator u -> u.opcode ^ exp_to_s u.child

@@ -64,6 +64,9 @@ type 'a j_result = ('a, j_error) Result.t
 let root_cause (msg:string) (j:Yojson.Basic.t) : 'a j_result =
   Result.Error (RootCause (msg, j))
 
+let because (msg:string) (j:Yojson.Basic.t) (e:j_error) : 'a j_result =
+  Result.Error (Because ((msg, j), e))
+
 let type_mismatch ty j =
   root_cause ("type mismatch: expecting " ^ ty ^ ", but got " ^ type_name j) j
 
@@ -116,12 +119,21 @@ let cast_list (j:Yojson.Basic.t) : Yojson.Basic.t list j_result =
   | `List l -> Ok l
   | _ -> type_mismatch "list" j 
 
-(* Cast the given json as a list, and then cast every element of the list *)
-let cast_map (f:'a -> ('b, 'e) Result.t) (j:Yojson.Basic.t) =
-  cast_list j
-  >>= map_all f (fun idx s e ->
+let cast_cons (j:Yojson.Basic.t) : (Yojson.Basic.t * Yojson.Basic.t list) j_result =
+  let* l = cast_list j in
+  match l with
+  | h :: t -> Ok (h, t)
+  | [] -> 
+    root_cause ("Expecting a nonempty list, but got an empty list instead") j
+
+let map (f:'a -> ('b, 'e) Result.t) : 'a list -> 'b list j_result =
+  map_all f (fun idx s e ->
     StackTrace.Because (("Error in index #" ^ (string_of_int (idx + 1)), s), e)
   )
+
+(* Cast the given json as a list, and then cast every element of the list *)
+let cast_map (f:'a -> ('b, 'e) Result.t) (j:Yojson.Basic.t) : 'b list j_result =
+  cast_list j >>= map f
 
 let ensure_length_eq (len:int) (l:Yojson.Basic.t list) : Yojson.Basic.t list j_result =
   if List.length l = len then (
@@ -131,6 +143,81 @@ let ensure_length_eq (len:int) (l:Yojson.Basic.t list) : Yojson.Basic.t list j_r
     let g = string_of_int (List.length l) in
     root_cause ("Expecting a list of length " ^ e ^ ", but got length " ^ g) (`List l)
   )
+
+let cast_list_1
+  (handler:Yojson.Basic.t -> 'a j_result)
+  (j:Yojson.Basic.t)
+  : 'a j_result
+=
+  let* l = cast_list j in
+  match l with
+  | [x] ->
+    (match handler x with
+    | Ok x -> Ok x
+    | Error e ->
+      because "Error in index #1" x e
+    )
+  | _ ->
+    let g = string_of_int (List.length l) in
+    root_cause
+      ("Expecting a list of length 1, but got a list of length " ^ g)
+      (`List l)
+
+
+let cast_list_2
+  (handle_fst:Yojson.Basic.t -> 'a j_result)
+  (handle_snd:Yojson.Basic.t -> 'b j_result)
+  (j:Yojson.Basic.t)
+  : ('a * 'b) j_result
+=
+  let* l = cast_list j in
+  match l with
+  | [x; y] ->
+    (match handle_fst x with
+    | Ok x ->
+        (match handle_snd y with
+        | Ok y -> Ok (x, y)
+        | Error e ->
+            because "Error in index #2" y e
+          )
+    | Error e ->
+      because "Error in index #1" x e
+    )
+  | _ ->
+    let g = string_of_int (List.length l) in
+    root_cause
+      ("Expecting a list of length 2, but got a list of length " ^ g)
+      (`List l)
+
+
+let cast_list_3
+  (handle_fst:Yojson.Basic.t -> 'a j_result)
+  (handle_snd:Yojson.Basic.t -> 'b j_result)
+  (handle_third:Yojson.Basic.t -> 'c j_result)
+  (j:Yojson.Basic.t)
+  : ('a * 'b * 'c) j_result
+=
+  let* l = cast_list j in
+  match l with
+  | [x; y; z] ->
+    (match handle_fst x with
+    | Ok x ->
+        (match handle_snd y with
+        | Ok y ->
+          (match handle_third z with
+            | Ok z -> Ok (x, y, z)
+            | Error e -> because "Error in index #3" z e)
+        | Error e ->
+            because "Error in index #2" y e
+          )
+    | Error e ->
+      because "Error in index #1" x e
+    )
+  | _ ->
+    let g = string_of_int (List.length l) in
+    root_cause
+      ("Expecting a list of length 3, but got a list of length " ^ g)
+      (`List l)
 
 let get_field (k:string) (kv: j_object) : Yojson.Basic.t j_result =
   match List.assoc_opt k kv with
@@ -182,19 +269,35 @@ let because_get_index (i:int) (l:Yojson.Basic.t list): 'a j_result -> 'a j_resul
     StackTrace.Because (("Position #" ^ (string_of_int (i + 1)), `List l), e)
   )
 
-let with_index (index:int) (f:Yojson.Basic.t -> 'a j_result) (l:j_list): 'a j_result =
+let wrap
+  (ok_handler:'a -> 'b j_result )
+  (error_handler: j_error -> string * Yojson.Basic.t)
+  (v:'a)
+=
+  Common.wrap ok_handler (fun (e:j_error) ->
+    let (msg, j) = error_handler e in
+    because msg j e
+  ) v
+
+let with_index
+  (index:int)
+  (f:Yojson.Basic.t -> 'a j_result)
+  (l:j_list)
+: 'a j_result
+=
   get_index index l
-  >>= Common.wrap f (fun e ->
-      StackTrace.Because (("Position #" ^ (string_of_int (index + 1)), `List l), e)
-      |> Result.error
-    )
+  >>= wrap f (fun _ -> ("Position #" ^ (string_of_int (index + 1)), `List l))
 
 let get_kind (o:j_object) : string j_result = with_field "kind" cast_string o
 
-let has_kind (ks:string list) (o:j_object) : bool =
+let filter_kind (f:string -> bool) (o:j_object) : bool =
   get_kind o
   (* Check if the kind is in 'ks' *)
-  |> Result.map (fun (k:string) -> List.mem k ks)
+  |> Result.map f
   (* Convert bool option to bool *)
   |> unwrap_or false
+
+
+let has_kind (ks:string list) (o:j_object) : bool =
+  filter_kind (fun (k:string) -> List.mem k ks) o
 

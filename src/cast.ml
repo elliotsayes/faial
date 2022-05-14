@@ -19,6 +19,7 @@ type c_exp =
   | BinaryOperator of c_binary
   | CallExpr of {func: c_exp; args: c_exp list; ty: c_type}
   | ConditionalOperator of {cond: c_exp; then_expr: c_exp; else_expr: c_exp; ty: c_type}
+  | CXXConstructExpr of {args: c_exp list; ty: c_type}
   | CXXBoolLiteralExpr of bool
   | CXXMethodDecl of {name: variable; ty: c_type}
   | CXXOperatorCallExpr of {func: c_exp; args: c_exp list; ty: c_type}
@@ -28,7 +29,6 @@ type c_exp =
   | NonTypeTemplateParmDecl of {name: variable; ty: c_type}
   | MemberExpr of {name: string; base: c_exp; ty: c_type}
   | ParmVarDecl of {name: variable; ty: c_type}
-  | DeclRefExpr of c_type
   | UnaryOperator of {opcode: string; child: c_exp; ty: c_type}
   | VarDecl of {name: variable; ty: c_type}
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
@@ -42,6 +42,7 @@ let exp_name = function
 | CallExpr _ -> "CallExpr"
 | ConditionalOperator _ -> "ConditionalOperator"
 | CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
+| CXXConstructExpr _ -> "CXXConstructExpr"
 | CXXMethodDecl _ -> "CXXMethodDecl"
 | CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
 | FloatingLiteral _ -> "FloatingLiteral"
@@ -50,14 +51,12 @@ let exp_name = function
 | NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
 | MemberExpr _ -> "MemberExpr"
 | ParmVarDecl _ -> "ParmVarDecl"
-| DeclRefExpr _ -> "DeclRefExpr"
 | UnaryOperator _ -> "UnaryOperator"
 | VarDecl _ -> "VarDecl"
 | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
 
 
 type c_init =
-  | CXXConstructExpr of {constructor: c_type; ty: c_type}
   | InitListExpr of {ty: c_type; args: c_exp list}
   | IExp of c_exp
 
@@ -98,6 +97,7 @@ type c_kernel = {
 
 let rec exp_type (e:c_exp) : c_type =
   match e with
+  | CXXConstructExpr c -> c.ty
   | CharacterLiteral _ -> Ctype.j_char_type
   | ArraySubscriptExpr a -> a.ty
   | BinaryOperator a -> a.ty
@@ -109,7 +109,6 @@ let rec exp_type (e:c_exp) : c_type =
   | IntegerLiteral _ -> Ctype.j_int_type
   | NonTypeTemplateParmDecl a -> a.ty
   | ParmVarDecl a -> a.ty
-  | DeclRefExpr ty -> ty
   | UnaryOperator a -> a.ty
   | VarDecl a -> a.ty
   | CallExpr c -> c.ty
@@ -163,14 +162,15 @@ let rec parse_exp (j:json) : c_exp j_result =
   let* kind = get_kind o in
   match kind with
   | "CharacterLiteral" ->
-    let* i = with_field "value" cast_int o in
-    Ok (CharacterLiteral i)
+    let* i = with_field "value" cast_string o in
+    Ok (CharacterLiteral (int_of_string i))
 
-  | "ConstantExpr" ->
-    with_field "inner" (fun f ->
-      let* l = cast_list f >>= ensure_length_eq 1 in
-      with_index 0 parse_exp l
-    ) o
+  | "ImplicitCastExpr"
+  | "ConstantExpr"
+  | "ParenExpr"
+  | "ExprWithCleanups"
+  | "CStyleCastExpr" ->
+    with_field "inner" (cast_list_1 parse_exp) o
 
   | "CXXDependentScopeMemberExpr" ->
     let* n = with_field "member" cast_string o in
@@ -184,23 +184,22 @@ let rec parse_exp (j:json) : c_exp j_result =
     Ok (MemberExpr {name=n; base=b; ty=ty})
 
   | "DeclRefExpr" ->
-    let* ty = get_field "type" o in
-    Ok (DeclRefExpr ty)
+    with_field "referencedDecl" parse_exp o
 
   | "FloatingLiteral" ->
     (match with_field "value" cast_int o with
-    | Ok i -> Ok (FloatingLiteral (Float.of_int i))
-    | _ ->
-      let* f = with_field "value" cast_float o in
-      Ok (FloatingLiteral f))
+        | Ok i -> Ok (FloatingLiteral (Float.of_int i))
+        | _ ->
+          let* f = with_field "value" cast_float o in
+          Ok (FloatingLiteral f))
 
   | "IntegerLiteral" ->
-    let* i = with_field "value" cast_int o in
-    Ok (IntegerLiteral i)
+    let* i = with_field "value" cast_string o in
+    Ok (IntegerLiteral (int_of_string i))
 
   | "MemberExpr" ->
     let* n = with_field "name" cast_string o in
-    let* b = with_field "base" parse_exp o in
+    let* b = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
     Ok (MemberExpr {name=n; base=b; ty=ty})
 
@@ -220,9 +219,9 @@ let rec parse_exp (j:json) : c_exp j_result =
     Ok (CXXMethodDecl {name=v; ty=ty})
 
   | "ConditionalOperator" ->
-    let* c = with_field "cond" parse_exp o in
-    let* t = with_field "thenExpr" parse_exp o in
-    let* e = with_field "elseExpr" parse_exp o in
+    let* (c, t, e) = with_field "inner"
+      (cast_list_3 parse_exp parse_exp parse_exp) o
+    in
     let* ty = get_field "type" o in
     Ok (ConditionalOperator {cond=c; then_expr=t; else_expr=e; ty=ty})
 
@@ -243,7 +242,7 @@ let rec parse_exp (j:json) : c_exp j_result =
 
   | "UnaryOperator" ->
     let* op = with_field "opcode" cast_string o in
-    let* c = with_field "subExpr" parse_exp o in
+    let* c = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
     let inc o =
       BinaryOperator {ty=ty; opcode="="; lhs=c;
@@ -259,8 +258,7 @@ let rec parse_exp (j:json) : c_exp j_result =
   | "CompoundAssignOperator" ->
     (* Convert: x += e into x = x + y *)
     let* ty = get_field "computeResultType" o in
-    let* lhs = with_field "lhs" parse_exp o in
-    let* rhs = with_field "rhs" parse_exp o in
+    let* lhs, rhs = with_field "inner" (cast_list_2 parse_exp parse_exp) o in
     let* opcode = with_field "opcode" cast_string o in
     (match Common.rsplit '=' opcode with
       | Some (opcode, "") ->
@@ -275,35 +273,48 @@ let rec parse_exp (j:json) : c_exp j_result =
   | "BinaryOperator" ->
     let ty = List.assoc_opt "type" o |> Ojson.unwrap_or Ctype.j_int_type in
     let* opcode = with_field "opcode" cast_string o in
-    let* lhs = with_field "lhs" parse_exp o in
-    let* rhs = with_field "rhs" parse_exp o in
+    let* lhs, rhs = with_field "inner"
+      (cast_list_2 parse_exp parse_exp) o
+    in
     Ok (BinaryOperator {ty=ty; opcode=opcode; lhs=lhs; rhs=rhs})
 
   | "ArraySubscriptExpr" ->
     let* ty = get_field "type" o in
-    let* lhs = with_field "lhs" parse_exp o in
-    let* rhs = with_field "rhs" parse_exp o in
+    let* lhs, rhs = with_field "inner"
+      (cast_list_2 parse_exp parse_exp) o
+    in
     Ok (ArraySubscriptExpr {ty=ty; lhs=lhs; rhs=rhs})
 
   | "CXXOperatorCallExpr" ->
-    let* func = with_field "func" parse_exp o in
-    let* args = with_field "args" (cast_map parse_exp) o in
+    let* (func, args) = with_field "inner" (fun j ->
+      let* h, t = cast_cons j in
+      let* func = wrap parse_exp (fun _ -> "func", j) h in
+      let* args = wrap (map parse_exp) (fun _ -> "args", j) t in
+      Ok (func, args)
+    ) o in
     let* ty = get_field "type" o in
     Ok (CXXOperatorCallExpr {func=func; args=args; ty=ty})
 
   | "CallExpr" ->
-    let* func = with_field "func" parse_exp o in
-    let* args = with_field "args" (cast_map parse_exp) o in
+    let* (func, args) = with_field "inner" (fun j ->
+      let* h, t = cast_cons j in
+      let* func = wrap parse_exp (fun _ -> "func", j) h in
+      let* args = wrap (map parse_exp) (fun _ -> "args", j) t in
+      Ok (func, args)
+    ) o in
     let* ty = get_field "type" o in
     Ok (CallExpr {func=func; args=args; ty=ty})
 
   | "CXXFunctionalCastExpr"
   | "MaterializeTemporaryExpr" ->
-    let* body = with_field "inner" (fun b ->
-      cast_list b >>= ensure_length_eq 1 >>=
-      with_index 0 parse_exp
-    ) o in
+    let* body = with_field "inner" (cast_list_1 parse_exp) o in
     Ok body
+
+  | "CXXConstructExpr" ->
+    let* ty = get_field "type" o in
+    let* args = with_field_or "inner" (cast_map parse_exp) [] o in
+    Ok (CXXConstructExpr {args=args; ty=ty})
+
 
   | "CXXBoolLiteralExpr" ->
     let* b = with_field "value" cast_bool o in
@@ -322,11 +333,6 @@ let rec parse_init (j:json) : c_init j_result =
     let* ty = get_field "type" o in
     let* args = with_field "inner" (cast_map parse_exp) o in
     Ok (InitListExpr {ty=ty; args=args})
-
-  | "CXXConstructExpr" ->
-    let* ty = get_field "type" o in
-    let* ctor = get_field "ctorType" o in
-    Ok (CXXConstructExpr {constructor=ctor; ty=ty})
 
   | _ ->
     let* e = parse_exp j in
@@ -399,9 +405,24 @@ let rec parse_stmt (j:json) : c_stmt j_result =
   let* kind = get_kind o in
   match kind with
   | "IfStmt" ->
-    let* cond = with_field "cond" parse_exp o in
-    let* then_stmt = with_field "thenStmt" parse_stmt o in
-    let* else_stmt = with_field_or "elseStmt" parse_stmt (CompoundStmt []) o in
+    let* (cond, then_stmt, else_stmt) = with_field "inner" (fun j ->
+      let* l = cast_list j in
+      let wrap handle_ok (m:string) = wrap handle_ok (fun _ -> (m, j)) in
+      match l with
+      | [cond;then_stmt;else_stmt] ->
+        let* cond = wrap parse_exp "cond" cond in
+        let* then_stmt = wrap parse_stmt "then_stmt" then_stmt in
+        let* else_stmt = wrap parse_stmt "else_stmt" else_stmt in
+        Ok (cond, then_stmt, else_stmt)
+      | [cond;then_stmt] ->
+        let* cond = wrap parse_exp "cond" cond in
+        let* then_stmt = wrap parse_stmt "then_stmt" then_stmt in
+        Ok (cond, then_stmt, CompoundStmt [])
+      | _ ->
+        let g = List.length l |> string_of_int in
+        root_cause ("Expecting a list of length 2 or 3, but got a length of list " ^ g) j
+    ) o
+    in
     Ok (IfStmt {cond=cond; then_stmt=then_stmt; else_stmt=else_stmt})
   | "WhileStmt" ->
     let* cond = with_field "cond" parse_exp o in
@@ -450,11 +471,29 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     let* b = with_field "body" parse_stmt o in
     Ok (DoStmt {cond=c; body=b})
   | "ForStmt" ->
-    let* i = with_opt_field "init" parse_for_init o in
-    let* c = with_opt_field "cond" parse_exp o in
-    let* n = with_opt_field "inc" parse_exp o in
-    let* b = with_field "body" parse_stmt o in
-    Ok (ForStmt {init=i; cond=c; inc=n; body=b})
+    let* (init, cond, inc, body) = with_field "inner" (fun j ->
+      let* l = cast_list j in
+      let wrap handle_ok (m:string) = wrap handle_ok (fun _ -> (m, j)) in
+      let wrap_opt handle_ok (m:string) (j:Yojson.Basic.t) =
+        match j with
+        | `Assoc [] -> Ok None
+        | _ ->
+          let* r = wrap handle_ok m j in
+          Ok (Some r)
+      in
+      match l with
+      | [init; _; cond; inc; body] ->
+        let* init = wrap_opt parse_for_init "init" init in
+        let* cond = wrap_opt parse_exp "cond" cond in
+        let* inc = wrap_opt parse_exp "inc" inc in
+        let* body = wrap parse_stmt "body" body in
+        Ok (init, cond, inc, body)
+      | _ ->
+        let g = List.length l |> string_of_int in
+        root_cause ("Expecting a list of length 5, but got a length of list " ^ g) j
+    ) o in
+    Ok (ForStmt {init=init; cond=cond; inc=inc; body=body})
+  | "FullComment" -> Ok (CompoundStmt [])
   | _ ->
     let* e = parse_exp j in
     Ok (SExp e)
@@ -475,18 +514,6 @@ let parse_param (j:json) : c_param j_result =
   let* is_shared = with_field_or "shared" cast_bool false o in
   Ok {name=v; is_used=(is_refed || is_used); is_shared=is_shared; ty=ty}
 
-let parse_kernel (o:Rjson.j_object) : c_kernel j_result =
-  let open Rjson in
-  let* body: c_stmt = with_field "body" parse_stmt o in
-  let* name: string = with_field "name" cast_string o in
-  let* ps = with_field "params" (cast_map parse_param) o in
-  Ok {
-    name = name;
-    code = body;
-    params = ps;
-  }
-
-
 let c_attr (k:string) : string =
   " __attribute__((annotate(\"" ^ k ^ "\")))"
 
@@ -497,19 +524,65 @@ let parse_attr (j:Yojson.Basic.t) : string j_result =
   let open Rjson in
   let* o = cast_object j in
   let* k = get_kind o in
-  if k = "AnnotateAttr" then
-    with_field "value" cast_string o
-  else
-    root_cause ("parse_attr: unexpected kind " ^ k) j
+  with_field "value" cast_string o
 
+let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
+  let open Rjson in
+  let res =
+    let* o = cast_object j in
+    let* k = get_kind o in
+    Ok (f k)
+  in
+  res |> unwrap_or false
 
+let parse_kernel (j:Yojson.Basic.t) : c_kernel j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* inner = with_field "inner" cast_list o in
+  let attrs, inner =
+    inner
+    |> List.partition
+      (j_filter_kind (Common.ends_with "Attr"))
+  in
+  let ps, body =
+    inner
+    |> List.partition
+      (j_filter_kind (fun k -> k = "ParmVarDecl" || k = "TemplateArgument"))
+  in
+  let* attrs = map parse_attr attrs in
+  let* body: c_stmt list = parse_stmt_list (Yojson.Basic.(`List body)) in
+  let body = match body with
+    | [s] -> s
+    | _ -> CompoundStmt body
+  in
+  let* name: string = with_field "name" cast_string o in
+  let* ps = map parse_param ps in
+  Ok {
+    name = name;
+    code = body;
+    params = ps;
+  }
+
+(* let get_kinds ks (j:Yojson.Basic.t list) =
+
+ *)(*
+let get_inner_kinds (o:Rjson.j_object) : string list =
+  let 
+*)
 let is_kernel2 (j:Yojson.Basic.t) : bool =
   let open Rjson in
   let is_kernel =
     let* o = cast_object j in
     let* k = get_kind o in
     if k = "FunctionDecl" then
-      let* attrs =  with_field "attrs" (cast_map parse_attr) o in
+      let* inner = with_field "inner" cast_list o in
+      (* Try to parse attrs *)
+      let attrs = inner
+        |> Common.map_opt (fun j ->
+          parse_attr j >>= (fun a -> Ok (Some a))
+          |> unwrap_or None
+        )
+      in
       Ok (List.mem c_attr_global attrs)
     else Ok false
   in
@@ -529,7 +602,7 @@ let parse_kernels (j:Yojson.Basic.t) : c_kernel list j_result =
     |> unwrap_or [] (* ignore errors and convert it to an empty list *)
     |> List.filter is_kernel2 (* only keep things that look like kernels *)
     |> map_all (* for each kernel convert it into an object and parse it *)
-      (fun k -> cast_object k >>= parse_kernel)
+      parse_kernel
       (* Abort the whole thing if we find a single parsing error *)
       (fun idx k e -> StackTrace.Because (("error parsing kernel " ^ string_of_int idx, k), e))
 
@@ -561,21 +634,20 @@ let rec exp_to_s : c_exp -> string =
   | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") (" ^ b.opcode ^ "." ^ type_to_str b.ty ^ ") (" ^ exp_to_s b.rhs ^ ")"
   | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
   | ArraySubscriptExpr b -> exp_to_s b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
-  | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
+  | CXXConstructExpr c -> "@ctor " ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")" 
+  | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
+  | CXXMethodDecl v -> "@meth " ^ var_name v.name
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | VarDecl v -> var_name v.name
-  | DeclRefExpr t -> Yojson.Basic.pretty_to_string t
   | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name
   | NonTypeTemplateParmDecl v -> "@tpl " ^ var_name v.name
-  | CXXMethodDecl v -> "@meth " ^ var_name v.name
   | FunctionDecl v -> "@func " ^ var_name v.name
   | ParmVarDecl v -> "@parm " ^ var_name v.name
   | UnaryOperator u -> u.opcode ^ exp_to_s u.child
 
 let init_to_s : c_init -> string =
   function
-  | CXXConstructExpr c -> "ctor"
   | InitListExpr i -> list_to_s exp_to_s i.args
   | IExp i -> exp_to_s i
 

@@ -71,6 +71,9 @@ let rec types_exp (env:Typing.t) (e:Dlang.d_exp) : (Typing.t * Index.t) =
   | CXXOperatorCallExpr c ->
     ret (c.func :: c.args)
 
+  | CXXConstructExpr c ->
+    ret c.args
+
   | ConditionalOperator c ->
     ret [ c.cond; c.then_expr; c.else_expr ]
   
@@ -82,7 +85,6 @@ let rec types_exp (env:Typing.t) (e:Dlang.d_exp) : (Typing.t * Index.t) =
   | FunctionDecl _
   | CXXMethodDecl _
   | CharacterLiteral _
-  | DeclRefExpr _
   | FloatingLiteral _
   | IntegerLiteral _
   | CXXBoolLiteralExpr _ -> (env, Index.Independent)
