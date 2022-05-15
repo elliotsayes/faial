@@ -456,6 +456,9 @@ let rec parse_stmt (j:json) : c_stmt j_result =
       | _ -> parse_stmt_list i
     ) o in
     Ok (CompoundStmt children)
+  | Some "LabelStmt" ->
+    (* TODO: do not parse LabelStmt *) 
+    with_field "inner" (cast_list_1 parse_stmt) o
   | Some "ReturnStmt" ->
     Ok ReturnStmt
   | Some "GotoStmt" ->
@@ -463,9 +466,21 @@ let rec parse_stmt (j:json) : c_stmt j_result =
   | Some "BreakStmt" ->
     Ok BreakStmt
   | Some "DoStmt" ->
-    let* c = with_field_or "cond" parse_exp (CXXBoolLiteralExpr true) o in
-    let* b = with_field "body" parse_stmt o in
+    let* inner = with_field "inner" cast_list o in
+    let* b, c = match inner with
+    | [b; c] ->
+      let* b = parse_stmt b in
+      let* c = parse_exp c in
+      Ok (b, c)
+    | [b] ->
+      let* b = parse_stmt b in
+      Ok (b, CXXBoolLiteralExpr true)
+    | _ -> root_cause "Error parsing DoStmt" j
+    in
     Ok (DoStmt {cond=c; body=b})
+  | Some "AttributedStmt" ->
+    let* (_, stmt) = with_field "inner" (cast_list_2 Result.ok parse_stmt) o in
+    Ok stmt
   | Some "ForStmt" ->
     let* (init, cond, inc, body) = with_field "inner" (fun j ->
       let* l = cast_list j in
@@ -489,6 +504,7 @@ let rec parse_stmt (j:json) : c_stmt j_result =
         root_cause ("Expecting a list of length 5, but got a length of list " ^ g) j
     ) o in
     Ok (ForStmt {init=init; cond=cond; inc=inc; body=body})
+  | Some "NullStmt" -> Ok (CompoundStmt [])
   | Some _ ->
     let* e = parse_exp j in
     Ok (SExp e)
