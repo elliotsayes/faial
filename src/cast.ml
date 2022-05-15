@@ -450,11 +450,11 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     in
     Ok (SwitchStmt {cond=c; body=b})
   | Some "CompoundStmt" ->
-    let* children : c_stmt list = with_field "inner" (fun (i:json) ->
+    let* children : c_stmt list = with_field_or "inner" (fun (i:json) ->
       match i with
       | `Assoc _ -> let* o = parse_stmt i in Ok [o]
       | _ -> parse_stmt_list i
-    ) o in
+    ) [] o in
     Ok (CompoundStmt children)
   | Some "LabelStmt" ->
     (* TODO: do not parse LabelStmt *) 
