@@ -316,6 +316,12 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt d_result =
     when var_name n = "__syncthreads" ->
     Ok Imp.Sync
 
+  | SExp (CallExpr {func = FunctionDecl {name = n; _}; args = [b]})
+    when var_name n = "__requires" ->
+    let* b = with_msg "cond" parse_bexp b in
+    Ok (Imp.Assert b)
+
+
   | WriteAccessStmt w ->
     let x = w.target.name in
     let* idx = with_msg "write.idx" (cast_map parse_nexp) w.target.index in
