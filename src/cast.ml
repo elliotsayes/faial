@@ -569,12 +569,6 @@ let parse_kernel (j:Yojson.Basic.t) : c_kernel j_result =
     params = ps;
   }
 
-(* let get_kinds ks (j:Yojson.Basic.t list) =
-
- *)(*
-let get_inner_kinds (o:Rjson.j_object) : string list =
-  let 
-*)
 let is_kernel2 (j:Yojson.Basic.t) : bool =
   let open Rjson in
   let is_kernel =
