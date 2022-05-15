@@ -462,14 +462,41 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
     tail
   ]
 
+let mk_array (h:hierarchy_t) (ty:Ctype.t) : array_t =
+  {
+    array_hierarchy = h;
+    array_size = Ctype.get_array_length ty;
+    array_type = Ctype.get_array_type ty;
+  }
+
+let parse_shared (s:Dlang.d_stmt) : (variable * array_t) list =
+  let open Dlang in
+  match s with
+  | CompoundStmt l ->
+    l |> List.concat_map (function
+      | DeclStmt l ->
+        l |> Common.(map_opt (fun d ->
+          if List.mem Cast.c_attr_shared d.attrs then
+            (match Cast.parse_type d.ty with
+            | Ok ty ->
+              Some (d.name, mk_array SharedMemory ty)
+            | Error _ -> None)
+          else None
+        ))
+      | _ -> [])
+  | _ -> []
+
 let parse_kernel (k:Dlang.d_kernel) : Imp.p_kernel d_result =
   let* code = parse_stmt k.code in
   let* (params, arrays) = parse_params k.params in
+  let shared = parse_shared k.code |> Exp.list_to_var_map in
   let open Imp in
   Ok {
     p_kernel_name = k.name;
     p_kernel_pre = Exp.b_true; (* TODO: implement this *)
     p_kernel_code = cuda_preamble code;
     p_kernel_params = params;
-    p_kernel_arrays = arrays;
+    p_kernel_arrays = VarMap.union 
+      (fun k l r -> Some r)
+      arrays shared;
   }
