@@ -429,33 +429,25 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     in
     Ok (IfStmt {cond=cond; then_stmt=then_stmt; else_stmt=else_stmt})
   | Some "WhileStmt" ->
-    let* cond = with_field "cond" parse_exp o in
-    let* body = with_field "body" parse_stmt o in
+    let* (cond, body) = with_field "inner"
+      (cast_list_2 parse_exp parse_stmt) o
+    in
     Ok (WhileStmt {cond=cond; body=body})
   | Some "DeclStmt" ->
-    (* prerr_endline (Yojson.Basic.pretty_to_string j); *)
     let* children = with_field "inner" (cast_map parse_decl) o in
     Ok (DeclStmt children)
   | Some "DefaultStmt" ->
-    let* c = with_field "inner" (fun i ->
-      cast_list i >>= ensure_length_eq 1 >>= with_index 0 parse_stmt 
-    ) o in
+    let* c = with_field "inner" (cast_list_1 parse_stmt) o in
     Ok (DefaultStmt c)
   | Some "CaseStmt" ->
-    let* (c, b) = with_field "inner" (fun f ->
-      let* l = cast_list f >>= ensure_length_eq 2 in
-      let* c = with_index 0 parse_exp l in
-      let* b = with_index 1 parse_stmt l in
-      Ok (c, b)
-    ) o in
+    let* (c, b) = with_field "inner"
+      (cast_list_2 parse_exp parse_stmt) o
+    in
     Ok (CaseStmt {case=c; body=b})
   | Some "SwitchStmt" ->
-    let* (c, b) = with_field "inner" (fun f ->
-      let* l = cast_list f >>= ensure_length_eq 2 in
-      let* c = with_index 0 parse_exp l in
-      let* b = with_index 1 parse_stmt l in
-      Ok (c, b)
-    ) o in
+    let* (c, b) = with_field "inner"
+      (cast_list_2 parse_exp parse_stmt) o
+    in
     Ok (SwitchStmt {cond=c; body=b})
   | Some "CompoundStmt" ->
     let* children : c_stmt list = with_field "inner" (fun (i:json) ->
