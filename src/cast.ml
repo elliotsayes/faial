@@ -355,7 +355,10 @@ let parse_attr (j:Yojson.Basic.t) : string j_result =
 
 let is_valid_j : json -> bool =
   function
-  | `Assoc o -> List.assoc_opt "kind" o |> Option.is_some
+  | `Assoc o ->
+    (match Rjson.get_kind o with
+      | Error _ | Ok "FullComment" -> false
+      | Ok _ -> true)
   | _ -> false
 
 let parse_decl (j:json) : c_decl j_result =
@@ -504,6 +507,7 @@ let rec parse_stmt (j:json) : c_stmt j_result =
         root_cause ("Expecting a list of length 5, but got a length of list " ^ g) j
     ) o in
     Ok (ForStmt {init=init; cond=cond; inc=inc; body=body})
+  | Some "FullComment"
   | Some "NullStmt" -> Ok (CompoundStmt [])
   | Some _ ->
     let* e = parse_exp j in
