@@ -165,8 +165,8 @@ let rec parse_exp (j:json) : c_exp j_result =
   let* kind = get_kind o in
   match kind with
   | "CharacterLiteral" ->
-    let* i = with_field "value" cast_string o in
-    Ok (CharacterLiteral (int_of_string i))
+    let* i = with_field "value" cast_int o in
+    Ok (CharacterLiteral i)
 
   | "ImplicitCastExpr"
   | "ConstantExpr"
