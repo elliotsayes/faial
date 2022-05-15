@@ -169,6 +169,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     Ok (CharacterLiteral i)
 
   | "ImplicitCastExpr"
+  | "CXXStaticCastExpr"
   | "ConstantExpr"
   | "ParenExpr"
   | "ExprWithCleanups"
