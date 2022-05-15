@@ -31,11 +31,13 @@ type c_exp =
   | ParmVarDecl of {name: variable; ty: c_type}
   | UnaryOperator of {opcode: string; child: c_exp; ty: c_type}
   | VarDecl of {name: variable; ty: c_type}
+  | EnumConstantDecl of {name: variable; ty: c_type}
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
 and c_binary = {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
 and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type}
 
 let exp_name = function
+| EnumConstantDecl _ -> "EnumConstantDecl"
 | CharacterLiteral _ -> "CharacterLiteral"
 | ArraySubscriptExpr _ -> "ArraySubscriptExpr"
 | BinaryOperator _ -> "BinaryOperator"
@@ -114,6 +116,7 @@ let rec exp_type (e:c_exp) : c_type =
   | CallExpr c -> c.ty
   | CXXOperatorCallExpr a -> a.ty
   | MemberExpr a -> a.ty
+  | EnumConstantDecl a -> a.ty
   | UnresolvedLookupExpr a -> Ctype.mk_j_type "?"
 
 let rec parse_position : json -> Sourceloc.position j_result =
@@ -202,6 +205,11 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* b = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
     Ok (MemberExpr {name=n; base=b; ty=ty})
+
+  | "EnumConstantDecl" ->
+    let* v = parse_variable j in
+    let* ty = get_field "type" o in
+    Ok (EnumConstantDecl {name=v; ty=ty})
 
   | "VarDecl" ->
     let* v = parse_variable j in
@@ -633,6 +641,7 @@ let rec exp_to_s : c_exp -> string =
   | NonTypeTemplateParmDecl v -> "@tpl " ^ var_name v.name
   | FunctionDecl v -> "@func " ^ var_name v.name
   | ParmVarDecl v -> "@parm " ^ var_name v.name
+  | EnumConstantDecl v -> "@enum " ^ var_name v.name
   | UnaryOperator u -> u.opcode ^ exp_to_s u.child
 
 let init_to_s : c_init -> string =

@@ -25,6 +25,7 @@ type d_exp =
   | ParmVarDecl of {name: variable; ty: d_type}
   | UnaryOperator of { opcode: string; child: d_exp; ty: d_type}
   | VarDecl of {name: variable; ty: d_type}
+  | EnumConstantDecl of {name: variable; ty: d_type}
   | UnresolvedLookupExpr of {name: variable; tys: d_type list}
 and d_binary = {opcode: string; lhs: d_exp; rhs: d_exp; ty: d_type}
 
@@ -43,6 +44,7 @@ let exp_name = function
 | NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
 | MemberExpr _ -> "MemberExpr"
 | ParmVarDecl _ -> "ParmVarDecl"
+| EnumConstantDecl _ -> "EnumConstantDecl"
 | UnaryOperator _ -> "UnaryOperator"
 | VarDecl _ -> "VarDecl"
 | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
@@ -168,6 +170,7 @@ let rec exp_type (e:d_exp) : d_type =
   | CallExpr c -> c.ty
   | CXXOperatorCallExpr a -> a.ty
   | MemberExpr a -> a.ty
+  | EnumConstantDecl a -> a.ty
   | UnresolvedLookupExpr a -> Ctype.mk_j_type "?"
 (* ------------------------------------------------------------------------ *)
 
@@ -297,6 +300,7 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     let (st, e) = rewrite_exp e st in
     state_pure (MemberExpr {base=e; name=o; ty=ty}) st
 
+  | EnumConstantDecl {name=n;ty=ty} -> state_pure (EnumConstantDecl {name=n;ty=ty})
   | VarDecl {name=n;ty=ty} -> state_pure (VarDecl {name=n;ty=ty})
   | ParmVarDecl {name=n;ty=ty} -> state_pure (ParmVarDecl {name=n;ty=ty})
   | FunctionDecl {name=n;ty=ty} -> state_pure (FunctionDecl {name=n;ty=ty})
@@ -458,6 +462,7 @@ let rec exp_to_s : d_exp -> string =
   | NonTypeTemplateParmDecl v -> "@tpl " ^ var_name v.name
   | FunctionDecl v -> "@func " ^ var_name v.name
   | ParmVarDecl v -> "@parm " ^ var_name v.name
+  | EnumConstantDecl v -> "@enum " ^ var_name v.name
   | UnaryOperator u -> u.opcode ^ exp_to_s u.child
 
 let init_to_s : d_init -> string =

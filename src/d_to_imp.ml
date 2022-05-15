@@ -147,6 +147,7 @@ let rec parse_nexp (e: Dlang.d_exp) : nexp d_result =
   | CXXConstructExpr _
   | MemberExpr _
   | FunctionDecl _ 
+  | EnumConstantDecl _
   | CallExpr _ ->
     prerr_endline ("WARNING: parse_nexp: rewriting to unknown: " ^ Dlang.exp_to_s e);
     Ok NUnknown
