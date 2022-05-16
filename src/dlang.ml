@@ -7,6 +7,7 @@ type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
 type d_type = json
+type d_var = Cast.c_var
 
 type d_exp =
   | CharacterLiteral of int
@@ -15,48 +16,19 @@ type d_exp =
   | ConditionalOperator of {cond: d_exp; then_expr: d_exp; else_expr: d_exp; ty: d_type}
   | CXXConstructExpr of {args: d_exp list; ty: d_type}
   | CXXBoolLiteralExpr of bool
-  | CXXMethodDecl of {name: variable; ty: d_type}
+  | CXXMethodDecl of d_var
   | CXXOperatorCallExpr of {func: d_exp; args: d_exp list; ty: d_type}
   | FloatingLiteral of float
-  | FunctionDecl of {name: variable; ty: d_type}
+  | FunctionDecl of d_var
   | IntegerLiteral of int
-  | NonTypeTemplateParmDecl of {name: variable; ty: d_type}
+  | NonTypeTemplateParmDecl of d_var
   | MemberExpr of {name: string; base: d_exp; ty: d_type}
-  | ParmVarDecl of {name: variable; ty: d_type}
+  | ParmVarDecl of d_var
   | UnaryOperator of { opcode: string; child: d_exp; ty: d_type}
-  | VarDecl of {name: variable; ty: d_type}
-  | EnumConstantDecl of {name: variable; ty: d_type}
+  | VarDecl of d_var
+  | EnumConstantDecl of d_var
   | UnresolvedLookupExpr of {name: variable; tys: d_type list}
 and d_binary = {opcode: string; lhs: d_exp; rhs: d_exp; ty: d_type}
-
-let exp_name = function
-| CharacterLiteral _ -> "CharacterLiteral"
-| BinaryOperator _ -> "BinaryOperator"
-| CallExpr _ -> "CallExpr"
-| ConditionalOperator _ -> "ConditionalOperator"
-| CXXConstructExpr _ -> "CXXConstructExpr"
-| CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
-| CXXMethodDecl _ -> "CXXMethodDecl"
-| CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
-| FloatingLiteral _ -> "FloatingLiteral"
-| FunctionDecl _ -> "FunctionDecl"
-| IntegerLiteral _ -> "IntegerLiteral"
-| NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
-| MemberExpr _ -> "MemberExpr"
-| ParmVarDecl _ -> "ParmVarDecl"
-| EnumConstantDecl _ -> "EnumConstantDecl"
-| UnaryOperator _ -> "UnaryOperator"
-| VarDecl _ -> "VarDecl"
-| UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
-
-let get_variable : d_exp -> variable option = function
-| CXXMethodDecl {name=n}
-| FunctionDecl {name=n}
-| NonTypeTemplateParmDecl {name=n}
-| ParmVarDecl {name=n}
-| VarDecl {name=n}
-| UnresolvedLookupExpr {name=n} -> Some n
-| _ -> None
 
 type d_init =
   | CXXConstructExpr of {constructor: d_type; ty: d_type}
@@ -97,7 +69,51 @@ type d_stmt =
 and d_for = {init: d_for_init option; cond: d_exp option; inc: d_exp option; body: d_stmt}
 
 
+type d_kernel = {
+  name: string;
+  code: d_stmt;
+  params: Cast.c_param list;
+}
+
+type d_def =
+  | Kernel of d_kernel
+  | Declaration of d_var
+
+type d_program = d_def list
+
+
 (* ------------------------------------- *)
+
+
+let exp_name = function
+| CharacterLiteral _ -> "CharacterLiteral"
+| BinaryOperator _ -> "BinaryOperator"
+| CallExpr _ -> "CallExpr"
+| ConditionalOperator _ -> "ConditionalOperator"
+| CXXConstructExpr _ -> "CXXConstructExpr"
+| CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
+| CXXMethodDecl _ -> "CXXMethodDecl"
+| CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
+| FloatingLiteral _ -> "FloatingLiteral"
+| FunctionDecl _ -> "FunctionDecl"
+| IntegerLiteral _ -> "IntegerLiteral"
+| NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
+| MemberExpr _ -> "MemberExpr"
+| ParmVarDecl _ -> "ParmVarDecl"
+| EnumConstantDecl _ -> "EnumConstantDecl"
+| UnaryOperator _ -> "UnaryOperator"
+| VarDecl _ -> "VarDecl"
+| UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
+
+let get_variable : d_exp -> variable option = function
+| CXXMethodDecl {name=n}
+| FunctionDecl {name=n}
+| NonTypeTemplateParmDecl {name=n}
+| ParmVarDecl {name=n}
+| VarDecl {name=n}
+| UnresolvedLookupExpr {name=n} -> Some n
+| _ -> None
+
 
 let init_to_exp (i:d_init) : d_exp list =
   match i with
@@ -143,13 +159,6 @@ let for_loop_vars (f:d_for) : variable list =
   | None -> []
 
 (* ------------------------------------- *)
-
-
-type d_kernel = {
-  name: string;
-  code: d_stmt;
-  params: Cast.c_param list;
-}
 
 
 let rec exp_type (e:d_exp) : d_type =
@@ -300,12 +309,12 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     let (st, e) = rewrite_exp e st in
     state_pure (MemberExpr {base=e; name=o; ty=ty}) st
 
-  | EnumConstantDecl {name=n;ty=ty} -> state_pure (EnumConstantDecl {name=n;ty=ty})
-  | VarDecl {name=n;ty=ty} -> state_pure (VarDecl {name=n;ty=ty})
-  | ParmVarDecl {name=n;ty=ty} -> state_pure (ParmVarDecl {name=n;ty=ty})
-  | FunctionDecl {name=n;ty=ty} -> state_pure (FunctionDecl {name=n;ty=ty})
-  | CXXMethodDecl {name=n;ty=ty} -> state_pure (CXXMethodDecl {name=n;ty=ty})
-  | NonTypeTemplateParmDecl {name=n;ty=ty} -> state_pure (NonTypeTemplateParmDecl {name=n;ty=ty})
+  | EnumConstantDecl v -> state_pure (EnumConstantDecl v)
+  | VarDecl v -> state_pure (VarDecl v)
+  | ParmVarDecl v -> state_pure (ParmVarDecl v)
+  | FunctionDecl v -> state_pure (FunctionDecl v)
+  | CXXMethodDecl v -> state_pure (CXXMethodDecl v)
+  | NonTypeTemplateParmDecl v -> state_pure (NonTypeTemplateParmDecl v)
   | UnresolvedLookupExpr {name=n;tys=tys} -> state_pure (UnresolvedLookupExpr {name=n;tys=tys})
   | FloatingLiteral f -> state_pure (FloatingLiteral f)
   | IntegerLiteral i -> state_pure (IntegerLiteral i)
@@ -435,6 +444,14 @@ let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
     params = k.params;
   }
 
+let rewrite_def (d:Cast.c_def) : d_def =
+  match d with
+  | Kernel k -> Kernel (rewrite_kernel k)
+  | Declaration d -> Declaration d
+
+let rewrite_program: Cast.c_program -> d_program =
+  List.map rewrite_def
+
 (* ------------------------------------------------------------------------ *)
 
 let list_to_s (f:'a -> string) (l:'a list) : string =
@@ -555,9 +572,15 @@ let kernel_to_s (k:d_kernel) : PPrint.t list =
   @
   stmt_to_s k.code
 
-let print_kernel (k: d_kernel) : unit =
-  PPrint.print_doc (kernel_to_s k)
+let def_to_s (d:d_def) : PPrint.t list =
+  let open PPrint in
+  match d with
+  | Declaration d -> [Line (Cast.type_to_str d.ty ^ " " ^ var_name d.name ^ ";")]
+  | Kernel k -> kernel_to_s k
 
-let print_stmt s =
-  PPrint.print_doc (stmt_to_s s)
+let program_to_s (p:d_program) : PPrint.t list =
+  List.concat_map def_to_s p
+
+let print_program (p:d_program) : unit =
+  PPrint.print_doc (program_to_s p)
 

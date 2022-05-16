@@ -6,28 +6,25 @@ let analyze j : Imp.p_kernel list =
   let open Indexflow in
   let open Cast in
   let open D_to_imp in
-  match Cast.parse_kernels j with
-  | Ok ks ->
-      ks
-      |> List.map (fun k ->
-          Cast.print_kernel k;
-          print_endline "------";
-          let k = Dlang.rewrite_kernel k in
-            Dlang.print_kernel k;
+  match Cast.parse_program j with
+  | Ok k ->
+    Cast.print_program k;
+    print_endline "------";
+    let k = Dlang.rewrite_program k in
+      Dlang.print_program k;
 (*             (match Indexflow.types_stmt Indexflow.Typing.make k.code with
-            | Ok _ -> 
-              print_endline "OK!"
-            | Error e -> Indexflow.print_s_error e;
-              prerr_endline "CHECKME";
-              exit (-1)
-            );
- *)         print_endline "-------";
-            (match D_to_imp.parse_kernel k with
-            | Ok k -> k
-            | Error e ->
-              D_to_imp.print_error e;
-              exit(-1)
-            )
+      | Ok _ -> 
+        print_endline "OK!"
+      | Error e -> Indexflow.print_s_error e;
+        prerr_endline "CHECKME";
+        exit (-1)
+      );
+*)         print_endline "-------";
+      (match D_to_imp.parse_program k with
+      | Ok k -> k
+      | Error e ->
+        D_to_imp.print_error e;
+        exit(-1)
       )
 
   | Error e ->

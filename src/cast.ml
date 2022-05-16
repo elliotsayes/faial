@@ -6,13 +6,8 @@ type json = Yojson.Basic.t
 type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
-(* Monadic let *)
-let (let*) = Result.bind
-(* Monadic pipe *)
-let (>>=) = Result.bind
-
 type c_type = json
-
+type c_var = {name: variable; ty: c_type}
 type c_exp =
   | CharacterLiteral of int
   | ArraySubscriptExpr of c_array_subscript
@@ -21,42 +16,20 @@ type c_exp =
   | ConditionalOperator of {cond: c_exp; then_expr: c_exp; else_expr: c_exp; ty: c_type}
   | CXXConstructExpr of {args: c_exp list; ty: c_type}
   | CXXBoolLiteralExpr of bool
-  | CXXMethodDecl of {name: variable; ty: c_type}
+  | CXXMethodDecl of c_var
   | CXXOperatorCallExpr of {func: c_exp; args: c_exp list; ty: c_type}
   | FloatingLiteral of float
-  | FunctionDecl of {name: variable; ty: c_type}
+  | FunctionDecl of c_var
   | IntegerLiteral of int
-  | NonTypeTemplateParmDecl of {name: variable; ty: c_type}
+  | NonTypeTemplateParmDecl of c_var
   | MemberExpr of {name: string; base: c_exp; ty: c_type}
-  | ParmVarDecl of {name: variable; ty: c_type}
+  | ParmVarDecl of c_var
   | UnaryOperator of {opcode: string; child: c_exp; ty: c_type}
-  | VarDecl of {name: variable; ty: c_type}
-  | EnumConstantDecl of {name: variable; ty: c_type}
+  | VarDecl of c_var
+  | EnumConstantDecl of c_var
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
 and c_binary = {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
 and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type}
-
-let exp_name = function
-| EnumConstantDecl _ -> "EnumConstantDecl"
-| CharacterLiteral _ -> "CharacterLiteral"
-| ArraySubscriptExpr _ -> "ArraySubscriptExpr"
-| BinaryOperator _ -> "BinaryOperator"
-| CallExpr _ -> "CallExpr"
-| ConditionalOperator _ -> "ConditionalOperator"
-| CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
-| CXXConstructExpr _ -> "CXXConstructExpr"
-| CXXMethodDecl _ -> "CXXMethodDecl"
-| CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
-| FloatingLiteral _ -> "FloatingLiteral"
-| FunctionDecl _ -> "FunctionDecl"
-| IntegerLiteral _ -> "IntegerLiteral"
-| NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
-| MemberExpr _ -> "MemberExpr"
-| ParmVarDecl _ -> "ParmVarDecl"
-| UnaryOperator _ -> "UnaryOperator"
-| VarDecl _ -> "VarDecl"
-| UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
-
 
 type c_init =
   | InitListExpr of {ty: c_type; args: c_exp list}
@@ -96,6 +69,18 @@ type c_kernel = {
   params: c_param list;
 }
 
+type c_def =
+  | Kernel of c_kernel
+  | Declaration of c_var
+
+type c_program = c_def list
+
+(* ------------------------------------------------------------------- *)
+
+(* Monadic let *)
+let (let*) = Result.bind
+(* Monadic pipe *)
+let (>>=) = Result.bind
 
 let rec exp_type (e:c_exp) : c_type =
   match e with
@@ -118,6 +103,29 @@ let rec exp_type (e:c_exp) : c_type =
   | MemberExpr a -> a.ty
   | EnumConstantDecl a -> a.ty
   | UnresolvedLookupExpr a -> Ctype.mk_j_type "?"
+
+
+let exp_name = function
+| EnumConstantDecl _ -> "EnumConstantDecl"
+| CharacterLiteral _ -> "CharacterLiteral"
+| ArraySubscriptExpr _ -> "ArraySubscriptExpr"
+| BinaryOperator _ -> "BinaryOperator"
+| CallExpr _ -> "CallExpr"
+| ConditionalOperator _ -> "ConditionalOperator"
+| CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
+| CXXConstructExpr _ -> "CXXConstructExpr"
+| CXXMethodDecl _ -> "CXXMethodDecl"
+| CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
+| FloatingLiteral _ -> "FloatingLiteral"
+| FunctionDecl _ -> "FunctionDecl"
+| IntegerLiteral _ -> "IntegerLiteral"
+| NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
+| MemberExpr _ -> "MemberExpr"
+| ParmVarDecl _ -> "ParmVarDecl"
+| UnaryOperator _ -> "UnaryOperator"
+| VarDecl _ -> "VarDecl"
+| UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
+
 
 let rec parse_position : json -> Sourceloc.position j_result =
   let open Sourceloc in
@@ -573,7 +581,7 @@ let parse_kernel (j:Yojson.Basic.t) : c_kernel j_result =
     params = ps;
   }
 
-let is_kernel2 (j:Yojson.Basic.t) : bool =
+let is_kernel (j:Yojson.Basic.t) : bool =
   let open Rjson in
   let is_kernel =
     let* o = cast_object j in
@@ -592,11 +600,34 @@ let is_kernel2 (j:Yojson.Basic.t) : bool =
   in
   is_kernel |> unwrap_or false
 
-let is_kernel (j:Yojson.Basic.t) : bool =
+
+let parse_def (j:Yojson.Basic.t) : c_def option j_result =
   let open Rjson in
-  cast_object j
-  >>= with_field "is_kernel" cast_bool
-  |> unwrap_or false
+  let* o = cast_object j in
+  let* k = get_kind o in
+  match k with
+  | "FunctionDecl" ->
+    if is_kernel j then
+      let* k = parse_kernel j in
+      Ok (Some (Kernel k))
+    else Ok None
+  | "VarDecl" ->
+    (match parse_decl j with
+    | Ok d ->
+      Ok (
+        if List.mem c_attr_shared d.attrs
+        then Some (Declaration {name=d.name; ty=d.ty})
+        else None
+      )
+    | _ -> Ok None)
+  | _ -> Ok None
+
+
+let parse_program (j:Yojson.Basic.t) : c_program j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* inner = with_field "inner" (cast_map parse_def) o in
+  Ok (Common.flatten_opt inner)
 
 
 let parse_kernels (j:Yojson.Basic.t) : c_kernel list j_result =
@@ -604,7 +635,7 @@ let parse_kernels (j:Yojson.Basic.t) : c_kernel list j_result =
   cast_object j
     >>= with_field "inner" cast_list
     |> unwrap_or [] (* ignore errors and convert it to an empty list *)
-    |> List.filter is_kernel2 (* only keep things that look like kernels *)
+    |> List.filter is_kernel (* only keep things that look like kernels *)
     |> map_all (* for each kernel convert it into an object and parse it *)
       parse_kernel
       (* Abort the whole thing if we find a single parsing error *)
@@ -737,7 +768,16 @@ let kernel_to_s (k:c_kernel) : PPrint.t list =
   @
   stmt_to_s k.code
 
-let print_kernel (k: c_kernel) : unit =
-  PPrint.print_doc (kernel_to_s k)
+let def_to_s (d:c_def) : PPrint.t list =
+  let open PPrint in
+  match d with
+  | Declaration d -> [Line (type_to_str d.ty ^ " " ^ var_name d.name ^ ";")]
+  | Kernel k -> kernel_to_s k
+
+let program_to_s (p:c_program) : PPrint.t list =
+  List.concat_map def_to_s p
+
+let print_program (p:c_program) : unit =
+  PPrint.print_doc (program_to_s p)
 
 
