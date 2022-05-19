@@ -372,6 +372,7 @@ let stmt_to_s: stmt -> PPrint.t list =
     | Sync -> [Line "sync;"]
     | Assert b -> [Line ("assert (" ^ (b_to_s b) ^ ");")]
     | Acc e -> acc_expr_to_s e
+    | Block [] -> []
     | Block l -> [Line "{"; Block (List.map stmt_to_s l |> List.flatten); Line "}"]
     | LocationAlias l ->
       [Line (
@@ -379,6 +380,7 @@ let stmt_to_s: stmt -> PPrint.t list =
         var_name l.alias_source ^ " + " ^
         n_to_s l.alias_offset ^ ";"
       )]
+    | Decl [] -> []
     | Decl l ->
       let entry (x, l, n) =
         (match l with | Global -> "global" | Local ->  "local") ^ " " ^
@@ -387,6 +389,13 @@ let stmt_to_s: stmt -> PPrint.t list =
       in
       let entries = Common.join "," (List.map entry l) in
       [Line ("decl " ^ entries ^ ";")]
+
+    | If (b, s1, Block []) -> [
+        Line ("if (" ^ b_to_s b ^ ") {");
+        Block (stmt_to_s s1);
+        Line "}";
+      ]
+    
     | If (b, s1, s2) -> [
         Line ("if (" ^ b_to_s b ^ ") {");
         Block (stmt_to_s s1);

@@ -472,7 +472,7 @@ let rec exp_to_s : d_exp -> string =
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
   | CXXConstructExpr c -> "@ctor " ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")" 
   | CXXMethodDecl v -> "@meth " ^ var_name v.name
-  | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
+  | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | VarDecl v -> var_name v.name
   | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name

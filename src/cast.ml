@@ -126,7 +126,6 @@ let exp_name = function
 | VarDecl _ -> "VarDecl"
 | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
 
-
 let rec parse_position : json -> Sourceloc.position j_result =
   let open Sourceloc in
   let open Rjson in
@@ -767,6 +766,11 @@ let stmt_to_s: c_stmt -> PPrint.t list =
       [ Line ("case " ^ exp_to_s c.case ^ ":"); Block(stmt_to_s c.body) ]
     | DefaultStmt d ->
       [ Line ("default:"); Block(stmt_to_s d) ]
+    | IfStmt {cond=b; then_stmt=s1; else_stmt=CompoundStmt[]} -> [
+        Line ("if (" ^ exp_to_s b ^ ") {");
+        Block (stmt_to_s s1);
+        Line "}";
+      ]
     | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} -> [
         Line ("if (" ^ exp_to_s b ^ ") {");
         Block (stmt_to_s s1);
@@ -774,7 +778,9 @@ let stmt_to_s: c_stmt -> PPrint.t list =
         Block (stmt_to_s s2);
         Line "}"
       ]
+    | CompoundStmt [] -> []
     | CompoundStmt l -> [Line "{"; Block (List.concat_map stmt_to_s l); Line "}"]
+    | DeclStmt [] -> []
     | DeclStmt d -> [Line "decl {"; Block (List.map (fun e -> Line (decl_to_s e)) d); Line "}"]
     | SExp e -> [Line (exp_to_s e)]
   in
