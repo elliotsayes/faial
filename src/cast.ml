@@ -167,6 +167,19 @@ let parse_variable (j:json) : variable j_result =
     Ok (LocVariable (l, name)) 
   | None -> Ok (Variable name)
 
+let compound (ty:c_type) (lhs:c_exp) (opcode:string) (rhs:c_exp) : c_exp =
+  BinaryOperator {
+    ty=ty;
+    opcode="=";
+    lhs=lhs;
+    rhs=BinaryOperator {
+      ty=ty;
+      opcode=opcode;
+      lhs=lhs;
+      rhs=rhs
+    }
+  }
+
 let rec parse_exp (j:json) : c_exp j_result =
   let open Rjson in
   let* o = cast_object j in
@@ -278,13 +291,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* lhs, rhs = with_field "inner" (cast_list_2 parse_exp parse_exp) o in
     let* opcode = with_field "opcode" cast_string o in
     (match Common.rsplit '=' opcode with
-      | Some (opcode, "") ->
-        Ok (BinaryOperator {
-          ty=ty;
-          opcode="=";
-          lhs=lhs;
-          rhs=BinaryOperator {ty=ty; opcode=opcode; lhs=lhs; rhs=rhs}
-        })
+      | Some (opcode, "") -> Ok (compound ty lhs opcode rhs)
       | _ -> root_cause "ERROR: parse_exp" j)
 
   | "BinaryOperator" ->
@@ -310,7 +317,26 @@ let rec parse_exp (j:json) : c_exp j_result =
       Ok (func, args)
     ) o in
     let* ty = get_field "type" o in
-    Ok (CXXOperatorCallExpr {func=func; args=args; ty=ty})
+    Ok (
+      match func, args with
+      | CXXMethodDecl {name=n}, [lhs; rhs] when var_name n = "operator=" ->
+        BinaryOperator {lhs=lhs; opcode="="; rhs=rhs; ty=exp_type lhs}
+      | (FunctionDecl {name=n}, [lhs; rhs]) ->
+        (match var_name n with
+          | "operator-=" -> compound ty lhs "-" rhs  
+          | "operator+=" -> compound ty lhs "+" rhs  
+          | "operator*=" -> compound ty lhs "*" rhs
+          | "operator/=" -> compound ty lhs "/" rhs
+          | "operator%=" -> compound ty lhs "%" rhs
+          | "operator^=" -> compound ty lhs "^" rhs
+          | "operator&=" -> compound ty lhs "&" rhs
+          | "operator|=" -> compound ty lhs "|" rhs
+          | "operator<<=" -> compound ty lhs "<<" rhs
+          | "operator>>=" -> compound ty lhs ">>" rhs
+          | _ -> CXXOperatorCallExpr {func=func; args=args; ty=ty}
+        )
+      | _ -> CXXOperatorCallExpr {func=func; args=args; ty=ty}
+    )
 
   | "CallExpr" ->
     let* (func, args) = with_field "inner" (fun j ->
@@ -671,7 +697,7 @@ let rec exp_to_s : c_exp -> string =
   | ArraySubscriptExpr b -> exp_to_s b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
   | CXXConstructExpr c -> "@ctor " ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")" 
-  | CXXOperatorCallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
+  | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
   | CXXMethodDecl v -> "@meth " ^ var_name v.name
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
   | VarDecl v -> var_name v.name
