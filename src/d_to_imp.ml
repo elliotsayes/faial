@@ -332,6 +332,12 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt d_result =
     let* idx = with_msg "read.idx" (cast_map parse_nexp) r.source.index in
     Ok (Imp.Acc (x, {access_index=idx; access_mode=R}))
 
+  | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 
+  | IfStmt {cond=b;then_stmt=ReturnStmt;else_stmt=CompoundStmt[]} ->
+    let* b = with_msg "cond" parse_bexp b in
+    let open Imp in
+    Ok (Imp.Assert (b_not b))
+
   | IfStmt c ->
     let* b = with_msg "if.cond" parse_bexp c.cond in
     let* t = with_msg "if.then" parse_stmt c.then_stmt in
