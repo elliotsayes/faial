@@ -369,7 +369,7 @@ let rec acc_t_cost (acc : 'a acc_t) : nexp =
 
 (* nexp_sum folds a nexp list into a nexp summation *)
 let nexp_sum : nexp list -> nexp =
-  List.fold_left (fun n1 n2 -> Bin (Plus, n1, n2)) (Num 0)
+  List.fold_left n_add (Num 0)
 
 (* shared_cost returns the cost of all accesses to a shared memory array *)
 let shared_cost (k : prog kernel) (v : variable) : nexp =
