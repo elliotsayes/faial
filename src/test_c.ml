@@ -4,7 +4,7 @@ module VarMap = Exp.VarMap
 
 (* ------------------------------------------------------------------------ *)
 
-let warn_kernels (arrays:VarSet.t StringMap.t) (p:Dlang.d_program) : unit =
+let warn_call_use_array (arrays:VarSet.t StringMap.t) (p:Dlang.d_program) : unit =
   ()
 
 
@@ -51,7 +51,7 @@ let () =
     Yojson.Basic.from_channel stdin
     |> analyze
   in
-  warn_kernels (make_array_map k3) k2;
+  warn_call_use_array (make_array_map k3) k2;
   (*
   Cast.print_program k1;
   print_endline "------";
