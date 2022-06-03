@@ -78,7 +78,7 @@ bundle:
     - mkdir bundle
     - cd bundle
     # c-to-json:
-    - wget -nv --content-disposition https://gitlab.com/umb-svl/c-to-json/-/jobs/artifacts/$CI_COMMIT_BRANCH/raw/build/c-to-json-bin.tar.bz2?job=build-rh610
+    - wget -nv --content-disposition https://gitlab.com/umb-svl/c-to-json/-/jobs/artifacts/$CI_COMMIT_BRANCH/raw/build/c-to-json-bin.tar.bz2?job=build
     - tar xf c-to-json-bin.tar.bz2
     - rm c-to-json-bin.tar.bz2
     # faial-infer:
