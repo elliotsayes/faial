@@ -29,7 +29,7 @@ USER faial
 
 WORKDIR /home/faial
 
-ARG OCAML_VERSION=4.11.1
+ARG OCAML_VERSION=4.12.0
 
 # Install OCaml
 RUN \
