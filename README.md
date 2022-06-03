@@ -57,7 +57,7 @@ Next, feel free to access the [`tutorial/`](tutorial/) directory!
 ## Compile-time dependencies
 
 * Rust `>= 1.4.7`
-* OCaml `>= 4.11.0`
+* OCaml `>= 4.12.0`
 * opam `>= 2.0`
 
 
