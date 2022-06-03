@@ -23,7 +23,7 @@ let make_array_map (ks:Imp.p_kernel list) : VarSet.t StringMap.t =
     )
   |> Common.list_to_string_map
 
-let analyze j : Cast.c_program  * Dlang.d_program * (Imp.p_kernel list) =
+let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kernel list) =
   let open Indexflow in
   let open Cast in
   let open D_to_imp in
