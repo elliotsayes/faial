@@ -90,6 +90,7 @@ let main_t =
     (skip_typecheck: bool)
     (sets: string list) : unit
   =
+    let _ = use_bv in (* XXX: use_bv is currently unused, why? *)
     let halt_when b f k : unit =
       if b then (f k; raise Exit)
       else ()

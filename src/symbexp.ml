@@ -236,7 +236,7 @@ let proof_to_s (p:proof) : Serialize.PPrint.t list =
 
 
 
-let print_kernels ((cache, ks) : LocationCache.t * proof Streamutil.stream) : unit =
+let print_kernels ((_, ks) : LocationCache.t * proof Streamutil.stream) : unit =
   let open Serialize in
   print_endline "; symbexp";
   let count = ref 0 in

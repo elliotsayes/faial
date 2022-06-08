@@ -84,7 +84,7 @@ let line_range filename offset count =
   in
   (* Return the first n-lines *)
   let yield_n ic count =
-    List.init count (fun n -> input_line ic)
+    List.init count (fun _ -> input_line ic)
   in
   let ic = open_in filename in
   skip_n ic offset;

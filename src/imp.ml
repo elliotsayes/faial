@@ -154,7 +154,7 @@ module Post = struct
   let filter_locs (locs:array_t VarMap.t) : prog -> prog =
     let rec filter_i (i:inst) : inst =
       match i with
-      | Acc (x, e) -> if VarMap.mem x locs then i else Skip
+      | Acc (x, _) -> if VarMap.mem x locs then i else Skip
       | Skip -> Skip
       | Sync -> Sync
       | If (b, p1, p2) -> If (b, filter_p p1, filter_p p2)
@@ -225,7 +225,7 @@ module Post = struct
       | Loop p ->
         let (p, st) = inline_p st p in
         [Loop p], st
-      | Decl (x, h, Some n, p) ->
+      | Decl (x, _, Some n, p) ->
         let n = n_subst st n in 
         let st = SubstAssoc.put st x n  in
         inline_p st p
@@ -311,7 +311,7 @@ let post_to_proto (p: Post.prog) : Proto.prog =
     | Loop p ->
       [Loop (mk_range (var_make "X?") (Num 2), post_to_proto_p p)]
     | Decl (_, _, Some _, _) -> failwith "Run inline_decl first!"
-    | Decl (x, h, None, p) -> post_to_proto_p p
+    | Decl (_, _, None, p) -> post_to_proto_p p
   and post_to_proto_p (p:Post.prog) : Proto.prog =
     match p with
     | [] -> []

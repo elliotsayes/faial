@@ -41,7 +41,7 @@ let take (n:int) (s:'a stream) : 'a list =
     | Exit -> List.rev !data
 
 let empty : 'a stream = {
-        stream_run = fun handler -> ()
+        stream_run = fun _ -> ()
     }
 
 let one (x:'a) : 'a stream = {

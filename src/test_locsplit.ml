@@ -22,8 +22,8 @@ let y_acc = UAcc (y, write)
 let assert_filter i (expected:u_inst option) =
   let given = filter_by_location x i in
   let msg = match expected, given with
-  | Some l, None -> "given none, expecting:"
-  | None, Some l -> "expecting none, given:"
+  | Some _, None -> "given none, expecting:"
+  | None, Some _ -> "expecting none, given:"
   | Some l1, Some l2 -> "expecting:\n" ^ u_prog_to_string [l1] ^
     "\ngiven:\n" ^ u_prog_to_string [l2]
   | None, None -> ""

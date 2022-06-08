@@ -207,7 +207,7 @@ let range_last (r:range) : nexp =
     n_plus
       (n_minus ub s)
       (n_mod (n_minus lb ub) s)
-  | StepName pred_name ->
+  | StepName _ ->
     n_mult lb (step_trunc r.range_step (n_div ub lb))
 
 let range_inc (r:range) : range =

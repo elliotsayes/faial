@@ -101,7 +101,7 @@ module BarrierIntervalHash =
 
 module BITable = Hashtbl.Make(BarrierIntervalHash)
 
-let translate (ks: a_prog kernel stream) (expect_typing_fail:bool) : u_kernel stream =
+let translate (ks: a_prog kernel stream) (_:bool) : u_kernel stream =
   let translate_k (k: a_prog kernel) : u_kernel stream =
     let p_to_k ((bi,locations):(barrier_interval * VarSet.t)) : u_kernel =
       (* Check for undefs *)
