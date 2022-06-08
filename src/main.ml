@@ -117,7 +117,7 @@ let main_t =
         then begin
           safe_run (fun () ->
             let ks = Yojson.Basic.from_channel ic
-              |> Parsejs.parse_kernels.run
+              |> Parsejs.(parse_kernels.run)
             in
             if cmd = Parse then
               (List.iter Imp.print_kernel ks;

@@ -36,6 +36,7 @@ let free_names_list f l fns =
   List.fold_right f l fns
 
 let rec free_names_inst (i:Proto.inst) (fns:VarSet.t) : VarSet.t =
+  let open Proto in
   match i with
   | Sync -> fns
   | Acc (_, a) -> free_names_access a fns
@@ -51,6 +52,7 @@ and free_names_proto (p:Proto.prog) (fns:VarSet.t) : VarSet.t =
   free_names_list free_names_inst p fns
 
 let rec free_locs_inst (i:Proto.inst) (fns:VarSet.t) =
+  let open Proto in
   match i with
   | Sync
     -> fns

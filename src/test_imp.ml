@@ -27,6 +27,7 @@ let tests = "test_predicates" >::: [
     (* Translate: *)
     let p : Post.prog = p |> imp_to_post in
     (* Test: *)
+    let open Imp.Post in
     (match p with
     | [
         Decl (_, Local, Some e1,[ (* local id = 32 + id; *)
@@ -49,13 +50,14 @@ let tests = "test_predicates" >::: [
     let id = var_make "id" in
     let sq = var_make "s_Q" in
     let p : Post.prog = [
-        Decl (id, Local, Some (n_plus (Num 32) (Var id)),[ (* local id = 32 + id; *)
-          Acc (sq, {access_index=[Var id]; access_mode = W}) (* rw s_Q[id]; *)
-        ])
+      let open Post in
+      Decl (id, Local, Some (n_plus (Num 32) (Var id)),[ (* local id = 32 + id; *)
+        Acc (sq, {access_index=[Var id]; access_mode = W}) (* rw s_Q[id]; *)
+      ])
     ] in
     let p : Post.prog = Post.inline_decls p in
     match p with
-    | [Acc (_, {access_index=[e]; access_mode = W}) (* rw s_Q[32 + id]; *)
+    | [Post.Acc (_, {access_index=[e]; access_mode = W}) (* rw s_Q[32 + id]; *)
       ] ->
       assert_nexp (n_plus (Num 32) (Var id)) e;
       ()
@@ -87,6 +89,7 @@ let tests = "test_predicates" >::: [
     (* Test: *)
     (match p with
     | [
+       Post.(
         Decl (v1, Local, None,[ (*  local threadIdx.x; *)
           Decl (v2, Local, Some v2_e, (* local id = threadIdx.x; *)
             [
@@ -96,7 +99,7 @@ let tests = "test_predicates" >::: [
               ])
             ]
           )
-        ])
+        ]))
       ] when v1 = tid && v2 = id && v3 = id
       ->
       let inc e = n_plus (Num 32) e in
@@ -137,17 +140,19 @@ let tests = "test_predicates" >::: [
       |> post_to_proto
     in
     (* Test: *)
-    (match p with
-    | [
-        Acc (_, {access_index=[e1]; _});
-        Acc (_, {access_index=[e2]; _})] ->
-      let inc e = n_plus (Num 32) e in
-      let tid = Var tid in
-      assert_nexp tid e1;
-      assert_nexp (inc tid) e2;
-      ()
-    | _ -> assert false
-    );
+    begin
+      let open Proto in
+      match p with
+      | [
+          Acc (_, {access_index=[e1]; _});
+          Acc (_, {access_index=[e2]; _})] ->
+        let inc e = n_plus (Num 32) e in
+        let tid = Var tid in
+        assert_nexp tid e1;
+        assert_nexp (inc tid) e2;
+        ()
+      | _ -> assert false
+    end;
     ()
   );
   "example1" >:: (fun _ ->
@@ -194,19 +199,21 @@ let tests = "test_predicates" >::: [
       |> post_to_proto
     in
     (* Test: *)
-    (match p with
-    | [
-        Acc (_, {access_index=[e1]; _});
-        Acc (_, {access_index=[e2]; _});
-        Acc (_, {access_index=[e3]; _})] ->
-      let tid = Var (var_make "threadIdx.x") in
-      let inc e = n_plus (Num 32) e in
-      assert_nexp tid e1;
-      assert_nexp (inc tid) e2;
-      assert_nexp (inc (inc tid)) e3;
-      ()
-    | _ -> assert false
-    );
+    begin
+      let open Proto in
+      match p with
+      | [
+          Acc (_, {access_index=[e1]; _});
+          Acc (_, {access_index=[e2]; _});
+          Acc (_, {access_index=[e3]; _})] ->
+        let tid = Var (var_make "threadIdx.x") in
+        let inc e = n_plus (Num 32) e in
+        assert_nexp tid e1;
+        assert_nexp (inc tid) e2;
+        assert_nexp (inc (inc tid)) e3;
+        ()
+      | _ -> assert false
+    end;
     ()
 
   );

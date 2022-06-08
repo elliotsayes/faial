@@ -275,12 +275,12 @@ end
 let imp_to_post (s:stmt) : Post.prog =
   let rec imp_to_post_s (s:stmt) : Post.prog =
     match s with
-    | Sync -> [Sync]
-    | Acc e -> [Acc e]
+    | Sync -> [Post.Sync]
+    | Acc e -> [Post.Acc e]
     | Block p -> imp_to_post_p p
-    | If (b, s1, s2) -> [If (b, imp_to_post_p [s1], imp_to_post_p [s2])]
-    | For (r, s) -> [For (r, imp_to_post_p [s])]
-    | Loop s -> [Loop (imp_to_post_p [s])]
+    | If (b, s1, s2) -> [Post.If (b, imp_to_post_p [s1], imp_to_post_p [s2])]
+    | For (r, s) -> [Post.For (r, imp_to_post_p [s])]
+    | Loop s -> [Post.Loop (imp_to_post_p [s])]
     (* Handled in the context of a prog *)
     | Assert _ -> failwith "unsupported"
     | LocationAlias _ -> failwith "unsupported"
@@ -288,11 +288,11 @@ let imp_to_post (s:stmt) : Post.prog =
   and imp_to_post_p (p:prog) : Post.prog =
     match p with
     | [] -> []
-    | Assert b :: p -> [If (b, imp_to_post_p p, [])]
+    | Assert b :: p -> [Post.If (b, imp_to_post_p p, [])]
     | LocationAlias e :: p -> imp_to_post_p p |> Post.loc_subst_p e
     | Decl [] :: p -> imp_to_post_p p
     | Decl ((x,v,o)::l) :: p ->
-      [Decl (x, v, o, imp_to_post_p (Decl l :: p))]
+      [Post.Decl (x, v, o, imp_to_post_p (Decl l :: p))]
     | s :: p ->
       Common.append_tr (imp_to_post_s s) (imp_to_post_p p)
   in
@@ -300,16 +300,17 @@ let imp_to_post (s:stmt) : Post.prog =
 
 let post_to_proto (p: Post.prog) : Proto.prog =
   let rec post_to_proto_i (i:Post.inst) : Proto.prog =
+    let open Post in
     match i with
-    | Sync -> [Sync]
-    | Acc (x,e) -> [Acc (x, e)]
+    | Sync -> [Proto.Sync]
+    | Acc (x,e) -> [Proto.Acc (x, e)]
     | Skip -> []
     | If (b, p1, p2) ->
       Proto.p_cond b (post_to_proto_p p1) @ Proto.p_cond (b_not b) (post_to_proto_p p2)
     | For (r, p) ->
-      [Loop (r, post_to_proto_p p)]
+      [Proto.Loop (r, post_to_proto_p p)]
     | Loop p ->
-      [Loop (mk_range (var_make "X?") (Num 2), post_to_proto_p p)]
+      [Proto.Loop (mk_range (var_make "X?") (Num 2), post_to_proto_p p)]
     | Decl (_, _, Some _, _) -> failwith "Run inline_decl first!"
     | Decl (_, _, None, p) -> post_to_proto_p p
   and post_to_proto_p (p:Post.prog) : Proto.prog =
