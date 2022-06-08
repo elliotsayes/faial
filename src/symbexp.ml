@@ -194,7 +194,7 @@ let h_prog_to_bexp
     |> b_and_ex
   in
   (* The dimention is the index count *)
-  let rec get_dim (l:cond_access list) : int =
+  let get_dim (l:cond_access list) : int =
     match l with
     | [] -> failwith "Phase split should not generate empty phases!"
     | c :: _ -> List.length c.ca_access.access_index

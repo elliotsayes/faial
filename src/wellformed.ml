@@ -80,7 +80,7 @@ let u_seq (u1:u_prog) (u2:u_prog) =
 
 (* Given a regular program, return a well-formed one *)
 let make_well_formed (p:Proto.prog) : w_prog Streamutil.stream =
-  let rec inline_cond (b:bexp) (w:w_prog) : w_prog =
+  let inline_cond (b:bexp) (w:w_prog) : w_prog =
     let b = Constfold.b_opt b in
     let rec i_inline (w:w_inst) : w_prog =
       match w with
@@ -100,7 +100,7 @@ let make_well_formed (p:Proto.prog) : w_prog Streamutil.stream =
     | SLoop (c2, r, w1, c3) :: w2 -> SLoop (u_seq c c2, r, w1, c3) :: w2
     | [] -> []
   in
-  let rec w_add (c:u_inst) (w:w_prog) =
+  let w_add (c:u_inst) (w:w_prog) =
     match w with
     | SSync c2 :: w -> SSync (c :: c2) :: w
     | SLoop (c2, r, w1, c3) :: w2 -> SLoop (c::c2, r, w1, c3) :: w2
