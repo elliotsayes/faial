@@ -83,6 +83,49 @@ type d_program = d_def list
 
 
 (* ------------------------------------- *)
+let rec d_stmt_rec (f: d_stmt -> unit) (stmt: d_stmt): unit = let loop = d_stmt_rec f in
+ f(stmt); match stmt with
+    | IfStmt {cond: d_exp; then_stmt: d_stmt; else_stmt: d_stmt} -> List.iter loop [then_stmt; else_stmt]
+    | WhileStmt {cond: d_exp; body: d_stmt} -> loop body
+    | DoStmt {cond: d_exp; body: d_stmt} -> loop body
+    | SwitchStmt {cond: d_exp; body: d_stmt} -> loop body
+    | CaseStmt {case: d_exp; body: d_stmt} -> loop body
+    | ForStmt {init: d_for_init option; cond: d_exp option; inc: d_exp option; body: d_stmt} -> loop body
+    | CompoundStmt stmts -> List.iter loop stmts
+    | _ -> ()
+
+let rec d_exp_rec (f: d_exp -> unit) (expr: d_exp): unit = let loop = d_exp_rec f in
+ f(expr); match expr with
+  | BinaryOperator {opcode: string; lhs: d_exp; rhs: d_exp; ty: d_type} -> List.iter loop [lhs; rhs]
+  | CallExpr {func: d_exp; args: d_exp list; ty: d_type} -> List.iter loop (List.append [func] args)
+  | ConditionalOperator {cond: d_exp; then_expr: d_exp; else_expr: d_exp; ty: d_type} ->
+      List.iter loop [cond; then_expr; else_expr]
+  | CXXConstructExpr {args: d_exp list; ty: d_type} -> List.iter loop args
+  | CXXOperatorCallExpr {func: d_exp; args: d_exp list; ty: d_type} ->
+      List.iter loop (List.append [func] args)
+  | MemberExpr {name: string; base: d_exp; ty: d_type} -> loop base
+  | UnaryOperator { opcode: string; child: d_exp; ty: d_type} -> loop child
+  | _ -> ()
+
+let for_dexp_in_dstmt (f: d_exp -> unit) (stmt: d_stmt) = let traversal = d_exp_rec f in
+  d_stmt_rec (fun stmt' ->
+    match stmt' with
+      | WriteAccessStmt writeStmt -> traversal writeStmt.source
+      | ReadAccessStmt readStmt -> List.iter traversal readStmt.source.index
+      | IfStmt ifStmt -> traversal ifStmt.cond
+      | DeclStmt decls -> List.iter (fun (decl: d_decl) -> decl.init |> Option.iter (fun decl -> match decl with
+          | InitListExpr initListExpr -> List.iter traversal initListExpr.args
+          | IExp d_exp' -> traversal d_exp'
+          | _ -> ())
+        ) decls
+      | WhileStmt whileStmt -> traversal whileStmt.cond
+      | ForStmt d_for' -> Option.iter traversal d_for'.cond
+      | DoStmt doStmt -> traversal doStmt.cond
+      | SwitchStmt switchStmt -> traversal switchStmt.cond
+      | CaseStmt caseStmt -> traversal caseStmt.case
+      | SExp d_exp' -> traversal d_exp'
+      | _ -> ()
+  ) stmt
 
 
 let exp_name = function
