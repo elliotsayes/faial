@@ -1,0 +1,11 @@
+
+(ocamllex
+  (modules scan))
+
+(menhir
+  (modules parse2))
+
+(library
+ (name faial)
+ (libraries yojson ANSITerminal z3 )
+ )
