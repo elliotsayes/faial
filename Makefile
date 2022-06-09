@@ -1,41 +1,42 @@
-OCB_FLAGS   = -use-ocamlfind -use-menhir -I src -no-links
+OCB_FLAGS   = -use-ocamlfind -use-menhir -I lib -no-links
 OCB = ocamlbuild $(OCB_FLAGS)
 
 GITLAB_CACHE = /tmp/gitlab-cache
 
-BUILD = _build/src
+BIN = _build/bin
+TEST = _build/test
 
-all: native byte
+all: native
 
 clean:
 	$(OCB) -clean
 
 cast:
-	$(OCB) test_c.native
+	$(OCB) -I bin test_c.native
 
 native: build-tests
-	$(OCB) main.native
-	cp $(BUILD)/main.native faial-bin
+	$(OCB) -I bin main.native
+	cp $(BIN)/main.native faial-bin
 
 bank-conflicts:
-	$(OCB) -package z3 -tag thread bankconflicts.native
-	cp $(BUILD)/bankconflicts.native bank-conflicts
+	$(OCB) -I bin -package z3 -tag thread bankconflicts.native
+	cp $(BIN)/bankconflicts.native bank-conflicts
 
 build-tests:
-	$(OCB) test_imp.native
-	$(OCB) test_common.native
-	$(OCB) test_locsplit.native
-	$(OCB) test_streamutil.native
-	$(OCB) test_predicates.native
-	$(OCB) test_parsejs.native
+	$(OCB) -I test test_imp.native
+	$(OCB) -I test test_common.native
+	$(OCB) -I test test_locsplit.native
+	$(OCB) -I test test_streamutil.native
+	$(OCB) -I test test_predicates.native
+	$(OCB) -I test test_parsejs.native
 
 test: build-tests
-	$(BUILD)/test_imp.native
-	$(BUILD)/test_common.native
-	$(BUILD)/test_streamutil.native
-	$(BUILD)/test_locsplit.native
-	$(BUILD)/test_predicates.native
-	$(BUILD)/test_parsejs.native
+	$(TEST)/test_imp.native
+	$(TEST)/test_common.native
+	$(TEST)/test_streamutil.native
+	$(TEST)/test_locsplit.native
+	$(TEST)/test_predicates.native
+	$(TEST)/test_parsejs.native
 
 ui:
 	(cd faial-ui/ && cargo b --release)
@@ -51,13 +52,10 @@ gitlab-bin:
 
 gitlab: gitlab-test gitlab-bin
 
-byte:
-	$(OCB) main.byte
-
 profile:
-	$(OCB) -tag profile main.native
+	$(OCB) -I bin -tag profile main.native
 
 debug:
-	$(OCB) -tag debug main.byte
+	$(OCB) -I bin -tag debug main.byte
 
 .PHONY: all clean byte native profile debug sanity test ui bank-conflicts

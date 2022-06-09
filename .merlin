@@ -1,3 +1,5 @@
-S src/**
+S lib/**
+S bin/**
+S test/**
 B _build/**
 PKG cmdliner ANSITerminal yojson oUnit
