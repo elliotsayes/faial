@@ -3,10 +3,15 @@ module VarSet = Exp.VarSet
 module VarMap = Exp.VarMap
 
 (* ------------------------------------------------------------------------ *)
-
 let warn_call_use_array (arrays:VarSet.t StringMap.t) (p:Dlang.d_program) : unit =
-  ()
-
+  let known_name = fun name -> StringMap.mem name arrays in
+  p |> List.filter_map (fun d_def -> match d_def with
+    | Dlang.Kernel kernel -> if known_name kernel.name then Some kernel else None
+    | _ -> None
+  ) |> List.iter (fun (kernel: Dlang.d_kernel) -> kernel.code |> (Dlang.for_dexp_in_dstmt (fun d_exp -> match d_exp with
+    | CXXOperatorCallExpr _ | CallExpr _-> print_endline kernel.name
+    | _ -> ()
+  )))
 
 let make_array_map (ks:Imp.p_kernel list) : VarSet.t StringMap.t =
   ks
