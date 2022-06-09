@@ -1,10 +1,6 @@
-open Hash_rt
-open Ppx_compare_lib.Builtin
-
 type variable =
   | LocVariable of Sourceloc.location * string
   | Variable of string
-  [@@deriving hash, compare]
 
 let var_make (name:string) : variable = Variable name
 
@@ -72,12 +68,10 @@ type nbin =
   | Mult
   | Div
   | Mod
-  [@@deriving hash, compare]
 
 type task =
   | Task1
   | Task2
-  [@@deriving hash, compare]
 
 let task_to_string (t:task) : string =
   match t with
@@ -95,12 +89,10 @@ type nrel =
   | NLe
   | NGt
   | NGe
-  [@@deriving hash, compare]
 
 type brel =
   | BOr
   | BAnd
-  [@@deriving hash, compare]
 
 type nexp =
   | NUnknown
@@ -110,7 +102,7 @@ type nexp =
   | Proj of task * variable
   | NCall of string * nexp
   | NIf of bexp * nexp * nexp
-  [@@deriving hash, compare]
+
 
 and bexp =
   | BUnknown
@@ -119,7 +111,6 @@ and bexp =
   | BRel of brel * bexp * bexp
   | BNot of bexp
   | Pred of string * nexp
-  [@@deriving hash, compare]
 
 let rec n_is_unknown (e:nexp) =
   match e with
@@ -328,13 +319,13 @@ let rec b_or_ex l =
   | x::l -> b_or x (b_or_ex l)
 
 
-type step_expr = Default of nexp | StepName of string [@@deriving hash, compare]
+type step_expr = Default of nexp | StepName of string
 type range = {
   range_var: variable;
   range_lower_bound: nexp;
   range_upper_bound: nexp;
   range_step: step_expr;
-} [@@deriving hash, compare]
+}
 
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
@@ -384,14 +375,12 @@ let range_first (r:range) : bexp =
 type mode =
   | R
   | W
-  [@@deriving hash, compare]
 
 (* An access pairs the index-expression with the access mode (R/W) *)
 type access = {access_index: nexp list; access_mode: mode}
-  [@@deriving hash, compare]
 
 (* Access expression *)
-type acc_expr = variable * access [@@deriving hash, compare]
+type acc_expr = variable * access
 
 let distinct (idx:variable list) : bexp =
   b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)

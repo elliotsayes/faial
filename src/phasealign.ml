@@ -4,8 +4,6 @@ open Common
 open Serialize
 open Subst
 open Streamutil
-open Hash_rt
-open Ppx_compare_lib.Builtin
 open Wellformed
 
 type a_inst =

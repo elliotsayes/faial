@@ -1,6 +1,4 @@
 open Exp
-open Hash_rt
-open Ppx_compare_lib.Builtin
 open Serialize
 
 (* The source instruction uses the base defined above *)
@@ -9,10 +7,9 @@ type inst =
   | Sync
   | Cond of bexp * inst list
   | Loop of range * inst list
-  [@@deriving hash, compare]
 
 (* The source program *)
-type prog = inst list [@@deriving hash, compare]
+type prog = inst list
 
 type 'a kernel = {
   (* The kernel name *)

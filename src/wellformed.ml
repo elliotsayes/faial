@@ -4,17 +4,15 @@ open Common
 open Serialize
 open Subst
 open Streamutil
-open Hash_rt
-open Ppx_compare_lib.Builtin
 
 type u_inst =
   | UAssert of bexp
   | UAcc of acc_expr
   | UCond of bexp * u_inst list
   | ULoop of range * u_inst list
-   [@@deriving hash, compare]
 
-type u_prog = u_inst list [@@deriving hash, compare]
+
+type u_prog = u_inst list
 
 type w_inst =
   | SSync of u_prog
