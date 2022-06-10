@@ -84,7 +84,7 @@ type d_program = d_def list
 
 (* ------------------------------------- *)
 let rec d_stmt_rec (f: d_stmt -> unit) (stmt: d_stmt): unit = let loop = d_stmt_rec f in
- f(stmt); match stmt with
+ f stmt ; match stmt with
     | IfStmt {cond: d_exp; then_stmt: d_stmt; else_stmt: d_stmt} -> List.iter loop [then_stmt; else_stmt]
     | WhileStmt {cond: d_exp; body: d_stmt} -> loop body
     | DoStmt {cond: d_exp; body: d_stmt} -> loop body
@@ -95,7 +95,7 @@ let rec d_stmt_rec (f: d_stmt -> unit) (stmt: d_stmt): unit = let loop = d_stmt_
     | _ -> ()
 
 let rec d_exp_rec (f: d_exp -> unit) (expr: d_exp): unit = let loop = d_exp_rec f in
- f(expr); match expr with
+ f expr ; match expr with
   | BinaryOperator {opcode: string; lhs: d_exp; rhs: d_exp; ty: d_type} -> List.iter loop [lhs; rhs]
   | CallExpr {func: d_exp; args: d_exp list; ty: d_type} -> List.iter loop (List.append [func] args)
   | ConditionalOperator {cond: d_exp; then_expr: d_exp; else_expr: d_exp; ty: d_type} ->

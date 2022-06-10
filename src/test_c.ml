@@ -5,13 +5,22 @@ module VarMap = Exp.VarMap
 (* ------------------------------------------------------------------------ *)
 let warn_call_use_array (arrays:VarSet.t StringMap.t) (p:Dlang.d_program) : unit =
   let known_name = fun name -> StringMap.mem name arrays in
-  p |> List.filter_map (fun d_def -> match d_def with
-    | Dlang.Kernel kernel -> if known_name kernel.name then Some kernel else None
-    | _ -> None
-  ) |> List.iter (fun (kernel: Dlang.d_kernel) -> kernel.code |> (Dlang.for_dexp_in_dstmt (fun d_exp -> match d_exp with
-    | CXXOperatorCallExpr _ | CallExpr _-> print_endline kernel.name
-    | _ -> ()
-  )))
+  let extract_arg_names = function
+      Dlang.ParmVarDecl d_var -> Some (d_var.name |> Exp.var_name)
+    | Dlang.VarDecl d_var -> Some (d_var.name |> Exp.var_name)
+    | _ -> None in
+  let var_decl_names = fun (args: Dlang.d_exp list) ->
+    args |> List.filter_map extract_arg_names |>  List.filter known_name in
+  p |> List.filter_map (function Dlang.Kernel kernel -> Some kernel | _ -> None)
+    |> List.iter (
+        fun (kernel: Dlang.d_kernel) -> kernel.code
+        |> (Dlang.for_dexp_in_dstmt (function
+               | CXXOperatorCallExpr expr -> expr.args |> var_decl_names |> List.iter print_endline
+               | CallExpr expr -> expr.args |> var_decl_names |> List.iter print_endline
+               | _ -> ()
+             )
+           )
+       )
 
 let make_array_map (ks:Imp.p_kernel list) : VarSet.t StringMap.t =
   ks
@@ -63,4 +72,4 @@ let () =
   Dlang.print_program k2;
   print_endline "-------";
   *)
-  List.iter Imp.print_kernel k3
+  (* List.iter Imp.print_kernel k3 *)
