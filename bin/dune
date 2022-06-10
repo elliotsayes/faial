@@ -5,6 +5,12 @@
  (libraries faial cmdliner))
 
 (executable
+ (public_name test-c)
+ (name test_c)
+ (modules test_c)
+ (libraries faial))
+
+(executable
  (public_name bank-conflicts)
  (name bankconflicts)
  (modules bankconflicts)

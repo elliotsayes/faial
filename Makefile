@@ -1,47 +1,36 @@
-OCB_FLAGS   = -use-ocamlfind -use-menhir -I lib -no-links
-OCB = ocamlbuild $(OCB_FLAGS)
+DUNE = dune
 
 GITLAB_CACHE = /tmp/gitlab-cache
 
-BIN = _build/bin
+BIN = _build/default/bin
 TEST = _build/test
 
-all: native
+all: main
 
 clean:
-	$(OCB) -clean
+	$(DUNE) clean
 
 cast:
-	$(OCB) -I bin test_c.native
+	$(DUNE) build bin/test_c.exe
 
-native: build-tests
-	$(OCB) -I bin main.native
-	cp $(BIN)/main.native faial-bin
+build-test:
+	$(DUNE) build test
+
+main:
+	$(DUNE) build bin/main.exe
+	cp $(BIN)/main.exe faial-bin
 
 bank-conflicts:
-	$(OCB) -I bin -package z3 -tag thread bankconflicts.native
-	cp $(BIN)/bankconflicts.native bank-conflicts
+	$(DUNE) build bin/bankconflicts.exe
+	cp $(BIN)/bankconflicts.exe bank-conflicts
 
-build-tests:
-	$(OCB) -I test test_imp.native
-	$(OCB) -I test test_common.native
-	$(OCB) -I test test_locsplit.native
-	$(OCB) -I test test_streamutil.native
-	$(OCB) -I test test_predicates.native
-	$(OCB) -I test test_parsejs.native
-
-test: build-tests
-	$(TEST)/test_imp.native
-	$(TEST)/test_common.native
-	$(TEST)/test_streamutil.native
-	$(TEST)/test_locsplit.native
-	$(TEST)/test_predicates.native
-	$(TEST)/test_parsejs.native
+test: build-test
+	$(DUNE) runtest
 
 ui:
 	(cd faial-ui/ && cargo b --release)
 
-sys-test: build-tests
+sys-test:
 	@./run-tests.py
 
 gitlab-test:
@@ -52,10 +41,5 @@ gitlab-bin:
 
 gitlab: gitlab-test gitlab-bin
 
-profile:
-	$(OCB) -I bin -tag profile main.native
 
-debug:
-	$(OCB) -I bin -tag debug main.byte
-
-.PHONY: all clean byte native profile debug sanity test ui bank-conflicts
+.PHONY: all clean main cast build-test test ui bank-conflicts sys-test gitlab gitlab-bin gitlab-test
