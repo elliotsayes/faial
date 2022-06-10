@@ -1,4 +1,11 @@
 (executable
- (public_name faial)
+ (public_name faial-bin)
  (name main)
+ (modules main)
  (libraries faial cmdliner))
+
+(executable
+ (public_name bank-conflicts)
+ (name bankconflicts)
+ (modules bankconflicts)
+ (libraries faial))
