@@ -10,6 +10,7 @@ all: native
 
 clean:
 	$(OCB) -clean
+	rm -f faial-bin bank-conflicts proto-to-cuda flores
 
 cast:
 	$(OCB) -I bin test_c.native
@@ -21,6 +22,14 @@ native: build-tests
 bank-conflicts:
 	$(OCB) -I bin -package z3 -tag thread bankconflicts.native
 	cp $(BIN)/bankconflicts.native bank-conflicts
+
+proto-to-cuda:
+	$(OCB) -I bin prototocuda.native
+	cp $(BIN)/prototocuda.native proto-to-cuda
+
+flores:
+	$(OCB) -I bin -package toml -tag thread flores.native
+	cp $(BIN)/flores.native flores
 
 build-tests:
 	$(OCB) -I test test_imp.native
@@ -58,4 +67,4 @@ profile:
 debug:
 	$(OCB) -I bin -tag debug main.byte
 
-.PHONY: all clean byte native profile debug sanity test ui bank-conflicts
+.PHONY: all clean byte native profile debug sanity test ui bank-conflicts proto-to-cuda flores

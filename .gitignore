@@ -3,3 +3,5 @@
 *.cmi
 *.cmo
 /bank-conflicts
+/proto-to-cuda
+/flores
