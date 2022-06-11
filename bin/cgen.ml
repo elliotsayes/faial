@@ -108,3 +108,26 @@ let arr_to_dummy (vs:array_t VarMap.t) : string list =
 
   let print_k (k:prog kernel) : unit =
     PPrint.print_doc (kernel_to_s prog_to_s k)
+
+(* Kernel to TOML conversion *)
+let global_arr_to_tlist (vs:array_t VarMap.t) : Toml.Types.table list =
+  VarMap.bindings vs
+  |> List.map (fun (k,v) -> Toml.Min.of_key_values [Toml.Min.key (var_name k), Toml.Types.TString (arr_type v)])
+
+let global_var_to_tlist (vs:VarSet.t) : Toml.Types.table list =
+  VarSet.elements (VarSet.diff vs thread_globals)
+  |> List.map (fun v -> Toml.Min.of_key_values [Toml.Min.key (var_name v), Toml.Types.TString "int"])
+
+let kernel_to_toml (k:prog kernel) =
+  let global_arr = (VarMap.filter (fun k -> fun v ->
+  v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
+  let open Toml.Min in
+  let open Toml.Types in
+  of_key_values
+  [
+    key "pass", TBool true;
+    key "includes", TArray (NodeInt []);
+    key "body", TString ("\n" ^ PPrint.doc_to_string [PPrint.Block (prog_to_s k.kernel_code)]);
+    key "arrays", TArray (NodeTable (global_arr_to_tlist global_arr));
+    key "scalars", TArray (NodeTable (global_var_to_tlist k.kernel_global_variables));
+  ]

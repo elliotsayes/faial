@@ -24,11 +24,11 @@ bank-conflicts:
 	cp $(BIN)/bankconflicts.native bank-conflicts
 
 proto-to-cuda:
-	$(OCB) -I bin prototocuda.native
+	$(OCB) -I bin -package toml -tag thread cgen.native prototocuda.native
 	cp $(BIN)/prototocuda.native proto-to-cuda
 
 flores:
-	$(OCB) -I bin -package toml -tag thread flores.native
+	$(OCB) -I bin -package toml -tag thread cgen.native flores.native
 	cp $(BIN)/flores.native flores
 
 build-tests:

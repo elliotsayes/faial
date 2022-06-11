@@ -1,6 +1,5 @@
 open Proto
 open Cmdliner
-open Cgen
 
 (* ----------------- kernel functions -------------------- *)
 
@@ -78,7 +77,7 @@ let main_t =
     (use_json: bool)
     : unit =
   let print_cuda (k : i_kernel) : unit =
-    List.iter (fun k -> print_k k) (i_kernel_to_p_kernel k)
+    List.iter (fun k -> Cgen.print_k k) (i_kernel_to_p_kernel k)
   in
   try open_i_kernel_with use_json fname print_cuda with
   | Common.ParseError b ->
