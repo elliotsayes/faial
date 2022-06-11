@@ -67,17 +67,27 @@ let main_t =
     Arg.(value & flag & info ["json"] ~doc)
   in
 
+  let output_toml =
+    let doc = "Output a TOML file" in
+    Arg.(value & flag & info ["output-toml"] ~doc)
+  in
+
   let get_fname =
     let doc = "The path $(docv) of the GPU contract." in
     Arg.(value & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
   in
 
+  let open Cgen in
   let do_main
     (fname: string option)
     (use_json: bool)
+    (output_toml: bool)
     : unit =
   let print_cuda (k : i_kernel) : unit =
-    List.iter (fun k -> Cgen.print_k k) (i_kernel_to_p_kernel k)
+    if output_toml then
+      List.iter (fun k -> print_toml (kernel_to_toml k)) (i_kernel_to_p_kernel k)
+    else
+      List.iter (fun k -> print_k k) (i_kernel_to_p_kernel k)
   in
   try open_i_kernel_with use_json fname print_cuda with
   | Common.ParseError b ->
@@ -87,6 +97,7 @@ let main_t =
     const do_main
     $ get_fname
     $ use_json
+    $ output_toml
   )
 
 let info =

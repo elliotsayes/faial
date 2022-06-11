@@ -84,30 +84,30 @@ let arr_to_dummy (vs:array_t VarMap.t) : string list =
   
 
 (* Serialization of the kernel *)
-  let kernel_to_s (f:'a -> PPrint.t list) (k:'a kernel) : PPrint.t list =
-    let open PPrint in
-    let arrays = (VarMap.partition (fun k -> fun v ->
-      v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
-    let global_arr = global_arr_to_l (fst arrays) in
-    let global_var = global_var_to_l k.kernel_global_variables in
-    let dummy_var = arr_to_dummy k.kernel_arrays in
-    let shared_arr = arr_to_shared (snd arrays) in
-    let funct_protos = arr_to_proto k.kernel_arrays in
-    [
-      Line "__global__";
-      Line ("void " ^ k.kernel_name ^ "(" ^ Common.join
-      ", " (global_arr @ global_var) ^ ")");
-      Line "{";
-      Line (Common.join "\n" (dummy_var @ shared_arr @ funct_protos));
-      Block (f k.kernel_code);
-      Line "}"
-    ]
+let kernel_to_s (f:'a -> PPrint.t list) (k:'a kernel) : PPrint.t list =
+  let open PPrint in
+  let arrays = (VarMap.partition (fun k -> fun v ->
+    v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
+  let global_arr = global_arr_to_l (fst arrays) in
+  let global_var = global_var_to_l k.kernel_global_variables in
+  let dummy_var = arr_to_dummy k.kernel_arrays in
+  let shared_arr = arr_to_shared (snd arrays) in
+  let funct_protos = arr_to_proto k.kernel_arrays in
+  [
+    Line "__global__";
+    Line ("void " ^ k.kernel_name ^ "(" ^ Common.join
+    ", " (global_arr @ global_var) ^ ")");
+    Line "{";
+    Line (Common.join "\n" (dummy_var @ shared_arr @ funct_protos));
+    Block (f k.kernel_code);
+    Line "}"
+  ]
     
-  let print_kernel (f:'a -> PPrint.t list) (k: 'a kernel) : unit =
-    PPrint.print_doc (kernel_to_s f k)
+let print_kernel (f:'a -> PPrint.t list) (k: 'a kernel) : unit =
+  PPrint.print_doc (kernel_to_s f k)
 
-  let print_k (k:prog kernel) : unit =
-    PPrint.print_doc (kernel_to_s prog_to_s k)
+let print_k (k:prog kernel) : unit =
+  PPrint.print_doc (kernel_to_s prog_to_s k)
 
 (* Kernel to TOML conversion *)
 let global_arr_to_tlist (vs:array_t VarMap.t) : Toml.Types.table list =
@@ -118,7 +118,7 @@ let global_var_to_tlist (vs:VarSet.t) : Toml.Types.table list =
   VarSet.elements (VarSet.diff vs thread_globals)
   |> List.map (fun v -> Toml.Min.of_key_values [Toml.Min.key (var_name v), Toml.Types.TString "int"])
 
-let kernel_to_toml (k:prog kernel) =
+let kernel_to_toml (k:prog kernel) : Toml.Types.table =
   let global_arr = (VarMap.filter (fun k -> fun v ->
   v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
   let open Toml.Min in
@@ -127,7 +127,10 @@ let kernel_to_toml (k:prog kernel) =
   [
     key "pass", TBool true;
     key "includes", TArray (NodeInt []);
-    key "body", TString ("\n" ^ PPrint.doc_to_string [PPrint.Block (prog_to_s k.kernel_code)]);
+    key "body", TString (PPrint.doc_to_string (kernel_to_s prog_to_s k));
     key "arrays", TArray (NodeTable (global_arr_to_tlist global_arr));
     key "scalars", TArray (NodeTable (global_var_to_tlist k.kernel_global_variables));
   ]
+
+let print_toml (toml:Toml.Types.table) : unit =
+  print_string (Toml.Printer.string_of_table toml)
