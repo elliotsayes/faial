@@ -67,39 +67,40 @@ let global_var_to_l (vs:VarSet.t) : string list =
   |> List.map (fun v -> "int " ^ var_name v)
 
 (* Helper functions for making kernel variable declarations/prototypes *)
-let arr_to_proto (vs:array_t VarMap.t) : string list =
+let arr_to_proto (vs:array_t VarMap.t) : PPrint.t list =
   VarMap.bindings vs
-  |> List.map (fun (k,v) -> "    extern " ^
-  arr_type v ^ " " ^ var_to_dummy k ^ "_w();")
+  |> List.map (fun (k,v) -> PPrint.Line ("extern " ^
+  arr_type v ^ " " ^ var_to_dummy k ^ "_w();"))
 
-let arr_to_shared (vs:array_t VarMap.t) : string list = 
+let arr_to_shared (vs:array_t VarMap.t) : PPrint.t list = 
   VarMap.bindings vs
-  |> List.map (fun (k,v) -> "    " ^ (match v.array_size with
+  |> List.map (fun (k,v) -> PPrint.Line ((match v.array_size with
   | [] -> "extern " | _ -> "") ^ "__shared__ " ^ arr_type v ^ " " ^
-  var_name k ^ idx_to_s string_of_int v.array_size ^ ";")
+  var_name k ^ idx_to_s string_of_int v.array_size ^ ";"))
 
-let arr_to_dummy (vs:array_t VarMap.t) : string list =
+let arr_to_dummy (vs:array_t VarMap.t) : PPrint.t list =
   VarMap.bindings vs
-  |> List.map (fun (k,v) -> "    " ^ arr_type v ^ " " ^ var_to_dummy k ^ ";")
-  
+  |> List.map (fun (k,v) -> PPrint.Line (arr_type v ^ " " ^ var_to_dummy k ^ ";"))
 
 (* Serialization of the kernel *)
+let body_to_s (f:'a -> PPrint.t list) (k:'a kernel) : PPrint.t =
+  let funct_protos = arr_to_proto k.kernel_arrays in
+  let shared_arr = arr_to_shared (VarMap.filter (fun k -> fun v ->
+  v.array_hierarchy = SharedMemory) k.kernel_arrays) in
+  let dummy_var = arr_to_dummy k.kernel_arrays in
+  PPrint.Block (funct_protos @ shared_arr @ dummy_var @ (f k.kernel_code))
+
 let kernel_to_s (f:'a -> PPrint.t list) (k:'a kernel) : PPrint.t list =
   let open PPrint in
-  let arrays = (VarMap.partition (fun k -> fun v ->
-    v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
-  let global_arr = global_arr_to_l (fst arrays) in
+  let global_arr = global_arr_to_l (VarMap.filter (fun k -> fun v ->
+  v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
   let global_var = global_var_to_l k.kernel_global_variables in
-  let dummy_var = arr_to_dummy k.kernel_arrays in
-  let shared_arr = arr_to_shared (snd arrays) in
-  let funct_protos = arr_to_proto k.kernel_arrays in
   [
     Line "__global__";
     Line ("void " ^ k.kernel_name ^ "(" ^ Common.join
     ", " (global_arr @ global_var) ^ ")");
     Line "{";
-    Line (Common.join "\n" (dummy_var @ shared_arr @ funct_protos));
-    Block (f k.kernel_code);
+    (body_to_s f k);
     Line "}"
   ]
     
@@ -112,11 +113,13 @@ let print_k (k:prog kernel) : unit =
 (* Kernel to TOML conversion *)
 let global_arr_to_tlist (vs:array_t VarMap.t) : Toml.Types.table list =
   VarMap.bindings vs
-  |> List.map (fun (k,v) -> Toml.Min.of_key_values [Toml.Min.key (var_name k), Toml.Types.TString (arr_type v)])
+  |> List.map (fun (k,v) -> Toml.Min.of_key_values
+  [Toml.Min.key (var_name k), Toml.Types.TString (arr_type v)])
 
 let global_var_to_tlist (vs:VarSet.t) : Toml.Types.table list =
   VarSet.elements (VarSet.diff vs thread_globals)
-  |> List.map (fun v -> Toml.Min.of_key_values [Toml.Min.key (var_name v), Toml.Types.TString "int"])
+  |> List.map (fun v -> Toml.Min.of_key_values
+  [Toml.Min.key (var_name v), Toml.Types.TString "int"])
 
 let kernel_to_toml (k:prog kernel) : Toml.Types.table =
   let global_arr = (VarMap.filter (fun k -> fun v ->
@@ -127,10 +130,10 @@ let kernel_to_toml (k:prog kernel) : Toml.Types.table =
   [
     key "pass", TBool true;
     key "includes", TArray (NodeInt []);
-    key "body", TString (PPrint.doc_to_string (kernel_to_s prog_to_s k));
+    key "body", TString (PPrint.doc_to_string (Line "" :: [body_to_s prog_to_s k]));
     key "arrays", TArray (NodeTable (global_arr_to_tlist global_arr));
     key "scalars", TArray (NodeTable (global_var_to_tlist k.kernel_global_variables));
   ]
 
-let print_toml (toml:Toml.Types.table) : unit =
-  print_string (Toml.Printer.string_of_table toml)
+let print_toml (t:Toml.Types.table) : unit =
+  print_string (Toml.Printer.string_of_table t)
