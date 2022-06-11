@@ -49,8 +49,8 @@ build-dist:
     - cd "$CI_PROJECT_DIR"
     - rm -f ./target/*/faial
     - eval $(opam config env)
-    - make
-    - make bank-conflicts
+    - dune build --release
+    - cp -Lr _build/install/default/bin/* ./
     - cd faial-ui
     - cargo b --release
     - cp ./target/release/faial ..
@@ -59,10 +59,9 @@ build-dist:
     paths:
       - faial-bin
       - faial
+      - pico
       - README.md
       - LICENSE
-      - bank-conflicts
-      - run-bank-conflicts.sh
 
 bundle:
   stage: deploy
@@ -87,7 +86,7 @@ bundle:
     - rm artifacts.zip
     - mv faial-infer bin/
     # faial:
-    - cp ../faial ../faial-bin  ../bank-conflicts ../run-bank-conflicts.sh bin/
+    - cp ../faial ../faial-bin  ../pico bin/
     - cp ../README.md ../LICENSE  ./
     # display tree & bundle:
     - tree

@@ -20,9 +20,9 @@ main:
 	$(DUNE) build bin/main.exe
 	cp $(BIN)/main.exe faial-bin
 
-bank-conflicts:
-	$(DUNE) build bin/bankconflicts.exe
-	cp $(BIN)/bankconflicts.exe bank-conflicts
+pico:
+	$(DUNE) build bin/pico.exe
+	cp $(BIN)/pico.exe pico
 
 test: build-test
 	$(DUNE) runtest
@@ -42,4 +42,4 @@ gitlab-bin:
 gitlab: gitlab-test gitlab-bin
 
 
-.PHONY: all clean main cast build-test test ui bank-conflicts sys-test gitlab gitlab-bin gitlab-test
+.PHONY: all clean main cast build-test test ui pico sys-test gitlab gitlab-bin gitlab-test

@@ -11,7 +11,7 @@
  (libraries faial))
 
 (executable
- (public_name bank-conflicts)
- (name bankconflicts)
- (modules bankconflicts)
- (libraries faial))
+ (public_name pico)
+ (name pico)
+ (modules pico)
+ (libraries pico cmdliner))

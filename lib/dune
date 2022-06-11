@@ -37,8 +37,16 @@
     symbexp
     typecheck
     wellformed
+  )
+
+  (libraries yojson ANSITerminal (re_export kernel)))
+
+(library
+  (name pico)
+  (wrapped false)
+  (modules
+    bankconflicts
     z3expr
   )
 
-  (libraries yojson ANSITerminal z3 (re_export kernel))
-)
+  (libraries faial z3))
