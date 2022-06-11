@@ -1,7 +1,5 @@
 module StackTrace = Common.StackTrace
 
-type xzy = Loops.increment
-
 open Exp
 
 (* Monadic let *)
