@@ -2,7 +2,6 @@ open Proto
 open Serialize
 open Common
 open Exp
-open Cgen
 
 let arr = var_make "A"
 let ub = var_make "n"
@@ -52,6 +51,7 @@ let program = [sync; loop1; loop2; cond1; cond2; read; write]
 
 let program_k (k : int) : prog list = choose k program
 
+(* Template kernel for random code generation *)
 let kernel (p : prog) : prog kernel =
   {kernel_name = "kernel";
   kernel_global_variables = VarSet.of_list [ub];
@@ -62,68 +62,33 @@ let kernel (p : prog) : prog kernel =
 
 let test_kernel = kernel (sync @@ loop2 @@ read @@ write [])
 
-let array_map_to_s (vs:array_t VarMap.t) : string =
-  VarMap.bindings vs
-  |> List.map (fun (k, v) -> var_name k)
-  |> Common.join ", "
-
-let var_set_to_s (vs:VarSet.t) (prefix:string) : string =
-  VarSet.elements vs
-  |> List.map (fun v -> prefix ^ var_name v)
-  |> Common.join ",\n"
-
-let kernel_to_s (f:'a -> PPrint.t list) (k:'a kernel) : PPrint.t list =
-  [
-    Line ("shared " ^ array_map_to_s k.kernel_arrays ^ ";\n");
-    Line ("const \n" ^ (var_set_to_s k.kernel_global_variables "  global ")
-                     ^ (var_set_to_s k.kernel_local_variables "  local "));
-    Line ("  where " ^ PPrint.b_to_s k.kernel_pre ^ ";\n");
-    Line (PPrint.doc_to_string (f k.kernel_code));
-  ]
-
-let print_kernel (f:'a -> PPrint.t list) (k: 'a kernel) : unit =
-  PPrint.print_doc (kernel_to_s f k)
-
-let print_k (k:prog kernel) : unit =
-  PPrint.print_doc (kernel_to_s prog_to_s k)
-
-(* Get the type of an array, defaulting to int if it is unknown *)
-let arr_type (arr:array_t) : string =
-  match arr.array_type with
-  | [] -> "int"
-  | _ -> Common.join " " arr.array_type
-
 (* Helper functions for making the kernel header/parameters *)
-let global_arr_to_l (vs:array_t VarMap.t) =
+let global_arr_to_tlist (vs:array_t VarMap.t) : Toml.Types.table list =
   VarMap.bindings vs
-  |> List.map (fun (k,v) -> Toml.Min.of_key_values [Toml.Min.key (var_name k), Toml.Types.TString (arr_type v)])
+  |> List.map (fun (k,v) -> Toml.Min.of_key_values [Toml.Min.key (var_name k), Toml.Types.TString (Cgen.arr_type v)])
 
-let global_var_to_l (vs:VarSet.t) =
+let global_var_to_tlist (vs:VarSet.t) : Toml.Types.table list =
   VarSet.elements (VarSet.diff vs thread_globals)
   |> List.map (fun v -> Toml.Min.of_key_values [Toml.Min.key (var_name v), Toml.Types.TString "int"])
 
 let kernel_to_toml (k:prog kernel) =
-  let arrays = (VarMap.partition (fun k -> fun v ->
+  let global_arr = (VarMap.filter (fun k -> fun v ->
   v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
-  Toml.Min.of_key_values [
-    (* Toml.Min.key "grid_dim", Toml.Types.TArray (Toml.Types.NodeInt [64; 1;]);
-    Toml.Min.key "block_dim", Toml.Types.TArray (Toml.Types.NodeInt [128; 1;]); *)
-    Toml.Min.key "pass", Toml.Types.TBool true;
-    Toml.Min.key "includes", Toml.Types.TArray (Toml.Types.NodeInt []);
-    (* Toml.Min.key "pre", Toml.Types.TArray (Toml.Types.NodeString [PPrint.b_to_s k.kernel_pre]); *)
-    Toml.Min.key "body", Toml.Types.TString ("\n" ^ PPrint.doc_to_string [PPrint.Block (prog_to_s k.kernel_code)]);
-    Toml.Min.key "arrays", Toml.Types.TArray (Toml.Types.NodeTable (global_arr_to_l (fst arrays)));
-    Toml.Min.key "scalars", Toml.Types.TArray (Toml.Types.NodeTable (global_var_to_l k.kernel_global_variables));
-]
+  let open Toml.Min in
+  let open Toml.Types in
+  of_key_values
+  [
+    key "pass", TBool true;
+    key "includes", TArray (NodeInt []);
+    key "body", TString ("\n" ^ PPrint.doc_to_string [PPrint.Block (Cgen.prog_to_s k.kernel_code)]);
+    key "arrays", TArray (NodeTable (global_arr_to_tlist global_arr));
+    key "scalars", TArray (NodeTable (global_var_to_tlist k.kernel_global_variables));
+  ]
 
 let () = print_string (Toml.Printer.string_of_table (kernel_to_toml test_kernel))
-
-(* let () = Codegen.print_k test_kernel *)
-
-(* let () = print_k (test_kernel) *)
 
 (* Generate all combinations *)
 
 (* let () = 
-  List.iter (fun p -> print_newline (print_k (kernel p)))
+  List.iter (fun p -> print_newline (Cgen.print_k (kernel p)))
     (List.map program_k (Common.range 1 (List.length program)) |> List.concat) *)
