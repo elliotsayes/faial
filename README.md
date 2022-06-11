@@ -1,6 +1,8 @@
 # Faial - DRF checking CUDA kernels
 
+<!--
 [![Build status](https://ci.appveyor.com/api/projects/status/n2uv6o1mpl18w5ir?svg=true)](https://ci.appveyor.com/project/cogumbreiro/faial)
+-->
 
 # Install
 
@@ -20,19 +22,20 @@ $ tar xvf faial.tar.bz2
 LICENSE
 README.md
 bin/
-bin/cu-to-json
-bin/faial-infer
 bin/c-to-json
 bin/faial
 bin/faial-bin
+bin/cu-to-json
+bin/faial-infer
+bin/pico
 share/
 share/c-to-json/
 share/c-to-json/include/
 share/c-to-json/include/stdarg.h
+share/c-to-json/include/stddef.h
+share/c-to-json/include/cuda.h
 share/c-to-json/include/cuda_textures.h
 share/c-to-json/include/cuda_curand.h
-share/c-to-json/include/cuda.h
-share/c-to-json/include/stddef.h
 ```
 
 
@@ -57,7 +60,7 @@ Next, feel free to access the [`tutorial/`](tutorial/) directory!
 ## Compile-time dependencies
 
 * Rust `>= 1.4.7`
-* OCaml `>= 4.12.0`
+* OCaml `>= 4.14.0`
 * opam `>= 2.0`
 
 
@@ -84,7 +87,7 @@ $ make
 These instructions are also available as a dockerfile: [`docker/from-scratch.Dockerfile`](docker/from-scratch.Dockerfile)
 
 Pre-requisites:
-* OCaml `>= 4.11.0`
+* OCaml `>= 4.14.0`
 * Rust `>= 1.47.0`
 * Z3 `4.8.8` (runtime only)
 
