@@ -448,7 +448,7 @@ let compile (k:p_kernel) : Proto.prog kernel =
   in
   let (more_pre, p) = p |> pre_from_body in
   let pre = b_and k.p_kernel_pre more_pre in
-  (**
+  (*
     1. We rename all variables so that they are all different
     2. We break down for-loops and variable declarations
     *)
