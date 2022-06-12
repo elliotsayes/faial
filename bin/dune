@@ -15,3 +15,21 @@
  (name pico)
  (modules pico)
  (libraries pico cmdliner))
+
+(library
+ (name cgen)
+ (modules cgen)
+ (wrapped false)
+ (libraries faial toml))
+
+(executable
+ (public_name proto-to-cuda)
+ (name prototocuda)
+ (modules prototocuda)
+ (libraries cgen cmdliner))
+
+(executable
+ (public_name flores)
+ (name flores)
+ (modules flores)
+ (libraries cgen))
