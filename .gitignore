@@ -1,7 +1,8 @@
 /faial-bin
+/faial
+/pico
+/proto-to-cuda
+/flores
 /_build
 *.cmi
 *.cmo
-/bank-conflicts
-/proto-to-cuda
-/flores

@@ -1,4 +1,17 @@
 (executable
- (public_name faial)
+ (public_name faial-bin)
  (name main)
+ (modules main)
  (libraries faial cmdliner))
+
+(executable
+ (public_name test-c)
+ (name test_c)
+ (modules test_c)
+ (libraries faial))
+
+(executable
+ (public_name pico)
+ (name pico)
+ (modules pico)
+ (libraries pico cmdliner))

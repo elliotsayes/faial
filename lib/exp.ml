@@ -301,8 +301,6 @@ let b_impl b1 b2 =
   | Bool false -> Bool true
   | _ -> b_or (b_not b1) b2
 
-let n_neq b1 b2 = b_not (n_eq b1 b2)
-
 let b_true = Bool true
 let b_false = Bool false
 

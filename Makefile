@@ -1,56 +1,45 @@
-OCB_FLAGS   = -use-ocamlfind -use-menhir -I lib -no-links
-OCB = ocamlbuild $(OCB_FLAGS)
+DUNE = dune
 
 GITLAB_CACHE = /tmp/gitlab-cache
 
-BIN = _build/bin
+BIN = _build/default/bin
 TEST = _build/test
 
-all: native
+all: main
 
 clean:
-	$(OCB) -clean
-	rm -f faial-bin bank-conflicts proto-to-cuda flores
+	$(DUNE) clean
+	rm -f faial-bin flores pico proto-to-cuda
 
 cast:
-	$(OCB) -I bin test_c.native
+	$(DUNE) build bin/test_c.exe
 
-native: build-tests
-	$(OCB) -I bin main.native
-	cp $(BIN)/main.native faial-bin
+build-test:
+	$(DUNE) build test
 
-bank-conflicts:
-	$(OCB) -I bin -package z3 -tag thread bankconflicts.native
-	cp $(BIN)/bankconflicts.native bank-conflicts
+main:
+	$(DUNE) build bin/main.exe
+	cp $(BIN)/main.exe faial-bin
+
+pico:
+	$(DUNE) build bin/pico.exe
+	cp $(BIN)/pico.exe pico
 
 proto-to-cuda:
-	$(OCB) -I bin -package toml -tag thread cgen.native prototocuda.native
-	cp $(BIN)/prototocuda.native proto-to-cuda
+	$(DUNE) build bin/prototocuda.exe
+	cp $(BIN)/prototocuda.exe proto-to-cuda
 
 flores:
-	$(OCB) -I bin -package toml -tag thread cgen.native flores.native
-	cp $(BIN)/flores.native flores
+	$(DUNE) build bin/flores.exe
+	cp $(BIN)/flores.exe flores
 
-build-tests:
-	$(OCB) -I test test_imp.native
-	$(OCB) -I test test_common.native
-	$(OCB) -I test test_locsplit.native
-	$(OCB) -I test test_streamutil.native
-	$(OCB) -I test test_predicates.native
-	$(OCB) -I test test_parsejs.native
-
-test: build-tests
-	$(TEST)/test_imp.native
-	$(TEST)/test_common.native
-	$(TEST)/test_streamutil.native
-	$(TEST)/test_locsplit.native
-	$(TEST)/test_predicates.native
-	$(TEST)/test_parsejs.native
+test: build-test
+	$(DUNE) runtest
 
 ui:
 	(cd faial-ui/ && cargo b --release)
 
-sys-test: build-tests
+sys-test:
 	@./run-tests.py
 
 gitlab-test:
@@ -61,10 +50,5 @@ gitlab-bin:
 
 gitlab: gitlab-test gitlab-bin
 
-profile:
-	$(OCB) -I bin -tag profile main.native
 
-debug:
-	$(OCB) -I bin -tag debug main.byte
-
-.PHONY: all clean byte native profile debug sanity test ui bank-conflicts proto-to-cuda flores
+.PHONY: all clean main cast build-test test ui pico proto-to-cuda flores sys-test gitlab gitlab-bin gitlab-test

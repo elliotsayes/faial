@@ -195,66 +195,6 @@ let proto_to_poly x v p : (poly_t list) acc_t list =
   proto_to_acc x (fun (a:access) -> List.map (n_to_poly v) (a.access_index)) p
 
 
-(* ----------------- kernel functions -------------------- *)
-
-let open_ic_with (fname:string option) (f : in_channel -> unit) : unit =
-    let ic, (closer: in_channel -> unit) = match fname with
-    | Some fname -> (open_in fname, close_in_noerr)
-    | None -> (stdin, fun x -> ())
-    in
-    try (f ic; closer ic) with
-    | e -> closer ic;
-      raise e
-
-
-let p_kernel_parser fname input : prog kernel =
-  let fname = match fname with
-  | Some x -> x
-  | None -> "<STDIN>"
-  in
-  let filebuf = Lexing.from_channel input in
-  Scan.set_filename filebuf fname;
-  try Parse2.main Scan.read filebuf with
-  | Parse2.Error ->
-    let b = Buffer.create 1024 in
-    let sloc = Sourceloc.of_lexbuf filebuf in
-    Printf.bprintf b "%a: syntax error" Sourceloc.location_bprint_start sloc;
-    (try
-        Printf.bprintf b "%a" Sourceloc.location_bprint_title sloc
-    with
-        Sys_error _ -> ()
-    );
-    raise (Common.ParseError b)
-
-let j_kernel_parser (_:string option) ic =
-  try Yojson.Basic.from_channel ic |> Parsejs.parse_kernels.run with
-  | Yojson.Json_error("Blank input data") ->
-    (* If the input is blank, just ignore the input and err with -1 *)
-    raise (Common.mk_parse_error_s "Empty input data. Blank file?\n")
-  | Yojson.Json_error(e) ->
-    raise (Common.mk_parse_error_s (Printf.sprintf "Error parsing JSON: %s\n" e))
-
-type i_kernel =
-  | JKernel of Imp.p_kernel list
-  | PKernel of prog kernel
-
-let parse_i_kernel (use_json:bool) (fname:string option) (ic:in_channel) : i_kernel =
-  if use_json then
-    JKernel (j_kernel_parser fname ic)
-  else
-    PKernel (p_kernel_parser fname ic)
-
-let open_i_kernel_with (use_json:bool) (fname:string option) (f:i_kernel -> unit) : unit =
-  open_ic_with fname (fun ic ->
-    f (parse_i_kernel use_json fname ic)
-  )
-
-let i_kernel_to_p_kernel (k:i_kernel) : prog kernel list =
-  match k with
-  | JKernel ks -> List.map Imp.compile ks
-  | PKernel p -> [p]
-
-
 (* ----------------- transaction cost analysis -------------------- *)
 
 (* This function indicates whether our theory CAN analyze the expression, not
@@ -381,19 +321,6 @@ let k_cost (k : prog kernel) : nexp =
   let vs : variable list = VarSet.elements (kernel_shared_arrays k) in
   nexp_sum (List.map (shared_cost k) vs)
 
-(* i_k_cost returns the cost of all kernels in the program source *)
-let i_k_cost (k : i_kernel) : nexp =
-  let ks : prog kernel list = i_kernel_to_p_kernel k in
+(* p_k_cost returns the cost of all kernels in the program source *)
+let p_k_cost (ks : prog kernel list) : nexp =
   Constfold.n_opt (nexp_sum (List.map k_cost ks))
-
-
-(* ----------------- execution entry point -------------------- *)
-
-let () =
-  let print_cost (k : i_kernel) : unit =
-    print_endline (Serialize.PPrint.n_to_s (i_k_cost k))
-  in
-  try open_i_kernel_with true None print_cost with
-  | Common.ParseError b ->
-      Buffer.output_buffer stderr b;
-      exit (-1)

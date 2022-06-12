@@ -1,5 +1,0 @@
-S lib/**
-S bin/**
-S test/**
-B _build/**
-PKG cmdliner ANSITerminal yojson oUnit z3 toml
