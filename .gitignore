@@ -1,5 +1,6 @@
 /faial-bin
+/faial
+/pico
 /_build
 *.cmi
 *.cmo
-/bank-conflicts

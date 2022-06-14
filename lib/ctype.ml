@@ -23,7 +23,7 @@ let parse_dim (x:string) : int list =
   |>
   List.map int_of_string
 
-let rec parse_array_type_opt (x:string) : string list option =
+let parse_array_type_opt (x:string) : string list option =
   match split_array_type x with
   | Some (x, _) -> Some (
       String.split_on_char ' ' x
@@ -31,7 +31,7 @@ let rec parse_array_type_opt (x:string) : string list option =
     )
   | None -> None
 
-let rec parse_array_dim_opt (x:string) : int list option =
+let parse_array_dim_opt (x:string) : int list option =
   match split_array_type x with
   | Some (_, x) -> (
       let x  = match Common.rsplit ' ' x with

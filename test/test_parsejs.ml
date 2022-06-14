@@ -30,9 +30,13 @@ let tests = "tests" >::: [
     | None -> assert_bool "could not get type" false
     | Some ty ->
     assert_equal (Ctype.to_string ty) "int [128]";
-    let a = mk_array SharedMemory ty in
-    assert_equal a.array_type ["int"];
-    assert_equal a.array_size [128];
+    begin
+      let a = (mk_array Exp.SharedMemory ty) in
+      let open Exp in
+      assert_equal a.array_type ["int"];
+      assert_equal a.array_size [128];
+      ()
+    end
   );
   "parse_position" >:: (fun _ ->
     let s = "
@@ -44,6 +48,7 @@ let tests = "tests" >::: [
     let open Yojson.Basic in
     let j = from_string s in
     let p = parse_position.run j in
+    let open Sourceloc in
     assert_position_equal p {pos_line = 386; pos_column = 123; pos_filename=""};
     let s = "
       {
@@ -77,6 +82,7 @@ let tests = "tests" >::: [
     let j = from_string s in
     assert (parse_loc.is_valid j);
     let p = parse_loc.run j in
+    let open Sourceloc in
     assert_location_equal p {
       loc_start = {pos_line = 20; pos_column = 30; pos_filename = ""};
       loc_end = {
@@ -129,7 +135,7 @@ let tests = "tests" >::: [
     let j = from_string s in
     let s = parse_stmt.run j in
     match s with
-    | Decl _ -> ()
+    | Imp.Decl _ -> ()
     | _ -> assert false
   );
   "parse_var" >:: (fun _ ->
@@ -179,7 +185,7 @@ let tests = "tests" >::: [
     let j = from_string s in
     let s = parse_stmt.run j in
     match s with
-    | Decl _ -> ()
+    | Imp.Decl _ -> ()
     | _ -> assert false
   );
   "parse_multi_decl" >:: (fun _ ->
@@ -224,7 +230,7 @@ let tests = "tests" >::: [
     let j = from_string s in
     let s = parse_stmt.run j in
     match s with
-    | Decl [_; _; _]  -> ()
+    | Imp.Decl [_; _; _]  -> ()
     | _ -> assert false
   );
   "parse_var" >:: (fun _ ->
@@ -275,7 +281,8 @@ let tests = "tests" >::: [
     let j = from_string s in
     assert (parse_var.is_valid j);
     let v = parse_var.run j in
-    assert_var_equal v (LocVariable (
+    let open Sourceloc in
+    assert_var_equal v (Exp.LocVariable (
       {
       loc_start = {pos_line = 391; pos_column = 1; pos_filename = ""};
       loc_end = {pos_line = 391; pos_column = 1; pos_filename = ""};
@@ -290,7 +297,7 @@ let tests = "tests" >::: [
     let j = from_string s in
     assert (parse_var.is_valid j);
     let v = parse_var.run j in
-    assert_var_equal v (Variable "t");
+    assert_var_equal v (Exp.Variable "t");
     ()
   );
   "get_kind_res" >:: (fun _ ->
@@ -347,10 +354,10 @@ let tests = "tests" >::: [
     let j = from_string s in
     assert (parse_stmt.is_valid j);
     let i = parse_stmt.run j in
-    (match i with
-    | Acc _ -> ()
+    begin match i with
+    | Imp.Acc _ -> ()
     | _ -> assert false
-    );
+    end;
     ()
   );
 ]

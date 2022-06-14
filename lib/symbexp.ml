@@ -85,7 +85,7 @@ type assign_task = {
   assign_index: int -> nexp -> bexp;
   assign_loc: Sourceloc.location -> bexp;
 }
-
+(*
 module LocationHash =
   struct
     type t = Sourceloc.location
@@ -94,24 +94,24 @@ module LocationHash =
   end
 
 module LocationTbl = Hashtbl.Make(LocationHash)
-
+*)
 module LocationCache = struct
   type t = {
-    loc_to_int: int LocationTbl.t;
+    loc_to_int: (Sourceloc.location, int) Hashtbl.t;
     mutable all_locs: Sourceloc.location list;
   }
 
   let create (size:int) : t = {
-    loc_to_int = LocationTbl.create size;
+    loc_to_int = Hashtbl.create size;
     all_locs = []
   }
 
   let get (ht:t) (l:Sourceloc.location) : int =
-    match LocationTbl.find_opt ht.loc_to_int l with
+    match Hashtbl.find_opt ht.loc_to_int l with
     | Some n -> n
     | None ->
-      let n = LocationTbl.length ht.loc_to_int in
-      LocationTbl.add ht.loc_to_int l n;
+      let n = Hashtbl.length ht.loc_to_int in
+      Hashtbl.add ht.loc_to_int l n;
       ht.all_locs <- l::ht.all_locs;
       n
 
@@ -194,7 +194,7 @@ let h_prog_to_bexp
     |> b_and_ex
   in
   (* The dimention is the index count *)
-  let rec get_dim (l:cond_access list) : int =
+  let get_dim (l:cond_access list) : int =
     match l with
     | [] -> failwith "Phase split should not generate empty phases!"
     | c :: _ -> List.length c.ca_access.access_index
@@ -236,7 +236,7 @@ let proof_to_s (p:proof) : Serialize.PPrint.t list =
 
 
 
-let print_kernels ((cache, ks) : LocationCache.t * proof Streamutil.stream) : unit =
+let print_kernels ((_, ks) : LocationCache.t * proof Streamutil.stream) : unit =
   let open Serialize in
   print_endline "; symbexp";
   let count = ref 0 in

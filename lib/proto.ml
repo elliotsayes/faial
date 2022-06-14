@@ -1,6 +1,4 @@
 open Exp
-open Hash_rt
-open Ppx_compare_lib.Builtin
 open Serialize
 
 (* The source instruction uses the base defined above *)
@@ -9,10 +7,9 @@ type inst =
   | Sync
   | Cond of bexp * inst list
   | Loop of range * inst list
-  [@@deriving hash, compare]
 
 (* The source program *)
-type prog = inst list [@@deriving hash, compare]
+type prog = inst list
 
 type 'a kernel = {
   (* The kernel name *)
@@ -191,6 +188,7 @@ let vars_distinct (p:prog)  (known:VarSet.t) : prog =
 
 
 let rec inst_to_s : inst -> PPrint.t list =
+  let open PPrint in
   function
   | Sync -> [Line "sync;"]
   | Acc e -> PPrint.acc_expr_to_s e

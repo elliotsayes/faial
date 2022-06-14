@@ -4,17 +4,15 @@ open Common
 open Serialize
 open Subst
 open Streamutil
-open Hash_rt
-open Ppx_compare_lib.Builtin
 
 type u_inst =
   | UAssert of bexp
   | UAcc of acc_expr
   | UCond of bexp * u_inst list
   | ULoop of range * u_inst list
-   [@@deriving hash, compare]
 
-type u_prog = u_inst list [@@deriving hash, compare]
+
+type u_prog = u_inst list
 
 type w_inst =
   | SSync of u_prog
@@ -80,7 +78,7 @@ let u_seq (u1:u_prog) (u2:u_prog) =
 
 (* Given a regular program, return a well-formed one *)
 let make_well_formed (p:Proto.prog) : w_prog Streamutil.stream =
-  let rec inline_cond (b:bexp) (w:w_prog) : w_prog =
+  let inline_cond (b:bexp) (w:w_prog) : w_prog =
     let b = Constfold.b_opt b in
     let rec i_inline (w:w_inst) : w_prog =
       match w with
@@ -100,7 +98,7 @@ let make_well_formed (p:Proto.prog) : w_prog Streamutil.stream =
     | SLoop (c2, r, w1, c3) :: w2 -> SLoop (u_seq c c2, r, w1, c3) :: w2
     | [] -> []
   in
-  let rec w_add (c:u_inst) (w:w_prog) =
+  let w_add (c:u_inst) (w:w_prog) =
     match w with
     | SSync c2 :: w -> SSync (c :: c2) :: w
     | SLoop (c2, r, w1, c3) :: w2 -> SLoop (c::c2, r, w1, c3) :: w2

@@ -235,7 +235,7 @@ module PPrint = struct
 
   let ident: variable -> string = var_name
 
-  let rec nrel_to_string (r:nrel) : string =
+  let nrel_to_string (r:nrel) : string =
     match r with
     | NEq -> "=="
     | NLe -> "<="

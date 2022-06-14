@@ -1,3 +1,0 @@
-S src/**
-B _build/**
-PKG cmdliner ANSITerminal yojson base ppx_hash ppx_compare ppx_deriving oUnit

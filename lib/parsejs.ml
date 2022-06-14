@@ -86,7 +86,7 @@ let get_kind (j:Yojson.Basic.t) : string =
 let get_fields fields (j:Yojson.Basic.t) : Yojson.Basic.t list  =
   let open Yojson.Basic.Util in
   let kv = List.map (fun x -> let open Ojson in (x, cast_object j >>= get_field x)) fields in
-  let missing = List.filter (fun (x,y) -> y = None) kv |> List.split |> fst in
+  let missing = List.filter (fun (_,y) -> y = None) kv |> List.split |> fst in
   if List.length missing > 0 then
     let fields = join ", " fields in
     let missing = join ", " missing in
@@ -544,7 +544,7 @@ let rec build_stmt : stmt builder =
     );
     "IfStmt", (["cond"], function
       | [cond] ->
-        let get_branch (o:Yojson.Basic.t) k =
+        let get_branch k =
           let msg = "When parsing IfStmt, could not parse branch " ^ k in
           match member k j with
             | `Assoc _ as o ->
@@ -553,8 +553,8 @@ let rec build_stmt : stmt builder =
             | _ -> abort_error msg j
         in
         let cond = b_parse cond in
-        let then_stmt = get_branch j "thenStmt" in
-        let else_stmt = get_branch j "elseStmt" in
+        let then_stmt = get_branch "thenStmt" in
+        let else_stmt = get_branch "elseStmt" in
         Some (s_if cond then_stmt else_stmt)
       | _ -> None
     );

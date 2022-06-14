@@ -97,7 +97,7 @@ module SubstPair =
     let find (x, v) y = if var_equal x y then Some v else None
     let remove (x, v) y = if var_equal x y then None else Some (x, v)
     let to_string (x, v) = "[" ^ var_name x ^ "=" ^ PPrint.n_to_s v ^ "]"
-    let is_empty (x, v) = false
+    let is_empty (_, _) = false
   end
 
 module ReplacePair = Make(SubstPair)

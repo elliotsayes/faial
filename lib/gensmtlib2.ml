@@ -153,21 +153,22 @@ let bv_serialize_proofs : Symbexp.proof list -> Smtlib.sexp list = Bv2.serialize
 let int_serialize_proofs : Symbexp.proof list -> Smtlib.sexp list = Std2.serialize_proofs
 
 let location_to_sexp (l:Sourceloc.location) : Smtlib.sexp =
-    let add_pos (b:Buffer.t) (p:Sourceloc.position) =
-        Buffer.add_string b (string_of_int p.pos_line);
-        Buffer.add_char b ':';
-        Buffer.add_string b (string_of_int p.pos_column)
-    in
-    let b = Buffer.create 100 in
-    Buffer.add_string b l.loc_start.pos_filename;
+  let open Sourceloc in
+  let add_pos (b:Buffer.t) (p:Sourceloc.position) =
+    Buffer.add_string b (string_of_int p.pos_line);
     Buffer.add_char b ':';
-    add_pos b l.loc_start;
-    Buffer.add_char b ':';
-    add_pos b l.loc_end;
-    let b = Buffer.contents b in
-    let open Smtlib in
-    let b = atom_to_string (String b) in
-    List [Atom (Symbol "echo"); Atom (String b)]
+    Buffer.add_string b (string_of_int p.pos_column)
+  in
+  let b = Buffer.create 100 in
+  Buffer.add_string b l.loc_start.pos_filename;
+  Buffer.add_char b ':';
+  add_pos b l.loc_start;
+  Buffer.add_char b ':';
+  add_pos b l.loc_end;
+  let b = Buffer.contents b in
+  let open Smtlib in
+  let b = atom_to_string (String b) in
+  List [Atom (Symbol "echo"); Atom (String b)]
 
 let translate (provenance:bool) ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : Smtlib.sexp Streamutil.stream =
     let open Serialize in

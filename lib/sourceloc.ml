@@ -1,5 +1,3 @@
-open Hash_rt
-open Ppx_compare_lib.Builtin
 
 (** The position is a 2D indexing in the screen buffer. It is 1-based. *)
 type position = {
@@ -7,7 +5,6 @@ type position = {
   pos_line: int;
   pos_column: int;
 }
-[@@deriving hash, compare] (* Requires base *)
 
 let pos_empty = {pos_filename = ""; pos_line = 1; pos_column=1}
 
@@ -43,7 +40,7 @@ type location = {
   loc_start : position;
   loc_end : position;
 }
-[@@deriving hash, compare]
+
 
 let location_repr (l:location) =
   "{start=" ^ position_repr l.loc_start ^", " ^
@@ -83,8 +80,8 @@ let line_range filename offset count =
     end
   in
   (* Return the first n-lines *)
-  let rec yield_n ic count =
-    List.init count (fun n -> input_line ic)
+  let yield_n ic count =
+    List.init count (fun _ -> input_line ic)
   in
   let ic = open_in filename in
   skip_n ic offset;

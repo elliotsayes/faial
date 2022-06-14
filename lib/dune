@@ -1,0 +1,52 @@
+
+; We need to explicitly declare the dependencies of parse2
+; Otherwise dune thinks there's a circular dependency
+(library
+  (name kernel)
+  (modules common sourceloc exp proto smtlib  serialize subst constfold predicates bindings)
+  (wrapped false)
+  (libraries yojson ANSITerminal)
+)
+
+(menhir (modules parse2))
+(ocamllex scan)
+
+(library
+  (name faial)
+  (wrapped false)
+  (modules
+    cast
+    ctype
+    dlang
+    d_to_imp
+    flatacc
+    freenames
+    gensmtlib2
+    imp
+    indexflow
+    locsplit
+    loops
+    ojson
+    parse2
+    parsejs
+    phasealign
+    phasesplit
+    rjson
+    scan
+    streamutil
+    symbexp
+    typecheck
+    wellformed
+  )
+
+  (libraries yojson ANSITerminal (re_export kernel)))
+
+(library
+  (name pico)
+  (wrapped false)
+  (modules
+    bankconflicts
+    z3expr
+  )
+
+  (libraries faial z3))

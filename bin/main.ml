@@ -90,6 +90,7 @@ let main_t =
     (skip_typecheck: bool)
     (sets: string list) : unit
   =
+    let _ = use_bv in (* XXX: use_bv is currently unused, why? *)
     let halt_when b f k : unit =
       if b then (f k; raise Exit)
       else ()
@@ -116,7 +117,7 @@ let main_t =
         then begin
           safe_run (fun () ->
             let ks = Yojson.Basic.from_channel ic
-              |> Parsejs.parse_kernels.run
+              |> Parsejs.(parse_kernels.run)
             in
             if cmd = Parse then
               (List.iter Imp.print_kernel ks;
