@@ -9,7 +9,8 @@ if which opam > /dev/null; then
         yojson=1.7.0 \
         ppx_deriving=5.2 \
         ppx_hash=v0.14.0 \
-        z3=4.8.11
+        z3=4.8.11 \
+        toml=7.0.0
 else
     >&2 echo "ERROR: Install opam first!"
     exit 1
