@@ -92,12 +92,13 @@ let body_to_s (f:'a -> PPrint.t list) (k:'a kernel) : PPrint.t =
 
 let kernel_to_s (f:'a -> PPrint.t list) (k:'a kernel) : PPrint.t list =
   let open PPrint in
+  let kernel_name = if k.kernel_name = "main" then "kernel" else k.kernel_name in
   let global_arr = global_arr_to_l (VarMap.filter (fun k -> fun v ->
   v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
   let global_var = global_var_to_l k.kernel_global_variables in
   [
     Line "__global__";
-    Line ("void " ^ k.kernel_name ^ "(" ^ Common.join
+    Line ("void " ^ kernel_name ^ "(" ^ Common.join
     ", " (global_arr @ global_var) ^ ")");
     Line "{";
     (body_to_s f k);
@@ -136,4 +137,7 @@ let kernel_to_toml (k:prog kernel) : Toml.Types.table =
   ]
 
 let print_toml (t:Toml.Types.table) : unit =
+  print_string (Toml.Printer.string_of_table t)
+
+let print_toml_body (t:Toml.Types.table) : unit =
   print_string (Toml.Printer.string_of_table t)
