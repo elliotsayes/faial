@@ -4,18 +4,18 @@ open Cmdliner
 (* ----------------- kernel functions -------------------- *)
 
 let open_ic_with (fname:string option) (f : in_channel -> unit) : unit =
-    let ic, (closer: in_channel -> unit) = match fname with
+  let ic, (closer: in_channel -> unit) = match fname with
     | Some fname -> (open_in fname, close_in_noerr)
     | None -> (stdin, fun x -> ())
-    in
-    try (f ic; closer ic) with
-    | e -> closer ic;
-      raise e
+  in
+  try (f ic; closer ic) with
+  | e -> closer ic;
+    raise e
 
 let p_kernel_parser fname input : prog kernel =
   let fname = match fname with
-  | Some x -> x
-  | None -> "<STDIN>"
+    | Some x -> x
+    | None -> "<STDIN>"
   in
   let filebuf = Lexing.from_channel input in
   Scan.set_filename filebuf fname;
@@ -25,9 +25,9 @@ let p_kernel_parser fname input : prog kernel =
     let sloc = Sourceloc.of_lexbuf filebuf in
     Printf.bprintf b "%a: syntax error" Sourceloc.location_bprint_start sloc;
     (try
-        Printf.bprintf b "%a" Sourceloc.location_bprint_title sloc
-    with
-        Sys_error _ -> ()
+       Printf.bprintf b "%a" Sourceloc.location_bprint_title sloc
+     with
+       Sys_error _ -> ()
     );
     raise (Common.ParseError b)
 
@@ -51,8 +51,8 @@ let parse_i_kernel (use_json:bool) (fname:string option) (ic:in_channel) : i_ker
 
 let open_i_kernel_with (use_json:bool) (fname:string option) (f:i_kernel -> unit) : unit =
   open_ic_with fname (fun ic ->
-    f (parse_i_kernel use_json fname ic)
-  )
+      f (parse_i_kernel use_json fname ic)
+    )
 
 let i_kernel_to_p_kernel (k:i_kernel) : prog kernel list =
   match k with
@@ -61,7 +61,12 @@ let i_kernel_to_p_kernel (k:i_kernel) : prog kernel list =
 
 (* ----------------- command line argument parser -------------------- *)
 
-let main_t =
+let p2c_t =
+  let get_fname =
+    let doc = "The path $(docv) of the GPU contract." in
+    Arg.(value & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
+  in
+
   let use_json =
     let doc = "Parse a JSON file" in
     Arg.(value & flag & info ["json"] ~doc)
@@ -69,32 +74,26 @@ let main_t =
 
   let output_toml =
     let doc = "Output a TOML file" in
-    Arg.(value & flag & info ["output-toml"] ~doc)
+    Arg.(value & flag & info ["toml"] ~doc)
   in
 
-  let get_fname =
-    let doc = "The path $(docv) of the GPU contract." in
-    Arg.(value & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
-  in
-
-  let open Cgen in
-  let do_main
-    (fname: string option)
-    (use_json: bool)
-    (output_toml: bool)
-    : unit =
-  let print_cuda (k : i_kernel) : unit =
-    if output_toml then
-      List.iter (fun k -> print_toml (kernel_to_toml k)) (i_kernel_to_p_kernel k)
-    else
-      List.iter (fun k -> print_k k) (i_kernel_to_p_kernel k)
-  in
-  try open_i_kernel_with use_json fname print_cuda with
-  | Common.ParseError b ->
+  let do_p2c
+      (fname: string option)
+      (use_json: bool)
+      (output_toml: bool) : unit =
+    let open Cgen in
+    let print_cuda (k : i_kernel) : unit =
+      if output_toml then
+        List.iter (fun k -> print_toml (kernel_to_toml k)) (i_kernel_to_p_kernel k)
+      else
+        List.iter (fun k -> print_k k) (i_kernel_to_p_kernel k)
+    in
+    try open_i_kernel_with use_json fname print_cuda with
+    | Common.ParseError b ->
       Buffer.output_buffer stderr b;
       exit (-1) in
   Term.(
-    const do_main
+    const do_p2c
     $ get_fname
     $ use_json
     $ output_toml
@@ -107,5 +106,5 @@ let info =
 (* ----------------- execution entry point -------------------- *)
 
 let _ =
-  Term.eval (main_t, info)
+  Term.eval (p2c_t, info)
   |> Term.exit
