@@ -440,9 +440,9 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
   let mk_var (name:string) (suffix:string) (x:string) : nexp =
     Var (var_make (name ^ suffix ^ "." ^ x))
   in
-  let idx_lt_dim name : bexp list =
+  let idx_lt_dim (name1, name2) : bexp list =
     List.map (fun x ->
-      n_lt (mk_var name "Idx" x) (mk_var name "Dim" x)
+      n_lt (mk_var name1 "Idx" x) (mk_var name2 "Dim" x)
     ) cuda_dims
   in
   let local_vars : variable list =
@@ -459,7 +459,7 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
     Decl all_vars;
     Assert (
       (Exp.distinct local_vars ::
-        List.concat_map idx_lt_dim ["thread"; "block"; "grid"]
+        List.concat_map idx_lt_dim [("thread", "block"); ("block", "grid")]
       )
       |> b_and_ex
     );
