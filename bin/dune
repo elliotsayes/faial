@@ -7,6 +7,7 @@
 (executable
  (public_name test-c)
  (name test_c)
+ (modes byte exe)
  (modules test_c)
  (libraries faial))
 
