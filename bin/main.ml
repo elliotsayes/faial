@@ -50,11 +50,6 @@ let safe_run f =
 
 type command = WLang | ALang | PLang | CLang | HLang | BLang | Sat | Typecheck | Parse
 
-let parse_from_infer ic : Imp.p_kernel list =
-  safe_run (fun () ->
-    Yojson.Basic.from_channel ic |> Parsejs.(parse_kernels.run)
-  )
-
 let parse_from_ctj ic : Imp.p_kernel list =
   let open Cast in
   let open D_to_imp in

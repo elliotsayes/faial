@@ -469,6 +469,20 @@ let infer_range (r:Dlang.d_for) : Exp.range option d_result =
     | None -> None)
   | None -> Ok None
 
+let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
+  let u = Unknown.make in
+  let (u, x) = Unknown.create u in
+  let (u, lb) = Unknown.create u in
+  let (u, ub) = Unknown.create u in
+  let r = {
+    range_var = x;
+    range_lower_bound = Var lb;
+    range_upper_bound = Var ub;
+    range_step = Default (Num 1);
+  } in
+  let vars = VarSet.of_list [lb; ub] in
+  Unknown.ret_u vars (For (r, Block b))
+
 
 let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
   let with_msg (m:string) f b = with_msg ("parse_stmt: " ^ m) f b in
@@ -545,19 +559,19 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
     let* r = infer_range s in
     let* b = with_msg "for.body" parse_stmt s.body in
     let open Imp in
-    ret (match r with
-    | Some r -> For (r, Block b)
-    | None -> Loop (Block b))
+    (match r with
+    | Some r -> ret (For (r, Block b))
+    | None -> ret_loop b)
 
   | DoStmt {cond=cond; body=body} ->
     let* body = with_msg "do.body" parse_stmt body in
     let open Imp in
-    ret (Loop (Block body))
+    ret_loop body
 
   | WhileStmt {cond=cond; body=body} ->
     let* body = with_msg "while.body" parse_stmt body in
     let open Imp in
-    ret (Loop (Block body))
+    ret_loop body
 
   | SwitchStmt s ->
     with_msg "switch.body" parse_stmt s.body

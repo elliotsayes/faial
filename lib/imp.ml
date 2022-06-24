@@ -20,7 +20,6 @@ type stmt =
 | Decl of (variable * locality * nexp option) list
 | If of (bexp * stmt * stmt)
 | For of (range * stmt)
-| Loop of stmt
 
 type prog = stmt list
 
@@ -32,7 +31,6 @@ module Post = struct
   | Acc of acc_expr
   | If of (bexp * inst list * inst list)
   | For of (range * inst list)
-  | Loop of inst list
   | Decl of (variable * locality * nexp option * inst list)
 
   type prog = inst list
@@ -51,7 +49,6 @@ module Post = struct
       )
       else i
     | Decl (x, h, o, l) -> Decl (x, h, o, loc_subst_p alias l)
-    | Loop s -> Loop (loc_subst_p alias s)
     | If (b, s1, s2) -> If (b, loc_subst_p alias s1, loc_subst_p alias s2)
     | For (r, s) -> For (r, loc_subst_p alias s)
     | Sync -> Sync
@@ -75,7 +72,6 @@ module Post = struct
       | Sync -> Sync
       | Skip -> Skip
       | Acc (x, a) -> Acc (x, M.a_subst st a)
-      | Loop p -> Loop (subst_p st p)
       | Decl (x, h, o, p) ->
         Decl (x, h, o_subst st o,
           M.add st x (function
@@ -124,9 +120,6 @@ module Post = struct
         let (p1, xs) = uniq_p p1 xs in
         let (p2, xs) = uniq_p p2 xs in
         If (b, p1, p2), xs
-      | Loop p ->
-        let (p, xs) = uniq_p p xs in
-        Loop p, xs
       | Decl (x, h, o, p) ->
         (match add_var x xs p with
         | (p, Some x, xs) ->
@@ -159,7 +152,6 @@ module Post = struct
       | Sync -> Sync
       | If (b, p1, p2) -> If (b, filter_p p1, filter_p p2)
       | For (r, p) -> For (r, filter_p p)
-      | Loop p -> Loop (filter_p p)
       | Decl (x, l, o, p) -> Decl (x, l, o, filter_p p)
     and filter_p (p: prog) : prog =
       List.map filter_i p
@@ -179,7 +171,6 @@ module Post = struct
         | Global -> locals, VarSet.add x globals
         in
         get_decls_p p (locals, globals)
-      | Loop p
       | For (_, p) -> get_decls_p p (locals,globals)
     and get_decls_p (p:prog) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
       List.fold_right get_decls_i p (locals,globals)
@@ -222,9 +213,6 @@ module Post = struct
         let st = SubstAssoc.del st r.range_var in
         let (p, st) = inline_p st p in
         [For (r, p)], st
-      | Loop p ->
-        let (p, st) = inline_p st p in
-        [Loop p], st
       | Decl (x, _, Some n, p) ->
         let n = n_subst st n in 
         let st = SubstAssoc.put st x n  in
@@ -280,7 +268,6 @@ let imp_to_post (s:stmt) : Post.prog =
     | Block p -> imp_to_post_p p
     | If (b, s1, s2) -> [Post.If (b, imp_to_post_p [s1], imp_to_post_p [s2])]
     | For (r, s) -> [Post.For (r, imp_to_post_p [s])]
-    | Loop s -> [Post.Loop (imp_to_post_p [s])]
     (* Handled in the context of a prog *)
     | Assert _ -> failwith "unsupported"
     | LocationAlias _ -> failwith "unsupported"
@@ -309,8 +296,6 @@ let post_to_proto (p: Post.prog) : Proto.prog =
       Proto.p_cond b (post_to_proto_p p1) @ Proto.p_cond (b_not b) (post_to_proto_p p2)
     | For (r, p) ->
       [Proto.Loop (r, post_to_proto_p p)]
-    | Loop p ->
-      [Proto.Loop (mk_range (var_make "X?") (Num 2), post_to_proto_p p)]
     | Decl (_, _, Some _, _) -> failwith "Run inline_decl first!"
     | Decl (_, _, None, p) -> post_to_proto_p p
   and post_to_proto_p (p:Post.prog) : Proto.prog =
@@ -338,12 +323,6 @@ let s_for (r:range) (s:stmt) =
   | Block [] -> Block []
   | Decl [] -> Decl []
   | _ -> For (r, s)
-
-let s_loop (s:stmt) =
-  match s with
-  | Block [] -> Block []
-  | Decl [] -> Decl []
-  | _ -> Loop s
 
 let s_if (b:bexp) (p1:stmt) (p2:stmt) : stmt =
   match b, p1, p2 with
@@ -406,11 +385,6 @@ let stmt_to_s: stmt -> PPrint.t list =
       ]
     | For (r, s) -> [
         Line ("foreach (" ^ r_to_s r ^ ") {");
-        Block (stmt_to_s s);
-        Line ("}")
-      ]
-    | Loop s -> [
-        Line ("loop {");
         Block (stmt_to_s s);
         Line ("}")
       ]
