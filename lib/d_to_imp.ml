@@ -48,6 +48,11 @@ let parse_nrel_opt: string -> nrel option =
   | ">"  -> Some NGt
   | x -> None
 
+let with_msg_ex (on_err:'a -> string) (f:'a -> 'b d_result) (c:'a): 'b d_result =
+  match f c with
+  | Ok o -> Ok o
+  | Error err -> Error (Because (on_err c, err))
+
 let with_msg (msg:string) (f:'a -> 'b d_result) (c:'a): 'b d_result =
   match f c with
   | Ok o -> Ok o
@@ -164,7 +169,9 @@ let rec parse_nexp (e: Dlang.d_exp) : d_nexp d_result =
   | MemberExpr _
   | FunctionDecl _ 
   | EnumConstantDecl _
-  | CallExpr _ ->
+  | CallExpr _ 
+  | UnaryOperator _
+  | CXXOperatorCallExpr _ ->
     prerr_endline ("WARNING: parse_nexp: rewriting to unknown: " ^ Dlang.exp_to_s e);
     Ok NUnknown
 
@@ -338,7 +345,7 @@ end
 (* -------------------------------------------------------------- *)
 
 let cast_map f = Rjson.map_all f (fun idx s e ->
-  StackTrace.Because ("Error in index #" ^ (string_of_int (idx + 1)), e))
+  StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
 (*
 let parse_access (a:d_access) : Exp.acc_expr d_result =
   let* i = with_msg "parse_access: index" (cast_map parse_nexp) a.index in
@@ -515,7 +522,7 @@ let ret_assert (b:Dlang.d_exp) : Imp.stmt list d_result =
   | None -> ret_skip
 
 let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
-  let with_msg (m:string) f b = with_msg ("parse_stmt: " ^ m) f b in
+  let with_msg (m:string) f b = with_msg_ex (fun a -> "parse_stmt: " ^ m ^ ": " ^ Dlang.summarize_stmt c) f b in
   let ret_n = Unknown.ret_n in
   let ret_b = Unknown.ret_b in
   let ret_ns = Unknown.ret_ns in
@@ -553,7 +560,7 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
     b |> ret_b (fun b -> s_if b (Block t) (Block e))
 
   | CompoundStmt l ->
-    let* l = cast_map parse_stmt l in
+    let* l = with_msg "block" (cast_map parse_stmt) l in
     ret (Imp.Block (List.flatten l))
 
   | DeclStmt l ->
