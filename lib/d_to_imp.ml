@@ -307,20 +307,20 @@ module Unknown = struct
     then Some b
     else None
 
-  let as_decls (xs:VarSet.t) : (variable * Imp.locality * nexp option) list =
-    VarSet.elements xs |> List.map (fun x -> (x, Imp.Local, None))
+  let as_decls (l:Imp.locality) (xs:VarSet.t) : (variable * Imp.locality * nexp option) list =
+    VarSet.elements xs |> List.map (fun x -> (x, l, None))
 
-  let decl_unknown (vars:VarSet.t) : Imp.stmt list =
+  let decl_unknown (l:Imp.locality) (vars:VarSet.t) : Imp.stmt list =
     if VarSet.is_empty vars then []
     else
-      [Decl (as_decls vars)]
+      [Decl (as_decls l vars)]
 
-  let ret_u (vars:VarSet.t) (s:Imp.stmt) : Imp.stmt list d_result = 
-    Ok (decl_unknown vars @ [s])
+  let ret_u (l:Imp.locality) (vars:VarSet.t) (s:Imp.stmt) : Imp.stmt list d_result = 
+    Ok (decl_unknown l vars @ [s])
 
   let ret_f (f:'a -> VarSet.t * 'b) (handler:'b -> Imp.stmt) (n:'a) : Imp.stmt list d_result =
     let vars, n = f n in
-    ret_u vars (handler n)
+    ret_u Imp.Local vars (handler n)
 
   let ret_n: (nexp -> Imp.stmt) -> d_nexp -> Imp.stmt list d_result =
     ret_f to_nexp
@@ -360,7 +360,7 @@ let parse_decl (d:Dlang.d_decl) : (variable * Imp.locality * nexp option) list d
       Ok (vars, Some n)
     | _ -> Ok (VarSet.empty, None)
     in
-    Ok (Unknown.as_decls vars @ [d.name, Imp.Local, n])
+    Ok (Unknown.as_decls Imp.Local vars @ [d.name, Imp.Local, n])
   ) else (
     prerr_endline ("WARNING: parse_decl: skipping non-int local variable '" ^ var_name d.name ^ "' type: " ^ Rjson.pp_js d.ty);
     Ok []
@@ -469,6 +469,26 @@ let infer_range (r:Dlang.d_for) : Exp.range option d_result =
     | None -> None)
   | None -> Ok None
 
+let get_locality (s: Imp.stmt) : Imp.locality =
+  let rec is_sync: Imp.stmt -> bool =
+    function
+    | Sync -> true
+    | Assert _
+    | Acc _
+    | LocationAlias _
+    | Decl _
+    -> false
+    | Block l -> is_sync_l l
+    | If (_, s1, s2) -> is_sync_l [s1; s2]
+    | For (_, s) -> is_sync s
+  and is_sync_l: Imp.stmt list -> bool =
+    function
+    | s :: l ->
+      is_sync s || is_sync_l l
+    | [] -> false
+  in
+  if is_sync s then Imp.Global else Imp.Local
+
 let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
   let u = Unknown.make in
   let (u, x) = Unknown.create u in
@@ -481,7 +501,8 @@ let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
     range_step = Default (Num 1);
   } in
   let vars = VarSet.of_list [lb; ub] in
-  Unknown.ret_u vars (For (r, Block b))
+  let l = get_locality (Block b) in
+  Unknown.ret_u l vars (For (r, Block b))
 
 
 let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
