@@ -550,7 +550,7 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 
   | IfStmt {cond=b;then_stmt=ReturnStmt;else_stmt=CompoundStmt[]} ->
-    ret_assert b
+    ret_assert (UnaryOperator {opcode="!"; child=b; ty=Dlang.exp_type b})
 
   | IfStmt c ->
     let* b = with_msg "if.cond" parse_bexp c.cond in
