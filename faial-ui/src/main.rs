@@ -180,7 +180,6 @@ impl CommandBuilder for DuctBuilder {
 #[derive(Debug,Clone,Eq,PartialEq)]
 enum Stage {
     Parse,
-    Infer,
     Analyze,
     Solve,
 }
@@ -193,8 +192,6 @@ impl Iterator for StageIter {
     fn next(&mut self) -> Option<Stage> {
         match &self.0 {
             Some(Stage::Parse) =>
-                std::mem::replace(&mut self.0, Some(Stage::Infer)),
-            Some(Stage::Infer) =>
                 std::mem::replace(&mut self.0, Some(Stage::Analyze)),
             Some(Stage::Analyze) =>
                 std::mem::replace(&mut self.0, Some(Stage::Solve)),
@@ -215,8 +212,7 @@ impl Stage {
 enum InputType {
     CUDA,
     PROTO,
-    CJSON,
-    PJSON,
+    JSON,
     SMT
 }
 
@@ -242,7 +238,7 @@ impl InputType {
             return InputType::SMT;
         }
         if curr_ext == "json" {
-            return InputType::CJSON;
+            return InputType::JSON;
         }
         return InputType::CUDA;
     }
@@ -250,8 +246,7 @@ impl InputType {
     fn as_stage(&self) -> Stage {
         match self {
             InputType::CUDA => Stage::Parse,
-            InputType::CJSON => Stage::Infer,
-            InputType::PJSON | InputType::PROTO => Stage::Analyze,
+            InputType::JSON | InputType::PROTO=> Stage::Analyze,
             InputType::SMT => Stage::Solve,
         }
     }
@@ -260,18 +255,16 @@ impl InputType {
         match self {
             InputType::CUDA => "cuda",
             InputType::PROTO => "proto",
-            InputType::CJSON => "cjson",
-            InputType::PJSON => "pjson",
+            InputType::JSON => "json",
             InputType::SMT => "smt",
         }
     }
 
-    fn values() -> [InputType; 5] {
+    fn values() -> [InputType; 4] {
         [
             InputType::CUDA,
             InputType::PROTO,
-            InputType::CJSON,
-            InputType::PJSON,
+            InputType::JSON,
             InputType::SMT,
         ]
     }
@@ -284,14 +277,12 @@ impl FromStr for InputType {
         match data {
             "cuda" => Ok(InputType::CUDA),
             "proto" => Ok(InputType::PROTO),
-            "cjson" => Ok(InputType::CJSON),
-            "pjson" => Ok(InputType::PJSON),
+            "json" => Ok(InputType::JSON),
             "smt" => Ok(InputType::SMT),
             x => Err(format!("Unknown format: {}", x)),
         }
     }
 }
-
 
 #[derive(Debug)]
 struct Faial {
@@ -300,12 +291,10 @@ struct Faial {
     expect_invalid: bool,
     input: Option<String>,
     analyze_only: bool,
-    infer_only: bool,
     parse_only: bool,
     stage: Stage,
     analyze_json: bool,
     skip_typecheck: bool,
-    infer_output_json: bool,
     block_dim: Vec<usize>,
     grid_dim: Vec<usize>,
     verbose: bool,
@@ -315,13 +304,31 @@ struct Faial {
     dry_run: bool,
     internal_steps: Option<u8>,
     faial_bin: String,
-    faial_infer: String,
     cu_to_json: String,
     includes: Vec<String>,
     z3: String,
 }
 
 impl Faial {
+    fn add_grid_dim(&self, cmd: &mut Vec<String>) -> () {
+        for (idx, field) in ["x", "y", "z"].iter().enumerate() {
+            let d = self.grid_dim.get(idx).unwrap_or(&1);
+            cmd.push(format!("-DgridDim.{}={}", field, d));
+            if d.clone() == 1 {
+                cmd.push(format!("-DblockIdx.{}=0", field));
+            }
+        }
+    }
+    fn add_block_dim(&self, cmd: &mut Vec<String>) -> () {
+        if self.block_dim.len() == 0 {
+            cmd.push(format!("-DblockDim.y=1"));
+            cmd.push(format!("-DblockDim.z=1"));
+        } else {
+            cmd.push(format!("-DblockDim.x={}", self.block_dim.get(0).unwrap_or(&1)));
+            cmd.push(format!("-DblockDim.y={}", self.block_dim.get(1).unwrap_or(&1)));
+            cmd.push(format!("-DblockDim.z={}", self.block_dim.get(2).unwrap_or(&1)));
+        }
+    }
     fn get_command(&self, stage:Stage, filename:Option<String>) -> Cmd {
         match stage {
             Stage::Parse => {
@@ -340,32 +347,6 @@ impl Faial {
                 }
                 Cmd::checked(cmd)
             },
-            Stage::Infer => {
-                let mut cmd = Vec::new();
-                cmd.push(self.faial_infer.clone());
-                if self.infer_only {
-                    if let Some(lvl) = self.internal_steps {
-                        // Set the level of the analysis, example: -3
-                        cmd.push("-X".to_string());
-                        cmd.push(format!("{}", lvl));
-                    }
-                    if self.infer_output_json {
-                        cmd.push("--provenance".to_string());
-                        cmd.push("-t".to_string());
-                        cmd.push("json".to_string());
-                    }
-                } else {
-                    cmd.push("--provenance".to_string());
-                    cmd.push("-t".to_string());
-                    cmd.push("json".to_string());
-                }
-                if let Some(filename) = filename {
-                    cmd.push(filename);
-                } else {
-                    cmd.push("-".to_string());
-                }
-                Cmd::checked(cmd)
-            },
             Stage::Analyze => {
                 let mut cmd = vec![self.faial_bin.clone()];
                 if self.analyze_only {
@@ -377,13 +358,8 @@ impl Faial {
                 if self.expect_invalid {
                     cmd.push("--expect-invalid".to_string());
                 }
-                let field = vec!["x", "y", "z"];
-                for (idx, d) in self.grid_dim.iter().enumerate() {
-                    cmd.push(format!("-DgridDim.{}={}", field.get(idx).unwrap(), d));
-                }
-                for (idx, d) in self.block_dim.iter().enumerate() {
-                    cmd.push(format!("-DblockDim.{}={}", field.get(idx).unwrap(), d));
-                }
+                self.add_grid_dim(&mut cmd);
+                self.add_block_dim(&mut cmd);
                 for (k,v) in &self.variables {
                     cmd.push(format!("-D{}={}", k, v));
                 }
@@ -415,8 +391,6 @@ impl Faial {
         let mut last = Stage::Solve;
         if self.parse_only {
             last = Stage::Parse;
-        } else if self.infer_only {
-            last = Stage::Infer;
         } else if self.analyze_only || self.expect_invalid {
             last = Stage::Analyze;
         }
@@ -531,7 +505,6 @@ impl Faial {
                     .long("expect-race")
                     .help("Sets exit status according to finding data-races.")
                     .conflicts_with("solve_only")
-                    .conflicts_with("infer_only")
                     .conflicts_with("analyze_only")
                 )
                 .arg(Arg::with_name("steps")
@@ -544,7 +517,6 @@ impl Faial {
                     .long("expect-invalid")
                     .help("Sets exit status according to finding invalid code.")
                     .conflicts_with("solve_only")
-                    .conflicts_with("infer_only")
                     .conflicts_with("parse_only")
                 )
                 .arg(Arg::with_name("analyze_only")
@@ -552,14 +524,12 @@ impl Faial {
                     .short("A")
                     .help("Halts after analysis")
                     .conflicts_with("solve_only")
-                    .conflicts_with("infer_only")
                     .conflicts_with("parse_only")
                 )
                 .arg(Arg::with_name("solve_only")
                     .long("solve-only")
                     .short("S")
                     .help("Halts after invoking solver")
-                    .conflicts_with("infer_only")
                     .conflicts_with("analyze_only")
                     .conflicts_with("parse_only")
                 )
@@ -568,16 +538,7 @@ impl Faial {
                     .short("P")
                     .help("Halts after invoking parser")
                     .conflicts_with("solve_only")
-                    .conflicts_with("infer_only")
                     .conflicts_with("analyze_only")
-                )
-                .arg(Arg::with_name("infer_only")
-                    .long("infer-only")
-                    .short("N")
-                    .help("Halts after model inference")
-                    .conflicts_with("solve_only")
-                    .conflicts_with("analyze_only")
-                    .conflicts_with("parse_only")
                 )
                 .arg(Arg::with_name("verbose")
                     .long("verbose")
@@ -586,10 +547,6 @@ impl Faial {
                 .arg(Arg::with_name("dry_run")
                     .long("dry-run")
                     .help("Prints the sequence of programs being run internally and exits")
-                )
-                .arg(Arg::with_name("infer_output_json")
-                    .long("--infer-output-json")
-                    .help("Outputs the result of inference as a PJSON format.")
                 )
                 .arg(Arg::with_name("input_type")
                     .long("type")
@@ -607,7 +564,6 @@ impl Faial {
                     .takes_value(true)
                     .min_values(0)
                     .max_values(3)
-                    .conflicts_with("infer_only")
                 )
                 .arg(Arg::with_name("block_dim")
                     .help("Sets the 'blockDim' variable (first 'x', then 'y', then 'z')")
@@ -616,9 +572,8 @@ impl Faial {
                     .value_delimiter(",")
                     .multiple(true)
                     .takes_value(true)
-                    .min_values(0)
+                    .min_values(3)
                     .max_values(3)
-                    .conflicts_with("infer_only")
                 )
                 .arg(Arg::with_name("parse_gv_args")
                     .long("parse-gv-args")
@@ -647,11 +602,6 @@ impl Faial {
                     .multiple(true)
                     .takes_value(true)
                     .min_values(0)
-                )
-                .arg(Arg::with_name("faial_infer")
-                    .long("faial-infer")
-                    .help("The path to faial-infer")
-                    .takes_value(true)
                 )
                 .arg(Arg::with_name("z3")
                     .help("The path to z3")
@@ -686,8 +636,8 @@ impl Faial {
             std::process::exit(255);
         }
         let analyze_json = match stage {
-            Stage::Infer | Stage::Parse => true,
-            _ => input_type == InputType::CJSON,
+            Stage::Parse => true,
+            _ => input_type == InputType::JSON,
         };
         let mut opts = Faial {
             expect_race: matches.is_present("expect_race"),
@@ -695,7 +645,6 @@ impl Faial {
             solve_only: matches.is_present("solve_only"),
             input: input,
             analyze_only: matches.is_present("analyze_only"),
-            infer_only: matches.is_present("infer_only"),
             parse_only: matches.is_present("parse_only"),
             grid_dim: get_vec(&matches, "grid_dim").unwrap(),
             block_dim: get_vec(&matches, "block_dim").unwrap(),
@@ -703,14 +652,12 @@ impl Faial {
             defines: get_vec(&matches, "defines").unwrap(),
             stage: stage,
             internal_steps: parse_opt::<u8>(&matches, "steps"),
-            infer_output_json: matches.is_present("infer_output_json"),
             analyze_json: analyze_json,
             verbose: matches.is_present("verbose"),
             variables: parse_key_val(&matches, "variables"),
             input_type: input_type,
             dry_run: matches.is_present("dry_run"),
             faial_bin: matches.value_of("faial_bin").unwrap_or("faial-bin").to_string(),
-            faial_infer: matches.value_of("faial_infer").unwrap_or("faial-infer").to_string(),
             z3: matches.value_of("z3").unwrap_or("z3").to_string(),
             cu_to_json: matches.value_of("cu_to_json").unwrap_or("cu-to-json").to_string(),
             skip_typecheck: true,
@@ -795,9 +742,6 @@ fn main() {
             eprintln!("Internal error running: {}\nReason: {}", pipe_str, e);
             if ! check_exe(&faial.cu_to_json) {
                 eprintln!("Could not execute cu-to-json: {}", faial.cu_to_json);
-            }
-            if ! check_exe(&faial.faial_infer) {
-                eprintln!("Could not execute faial-infer: {}", faial.faial_infer);
             }
             if ! check_exe(&faial.faial_bin) {
                 eprintln!("Could not execute faial-bin: {}", faial.faial_bin);
