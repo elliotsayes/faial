@@ -178,12 +178,6 @@ let main_t =
               not (VarSet.mem (var_make x) k.kernel_global_variables)
             )
           in
-          match missed_keys with
-          | (x, _) :: _ ->
-            prerr_endline ("ERROR: variable '" ^ x ^ "' is undefined or is a thread-local variable, which cannot be set");
-            exit (-1)
-          | [] -> ()
-          ;
           let thread_count : int list = Common.map_opt (fun (k, v) ->
             if List.mem k ["blockDim.x"; "blockDim.y"; "blockDim.z"] then
               Some v
