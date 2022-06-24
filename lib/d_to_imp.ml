@@ -232,8 +232,8 @@ module Unknown = struct
     let rec add (c:int) : VarSet.t =
       if c <= 0 then VarSet.empty
       else
-        let st = st - 1 in
-        VarSet.add (get_var st) (add st)
+        let c = c - 1 in
+        VarSet.add (get_var c) (add c)
     in
     add st
 
