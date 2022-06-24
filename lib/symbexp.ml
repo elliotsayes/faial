@@ -45,7 +45,7 @@ let proj_access (locals:VarSet.t) (t:task) (ca:cond_access) : cond_access =
   in
   let rec inline_proj_n (t:task) (n: nexp) : nexp =
     match n with
-    | Num _ | NUnknown -> n
+    | Num _ -> n
     | Var x when VarSet.mem x locals -> Var (proj_var t x)
     | Var _ -> n
     | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
@@ -55,7 +55,7 @@ let proj_access (locals:VarSet.t) (t:task) (ca:cond_access) : cond_access =
   and inline_proj_b (t:task) (b: bexp) : bexp =
     match b with
     | Pred (x, n) -> Pred (x, inline_proj_n t n)
-    | Bool _ | BUnknown -> b
+    | Bool _ -> b
     | BNot b -> BNot (inline_proj_b t b)
     | BRel (o, b1, b2) -> BRel (o, inline_proj_b t b1, inline_proj_b t b2)
     | NRel (o, n1, n2) -> NRel (o, inline_proj_n t n1, inline_proj_n t n2)

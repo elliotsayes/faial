@@ -48,14 +48,6 @@ let parse_nrel_opt: string -> nrel option =
   | ">"  -> Some NGt
   | x -> None
 
-let parse_brel: string -> bexp -> bexp -> bexp =
-  function
-  | "||" -> b_or
-  | "&&" -> b_and
-  | x ->
-    prerr_endline ("WARNING: parse_brel: Can't handle " ^ x ^ " converting it to unknown");
-    fun b1 b2 -> BUnknown
-
 let with_msg (msg:string) (f:'a -> 'b d_result) (c:'a): 'b d_result =
   match f c with
   | Ok o -> Ok o
@@ -100,15 +92,41 @@ let cuda_vars = cuda_local_vars @ cuda_global_vars
 
 let cuda_dims = ["x"; "y"; "z"]
 
-let rec parse_nexp (e: Dlang.d_exp) : nexp d_result =
+type d_nexp =
+  | Var of variable
+  | Num of int
+  | Bin of nbin * d_nexp * d_nexp
+  | Proj of task * variable
+  | NCall of string * d_nexp
+  | NIf of d_bexp * d_nexp * d_nexp
+  | NUnknown
+
+and d_bexp =
+  | Bool of bool
+  | NRel of nrel * d_nexp * d_nexp
+  | BRel of brel * d_bexp * d_bexp
+  | BNot of d_bexp
+  | Pred of string * d_nexp
+  | BUnknown
+
+
+let parse_brel (op:string) (l:d_bexp) (r:d_bexp) : d_bexp =
+  match op with
+  | "||" -> BRel (BOr, l, r)
+  | "&&" -> BRel (BAnd, l, r)
+  | x ->
+    prerr_endline ("WARNING: parse_brel: Can't handle " ^ x ^ " converting it to unknown");
+    BUnknown
+
+let rec parse_nexp (e: Dlang.d_exp) : d_nexp d_result =
   let parse_b m b = with_exp m e parse_bexp b in
   let parse_n m n = with_exp m e parse_nexp n in
   match e with
   (* ---------------- CUDA SPECIFIC ----------- *)
   | MemberExpr {base=VarDecl{name=base}; name=dim} 
     when List.mem (var_name base) cuda_vars && List.mem dim cuda_dims->
-      let x = var_name base ^ "." ^ dim |> var_make in
-      Ok (Var x)
+    let x = var_name base ^ "." ^ dim |> var_make in
+    Ok (Var x)
 
   (* ------------------------------------------ *)
   | NonTypeTemplateParmDecl { name = v ; _ }
@@ -124,20 +142,20 @@ let rec parse_nexp (e: Dlang.d_exp) : nexp d_result =
     let* b = parse_b "cond" o.cond in
     let* n1 = parse_n "then_expr" o.then_expr in
     let* n2 = parse_n "else_expr" o.else_expr in
-    Ok (n_if b n1 n2)
+    Ok (NIf (b, n1, n2))
   | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]} when var_name n = "min" ->
     let* n1 = parse_n "lhs" n1 in
     let* n2 = parse_n "rhs" n2 in
-    Ok (n_if (n_lt n1 n2) n1 n2)
+    Ok (NIf (NRel (NLt, n1, n2), n1, n2))
   | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]} when var_name n = "max" ->
     let* n1 = parse_n "lhs" n1 in
     let* n2 = parse_n "rhs" n2 in
-    Ok (n_if (n_gt n1 n2) n1 n2)
+    Ok (NIf (NRel (NGt, n1, n2), n1, n2))
   | BinaryOperator {opcode=o; lhs=n1; rhs=n2} ->
     let* n1 = parse_n "lhs" n1 in
     let* n2 = parse_n "rhs" n2 in
     Ok (match parse_nbin o with
-    | Some o -> n_bin o n1 n2
+    | Some o -> Bin (o, n1, n2)
     | None -> NUnknown)
   | CXXBoolLiteralExpr b ->
     Ok (Num (if b then 1 else 0))
@@ -153,19 +171,19 @@ let rec parse_nexp (e: Dlang.d_exp) : nexp d_result =
   | _ ->
     root_cause ("WARNING: parse_nexp: unsupported expression " ^ Dlang.exp_name e ^ " : " ^ Dlang.exp_to_s e)
 
-and parse_bexp (e: Dlang.d_exp) : bexp d_result =
+and parse_bexp (e: Dlang.d_exp) : d_bexp d_result =
   let parse_b m b = with_exp ("parse_bexp: " ^ m) e parse_bexp b in
   let parse_n m n = with_exp ("parse_bexp: " ^ m) e parse_nexp n in
   match e with
   | BinaryOperator {lhs=l; opcode="&"; rhs=IntegerLiteral 1} ->
     let* n = parse_nexp l in
-    Ok (n_eq (n_mod n (Num 2)) (Num 0))
+    Ok (NRel (NEq, Bin (Mod, n, (Num 2)), Num 0))
   | BinaryOperator o ->
     (match parse_nrel_opt o.opcode with
     | Some r ->
       let* n1 = parse_n "lhs" o.lhs in
       let* n2 = parse_n "rhs" o.rhs in
-      Ok (n_rel r n1 n2)
+      Ok (NRel (r, n1, n2))
     | None ->
       let* b1 = parse_b "lhs" o.lhs in
       let* b2 = parse_b "rhs" o.rhs in
@@ -174,23 +192,160 @@ and parse_bexp (e: Dlang.d_exp) : bexp d_result =
 
   | UnaryOperator u when u.opcode = "!" ->
     let* b = parse_b "not" u.child in
-    Ok (b_not b)
+    Ok (BNot b)
 
   | _ ->
     let* n = parse_n (Dlang.exp_name e) e in
     prerr_endline ("WARNING: parse_bexp: rewriting '" ^ Dlang.exp_to_s e ^ "' to: 0 != " ^ Dlang.exp_to_s e);
-    Ok (n_neq n (Num 0))
+    Ok (NRel (NEq, n, (Num 0)))
 
+
+(* -------------------------------------------------------------- *)
+
+
+(* 
+   Parsing expressions requires a global state
+   which is a set of unknowns. Whenever we parse a
+   statement we may create certain unknowns. Such variables
+   are defined within the scope of that statement alone.
+   The state UnknownSt is global to parsing numerical
+   and boolean expressions.
+ *)
+module Unknown = struct
+  type t = int
+
+  let make : t = 0
+
+  let get_var (st:t) = var_make ("__unk" ^ string_of_int st)
+
+  let create (st:t) : t * variable =
+    (st + 1, get_var st)
+
+  let get (st:t) : VarSet.t =
+    let rec add (c:int) : VarSet.t =
+      if c <= 0 then VarSet.empty
+      else
+        let st = st - 1 in
+        VarSet.add (get_var st) (add st)
+    in
+    add st
+
+  let rec handle_n (u:t) (n:d_nexp) : (t * nexp) =
+    match n with
+    | Var x -> (u, Exp.Var x)
+    | Num x -> (u, Exp.Num x)
+    | Bin (o, n1, n2) ->
+      let (u, n1) = handle_n u n1 in
+      let (u, n2) = handle_n u n2 in
+      (u, Exp.Bin (o, n1, n2))
+    | Proj (x, y) -> (u, Exp.Proj (x, y))
+    | NCall (x, n) ->
+      let (u, n) = handle_n u n in
+      (u, Exp.NCall (x, n)) 
+    | NIf (b, n1, n2) ->
+      let (u, b) = handle_b u b in
+      let (u, n1) = handle_n u n1 in
+      let (u, n2) = handle_n u n2 in
+      (u, Exp.NIf (b, n1, n2))
+    | NUnknown ->
+      let (u, x) = create u in
+      (u, Exp.Var x)
+
+  and handle_b (u:t) (b:d_bexp) : (t * bexp) =
+    match b with
+    | Bool x -> (u, Exp.Bool x)
+    | NRel (o, n1, n2) ->
+      let (u, n1) = handle_n u n1 in
+      let (u, n2) = handle_n u n2 in
+      (u, NRel (o, n1, n2))
+    | BRel (o, b1, b2) ->
+      let (u, b1) = handle_b u b1 in
+      let (u, b2) = handle_b u b2 in
+      (u, BRel (o, b1, b2))
+    | BNot b ->
+      let (u, b) = handle_b u b in
+      (u, BNot b)
+    | Pred (x, n) ->
+      let (u, n) = handle_n u n in
+      (u, Pred (x, n))
+    | BUnknown ->
+      let (u, x) = create u in
+      (u, NRel (NNeq, Var x, Num 0))
+
+  let convert (handler:t -> 'a -> t * 'b) (n:'a) : VarSet.t * 'b =
+    let (u, n) = handler make n in
+    (get u, n)
+
+  (* Convert a d_nexp into an nexp and get the set of unknowns *)
+  let to_nexp: d_nexp -> VarSet.t * nexp = convert handle_n
+
+  (* Convert a d_bexp into an bexp and get the set of unknowns *)
+  let to_bexp: d_bexp -> VarSet.t * bexp = convert handle_b
+
+  let rec mmap (f:t -> 'a -> t * 'b) (st:t) : 'a list -> (t * 'b list) =
+    function
+    | [] -> (st, [])
+    | x :: l ->
+      let (st, x) = f st x in
+      let (st, l) = mmap f st l in
+      (st, x :: l) 
+
+  let to_nexp_list: d_nexp list -> VarSet.t * nexp list =
+    convert (mmap handle_n)
+
+  (* Convert a d_nexp into an nexp only if there are no unknowns *)
+  let try_to_nexp (n:d_nexp) : nexp option =
+    let (u, n) = handle_n make n in
+    if u = 0
+    then Some n
+    else None
+
+  (* Convert a d_bexp into an bexp only if there are no unknowns *)
+  let try_to_bexp (n:d_bexp) : bexp option =
+    let (u, b) = handle_b make n in
+    if u = 0
+    then Some b
+    else None
+
+  let as_decls (xs:VarSet.t) : (variable * Imp.locality * nexp option) list =
+    VarSet.elements xs |> List.map (fun x -> (x, Imp.Local, None))
+
+  let decl_unknown (vars:VarSet.t) : Imp.stmt list =
+    if VarSet.is_empty vars then []
+    else
+      [Decl (as_decls vars)]
+
+  let ret_u (vars:VarSet.t) (s:Imp.stmt) : Imp.stmt list d_result = 
+    Ok (decl_unknown vars @ [s])
+
+  let ret_f (f:'a -> VarSet.t * 'b) (handler:'b -> Imp.stmt) (n:'a) : Imp.stmt list d_result =
+    let vars, n = f n in
+    ret_u vars (handler n)
+
+  let ret_n: (nexp -> Imp.stmt) -> d_nexp -> Imp.stmt list d_result =
+    ret_f to_nexp
+
+  let ret_ns: (nexp list -> Imp.stmt) -> d_nexp list -> Imp.stmt list d_result =
+    ret_f to_nexp_list
+
+  let ret_b: (bexp -> Imp.stmt) -> d_bexp -> Imp.stmt list d_result =
+    ret_f to_bexp
+
+
+end
+
+
+(* -------------------------------------------------------------- *)
 
 let cast_map f = Rjson.map_all f (fun idx s e ->
   StackTrace.Because ("Error in index #" ^ (string_of_int (idx + 1)), e))
-
+(*
 let parse_access (a:d_access) : Exp.acc_expr d_result =
   let* i = with_msg "parse_access: index" (cast_map parse_nexp) a.index in
   Ok (a.location, {access_index=i; access_mode=a.mode})
+*)
 
-
-let parse_decl (d:Dlang.d_decl) : (variable * Imp.locality * nexp option) option d_result =
+let parse_decl (d:Dlang.d_decl) : (variable * Imp.locality * nexp option) list d_result =
   let parse_n m b = with_msg (m ^ ": " ^ Dlang.decl_to_s d) parse_nexp b in
   let* ty = match Cast.parse_type d.ty with
   | Ok ty -> Ok ty
@@ -198,16 +353,17 @@ let parse_decl (d:Dlang.d_decl) : (variable * Imp.locality * nexp option) option
   in
   if Ctype.is_int ty
   then (
-    let* (n:Exp.nexp option) = match d.init with
+    let* ((vars, n):(VarSet.t * (nexp option))) = match d.init with
     | Some (IExp n) ->
       let* n = parse_n "init" n in
-      Ok (Some n)
-    | _ -> Ok None
+      let (vars, n) = Unknown.to_nexp n in
+      Ok (vars, Some n)
+    | _ -> Ok (VarSet.empty, None)
     in
-    Ok (Some (d.name, Imp.Local, n))
+    Ok (Unknown.as_decls vars @ [d.name, Imp.Local, n])
   ) else (
     prerr_endline ("WARNING: parse_decl: skipping non-int local variable '" ^ var_name d.name ^ "' type: " ^ Rjson.pp_js d.ty);
-    Ok None
+    Ok []
   )
 
 let is_pointer (j:Yojson.Basic.t) =
@@ -230,16 +386,19 @@ let rec parse_load_expr (target:Dlang.d_exp) (exp:Dlang.d_exp)
   | _ ->
     Right exp
 
-let parse_location_alias (s:d_location_alias) : Imp.stmt d_result =
+
+
+let parse_location_alias (s:d_location_alias) : Imp.stmt list d_result =
   let* source = with_msg "location_alias.source" parse_var s.source in
   let* target = with_msg "location_alias.target" parse_var s.target in
   let* offset = with_msg "location_alias.offset" parse_nexp s.offset in
-  let open Imp in
-  Ok (LocationAlias {
-    alias_source=source;
-    alias_target=target;
-    alias_offset=offset
-  })
+  offset |> Unknown.ret_n (fun offset ->
+    LocationAlias {
+      alias_source=source;
+      alias_target=target;
+      alias_offset=offset
+    }
+  )
 
 
 type 'a unop =
@@ -252,16 +411,20 @@ type for_range = {
   inc: Loops.increment unop;
 }
 
-let parse_unop (u:'a Loops.unop) : 'a unop d_result =
+let parse_unop (u:'a Loops.unop) : 'a unop option d_result =
   let* arg = parse_nexp u.arg in
-  Ok {op=u.op; arg=arg}
+  Ok (match Unknown.try_to_nexp arg with
+    | Some arg -> Some {op=u.op; arg=arg}
+    | None -> None)
 
 let infer_range (r:Dlang.d_for) : Exp.range option d_result =
-  let parse_for_range (r:Loops.d_for_range) : for_range d_result =
+  let parse_for_range (r:Loops.d_for_range) : for_range option d_result =
     let* init = parse_nexp r.init in
     let* cond = parse_unop r.cond in
     let* inc = parse_unop r.inc in
-    Ok {name = r.name; init=init; cond=cond; inc=inc}
+    Ok (match Unknown.try_to_nexp init, cond, inc with
+    | Some init, Some cond, Some inc -> Some {name = r.name; init=init; cond=cond; inc=inc}
+    | _, _, _ -> None)
   in
   let infer_range (r:for_range) : Exp.range option =
     let open Loops in
@@ -301,55 +464,61 @@ let infer_range (r:Dlang.d_for) : Exp.range option d_result =
   match Loops.parse_for r with
   | Some r ->
     let* r = parse_for_range r in
-    Ok (infer_range r)
+    Ok (match r with
+    | Some r -> infer_range r
+    | None -> None)
   | None -> Ok None
 
 
-let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt d_result =
+let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
   let with_msg (m:string) f b = with_msg ("parse_stmt: " ^ m) f b in
-
+  let ret (s:Imp.stmt) : Imp.stmt list d_result = Ok [s] in
+  let ret_n = Unknown.ret_n in
+  let ret_b = Unknown.ret_b in
+  let ret_ns = Unknown.ret_ns in
   match c with
 
   | SExp (CallExpr {func=FunctionDecl{name=n}; args=[]})
     when var_name n = "__syncthreads" ->
-    Ok Imp.Sync
+    ret Imp.Sync
 
   | SExp (CallExpr {func = FunctionDecl {name = n; _}; args = [b]})
     when var_name n = "__requires" ->
     let* b = with_msg "cond" parse_bexp b in
-    Ok (Imp.Assert b)
-
+    b |> ret_b (fun b -> Imp.Assert b)
 
   | WriteAccessStmt w ->
     let x = w.target.name in
     let* idx = with_msg "write.idx" (cast_map parse_nexp) w.target.index in
-    Ok (Imp.Acc (x, {access_index=idx; access_mode=W}))
+    idx |> ret_ns (fun idx -> Imp.Acc (x, {access_index=idx; access_mode=W}))
 
   | ReadAccessStmt r ->
     let x = r.source.name in
     let* idx = with_msg "read.idx" (cast_map parse_nexp) r.source.index in
-    Ok (Imp.Acc (x, {access_index=idx; access_mode=R}))
+    idx |> ret_ns (fun idx ->
+        Imp.Acc (x, {access_index=idx; access_mode=R})
+    )
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 
   | IfStmt {cond=b;then_stmt=ReturnStmt;else_stmt=CompoundStmt[]} ->
     let* b = with_msg "cond" parse_bexp b in
     let open Imp in
-    Ok (Imp.Assert (b_not b))
+    b |> ret_b (fun b -> Imp.Assert (b_not b))
 
   | IfStmt c ->
     let* b = with_msg "if.cond" parse_bexp c.cond in
     let* t = with_msg "if.then" parse_stmt c.then_stmt in
     let* e = with_msg "if.else" parse_stmt c.else_stmt in
     let open Imp in
-    Ok (s_if b t e)
+    b |> ret_b (fun b -> s_if b (Block t) (Block e))
 
   | CompoundStmt l ->
     let* l = cast_map parse_stmt l in
-    Ok (Imp.Block l)
+    ret (Imp.Block (List.flatten l))
 
   | DeclStmt l ->
-    let* l = cast_map parse_decl l |> Result.map Common.flatten_opt in
-    Ok (Imp.Decl l)
+    let* l = cast_map parse_decl l |> Result.map List.concat in
+    ret (Imp.Decl l)
 
   | SExp ((BinaryOperator {opcode="="; lhs=VarDecl {name=v; ty=ty} as lhs; rhs=rhs}))
   | SExp ((BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; ty=ty} as lhs; rhs=rhs}))
@@ -358,37 +527,37 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt d_result =
     (match parse_load_expr lhs rhs with
     | Left a ->
       parse_location_alias a
-    | Right _ -> Ok (Imp.Block []))
+    | Right _ -> Ok [])
 
   | SExp (BinaryOperator {opcode="="; lhs=VarDecl {name=v; ty=ty}; rhs=rhs})
   | SExp (BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; ty=ty}; rhs=rhs})
     ->
     let* rhs = with_msg "assign.rhs" parse_nexp rhs in
-    let open Imp in 
-    Ok (Decl [v, Local, Some rhs])
+    let open Imp in
+    rhs |> ret_n (fun rhs -> Decl [v, Local, Some rhs])
 
   | BreakStmt
   | GotoStmt
   | ReturnStmt 
-  | SExp _ -> Ok (Imp.Block [])
+  | SExp _ -> Ok []
 
   | ForStmt s ->
     let* r = infer_range s in
     let* b = with_msg "for.body" parse_stmt s.body in
     let open Imp in
-    (match r with
-    | Some r -> Ok (For (r, b))
-    | None -> Ok (Loop b))
+    ret (match r with
+    | Some r -> For (r, Block b)
+    | None -> Loop (Block b))
 
   | DoStmt {cond=cond; body=body} ->
     let* body = with_msg "do.body" parse_stmt body in
     let open Imp in
-    Ok (Loop body)
+    ret (Loop (Block body))
 
   | WhileStmt {cond=cond; body=body} ->
     let* body = with_msg "while.body" parse_stmt body in
     let open Imp in
-    Ok (Loop body)
+    ret (Loop (Block body))
 
   | SwitchStmt s ->
     with_msg "switch.body" parse_stmt s.body
@@ -500,7 +669,7 @@ let parse_kernel (shared_params:(variable * array_t) list) (k:Dlang.d_kernel) : 
   Ok {
     p_kernel_name = k.name;
     p_kernel_pre = Exp.b_true; (* TODO: implement this *)
-    p_kernel_code = cuda_preamble code;
+    p_kernel_code = cuda_preamble (Block code);
     p_kernel_params = params;
     p_kernel_arrays = VarMap.union 
       (fun k l r -> Some r)

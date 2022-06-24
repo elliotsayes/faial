@@ -95,7 +95,6 @@ type brel =
   | BAnd
 
 type nexp =
-  | NUnknown
   | Var of variable
   | Num of int
   | Bin of nbin * nexp * nexp
@@ -103,36 +102,12 @@ type nexp =
   | NCall of string * nexp
   | NIf of bexp * nexp * nexp
 
-
 and bexp =
-  | BUnknown
   | Bool of bool
   | NRel of nrel * nexp * nexp
   | BRel of brel * bexp * bexp
   | BNot of bexp
   | Pred of string * nexp
-
-let rec n_is_unknown (e:nexp) =
-  match e with
-  | NUnknown -> true
-  | Var _ | Num _ | Proj _ -> false
-  | NCall (_, n) -> n_is_unknown n
-  | Bin (_, n1, n2) ->
-    n_is_unknown n1 || n_is_unknown n2
-  | NIf (b, n1, n2) ->
-    b_is_unknown b
-    || n_is_unknown n1
-    || n_is_unknown n2
-and b_is_unknown (e:bexp) =
-  match e with
-  | BUnknown -> true
-  | Bool _ -> false
-  | NRel (_, n1, n2) -> n_is_unknown n1 || n_is_unknown n2
-  | BRel (_, b1, b2) -> b_is_unknown b1 || b_is_unknown b2
-
-  | BNot b -> b_is_unknown b
-  | Pred (_, n) -> n_is_unknown n
-
 
 let eval_nbin (o:nbin) : int -> int -> int =
   match o with
@@ -163,7 +138,6 @@ let eval_brel o : bool -> bool -> bool =
 
 let rec n_eval (n: nexp) : int =
   match n with
-  | NUnknown -> failwith "n_eval: unknown"
   | Var x -> failwith ("n_eval: variable " ^ (var_name x))
   | Num n -> n
   | Bin (o, n1, n2) -> eval_nbin o (n_eval n1) (n_eval n2)
@@ -173,7 +147,6 @@ let rec n_eval (n: nexp) : int =
     if (b_eval b) then (n_eval n1) else (n_eval n2)
 and b_eval (b: bexp) : bool =
   match b with
-  | BUnknown -> failwith "b_eval: unknown"
   | Bool b -> b
   | NRel (o, n1, n2) ->
     eval_nrel o (n_eval n1) (n_eval n2)
@@ -204,12 +177,10 @@ let n_neq = n_rel NNeq
 let n_if b n1 n2 =
   match b with
   | Bool b -> if b then n1 else n2
-  | BUnknown -> NUnknown
   | _ -> NIf (b, n1, n2)
 
 let n_plus n1 n2 =
   match n1, n2 with
-  | NUnknown, _ | _, NUnknown -> NUnknown
   | Num 0, n | n, Num 0 -> n
   | Num n1, Num n2 -> Num (n1 + n2)
   | Num n1, Bin (Plus, Num n2, e)
@@ -220,14 +191,12 @@ let n_plus n1 n2 =
 
 let n_minus n1 n2 =
   match n1, n2 with
-  | NUnknown, _ | _, NUnknown -> NUnknown
   | n, Num 0 -> n
   | Num n1, Num n2 -> Num (n1 - n2)
   | _, _ -> Bin (Minus, n1, n2)
 
 let n_mult n1 n2 =
   match n1, n2 with
-  | NUnknown, _ | _, NUnknown -> NUnknown
   | Num 1, n | n, Num 1 -> n
   | Num 0, _ | _, Num 0 -> Num 0
   | Num n1, Num n2 -> Num (n1 * n2)
@@ -239,7 +208,6 @@ let n_mult n1 n2 =
 
 let n_div n1 n2 =
   match n1, n2 with
-  | NUnknown, _ | _, NUnknown -> NUnknown
   | _, Num 1 -> n1
   | Num 0, _ -> Num 0
   | _, Num 0 -> failwith ("Division by 0")
@@ -248,14 +216,12 @@ let n_div n1 n2 =
 
 let n_mod n1 n2 =
   match n1, n2 with
-  | NUnknown, _ | _, NUnknown -> NUnknown
   | Num n1, Num n2 -> Num (Common.modulo n1 n2)
   | _, _ -> Bin (Mod, n1, n2)
 
 let n_bin o n1 n2 =
   try
     match o, n1, n2 with
-    | _, NUnknown, _ |_, _, NUnknown -> NUnknown
     | _, Num n1, Num n2 -> Num (eval_nbin o n1 n2)
     | Plus, _, _ -> n_plus n1 n2
     | Minus, _, _ -> n_minus n1 n2
@@ -268,27 +234,23 @@ let n_bin o n1 n2 =
 
 let b_rel o b1 b2 =
   match b1, b2 with
-  | BUnknown, _ | _, BUnknown -> BUnknown
   | Bool b1, Bool b2 -> Bool (eval_brel o b1 b2)
   | _, _ -> BRel (o, b1, b2)
 
 let b_or b1 b2 =
   match b1, b2 with
-  | BUnknown, _ | _, BUnknown -> BUnknown
   | Bool true, _ | _, Bool true -> Bool true
   | Bool false, b | b, Bool false -> b
   | _, _ -> b_rel BOr b1 b2
 
 let b_and b1 b2 =
   match b1, b2 with
-  | BUnknown, _ | _, BUnknown -> BUnknown
   | Bool true, b | b, Bool true -> b
   | Bool false, _ | _, Bool false -> Bool false
   | _, _ -> b_rel BAnd b1 b2
 
 let b_not b =
   match b with
-  | BUnknown -> BUnknown
   | BNot b -> b
   | NRel (NEq, n1, n2) -> NRel (NNeq, n1, n2)
   | NRel (NNeq, n1, n2) -> NRel (NEq, n1, n2)

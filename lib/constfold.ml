@@ -2,14 +2,12 @@ open Exp
 
 let rec norm (b:bexp) : bexp list =
   match b with
-  | BUnknown
   | Pred _
   | BNot (Pred _)
   | BRel (BOr, _, _)
   | Bool _
   | NRel _ -> [b]
   | BRel (BAnd, b1, b2) -> List.append (norm b1) (norm b2)
-  | BNot BUnknown -> [BUnknown]
   | BNot (Bool b) -> [Bool (not b)]
   | BNot (BRel (BAnd, b1, b2)) -> norm (b_or (b_not b1) (b_not b2))
   | BNot (BRel (BOr, b1, b2)) -> norm (b_and (b_not b1) (b_not b2))
@@ -28,7 +26,6 @@ let bexp_to_bool b =
 
 let rec n_opt (a : nexp) : nexp =
   match a with
-  | NUnknown
   | Var _ 
   | Num _ -> a
     (* if n < 0 then raise (Failure "Negative number") else a *)
@@ -97,7 +94,6 @@ and b_opt (e : bexp) : bexp =
       end
     | v -> Pred (x, v)
     end
-  | BUnknown
   | Bool _ -> e
   | BRel (b, b1, b2) ->
     begin
