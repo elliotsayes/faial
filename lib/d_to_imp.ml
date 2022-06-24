@@ -504,10 +504,18 @@ let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
   let l = get_locality (Block b) in
   Unknown.ret_u l vars (For (r, Block b))
 
+let ret (s:Imp.stmt) : Imp.stmt list d_result = Ok [s]
+
+let ret_skip : Imp.stmt list d_result = Ok []
+
+let ret_assert (b:Dlang.d_exp) : Imp.stmt list d_result =
+  let* b = with_msg "cond" parse_bexp b in
+  match Unknown.try_to_bexp b with
+  | Some b -> ret (Imp.Assert b)
+  | None -> ret_skip
 
 let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
   let with_msg (m:string) f b = with_msg ("parse_stmt: " ^ m) f b in
-  let ret (s:Imp.stmt) : Imp.stmt list d_result = Ok [s] in
   let ret_n = Unknown.ret_n in
   let ret_b = Unknown.ret_b in
   let ret_ns = Unknown.ret_ns in
@@ -519,8 +527,7 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
 
   | SExp (CallExpr {func = FunctionDecl {name = n; _}; args = [b]})
     when var_name n = "__requires" ->
-    let* b = with_msg "cond" parse_bexp b in
-    b |> ret_b (fun b -> Imp.Assert b)
+    ret_assert b
 
   | WriteAccessStmt w ->
     let x = w.target.name in
@@ -536,9 +543,7 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 
   | IfStmt {cond=b;then_stmt=ReturnStmt;else_stmt=CompoundStmt[]} ->
-    let* b = with_msg "cond" parse_bexp b in
-    let open Imp in
-    b |> ret_b (fun b -> Imp.Assert (b_not b))
+    ret_assert b
 
   | IfStmt c ->
     let* b = with_msg "if.cond" parse_bexp c.cond in
