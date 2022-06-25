@@ -712,12 +712,23 @@ let parse_kernel (shared_params:(variable * array_t) list) (k:Dlang.d_kernel) : 
   let shared = parse_shared k.code
     |> Common.append_rev shared_params
     |> Exp.list_to_var_map in
+  let rec add_type_params (params:VarSet.t) : Cast.c_type_param list -> VarSet.t =
+    function
+    | [] -> params
+    | PTemplateTypeParmDecl _ :: l -> add_type_params params l
+    | PNonTypeTemplateParmDecl x :: l ->
+      let params = match Cast.parse_type x.ty with
+      | Ok ty when Ctype.is_int ty -> VarSet.add x.name params
+      | _ -> params
+      in
+      add_type_params params l
+  in
   let open Imp in
   Ok {
     p_kernel_name = k.name;
     p_kernel_pre = Exp.b_true; (* TODO: implement this *)
     p_kernel_code = cuda_preamble (Block code);
-    p_kernel_params = params;
+    p_kernel_params = add_type_params params k.type_params;
     p_kernel_arrays = VarMap.union 
       (fun k l r -> Some r)
       arrays shared;

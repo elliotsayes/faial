@@ -72,6 +72,7 @@ and d_for = {init: d_for_init option; cond: d_exp option; inc: d_exp option; bod
 type d_kernel = {
   name: string;
   code: d_stmt;
+  type_params: Cast.c_type_param list;
   params: Cast.c_param list;
 }
 
@@ -485,6 +486,7 @@ let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
     name = k.name;
     code = rewrite_stmt k.code;
     params = k.params;
+    type_params = k.type_params;
   }
 
 let rewrite_def (d:Cast.c_def) : d_def =
@@ -646,6 +648,7 @@ let kernel_to_s (k:d_kernel) : PPrint.t list =
   [
     Line ("name: " ^ k.name);
     Line ("params: " ^ list_to_s Cast.param_to_s k.params);
+    Line ("type params: " ^ list_to_s Cast.type_param_to_s k.type_params);
   ]
   @
   stmt_to_s k.code

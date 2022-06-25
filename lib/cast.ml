@@ -63,9 +63,14 @@ type c_stmt =
 
 type c_param = {name: variable; is_used: bool; is_shared: bool; ty: c_type}
 
+type c_type_param =
+  | PTemplateTypeParmDecl of variable
+  | PNonTypeTemplateParmDecl of {name: variable; ty: c_type} 
+
 type c_kernel = {
   name: string;
   code: c_stmt;
+  type_params: c_type_param list;
   params: c_param list;
 }
 
@@ -578,7 +583,7 @@ let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
   in
   res |> unwrap_or false
 
-let parse_kernel (j:Yojson.Basic.t) : c_kernel j_result =
+let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j_result =
   let open Rjson in
   let* o = cast_object j in
   let* inner = with_field "inner" cast_list o in
@@ -604,6 +609,7 @@ let parse_kernel (j:Yojson.Basic.t) : c_kernel j_result =
     name = name;
     code = body;
     params = ps;
+    type_params = type_params;
   }
 
 let is_kernel (j:Yojson.Basic.t) : bool =
@@ -611,7 +617,7 @@ let is_kernel (j:Yojson.Basic.t) : bool =
   let is_kernel =
     let* o = cast_object j in
     let* k = get_kind o in
-    if k = "FunctionDecl" then
+    if k = "FunctionDecl" then (
       let* inner = with_field "inner" cast_list o in
       (* Try to parse attrs *)
       let attrs = inner
@@ -621,21 +627,56 @@ let is_kernel (j:Yojson.Basic.t) : bool =
         )
       in
       Ok (List.mem c_attr_global attrs)
-    else Ok false
+    ) else Ok false
   in
   is_kernel |> unwrap_or false
+
+let parse_type_param (j:Yojson.Basic.t) : c_type_param option j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* k = get_kind o in
+  match k with
+  | "TemplateTypeParmDecl" ->
+    let* name = parse_variable j in
+    Ok (Some (PTemplateTypeParmDecl name))
+  | "NonTypeTemplateParmDecl" ->
+    let* name = parse_variable j in
+    let* ty = get_field "type" o in
+    Ok (Some (PNonTypeTemplateParmDecl {name=name; ty=ty}))
+  | _ -> Ok None
 
 
 let parse_def (j:Yojson.Basic.t) : c_def option j_result =
   let open Rjson in
   let* o = cast_object j in
   let* k = get_kind o in
-  match k with
-  | "FunctionDecl" ->
+  let parse_k (type_params:c_type_param list) (j:Yojson.Basic.t) : c_def option j_result =
     if is_kernel j then
-      let* k = parse_kernel j in
+      let* k = parse_kernel type_params j in
       Ok (Some (Kernel k))
     else Ok None
+  in
+  match k with
+  | "FunctionTemplateDecl" ->
+    (* Given a list of inners, we parse from left-to-right the
+       template parameters first.
+       If we cannot find parse a template parameter, then
+       we try to parse a function declaration. In some cases we
+       might even have some more parameters after the function
+       declaration, but those are discarded, as I did not understand
+       what they are for. *)
+    let rec handle (type_params:c_type_param list): Yojson.Basic.t list -> c_def option j_result =
+      function
+      | [] -> root_cause "Error parsing FunctionTemplateDecl: no FunctionDecl found" j
+      | j :: l ->
+        let* p = parse_type_param j in
+        (match p with
+        | Some p -> handle (p::type_params) l
+        | None -> parse_k type_params j)
+    in
+    let* inner = with_field "inner" cast_list o in
+    handle [] inner
+  | "FunctionDecl" -> parse_k [] j
   | "VarDecl" ->
     (match parse_decl j with
     | Ok d ->
@@ -645,7 +686,8 @@ let parse_def (j:Yojson.Basic.t) : c_def option j_result =
         else None
       )
     | _ -> Ok None)
-  | _ -> Ok None
+  | _ ->
+    Ok None
 
 
 let parse_program (j:Yojson.Basic.t) : c_program j_result =
@@ -654,17 +696,6 @@ let parse_program (j:Yojson.Basic.t) : c_program j_result =
   let* inner = with_field "inner" (cast_map parse_def) o in
   Ok (Common.flatten_opt inner)
 
-
-let parse_kernels (j:Yojson.Basic.t) : c_kernel list j_result =
-  let open Rjson in
-  cast_object j
-    >>= with_field "inner" cast_list
-    |> unwrap_or [] (* ignore errors and convert it to an empty list *)
-    |> List.filter is_kernel (* only keep things that look like kernels *)
-    |> map_all (* for each kernel convert it into an object and parse it *)
-      parse_kernel
-      (* Abort the whole thing if we find a single parsing error *)
-      (fun idx k e -> StackTrace.Because (("error parsing kernel " ^ string_of_int idx, k), e))
 
 let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
   let open Rjson in
@@ -791,11 +822,19 @@ let param_to_s (p:c_param) : string =
   let shared = if p.is_shared then "shared " else "" in
   used ^ shared ^ var_name p.name
 
+let type_param_to_s (p:c_type_param) : string =
+  let name = match p with
+  | PTemplateTypeParmDecl x -> x
+  | PNonTypeTemplateParmDecl x -> x.name
+  in
+  var_name name
+
 let kernel_to_s (k:c_kernel) : PPrint.t list =
   let open PPrint in
   [
     Line ("name: " ^ k.name);
     Line ("params: " ^ list_to_s param_to_s k.params);
+    Line ("type params: " ^ list_to_s type_param_to_s k.type_params);
   ]
   @
   stmt_to_s k.code
