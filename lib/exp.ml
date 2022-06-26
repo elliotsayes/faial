@@ -280,8 +280,14 @@ let rec b_or_ex l =
 
 
 type step_expr = Default of nexp | StepName of string
+
+type direction =
+  | Increase
+  | Decrease
+
 type range = {
   range_var: variable;
+  range_dir: direction;
   range_lower_bound: nexp;
   range_upper_bound: nexp;
   range_step: step_expr;
@@ -295,7 +301,8 @@ let mk_range (x:variable) (ub:nexp) =
     range_var = x;
     range_lower_bound = Num 0;
     range_upper_bound = ub;
-    range_step = Default (Num 1)
+    range_step = Default (Num 1);
+    range_dir = Increase;
   }
 
 let range_to_cond (r:range) : bexp =

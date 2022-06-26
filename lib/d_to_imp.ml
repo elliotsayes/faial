@@ -421,18 +421,19 @@ let infer_range (r:Dlang.d_for) : Exp.range option d_result =
     let open Loops in
     let open Exp in
     let (let*) = Option.bind in
-    let (lb, ub) = match r with
+    let (lb, ub, d) = match r with
     (* (int i = 0; i < 4; i++) *)
     | {init=lb; cond={op=Lt; arg=ub}} ->
-      (lb,ub)
+      (lb, ub, Increase)
     (* (int i = 4; i >= 0; i--) *)
-    | {init=ub; cond={op=GtEq; arg=lb}}
+    | {init=ub; cond={op=GtEq; arg=lb}} ->
+      (lb, n_plus (Num 1) ub, Decrease)
     (* (int i = 0; i <= 4; i++) *)
     | {init=lb; cond={op=LtEq; arg=ub}} ->
-      (lb, n_plus (Num 1) ub)
+      (lb, n_plus (Num 1) ub, Increase)
     (* (int i = 4; i > 0; i--) *)
     | {init=ub; cond={op=Gt; arg=lb}} ->
-      (n_plus (Num 1) lb, n_plus (Num 1) ub)
+      (n_plus (Num 1) lb, n_plus (Num 1) ub, Decrease)
     in
     let* step = match r.inc with
     | {op=Plus; arg=a}
@@ -450,6 +451,7 @@ let infer_range (r:Dlang.d_for) : Exp.range option d_result =
       range_lower_bound=lb;
       range_upper_bound=ub;
       range_step=step;
+      range_dir=d;
     }
   in
   match Loops.parse_for r with
@@ -490,6 +492,7 @@ let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
     range_lower_bound = Var lb;
     range_upper_bound = Var ub;
     range_step = Default (Num 1);
+    range_dir = Increase;
   } in
   let vars = VarSet.of_list [lb; ub] in
   let l = get_locality (Block b) in

@@ -1,9 +1,5 @@
 type variable = Exp.variable
 
-type direction =
-  | Bigger
-  | Smaller
-
 type increment =
   | Plus
   | LShift
@@ -28,15 +24,6 @@ let parse_inc_op (o:string) : increment option =
 	| "*" -> Some Mult
 	| _ -> None
 
-
-let inc_to_dir: increment -> direction = function
-	| Plus
-	| LShift
-	| Mult -> Bigger
-	| Minus
-	| RShift
-	| Div -> Smaller 
-
 let parse_cmp (o:string) : comparator option =
 	match o with
 	| "<" -> Some Lt
@@ -44,13 +31,6 @@ let parse_cmp (o:string) : comparator option =
 	| "<=" -> Some LtEq
 	| ">=" -> Some GtEq
 	| _ -> None
-
-let cmp_to_dir: comparator -> direction = function
-	| Lt
-	| LtEq -> Bigger
-	| Gt
-	| GtEq -> Smaller 
-
 
 type 'a unop =
 	{op: 'a; arg: Dlang.d_exp}

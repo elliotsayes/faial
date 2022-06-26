@@ -297,12 +297,19 @@ module PPrint = struct
     | StepName x -> x
 
   let r_to_s (r : range) : string =
-    ident r.range_var ^ " in " ^
-    n_to_s r.range_lower_bound ^ " .. " ^
-    n_to_s r.range_upper_bound ^
-    (match r.range_step with
+    let x = ident r.range_var in
+    let lb = n_to_s r.range_lower_bound in
+    let ub = n_to_s r.range_upper_bound in
+    let s = match r.range_step with
     | Default (Num 1) -> ""
-    | _ -> "; " ^ ident r.range_var ^ " " ^ s_to_s r.range_step)
+    | _ -> "; " ^ ident r.range_var ^ " " ^ s_to_s r.range_step
+    in
+    let d = match r.range_dir with
+    | Increase -> "↑"
+    | Decrease -> "↓"
+    in
+    x ^ " in " ^ lb ^ " .. " ^ ub ^ s ^ " " ^ d
+    
 
   let mode_to_s: mode -> string = function
     | W -> "rw"

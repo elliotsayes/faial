@@ -103,16 +103,16 @@ prog:
 
 %inline range:
   | x = ident IN lb = nexp UNTIL ub = nexp
-   { {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=Default (Num 1)} }
+   { {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=Default (Num 1); range_dir = Increase} }
   | x = ident IN lb = nexp UNTIL ub = nexp SEMICOLON ident PLUS n = nexp
    { (*if x != z then raise Error else*)
-     {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=Default n} }
+     {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=Default n; range_dir = Increase} }
   | x = ident IN lb = nexp UNTIL ub = nexp SEMICOLON ident MULT TWO
    { (*if x != z then raise Error else*)
-     {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=StepName "pow2"} }
+     {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=StepName "pow2"; range_dir = Increase} }
   | x = ident IN lb = nexp UNTIL ub = nexp SEMICOLON ident MULT y = UINT
    { (*if x != z then raise Error else*)
-    {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=StepName ("pow" ^ (string_of_int y))} }
+    {range_var=x; range_lower_bound=lb; range_upper_bound=ub; range_step=StepName ("pow" ^ (string_of_int y)); range_dir = Increase} }
 
 expr:
   | SYNC { Sync }
