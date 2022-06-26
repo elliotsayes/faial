@@ -167,9 +167,10 @@ let parse_variable (j:json) : variable j_result =
   let* name = with_field "name" cast_string o in
   match List.assoc_opt "range" o with
   | Some range ->
-    let* l = with_field "range" parse_location o in
-    Ok (LocVariable (l, name)) 
+    let* l = parse_location range in
+    Ok (LocVariable (l, name))
   | None -> Ok (Variable name)
+  
 
 let compound (ty:c_type) (lhs:c_exp) (opcode:string) (rhs:c_exp) : c_exp =
   BinaryOperator {
@@ -213,7 +214,15 @@ let rec parse_exp (j:json) : c_exp j_result =
     Ok (MemberExpr {name=n; base=b; ty=ty})
 
   | "DeclRefExpr" ->
-    with_field "referencedDecl" parse_exp o
+    with_field "referencedDecl" (fun new_j ->
+      (* Propagate provenance *)
+      let new_j = match new_j, List.assoc_opt "range" o with
+      | `Assoc new_o, Some range ->
+        `Assoc (("range", range)::new_o)
+      | _, _ -> new_j
+      in 
+      parse_exp new_j
+    ) o
 
   | "FloatingLiteral" ->
     (match with_field "value" cast_int o with
@@ -713,30 +722,48 @@ let type_to_str (j:Yojson.Basic.t) : string =
 let list_to_s (f:'a -> string) (l:'a list) : string =
   List.map f l |> Common.join ", "
 
-let rec exp_to_s : c_exp -> string =
-  function
-  | FloatingLiteral f -> string_of_float f
-  | CharacterLiteral i
-  | IntegerLiteral i -> string_of_int i
-  | ConditionalOperator c ->
-    "(" ^ exp_to_s c.cond ^ ") ? (" ^
-          exp_to_s c.then_expr ^ ") : (" ^
-          exp_to_s c.else_expr ^ ")"
-  | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") (" ^ b.opcode ^ "." ^ type_to_str b.ty ^ ") (" ^ exp_to_s b.rhs ^ ")"
-  | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
-  | ArraySubscriptExpr b -> exp_to_s b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
-  | CXXBoolLiteralExpr b -> if b then "true" else "false";
-  | CXXConstructExpr c -> "@ctor " ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")" 
-  | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
-  | CXXMethodDecl v -> "@meth " ^ var_name v.name
-  | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
-  | VarDecl v -> var_name v.name
-  | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name
-  | NonTypeTemplateParmDecl v -> "@tpl " ^ var_name v.name
-  | FunctionDecl v -> "@func " ^ var_name v.name
-  | ParmVarDecl v -> "@parm " ^ var_name v.name
-  | EnumConstantDecl v -> "@enum " ^ var_name v.name
-  | UnaryOperator u -> u.opcode ^ exp_to_s u.child
+let exp_to_s ?(modifier:bool=true) ?(provenance:bool=false) ?(types:bool=false) : c_exp -> string =
+  let attr (s:string) : string =
+    if modifier
+    then "@" ^ s ^ " "
+    else ""
+  in
+  let opcode (o:string) (j:Yojson.Basic.t) : string =
+    if types
+    then "(" ^ o ^ "." ^ type_to_str j ^ ")"
+    else o
+  in
+  let var_name: variable -> string =
+    if provenance
+    then var_repr
+    else var_name
+  in
+  let rec exp_to_s: c_exp -> string =
+    function
+    | FloatingLiteral f -> string_of_float f
+    | CharacterLiteral i
+    | IntegerLiteral i -> string_of_int i
+    | ConditionalOperator c ->
+      "(" ^ exp_to_s c.cond ^ ") ? (" ^
+            exp_to_s c.then_expr ^ ") : (" ^
+            exp_to_s c.else_expr ^ ")"
+    | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") " ^ opcode b.opcode b.ty ^ " (" ^ exp_to_s b.rhs ^ ")"
+    | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
+    | ArraySubscriptExpr b -> exp_to_s b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
+    | CXXBoolLiteralExpr b -> if b then "true" else "false";
+    | CXXConstructExpr c -> attr "ctor" ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")" 
+    | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
+    | CXXMethodDecl v -> attr "meth" ^ var_name v.name
+    | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
+    | VarDecl v -> var_name v.name
+    | UnresolvedLookupExpr v -> attr "unresolv" ^ var_name v.name
+    | NonTypeTemplateParmDecl v -> attr "tpl" ^ var_name v.name
+    | FunctionDecl v -> attr "func" ^ var_name v.name
+    | ParmVarDecl v -> attr "parm" ^ var_name v.name
+    | EnumConstantDecl v -> attr "enum" ^ var_name v.name
+    | UnaryOperator u -> u.opcode ^ exp_to_s u.child
+  in
+  exp_to_s
 
 let init_to_s : c_init -> string =
   function
@@ -761,7 +788,8 @@ let opt_for_init_to_s (o:c_for_init option) : string =
   | Some o -> for_init_to_s o
   | None -> ""
 
-let stmt_to_s: c_stmt -> PPrint.t list =
+let stmt_to_s ?(modifier:bool=true) ?(provenance:bool=false) : c_stmt -> PPrint.t list =
+  let exp_to_s : c_exp -> string = exp_to_s ~modifier ~provenance in
   let opt_exp_to_s: c_exp option -> string =
     function
     | Some c -> exp_to_s c
@@ -829,7 +857,7 @@ let type_param_to_s (p:c_type_param) : string =
   in
   var_name name
 
-let kernel_to_s (k:c_kernel) : PPrint.t list =
+let kernel_to_s ?(modifier:bool=true) ?(provenance:bool=false) (k:c_kernel) : PPrint.t list =
   let open PPrint in
   [
     Line ("name: " ^ k.name);
@@ -837,18 +865,18 @@ let kernel_to_s (k:c_kernel) : PPrint.t list =
     Line ("type params: " ^ list_to_s type_param_to_s k.type_params);
   ]
   @
-  stmt_to_s k.code
+  stmt_to_s ~modifier ~provenance k.code
 
-let def_to_s (d:c_def) : PPrint.t list =
+let def_to_s ?(modifier:bool=true) ?(provenance:bool=false) (d:c_def) : PPrint.t list =
   let open PPrint in
   match d with
   | Declaration d -> [Line (type_to_str d.ty ^ " " ^ var_name d.name ^ ";")]
-  | Kernel k -> kernel_to_s k
+  | Kernel k -> kernel_to_s ~modifier ~provenance k
 
-let program_to_s (p:c_program) : PPrint.t list =
-  List.concat_map def_to_s p
+let program_to_s ?(modifier:bool=true) ?(provenance:bool=false) (p:c_program) : PPrint.t list =
+  List.concat_map (def_to_s ~modifier ~provenance) p
 
-let print_program (p:c_program) : unit =
-  PPrint.print_doc (program_to_s p)
+let print_program ?(modifier:bool=true) ?(provenance:bool=false) (p:c_program) : unit =
+  PPrint.print_doc (program_to_s ~modifier ~provenance p)
 
 
