@@ -40,6 +40,7 @@ module Post = struct
     let open PPrint in
     let rec stmt_to_s : inst -> PPrint.t list =
       function
+      | Skip -> []
       | Sync -> [Line "sync;"]
       | Acc e -> acc_expr_to_s e
       | Decl (x, l, n, p) ->
