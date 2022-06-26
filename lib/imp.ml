@@ -218,7 +218,7 @@ module Post = struct
       | For (r, p) ->
         let r = r_subst st r in
         let (x, known, st) = add_var r.range_var in
-        [For ({r with range_var = x}, p)]
+        [For ({r with range_var = x}, inline_p known st p)]
     and inline_p (known:VarSet.t) (st:SubstAssoc.t): prog -> prog =
       List.concat_map (inline_i known st)
     in
