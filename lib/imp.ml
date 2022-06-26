@@ -35,6 +35,43 @@ module Post = struct
 
   type prog = inst list
 
+
+  let prog_to_s: prog -> string =
+    let open PPrint in
+    let rec stmt_to_s : inst -> PPrint.t list =
+      function
+      | Sync -> [Line "sync;"]
+      | Acc e -> acc_expr_to_s e
+      | Decl (x, l, n, p) ->
+        let entry =
+          (match l with | Global -> "global" | Local ->  "local") ^ " " ^
+          var_name x ^
+          (match n with | Some n -> " = " ^ n_to_s n | None -> "")
+        in
+        [
+          Line ("decl " ^ entry ^ " {");
+          Block (prog_to_s p);
+          Line "}";
+        ]
+
+      | If (b, s1, s2) -> [
+          Line ("if (" ^ b_to_s b ^ ") {");
+          Block (prog_to_s s1);
+          Line "} else {";
+          Block (prog_to_s s2);
+          Line "}"
+        ]
+
+      | For (r, s) -> [
+          Line ("foreach (" ^ r_to_s r ^ ") {");
+          Block (prog_to_s s);
+          Line ("}")
+        ]
+    and prog_to_s : prog -> PPrint.t list =
+      fun p -> List.map stmt_to_s p |> List.flatten
+    in
+    fun p -> prog_to_s p |> doc_to_string
+
   let rec loc_subst_i (alias:alias_expr) (i:inst) : inst =
     match i with
     | Acc (x, a) ->
@@ -73,7 +110,7 @@ module Post = struct
       | Skip -> Skip
       | Acc (x, a) -> Acc (x, M.a_subst st a)
       | Decl (x, h, o, p) ->
-        Decl (x, h, o_subst st o,
+        Decl (x, h, Option.map (M.n_subst st) o,
           M.add st x (function
           | Some st' -> subst_p st' p
           | None -> p
@@ -96,53 +133,6 @@ module Post = struct
   module ReplacePair = SubstMake(Subst.SubstPair)
   let subst_i = ReplacePair.subst_i
   let subst_p = ReplacePair.subst_p
-  let vars_distinct (known:VarSet.t) (p:prog) : prog =
-    let open Bindings in
-    let rec uniq_i (i:inst) (xs:VarSet.t) : inst * VarSet.t =
-      let add_var x xs (p:prog) =
-        if VarSet.mem x xs then (
-          let new_x : variable = generate_fresh_name x xs in
-          let xs = VarSet.add new_x xs in
-          let p = subst_p (x, Var new_x) p in 
-          let (p, xs) = uniq_p p xs in
-          p, Some new_x, xs
-        ) else (
-          let (p, xs) = uniq_p p xs in
-          p, None, xs
-        )
-      in
-      match i with
-      | Acc _
-      | Sync
-      | Skip
-        -> i, xs
-      | If (b, p1, p2) ->
-        let (p1, xs) = uniq_p p1 xs in
-        let (p2, xs) = uniq_p p2 xs in
-        If (b, p1, p2), xs
-      | Decl (x, h, o, p) ->
-        (match add_var x xs p with
-        | (p, Some x, xs) ->
-          Decl (x, h, o, p), xs
-        | (p, None, xs) ->
-          Decl (x, h, o, p), xs)
-      | For (r, p) ->
-        let x = r.range_var in
-        (match add_var x xs p with
-        | (p, Some x, xs) ->
-          let (p, xs) = uniq_p p xs in
-          For ({ r with range_var = x }, p), xs
-        | (p, None, xs) ->
-          For (r, p), xs)
-    and uniq_p (p:prog) (xs:VarSet.t) : prog * VarSet.t =
-      match p with
-      | [] -> [], xs
-      | i::p ->
-        let (i, xs) = uniq_i i xs in
-        let (p, xs) = uniq_p p xs in
-        i::p, xs
-    in
-    uniq_p p known |> fst
 
   let filter_locs (locs:array_t VarMap.t) : prog -> prog =
     let rec filter_i (i:inst) : inst =
@@ -177,8 +167,7 @@ module Post = struct
     in
     get_decls_p p (VarSet.empty, globals)
 
-
-  let inline_decls (p: prog) : prog =
+  let inline_decls (known:VarSet.t) : prog -> prog =
     let n_subst (st:SubstAssoc.t) (n:nexp): nexp =
       if SubstAssoc.is_empty st
       then n
@@ -198,39 +187,41 @@ module Post = struct
       then r
       else ReplaceAssoc.r_subst st r
     in
-    let rec inline_i (st:SubstAssoc.t) (i:inst) : prog * SubstAssoc.t =
+    let rec inline_i (known:VarSet.t) (st:SubstAssoc.t) (i:inst) : prog =
+      let add_var (x:variable) : variable * VarSet.t * SubstAssoc.t =
+        let old_x = x in
+        let x, st =
+          if VarSet.mem x known
+          then (
+            let new_x = Bindings.generate_fresh_name x known in 
+            (new_x, SubstAssoc.put st x (Var new_x)) 
+          ) else (x, st)
+        in
+        let known = VarSet.add x known in
+        (x, known, st)
+      in
       match i with
-      | Sync -> [Sync], st
-      | Acc (x,e) -> [Acc (x, a_subst st e)], st
-      | Skip -> [], st
+      | Sync -> [Sync]
+      | Acc (x,e) -> [Acc (x, a_subst st e)]
+      | Skip -> []
       | If (b, p1, p2) ->
         let b = b_subst st b in
-        let p1, st = inline_p st p1 in
-        let p2, st = inline_p st p2 in
-        [If (b, p1, p2)], st
+        [If (b, inline_p known st p1, inline_p known st p2)]
+      | Decl (x, _, Some n, p) ->
+        let n = n_subst st n in
+        let st = SubstAssoc.put st x n  in
+        inline_p known st p
+      | Decl (x, h, None, p) ->
+        let (x, known, st) = add_var x in
+        [Decl (x, h, None, inline_p known st p)]
       | For (r, p) ->
         let r = r_subst st r in
-        let st = SubstAssoc.del st r.range_var in
-        let (p, st) = inline_p st p in
-        [For (r, p)], st
-      | Decl (x, _, Some n, p) ->
-        let n = n_subst st n in 
-        let st = SubstAssoc.put st x n  in
-        inline_p st p
-      | Decl (x, h, None, p) ->
-        let st = SubstAssoc.del st x in
-        let p, st = inline_p st p in
-        [Decl (x, h, None, p)], st
-    and inline_p (st:SubstAssoc.t) (p:prog) : prog * SubstAssoc.t =
-      match p with
-      | [] -> [], st
-      | i::p -> 
-        let (p1, st) = inline_i st i in
-        let (p2, st) = inline_p st p in
-        Common.append_tr p1 p2, st
+        let (x, known, st) = add_var r.range_var in
+        [For ({r with range_var = x}, p)]
+    and inline_p (known:VarSet.t) (st:SubstAssoc.t): prog -> prog =
+      List.concat_map (inline_i known st)
     in
-    inline_p (SubstAssoc.make []) p |> fst
-
+    inline_p known (SubstAssoc.make [])
 
 
 end
@@ -409,8 +400,8 @@ let print_kernel (k: p_kernel) : unit =
 let compile (k:p_kernel) : Proto.prog kernel =
   let p : Post.prog = imp_to_post k.p_kernel_code
     |> Post.filter_locs k.p_kernel_arrays (* Remove unknown arrays *)
-    |> Post.inline_decls (* Inline local variable assignment *)
-    |> Post.vars_distinct k.p_kernel_params (* Ensure variables are distinct *)
+    (* Inline local variable assignment and ensure variables are distinct*)
+    |> Post.inline_decls k.p_kernel_params
   in
   let (locals, globals) = Post.get_decls k.p_kernel_params p in
   let p = post_to_proto p in
