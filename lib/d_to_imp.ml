@@ -348,7 +348,7 @@ let parse_decl (d:Dlang.d_decl) : (variable * Imp.locality * nexp option) list d
       Ok (vars, Some n)
     | _ -> Ok (VarSet.empty, None)
     in
-    Ok (Unknown.as_decls Imp.Local vars @ [d.name, Imp.Local, n])
+    Ok ((d.name, Imp.Local, n) :: Unknown.as_decls Imp.Local vars )
   ) else (
     prerr_endline ("WARNING: parse_decl: skipping non-int local variable '" ^ var_name d.name ^ "' type: " ^ Rjson.pp_js d.ty);
     Ok []
