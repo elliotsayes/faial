@@ -146,6 +146,9 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
     let* n1 = parse_e "then_expr" o.then_expr in
     let* n2 = parse_e "else_expr" o.else_expr in
     ret_n (NIf (b, n1, n2))
+  | CallExpr {func = FunctionDecl {name = f}; args = [n]} when var_name f = "__is_pow2" ->
+    let* n = parse_e "arg" n in
+    ret_b (Pred ("pow2", n))
   | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]} when var_name n = "min" ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
