@@ -288,7 +288,8 @@ let post_to_proto (p: Post.prog) : Proto.prog =
       Proto.p_cond b (post_to_proto_p p1) @ Proto.p_cond (b_not b) (post_to_proto_p p2)
     | For (r, p) ->
       [Proto.Loop (r, post_to_proto_p p)]
-    | Decl (_, _, Some _, _) -> failwith "Run inline_decl first!"
+    | Decl (_, _, Some _, _) ->
+      failwith ("Run inline_decl first: " ^ Post.prog_to_s [i])
     | Decl (_, _, None, p) -> post_to_proto_p p
   and post_to_proto_p (p:Post.prog) : Proto.prog =
     match p with
