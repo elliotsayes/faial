@@ -72,6 +72,7 @@ and d_for = {init: d_for_init option; cond: d_exp option; inc: d_exp option; bod
 type d_kernel = {
   name: string;
   code: d_stmt;
+  type_params: Cast.c_type_param list;
   params: Cast.c_param list;
 }
 
@@ -485,6 +486,7 @@ let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
     name = k.name;
     code = rewrite_stmt k.code;
     params = k.params;
+    type_params = k.type_params;
   }
 
 let rewrite_def (d:Cast.c_def) : d_def =
@@ -602,15 +604,51 @@ let stmt_to_s: d_stmt -> PPrint.t list =
   in
   stmt_to_s
 
-let kernel_to_s (k:d_kernel) : PPrint.t list =
-  let open PPrint in
-  stmt_to_s k.code
+let summarize_stmt: d_stmt -> string =
+  let opt_exp_to_s: d_exp option -> string =
+    function
+    | Some c -> exp_to_s c
+    | None -> ""
+  in
+  let rec stmt_to_s : d_stmt -> string =
+    function
+    | WriteAccessStmt w ->
+      "rw " ^
+      subscript_to_s w.target ^
+      " = " ^
+      exp_to_s w.source ^ ";"
+    | ReadAccessStmt r -> "ro " ^ var_name r.target ^ " = " ^ subscript_to_s r.source ^ ";"
+    | ReturnStmt -> "return;"
+    | GotoStmt -> "goto;"
+    | BreakStmt -> "break;"
+    | ForStmt f ->
+        "for (" ^
+        opt_for_init_to_s f.init ^ "; " ^
+        opt_exp_to_s f.cond ^ "; " ^
+        opt_exp_to_s f.inc ^
+        ") {...}"
+    | WhileStmt {cond=b; body=s} -> "while (" ^ exp_to_s b ^ ") {...}"
+    | DoStmt {cond=b; body=s} -> "{...} do (" ^ exp_to_s b ^ ")";
+    | SwitchStmt {cond=b; body=s} -> "switch (" ^ exp_to_s b ^ ") {...}";
+    | CaseStmt c -> "case " ^ exp_to_s c.case ^ ": {...}"
+    | DefaultStmt d -> "default: {...}"
+    | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
+      "if (" ^ exp_to_s b ^ ") {...} else {...}"
+    | CompoundStmt l ->
+      let c = List.length l |> string_of_int in
+      "{ " ^ c ^ " stmts... }"
+    | DeclStmt d ->
+      "decl {" ^ Common.join ", " (List.map decl_to_s d) ^ "}"
+    | SExp e -> exp_to_s e
+  in
+  stmt_to_s
 
 let kernel_to_s (k:d_kernel) : PPrint.t list =
   let open PPrint in
   [
     Line ("name: " ^ k.name);
     Line ("params: " ^ list_to_s Cast.param_to_s k.params);
+    Line ("type params: " ^ list_to_s Cast.type_param_to_s k.type_params);
   ]
   @
   stmt_to_s k.code

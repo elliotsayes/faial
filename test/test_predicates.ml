@@ -36,7 +36,8 @@ let mk_range (r:vrange) : Exp.range =
     range_var = var_make "x";
     range_lower_bound = Num r.vr_lower_bound;
     range_upper_bound = Num r.vr_upper_bound;
-    range_step = Default (Num r.vr_step)
+    range_step = Default (Num r.vr_step);
+    range_dir = Increase;
   }
 
 let r_last (r:vrange) : int =

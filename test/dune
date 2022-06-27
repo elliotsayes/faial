@@ -4,7 +4,6 @@
    test_common
    test_imp
    test_locsplit
-   test_parsejs
    test_predicates
    test_streamutil
  )
