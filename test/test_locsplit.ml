@@ -10,7 +10,8 @@ let r = {
   range_var = var_make "z";
   range_lower_bound = Num 1;
   range_upper_bound = Num 2;
-  range_step = Default (Num 1)
+  range_step = Default (Num 1);
+  range_dir = Increase;
 }
 let write = {
   access_index = [];
