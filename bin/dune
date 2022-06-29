@@ -7,7 +7,15 @@
 (executable
  (public_name test-c)
  (name test_c)
+ (modes byte exe)
  (modules test_c)
+ (libraries faial))
+
+(executable
+ (public_name parser)
+ (name parser)
+ (modes exe)
+ (modules parser)
  (libraries faial))
 
 (executable

@@ -41,7 +41,6 @@ let rec n_to_expr (ctx:context) (n:nexp) : expr = match n with
     (nbin_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
 | NIf (b, n1, n2) -> Boolean.mk_ite ctx
     (b_to_expr ctx b) (n_to_expr ctx n1) (n_to_expr ctx n2)
-| NUnknown -> raise (Not_implemented "n_to_expr not implemented for NUnknown")
 
 and b_to_expr (ctx:context) (b:bexp) : expr = match b with
   Bool (b:bool) -> Boolean.mk_val ctx b
@@ -51,4 +50,3 @@ and b_to_expr (ctx:context) (b:bexp) : expr = match b with
     (brel_to_expr op) ctx (b_to_expr ctx b1) (b_to_expr ctx b2)
 | BNot (b:bexp) -> Boolean.mk_not ctx (b_to_expr ctx b)
 | Pred _ -> raise (Not_implemented "b_to_expr not implemented for Pred")
-| BUnknown -> raise (Not_implemented "b_to_expr not implemented for BUnknown")

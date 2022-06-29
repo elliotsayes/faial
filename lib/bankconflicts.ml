@@ -281,7 +281,8 @@ let rec normalize_ranges (acc: 'a acc_t) : 'a acc_t =
         range_var = r.range_var;
         range_lower_bound = Num 0;
         range_upper_bound = Bin (Minus, r.range_upper_bound, r.range_lower_bound);
-        range_step = r.range_step } in
+        range_step = r.range_step;
+        range_dir = Increase } in
       (* the resulting normalized range: *)
       Range (r, normalize_ranges acc)
   | Cond (b, acc) -> Cond (b, normalize_ranges acc)

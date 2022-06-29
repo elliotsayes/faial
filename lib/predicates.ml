@@ -147,11 +147,10 @@ let get_predicates (b:bexp) : t list =
     | BRel (_, b1, b2) -> get_names_b b1 preds |> get_names_b b2
     | BNot b -> get_names_b b preds
     | NRel (_, n1, n2) -> get_names_n n1 preds |> get_names_n n2
-    | BUnknown
     | Bool _ -> preds
   and get_names_n (n:nexp) (ns:StringSet.t) : StringSet.t =
     match n with
-    | Var _ | Num _ | Proj _ | NUnknown -> ns
+    | Var _ | Num _ | Proj _ -> ns
     | Bin (_, n1, n2) -> get_names_n n1 ns |> get_names_n n2
     | NIf (b, n1, n2) -> get_names_b b ns |> get_names_n n1 |> get_names_n n2
     | NCall (_, n) -> get_names_n n ns
@@ -166,10 +165,10 @@ let get_functions (b:bexp) : step_handler list =
     | BRel (_, b1, b2) -> get_names_b b1 ns |> get_names_b b2
     | BNot b -> get_names_b b ns
     | NRel (_, n1, n2) -> get_names_n n1 ns |> get_names_n n2
-    | Bool _ | Pred _ | BUnknown -> ns
+    | Bool _ | Pred _ -> ns
   and get_names_n (n:nexp) (ns:StringSet.t) : StringSet.t =
     match n with
-    | Var _ | Num _ | Proj _ | NUnknown -> ns
+    | Var _ | Num _ | Proj _ -> ns
     | Bin (_, n1, n2) -> get_names_n n1 ns |> get_names_n n2
     | NIf (b, n1, n2) -> get_names_b b ns |> get_names_n n1 |> get_names_n n2
     | NCall (x, _) -> StringSet.add x ns

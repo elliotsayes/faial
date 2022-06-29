@@ -39,7 +39,7 @@ let kernel_global_arrays (k:'a kernel) : VarSet.t =
 let kernel_constants (k:prog kernel) =
   let rec constants (b: bexp) (kvs:(string*int) list) : (string*int) list =
     match b with
-    | Bool _ | BUnknown -> kvs
+    | Bool _ -> kvs
     | NRel (NEq, Var x, Num n)
     | NRel (NEq, Num n, Var x) ->
       (var_name x, n) :: kvs

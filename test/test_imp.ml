@@ -7,6 +7,11 @@ let assert_nexp (expected:nexp) (given:nexp) =
   let msg = "Expected: " ^ PPrint.n_to_s expected ^ "\nGiven: " ^ PPrint.n_to_s given in
   assert_equal expected given ~msg
 
+let assert_post (expected:Post.prog) (given:Post.prog) =
+  let msg = "Expected:\n" ^ Post.prog_to_s expected ^ "\nGiven:\n" ^ Post.prog_to_s given in
+  assert_equal expected given ~msg
+
+
 let var x = Var (var_make x)
 
 let tests = "test_predicates" >::: [
@@ -55,7 +60,7 @@ let tests = "test_predicates" >::: [
         Acc (sq, {access_index=[Var id]; access_mode = W}) (* rw s_Q[id]; *)
       ])
     ] in
-    let p : Post.prog = Post.inline_decls p in
+    let p : Post.prog = Post.inline_decls VarSet.empty p in
     match p with
     | [Post.Acc (_, {access_index=[e]; access_mode = W}) (* rw s_Q[32 + id]; *)
       ] ->
@@ -135,8 +140,7 @@ let tests = "test_predicates" >::: [
     (* Translate: *)
     let p : Proto.prog = p
       |> imp_to_post
-      |> Post.inline_decls
-      |> Post.vars_distinct VarSet.empty
+      |> Post.inline_decls VarSet.empty
       |> post_to_proto
     in
     (* Test: *)
@@ -194,8 +198,7 @@ let tests = "test_predicates" >::: [
     (* Translate: *)
     let p : Proto.prog = p
       |> imp_to_post
-      |> Post.inline_decls
-      |> Post.vars_distinct VarSet.empty
+      |> Post.inline_decls VarSet.empty
       |> post_to_proto
     in
     (* Test: *)
@@ -217,6 +220,69 @@ let tests = "test_predicates" >::: [
     ()
 
   );
+  "example3" >:: (fun _ ->
+    let x = var_make "x" in
+    let a = var_make "a" in
+    let b = var_make "b" in 
+    let p = Block [
+      Decl [
+        x, Local, None;
+        a, Local, Some (Var x);
+      ];
+      Decl [
+        x, Local, None;
+        b, Local, Some (Var x);
+      ];
+      Acc (var_make "A", {access_index = [Var a; Var b]; access_mode = W})
+    ] in
+    let p1 =
+      let open Post in
+      [Decl (x, Local, None,
+        [Decl (a, Local, Some (Var x),
+          [Decl (x, Local, None,
+            [Decl (b, Local, Some (Var x),
+              [Acc (var_make "A", {access_index = [Var a; Var b]; access_mode = W})]
+            )]
+          )]
+        )]
+      )]
+    in
+    assert (imp_to_post p = p1);
+    let p2 =
+      let open Post in
+      [Decl (x, Local, None,
+        [Decl (a, Local, Some (Var x),
+          [Decl (x, Local, None,
+            [Decl (b, Local, Some (Var x),
+              [Acc (var_make "A", {access_index = [Var a; Var b]; access_mode = W})]
+            )]
+          )]
+        )]
+      )]
+    in
+    let x1 = var_make "x1" in
+    let p3 = 
+      let open Post in
+      [Decl (x, Local, None,
+        [Decl (x1, Local, None,
+          [Acc (var_make "A", {access_index = [Var x; Var x1]; access_mode = W})]
+        )]
+      )]
+    in
+    assert_post p3 (Post.inline_decls VarSet.empty p2);
+    (* Translate: *)
+    let p : Proto.prog = p
+      |> imp_to_post
+      |> Post.inline_decls VarSet.empty
+      |> post_to_proto
+    in
+    let open Proto in
+    match p with
+    | [Acc (_, {access_index=[x1; x2]})] ->
+      assert_nexp (Var (var_make "x")) x1;
+      assert_nexp (Var (var_make "x1")) x2;
+    | _ -> assert false
+  )
 ]
 
 let _ = run_test_tt_main tests

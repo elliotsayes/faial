@@ -85,6 +85,8 @@ let is_int (c:t) : bool =
   	"const uint";
   	"long";
   	"const long";
+    "bool";
+    "const bool";
   ]
 
 (* ------------------------------------- *)

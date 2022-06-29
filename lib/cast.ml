@@ -63,9 +63,14 @@ type c_stmt =
 
 type c_param = {name: variable; is_used: bool; is_shared: bool; ty: c_type}
 
+type c_type_param =
+  | PTemplateTypeParmDecl of variable
+  | PNonTypeTemplateParmDecl of {name: variable; ty: c_type} 
+
 type c_kernel = {
   name: string;
   code: c_stmt;
+  type_params: c_type_param list;
   params: c_param list;
 }
 
@@ -162,9 +167,10 @@ let parse_variable (j:json) : variable j_result =
   let* name = with_field "name" cast_string o in
   match List.assoc_opt "range" o with
   | Some range ->
-    let* l = with_field "range" parse_location o in
-    Ok (LocVariable (l, name)) 
+    let* l = parse_location range in
+    Ok (LocVariable (l, name))
   | None -> Ok (Variable name)
+  
 
 let compound (ty:c_type) (lhs:c_exp) (opcode:string) (rhs:c_exp) : c_exp =
   BinaryOperator {
@@ -208,7 +214,15 @@ let rec parse_exp (j:json) : c_exp j_result =
     Ok (MemberExpr {name=n; base=b; ty=ty})
 
   | "DeclRefExpr" ->
-    with_field "referencedDecl" parse_exp o
+    with_field "referencedDecl" (fun new_j ->
+      (* Propagate provenance *)
+      let new_j = match new_j, List.assoc_opt "range" o with
+      | `Assoc new_o, Some range ->
+        `Assoc (("range", range)::new_o)
+      | _, _ -> new_j
+      in 
+      parse_exp new_j
+    ) o
 
   | "FloatingLiteral" ->
     (match with_field "value" cast_int o with
@@ -578,7 +592,7 @@ let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
   in
   res |> unwrap_or false
 
-let parse_kernel (j:Yojson.Basic.t) : c_kernel j_result =
+let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j_result =
   let open Rjson in
   let* o = cast_object j in
   let* inner = with_field "inner" cast_list o in
@@ -604,6 +618,7 @@ let parse_kernel (j:Yojson.Basic.t) : c_kernel j_result =
     name = name;
     code = body;
     params = ps;
+    type_params = type_params;
   }
 
 let is_kernel (j:Yojson.Basic.t) : bool =
@@ -611,7 +626,7 @@ let is_kernel (j:Yojson.Basic.t) : bool =
   let is_kernel =
     let* o = cast_object j in
     let* k = get_kind o in
-    if k = "FunctionDecl" then
+    if k = "FunctionDecl" then (
       let* inner = with_field "inner" cast_list o in
       (* Try to parse attrs *)
       let attrs = inner
@@ -621,21 +636,56 @@ let is_kernel (j:Yojson.Basic.t) : bool =
         )
       in
       Ok (List.mem c_attr_global attrs)
-    else Ok false
+    ) else Ok false
   in
   is_kernel |> unwrap_or false
+
+let parse_type_param (j:Yojson.Basic.t) : c_type_param option j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* k = get_kind o in
+  match k with
+  | "TemplateTypeParmDecl" ->
+    let* name = parse_variable j in
+    Ok (Some (PTemplateTypeParmDecl name))
+  | "NonTypeTemplateParmDecl" ->
+    let* name = parse_variable j in
+    let* ty = get_field "type" o in
+    Ok (Some (PNonTypeTemplateParmDecl {name=name; ty=ty}))
+  | _ -> Ok None
 
 
 let parse_def (j:Yojson.Basic.t) : c_def option j_result =
   let open Rjson in
   let* o = cast_object j in
   let* k = get_kind o in
-  match k with
-  | "FunctionDecl" ->
+  let parse_k (type_params:c_type_param list) (j:Yojson.Basic.t) : c_def option j_result =
     if is_kernel j then
-      let* k = parse_kernel j in
+      let* k = parse_kernel type_params j in
       Ok (Some (Kernel k))
     else Ok None
+  in
+  match k with
+  | "FunctionTemplateDecl" ->
+    (* Given a list of inners, we parse from left-to-right the
+       template parameters first.
+       If we cannot find parse a template parameter, then
+       we try to parse a function declaration. In some cases we
+       might even have some more parameters after the function
+       declaration, but those are discarded, as I did not understand
+       what they are for. *)
+    let rec handle (type_params:c_type_param list): Yojson.Basic.t list -> c_def option j_result =
+      function
+      | [] -> root_cause "Error parsing FunctionTemplateDecl: no FunctionDecl found" j
+      | j :: l ->
+        let* p = parse_type_param j in
+        (match p with
+        | Some p -> handle (p::type_params) l
+        | None -> parse_k type_params j)
+    in
+    let* inner = with_field "inner" cast_list o in
+    handle [] inner
+  | "FunctionDecl" -> parse_k [] j
   | "VarDecl" ->
     (match parse_decl j with
     | Ok d ->
@@ -645,7 +695,8 @@ let parse_def (j:Yojson.Basic.t) : c_def option j_result =
         else None
       )
     | _ -> Ok None)
-  | _ -> Ok None
+  | _ ->
+    Ok None
 
 
 let parse_program (j:Yojson.Basic.t) : c_program j_result =
@@ -654,17 +705,6 @@ let parse_program (j:Yojson.Basic.t) : c_program j_result =
   let* inner = with_field "inner" (cast_map parse_def) o in
   Ok (Common.flatten_opt inner)
 
-
-let parse_kernels (j:Yojson.Basic.t) : c_kernel list j_result =
-  let open Rjson in
-  cast_object j
-    >>= with_field "inner" cast_list
-    |> unwrap_or [] (* ignore errors and convert it to an empty list *)
-    |> List.filter is_kernel (* only keep things that look like kernels *)
-    |> map_all (* for each kernel convert it into an object and parse it *)
-      parse_kernel
-      (* Abort the whole thing if we find a single parsing error *)
-      (fun idx k e -> StackTrace.Because (("error parsing kernel " ^ string_of_int idx, k), e))
 
 let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
   let open Rjson in
@@ -682,30 +722,48 @@ let type_to_str (j:Yojson.Basic.t) : string =
 let list_to_s (f:'a -> string) (l:'a list) : string =
   List.map f l |> Common.join ", "
 
-let rec exp_to_s : c_exp -> string =
-  function
-  | FloatingLiteral f -> string_of_float f
-  | CharacterLiteral i
-  | IntegerLiteral i -> string_of_int i
-  | ConditionalOperator c ->
-    "(" ^ exp_to_s c.cond ^ ") ? (" ^
-          exp_to_s c.then_expr ^ ") : (" ^
-          exp_to_s c.else_expr ^ ")"
-  | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") (" ^ b.opcode ^ "." ^ type_to_str b.ty ^ ") (" ^ exp_to_s b.rhs ^ ")"
-  | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
-  | ArraySubscriptExpr b -> exp_to_s b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
-  | CXXBoolLiteralExpr b -> if b then "true" else "false";
-  | CXXConstructExpr c -> "@ctor " ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")" 
-  | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
-  | CXXMethodDecl v -> "@meth " ^ var_name v.name
-  | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
-  | VarDecl v -> var_name v.name
-  | UnresolvedLookupExpr v -> "@unresolv " ^ var_name v.name
-  | NonTypeTemplateParmDecl v -> "@tpl " ^ var_name v.name
-  | FunctionDecl v -> "@func " ^ var_name v.name
-  | ParmVarDecl v -> "@parm " ^ var_name v.name
-  | EnumConstantDecl v -> "@enum " ^ var_name v.name
-  | UnaryOperator u -> u.opcode ^ exp_to_s u.child
+let exp_to_s ?(modifier:bool=true) ?(provenance:bool=false) ?(types:bool=false) : c_exp -> string =
+  let attr (s:string) : string =
+    if modifier
+    then "@" ^ s ^ " "
+    else ""
+  in
+  let opcode (o:string) (j:Yojson.Basic.t) : string =
+    if types
+    then "(" ^ o ^ "." ^ type_to_str j ^ ")"
+    else o
+  in
+  let var_name: variable -> string =
+    if provenance
+    then var_repr
+    else var_name
+  in
+  let rec exp_to_s: c_exp -> string =
+    function
+    | FloatingLiteral f -> string_of_float f
+    | CharacterLiteral i
+    | IntegerLiteral i -> string_of_int i
+    | ConditionalOperator c ->
+      "(" ^ exp_to_s c.cond ^ ") ? (" ^
+            exp_to_s c.then_expr ^ ") : (" ^
+            exp_to_s c.else_expr ^ ")"
+    | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") " ^ opcode b.opcode b.ty ^ " (" ^ exp_to_s b.rhs ^ ")"
+    | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
+    | ArraySubscriptExpr b -> exp_to_s b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
+    | CXXBoolLiteralExpr b -> if b then "true" else "false";
+    | CXXConstructExpr c -> attr "ctor" ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")" 
+    | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
+    | CXXMethodDecl v -> attr "meth" ^ var_name v.name
+    | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
+    | VarDecl v -> var_name v.name
+    | UnresolvedLookupExpr v -> attr "unresolv" ^ var_name v.name
+    | NonTypeTemplateParmDecl v -> attr "tpl" ^ var_name v.name
+    | FunctionDecl v -> attr "func" ^ var_name v.name
+    | ParmVarDecl v -> attr "parm" ^ var_name v.name
+    | EnumConstantDecl v -> attr "enum" ^ var_name v.name
+    | UnaryOperator u -> u.opcode ^ exp_to_s u.child
+  in
+  exp_to_s
 
 let init_to_s : c_init -> string =
   function
@@ -730,7 +788,8 @@ let opt_for_init_to_s (o:c_for_init option) : string =
   | Some o -> for_init_to_s o
   | None -> ""
 
-let stmt_to_s: c_stmt -> PPrint.t list =
+let stmt_to_s ?(modifier:bool=true) ?(provenance:bool=false) : c_stmt -> PPrint.t list =
+  let exp_to_s : c_exp -> string = exp_to_s ~modifier ~provenance in
   let opt_exp_to_s: c_exp option -> string =
     function
     | Some c -> exp_to_s c
@@ -791,25 +850,33 @@ let param_to_s (p:c_param) : string =
   let shared = if p.is_shared then "shared " else "" in
   used ^ shared ^ var_name p.name
 
-let kernel_to_s (k:c_kernel) : PPrint.t list =
+let type_param_to_s (p:c_type_param) : string =
+  let name = match p with
+  | PTemplateTypeParmDecl x -> x
+  | PNonTypeTemplateParmDecl x -> x.name
+  in
+  var_name name
+
+let kernel_to_s ?(modifier:bool=true) ?(provenance:bool=false) (k:c_kernel) : PPrint.t list =
   let open PPrint in
   [
     Line ("name: " ^ k.name);
     Line ("params: " ^ list_to_s param_to_s k.params);
+    Line ("type params: " ^ list_to_s type_param_to_s k.type_params);
   ]
   @
-  stmt_to_s k.code
+  stmt_to_s ~modifier ~provenance k.code
 
-let def_to_s (d:c_def) : PPrint.t list =
+let def_to_s ?(modifier:bool=true) ?(provenance:bool=false) (d:c_def) : PPrint.t list =
   let open PPrint in
   match d with
   | Declaration d -> [Line (type_to_str d.ty ^ " " ^ var_name d.name ^ ";")]
-  | Kernel k -> kernel_to_s k
+  | Kernel k -> kernel_to_s ~modifier ~provenance k
 
-let program_to_s (p:c_program) : PPrint.t list =
-  List.concat_map def_to_s p
+let program_to_s ?(modifier:bool=true) ?(provenance:bool=false) (p:c_program) : PPrint.t list =
+  List.concat_map (def_to_s ~modifier ~provenance) p
 
-let print_program (p:c_program) : unit =
-  PPrint.print_doc (program_to_s p)
+let print_program ?(modifier:bool=true) ?(provenance:bool=false) (p:c_program) : unit =
+  PPrint.print_doc (program_to_s ~modifier ~provenance p)
 
 

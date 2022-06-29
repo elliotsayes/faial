@@ -50,6 +50,28 @@ let safe_run f =
 
 type command = WLang | ALang | PLang | CLang | HLang | BLang | Sat | Typecheck | Parse
 
+let parse_from_ctj ic : Imp.p_kernel list =
+  let open Cast in
+  let open D_to_imp in
+  let j = Yojson.Basic.from_channel ic in
+  match Cast.parse_program j with
+  | Ok k1 ->
+    let k2 = Dlang.rewrite_program k1 in
+      (match D_to_imp.parse_program k2 with
+      | Ok k3 -> k3
+      | Error e ->
+        Cast.print_program k1;
+        print_endline "------";
+        Dlang.print_program k2;
+        print_endline "-------";
+        D_to_imp.print_error e;
+        exit(-1)
+      )
+  | Error e ->
+    Rjson.print_error e;
+    exit(-1)
+
+
 let main_t =
   let use_bv =
     let doc = "Generate bit-vector code." in
@@ -115,17 +137,11 @@ let main_t =
       in
       let ks : prog kernel list = if use_json
         then begin
-          safe_run (fun () ->
-            let ks = Yojson.Basic.from_channel ic
-              |> Parsejs.(parse_kernels.run)
-            in
-            if cmd = Parse then
-              (List.iter Imp.print_kernel ks;
-              (* return an empty list of compiled kernels *)
-              [])
-            else
-              List.map Imp.compile ks
-          )
+          let ks = parse_from_ctj ic in
+          (if cmd = Parse
+          then (List.iter Imp.print_kernel ks; [])
+          else ks)
+          |> List.map Imp.compile
         end else
           [v2_parse fname ic]
       in
@@ -155,13 +171,22 @@ let main_t =
               VarSet.mem (var_make x) k.kernel_global_variables
             )
           in
+          let missed_keys =
+            sets @ Proto.kernel_constants k
+            |> List.filter (fun (x,_) ->
+              (* Make sure we only replace thread-global variables *)
+              not (VarSet.mem (var_make x) k.kernel_global_variables)
+            )
+          in
           let thread_count : int list = Common.map_opt (fun (k, v) ->
             if List.mem k ["blockDim.x"; "blockDim.y"; "blockDim.z"] then
               Some v
             else
               None
           ) sets in
-          let check_drf = if List.length thread_count > 0
+          let undef_block_dim_x = not (List.mem_assoc "blockDim.x" key_vals) in 
+          let check_drf = undef_block_dim_x || 
+            if List.length thread_count > 0
             then (List.fold_left ( * ) 1 thread_count) > 1
             else true
           in

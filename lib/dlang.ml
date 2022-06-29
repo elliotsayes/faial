@@ -72,6 +72,7 @@ and d_for = {init: d_for_init option; cond: d_exp option; inc: d_exp option; bod
 type d_kernel = {
   name: string;
   code: d_stmt;
+  type_params: Cast.c_type_param list;
   params: Cast.c_param list;
 }
 
@@ -83,6 +84,49 @@ type d_program = d_def list
 
 
 (* ------------------------------------- *)
+let rec d_stmt_rec (f: d_stmt -> unit) (stmt: d_stmt): unit = let loop = d_stmt_rec f in
+ f stmt ; match stmt with
+    | IfStmt {cond: d_exp; then_stmt: d_stmt; else_stmt: d_stmt} -> List.iter loop [then_stmt; else_stmt]
+    | WhileStmt {cond: d_exp; body: d_stmt} -> loop body
+    | DoStmt {cond: d_exp; body: d_stmt} -> loop body
+    | SwitchStmt {cond: d_exp; body: d_stmt} -> loop body
+    | CaseStmt {case: d_exp; body: d_stmt} -> loop body
+    | ForStmt {init: d_for_init option; cond: d_exp option; inc: d_exp option; body: d_stmt} -> loop body
+    | CompoundStmt stmts -> List.iter loop stmts
+    | _ -> ()
+
+let rec d_exp_rec (f: d_exp -> unit) (expr: d_exp): unit = let loop = d_exp_rec f in
+ f expr ; match expr with
+  | BinaryOperator {opcode: string; lhs: d_exp; rhs: d_exp; ty: d_type} -> List.iter loop [lhs; rhs]
+  | CallExpr {func: d_exp; args: d_exp list; ty: d_type} -> List.iter loop (List.append [func] args)
+  | ConditionalOperator {cond: d_exp; then_expr: d_exp; else_expr: d_exp; ty: d_type} ->
+      List.iter loop [cond; then_expr; else_expr]
+  | CXXConstructExpr {args: d_exp list; ty: d_type} -> List.iter loop args
+  | CXXOperatorCallExpr {func: d_exp; args: d_exp list; ty: d_type} ->
+      List.iter loop (List.append [func] args)
+  | MemberExpr {name: string; base: d_exp; ty: d_type} -> loop base
+  | UnaryOperator { opcode: string; child: d_exp; ty: d_type} -> loop child
+  | _ -> ()
+
+let for_dexp_in_dstmt (f: d_exp -> unit) (stmt: d_stmt) = let traversal = d_exp_rec f in
+  d_stmt_rec (fun stmt' ->
+    match stmt' with
+      | WriteAccessStmt writeStmt -> traversal writeStmt.source
+      | ReadAccessStmt readStmt -> List.iter traversal readStmt.source.index
+      | IfStmt ifStmt -> traversal ifStmt.cond
+      | DeclStmt decls -> List.iter (fun (decl: d_decl) -> decl.init |> Option.iter (fun decl -> match decl with
+          | InitListExpr initListExpr -> List.iter traversal initListExpr.args
+          | IExp d_exp' -> traversal d_exp'
+          | _ -> ())
+        ) decls
+      | WhileStmt whileStmt -> traversal whileStmt.cond
+      | ForStmt d_for' -> Option.iter traversal d_for'.cond
+      | DoStmt doStmt -> traversal doStmt.cond
+      | SwitchStmt switchStmt -> traversal switchStmt.cond
+      | CaseStmt caseStmt -> traversal caseStmt.case
+      | SExp d_exp' -> traversal d_exp'
+      | _ -> ()
+  ) stmt
 
 
 let exp_name = function
@@ -442,6 +486,7 @@ let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
     name = k.name;
     code = rewrite_stmt k.code;
     params = k.params;
+    type_params = k.type_params;
   }
 
 let rewrite_def (d:Cast.c_def) : d_def =
@@ -559,15 +604,51 @@ let stmt_to_s: d_stmt -> PPrint.t list =
   in
   stmt_to_s
 
-let kernel_to_s (k:d_kernel) : PPrint.t list =
-  let open PPrint in
-  stmt_to_s k.code
+let summarize_stmt: d_stmt -> string =
+  let opt_exp_to_s: d_exp option -> string =
+    function
+    | Some c -> exp_to_s c
+    | None -> ""
+  in
+  let rec stmt_to_s : d_stmt -> string =
+    function
+    | WriteAccessStmt w ->
+      "rw " ^
+      subscript_to_s w.target ^
+      " = " ^
+      exp_to_s w.source ^ ";"
+    | ReadAccessStmt r -> "ro " ^ var_name r.target ^ " = " ^ subscript_to_s r.source ^ ";"
+    | ReturnStmt -> "return;"
+    | GotoStmt -> "goto;"
+    | BreakStmt -> "break;"
+    | ForStmt f ->
+        "for (" ^
+        opt_for_init_to_s f.init ^ "; " ^
+        opt_exp_to_s f.cond ^ "; " ^
+        opt_exp_to_s f.inc ^
+        ") {...}"
+    | WhileStmt {cond=b; body=s} -> "while (" ^ exp_to_s b ^ ") {...}"
+    | DoStmt {cond=b; body=s} -> "{...} do (" ^ exp_to_s b ^ ")";
+    | SwitchStmt {cond=b; body=s} -> "switch (" ^ exp_to_s b ^ ") {...}";
+    | CaseStmt c -> "case " ^ exp_to_s c.case ^ ": {...}"
+    | DefaultStmt d -> "default: {...}"
+    | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
+      "if (" ^ exp_to_s b ^ ") {...} else {...}"
+    | CompoundStmt l ->
+      let c = List.length l |> string_of_int in
+      "{ " ^ c ^ " stmts... }"
+    | DeclStmt d ->
+      "decl {" ^ Common.join ", " (List.map decl_to_s d) ^ "}"
+    | SExp e -> exp_to_s e
+  in
+  stmt_to_s
 
 let kernel_to_s (k:d_kernel) : PPrint.t list =
   let open PPrint in
   [
     Line ("name: " ^ k.name);
     Line ("params: " ^ list_to_s Cast.param_to_s k.params);
+    Line ("type params: " ^ list_to_s Cast.type_param_to_s k.type_params);
   ]
   @
   stmt_to_s k.code

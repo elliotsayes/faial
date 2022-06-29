@@ -93,7 +93,6 @@ module StdNexp : NEXP_SERIALIZER = struct
       binop (nbin_to_string b) (n_ser a1) (n_ser a2)
     | NIf (b, n1, n2) -> call "if" [b_ser b; n_ser n1; n_ser n2]
     | NCall (x, n) -> call x [n_ser n]
-    | NUnknown -> failwith "n_ser: unexpected input unknown"
   and b_ser (b:bexp) : Smtlib.sexp =
     match b with
     | Bool b -> Smtlib.Atom (Smtlib.Bool b)
@@ -103,7 +102,6 @@ module StdNexp : NEXP_SERIALIZER = struct
       binop (brel_to_string b) (b_ser b1) (b_ser b2)
     | BNot b -> unop "not" (b_ser b)
     | Pred (x, v) -> unop x (n_ser v)
-    | BUnknown -> failwith "b_ser: unexpected input unknown"
 end
 
 module BvNexp : NEXP_SERIALIZER = struct
@@ -143,7 +141,6 @@ module BvNexp : NEXP_SERIALIZER = struct
       binop (nbin_to_string b) (n_ser a1) (n_ser a2)
     | NIf (b, n1, n2) -> call "if" [b_ser b; n_ser n1; n_ser n2]
     | NCall (x, n) -> call x [n_ser n]
-    | NUnknown -> failwith "n_ser: unexpected input unknown"
 
   and b_ser (b:bexp) : Smtlib.sexp =
     match b with
@@ -154,7 +151,6 @@ module BvNexp : NEXP_SERIALIZER = struct
       binop (brel_to_string b) (b_ser b1) (b_ser b2)
     | BNot b -> unop "not" (b_ser b)
     | Pred (x, v) -> unop x (n_ser v)
-    | BUnknown -> failwith "b_ser: unexpected input unknown"
 end
 
 let n_ser = StdNexp.n_ser
@@ -251,7 +247,6 @@ module PPrint = struct
 
   let rec n_par (n:nexp) : string =
     match n with
-    | NUnknown
     | Proj _
     | Num _
     | Var _
@@ -271,7 +266,6 @@ module PPrint = struct
       x ^ "(" ^ n_to_s arg ^ ")"
     | NIf (b, n1, n2) ->
       b_par b ^ " ? " ^ n_par n1 ^ " : " ^ n_par n2
-    | NUnknown -> "??"
   and b_to_s : bexp -> string = function
     | Bool b -> if b then "true" else "false"
     | NRel (b, n1, n2) ->
@@ -280,12 +274,10 @@ module PPrint = struct
       b_par b1 ^ " " ^ brel_to_string b ^ " " ^ b_par b2
     | BNot b -> "!" ^ b_par b
     | Pred (x, v) -> x ^ "(" ^ n_to_s v ^ ")"
-    | BUnknown -> "??"
   and b_par (b:bexp) : string =
     match b with
     | Pred _
     | Bool _
-    | BUnknown
     | NRel _ -> b_to_s b
     | BNot _
     | BRel _ -> "("  ^ b_to_s b ^ ")"
@@ -305,12 +297,19 @@ module PPrint = struct
     | StepName x -> x
 
   let r_to_s (r : range) : string =
-    ident r.range_var ^ " in " ^
-    n_to_s r.range_lower_bound ^ " .. " ^
-    n_to_s r.range_upper_bound ^
-    (match r.range_step with
+    let x = ident r.range_var in
+    let lb = n_to_s r.range_lower_bound in
+    let ub = n_to_s r.range_upper_bound in
+    let s = match r.range_step with
     | Default (Num 1) -> ""
-    | _ -> "; " ^ ident r.range_var ^ " " ^ s_to_s r.range_step)
+    | _ -> "; " ^ ident r.range_var ^ " " ^ s_to_s r.range_step
+    in
+    let d = match r.range_dir with
+    | Increase -> "↑"
+    | Decrease -> "↓"
+    in
+    x ^ " in " ^ lb ^ " .. " ^ ub ^ s ^ " " ^ d
+    
 
   let mode_to_s: mode -> string = function
     | W -> "rw"
