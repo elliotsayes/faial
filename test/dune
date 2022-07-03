@@ -6,6 +6,7 @@
    test_locsplit
    test_predicates
    test_streamutil
+   test_ctype
  )
  (libraries faial oUnit)
 )

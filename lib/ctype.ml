@@ -2,7 +2,7 @@
 let split_array_type (x:string) : (string * string) option =
   match Common.split '[' x with
   | Some (x, y) ->
-    let x = String.sub x 0 (String.length x - 1) in
+    let x = String.trim x in
     Some (x, "[" ^ y)
   | None -> (
     match Common.rsplit ' ' x with
