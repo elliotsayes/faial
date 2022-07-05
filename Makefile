@@ -18,11 +18,11 @@ build-test:
 
 main:
 	$(DUNE) build bin/main.exe
-	cp $(BIN)/main.exe faial-bin
+	cp -f $(BIN)/main.exe faial-bin
 
 pico:
 	$(DUNE) build bin/pico.exe
-	cp $(BIN)/pico.exe pico
+	cp -f $(BIN)/pico.exe pico
 
 test: build-test
 	$(DUNE) runtest

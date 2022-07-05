@@ -570,6 +570,7 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
     let open Imp in
     rhs |> ret_n (fun rhs -> Decl [v, Local, Some rhs])
 
+  | ContinueStmt
   | BreakStmt
   | GotoStmt
   | ReturnStmt 

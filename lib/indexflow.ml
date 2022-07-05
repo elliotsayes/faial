@@ -154,6 +154,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t s_result =
   | DeclStmt []
   | BreakStmt
   | GotoStmt
+  | ContinueStmt
   | ReturnStmt -> Ok env
   
 

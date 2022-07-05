@@ -50,6 +50,7 @@ type c_stmt =
   | BreakStmt
   | GotoStmt
   | ReturnStmt
+  | ContinueStmt
   | IfStmt of {cond: c_exp; then_stmt: c_stmt; else_stmt: c_stmt}
   | CompoundStmt of c_stmt list
   | DeclStmt of c_decl list
@@ -422,7 +423,7 @@ let parse_decl (j:json) : c_decl j_result =
       let* o = cast_object j in
       let* k = get_kind o in
       Ok (match k with 
-        | "AnnotateAttr" -> true
+        | "CUDASharedAttr" -> true
         | _ -> false
       )
     ) |> unwrap_or false
@@ -515,6 +516,8 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     Ok GotoStmt
   | Some "BreakStmt" ->
     Ok BreakStmt
+  | Some "ContinueStmt" ->
+    Ok ContinueStmt
   | Some "DoStmt" ->
     let* inner = with_field "inner" cast_list o in
     let* b, c = match inner with
@@ -578,7 +581,7 @@ let parse_param (j:json) : c_param j_result =
   Ok {name=v; is_used=(is_refed || is_used); is_shared=is_shared; ty=ty}
 
 let c_attr (k:string) : string =
-  " __attribute__((annotate(\"" ^ k ^ "\")))"
+  " __attribute__((" ^ k ^ "))"
 
 let c_attr_shared = c_attr "shared"
 let c_attr_global = c_attr "global"
@@ -801,6 +804,7 @@ let stmt_to_s ?(modifier:bool=true) ?(provenance:bool=false) : c_stmt -> PPrint.
     | ReturnStmt -> [Line "return;"]
     | GotoStmt -> [Line "goto;"]
     | BreakStmt -> [Line "break;"]
+    | ContinueStmt -> [Line "continue;"]
     | ForStmt f -> [
         Line ("for " ^ opt_for_init_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
         Block(stmt_to_s f.body);
