@@ -20,6 +20,7 @@ type stmt =
 | Decl of (variable * locality * nexp option) list
 | If of (bexp * stmt * stmt)
 | For of (range * stmt)
+| Call of (variable * nexp) list
 
 type prog = stmt list
 
@@ -96,7 +97,7 @@ module Post = struct
     | [] -> []
     | i :: p -> loc_subst_i alias i :: loc_subst_p alias p
 
-  
+
 
   module SubstMake(S:Subst.SUBST) = struct
     module M = Subst.Make(S)
@@ -104,7 +105,7 @@ module Post = struct
       function
       | Some n -> Some (M.n_subst st n)
       | None -> None
-      
+
     let rec subst_i (st:S.t) (s:inst) : inst =
       match s with
       | Sync -> Sync
@@ -238,15 +239,15 @@ end
   1. In Imp, the lexical scoping of a variable binding is the sequence
   of statements that succeed that statement. In Post, the lexical scoping is
   always  _contained_ in the variable binding operator.
-  
+
   For instance a variable declaration in Imp:
     var x; s1; ...; sn
   Becomes
     var x { s1; ...; sn }
-  
+
   2. In Imp we can have local variable assignments. We inline such assignments
   in Post. However, variable declaration still remains in Post.
-  
+
   In Imp:
     local x = 1; s1; ...; sn
   becomes in Post:
@@ -264,6 +265,7 @@ let imp_to_post (s:stmt) : Post.prog =
     | Assert _ -> failwith "unsupported"
     | LocationAlias _ -> failwith "unsupported"
     | Decl _ -> failwith "unsupported"
+    | Call _ -> failwith "unsupported"
   and imp_to_post_p (p:prog) : Post.prog =
     match p with
     | [] -> []
@@ -362,13 +364,18 @@ let stmt_to_s: stmt -> PPrint.t list =
       in
       let entries = Common.join "," (List.map entry l) in
       [Line ("decl " ^ entries ^ ";")]
+    | Call args ->
+      [
+        Line (args
+                |> List.map (fun (var, exp) -> var_name var ^ " " ^ n_to_s exp)
+                |> Common.join ", ")
 
+      ]
     | If (b, s1, Block []) -> [
         Line ("if (" ^ b_to_s b ^ ") {");
         Block (stmt_to_s s1);
         Line "}";
       ]
-    
     | If (b, s1, s2) -> [
         Line ("if (" ^ b_to_s b ^ ") {");
         Block (stmt_to_s s1);

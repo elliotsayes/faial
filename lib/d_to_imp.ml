@@ -470,6 +470,7 @@ let get_locality (s: Imp.stmt) : Imp.locality =
     | Acc _
     | LocationAlias _
     | Decl _
+    | Call _
     -> false
     | Block l -> is_sync_l l
     | If (_, s1, s2) -> is_sync_l [s1; s2]
@@ -716,7 +717,7 @@ let parse_kernel (shared_params:(variable * array_t) list) (k:Dlang.d_kernel) : 
     p_kernel_pre = Exp.b_true; (* TODO: implement this *)
     p_kernel_code = cuda_preamble (Block code);
     p_kernel_params = add_type_params params k.type_params;
-    p_kernel_arrays = VarMap.union 
+    p_kernel_arrays = VarMap.union
       (fun k l r -> Some r)
       arrays shared;
   }

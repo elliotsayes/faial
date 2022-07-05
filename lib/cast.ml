@@ -67,11 +67,20 @@ type c_type_param =
   | PTemplateTypeParmDecl of variable
   | PNonTypeTemplateParmDecl of {name: variable; ty: c_type} 
 
+type c_kernel_entry =
+  | Default
+  | Auxiliary
+
+let to_str = function
+  | Default -> "Default"
+  | Auxiliary -> "Auxiliary"
+
 type c_kernel = {
   name: string;
   code: c_stmt;
   type_params: c_type_param list;
   params: c_param list;
+  entry_type: c_kernel_entry;
 }
 
 type c_def =
@@ -582,6 +591,7 @@ let c_attr (k:string) : string =
 
 let c_attr_shared = c_attr "shared"
 let c_attr_global = c_attr "global"
+let c_attr_device = c_attr "device"
 
 let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
   let open Rjson in
@@ -614,11 +624,16 @@ let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j
   in
   let* name: string = with_field "name" cast_string o in
   let* ps = map parse_param ps in
+  let entry_type: c_kernel_entry = if List.mem c_attr_device attrs then
+    Auxiliary
+  else
+    Default in
   Ok {
     name = name;
     code = body;
     params = ps;
     type_params = type_params;
+    entry_type = entry_type;
   }
 
 let is_kernel (j:Yojson.Basic.t) : bool =

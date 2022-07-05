@@ -74,6 +74,7 @@ type d_kernel = {
   code: d_stmt;
   type_params: Cast.c_type_param list;
   params: Cast.c_param list;
+  entry_type: Cast.c_kernel_entry;
 }
 
 type d_def =
@@ -487,6 +488,7 @@ let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
     code = rewrite_stmt k.code;
     params = k.params;
     type_params = k.type_params;
+    entry_type = k.entry_type;
   }
 
 let rewrite_def (d:Cast.c_def) : d_def =
