@@ -25,5 +25,4 @@ let cu_to_json ?(exe="cu-to-json") (fname : string) : Yojson.Basic.t =
   | Ok x -> x
   | Error (r, m) ->
     prerr_endline ("cu-to-json: " ^ m);
-    (* prerr_endline ("cu-to-json: could not run: cu-to-json " ^ fname); *)
     exit r
