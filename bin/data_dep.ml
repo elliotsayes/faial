@@ -1,10 +1,4 @@
 
-let cu_to_json (fname : string) : Yojson.Basic.t =
-  let cmd = "cu-to-json " ^ fname in
-  let in_c = Unix.open_process_in cmd in
-  let raw_json_ast = Yojson.Basic.from_channel in_c in
-  In_channel.close in_c; raw_json_ast
-
 let analyze (j:Yojson.Basic.t) : unit =
   let open Indexflow in
   let open Cast in
@@ -34,7 +28,7 @@ let analyze (j:Yojson.Basic.t) : unit =
 
 let main (fname: string) : unit =
   fname
-  |> cu_to_json
+  |> Cu_to_json.cu_to_json
   |> analyze 
 
 open Cmdliner
