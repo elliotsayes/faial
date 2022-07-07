@@ -206,3 +206,19 @@ and types_stmt_list (env:Typing.t) (s:d_stmt list) : Typing.t s_result =
   | s :: ss ->
     let* env = types_stmt env s in
     types_stmt_list env ss
+
+let types_kernel (k:d_kernel) : Typing.t s_result =
+  let env =
+    k.params
+    |> List.map (fun (p:Cast.c_param) -> p.name)
+    |> List.fold_left (fun env x -> Typing.add_i x env) Typing.make
+  in
+  types_stmt env k.code
+
+let types_def : d_def -> (string * (Typing.t s_result)) option =
+  function
+  | Declaration _ -> None
+  | Kernel k -> Some (k.name, types_kernel k)
+
+let types_program : d_program -> (string * Typing.t s_result) list =
+  Common.map_opt types_def
