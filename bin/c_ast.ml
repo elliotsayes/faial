@@ -26,13 +26,26 @@ let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kern
     exit(-1)
 
 
-let () = (*k1 c k2 d k3 imp *)
-  let (k1, k2, k3) =
-    Yojson.Basic.from_channel stdin
-    |> analyze
-  in
+let main (fname: string) : unit =
+  let j = Cu_to_json.cu_to_json fname in
+  let (k1, k2, k3) = analyze j in 
   Cast.print_program k1;
   print_endline "------";
   Dlang.print_program k2;
   print_endline "------";
   List.iter Imp.print_kernel k3
+
+open Cmdliner
+
+let get_fname = 
+  let doc = "The path $(docv) of the GPU program." in
+  Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
+
+let main_t = Term.(const main $ get_fname)
+
+let info =
+  let doc = "Print the C-AST" in
+  Term.info "c-ast" ~version:"%%VERSION%%" ~doc ~exits:Term.default_exits
+
+let () = Term.exit @@ Term.eval (main_t, info)
+

@@ -10,8 +10,13 @@ all: main
 clean:
 	$(DUNE) clean
 
-cast:
-	$(DUNE) build bin/test_c.exe
+c-ast:
+	$(DUNE) build bin/c_ast.exe
+	cp -f $(BIN)/c_ast.exe c-ast
+
+data-dep:
+	$(DUNE) build bin/data_dep.exe
+	cp -f $(BIN)/data_dep.exe data-dep
 
 build-test:
 	$(DUNE) build test
@@ -42,4 +47,4 @@ gitlab-bin:
 gitlab: gitlab-test gitlab-bin
 
 
-.PHONY: all clean main cast build-test test ui pico sys-test gitlab gitlab-bin gitlab-test
+.PHONY: all clean main build-test test ui pico sys-test gitlab gitlab-bin gitlab-test c-ast

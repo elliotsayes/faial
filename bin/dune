@@ -12,18 +12,16 @@
  (libraries faial))
 
 (executable
- (public_name data-dep)
  (name data_dep)
  (modes exe)
  (modules data_dep)
  (libraries faial cmdliner))
 
 (executable
- (public_name parser)
- (name parser)
+ (name c_ast)
  (modes exe)
- (modules parser)
- (libraries faial))
+ (modules c_ast)
+ (libraries faial cmdliner))
 
 (executable
  (public_name pico)
