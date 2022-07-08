@@ -6,3 +6,5 @@
 /_build
 *.cmi
 *.cmo
+/c-ast
+/data-dep

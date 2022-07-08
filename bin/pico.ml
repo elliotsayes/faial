@@ -1,26 +1,9 @@
-(* Parse C AST as JSON using cu-to-json *)
-
-let cu_to_json (fname : string) : string =
-  let cmd = "cu-to-json " ^ fname in
-  let in_c = Unix.open_process_in cmd in
-  let raw_json_ast = In_channel.input_all in_c in
-  In_channel.close in_c; raw_json_ast
-
-let parse_json (raw_json_ast : string) : Yojson.Basic.t =
-  try Yojson.Basic.from_string raw_json_ast with
-  | Yojson.Json_error("Blank input data") ->
-    (* If the input is blank, just ignore the input and err with -1 *)
-    raise (Common.mk_parse_error_s "Empty input data. Blank file?\n")
-  | Yojson.Json_error(e) ->
-    raise (Common.mk_parse_error_s (Printf.sprintf "Error parsing JSON: %s\n" e))
-
 
 (* Main function *)
 
 let pico (fname : string) =
   try
-    let raw_json = cu_to_json fname in
-    let parsed_json = parse_json raw_json in
+    let parsed_json = Cu_to_json.cu_to_json fname in
     let c_ast = parsed_json |> Cast.parse_program |> Result.get_ok in
     let d_ast = c_ast |> Dlang.rewrite_program in
     let imp = d_ast |> D_to_imp.parse_program |> Result.get_ok in

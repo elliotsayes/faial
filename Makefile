@@ -11,19 +11,24 @@ clean:
 	$(DUNE) clean
 	rm -f faial-bin flores pico proto-to-cuda
 
-cast:
-	$(DUNE) build bin/test_c.exe
+c-ast:
+	$(DUNE) build bin/c_ast.exe
+	cp -f $(BIN)/c_ast.exe c-ast
+
+data-dep:
+	$(DUNE) build bin/data_dep.exe
+	cp -f $(BIN)/data_dep.exe data-dep
 
 build-test:
 	$(DUNE) build test
 
 main:
 	$(DUNE) build bin/main.exe
-	cp $(BIN)/main.exe faial-bin
+	cp -f $(BIN)/main.exe faial-bin
 
 pico:
 	$(DUNE) build bin/pico.exe
-	cp $(BIN)/pico.exe pico
+	cp -f $(BIN)/pico.exe pico
 
 proto-to-cuda:
 	$(DUNE) build bin/prototocuda.exe
@@ -51,4 +56,4 @@ gitlab-bin:
 gitlab: gitlab-test gitlab-bin
 
 
-.PHONY: all clean main cast build-test test ui pico proto-to-cuda flores sys-test gitlab gitlab-bin gitlab-test
+.PHONY: all clean main build-test test ui pico proto-to-cuda flores sys-test gitlab gitlab-bin gitlab-test c-ast

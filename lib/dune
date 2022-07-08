@@ -36,6 +36,7 @@
     symbexp
     typecheck
     wellformed
+    cu_to_json
   )
 
   (libraries yojson ANSITerminal (re_export kernel)))

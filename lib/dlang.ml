@@ -56,6 +56,7 @@ type d_stmt =
   | BreakStmt
   | GotoStmt
   | ReturnStmt
+  | ContinueStmt
   | IfStmt of {cond: d_exp; then_stmt: d_stmt; else_stmt: d_stmt}
   | CompoundStmt of d_stmt list
   | DeclStmt of d_decl list
@@ -445,6 +446,7 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
   | BreakStmt -> BreakStmt
   | GotoStmt -> GotoStmt
   | ReturnStmt -> ReturnStmt
+  | ContinueStmt -> ContinueStmt
   | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
     let (pre, c) = rewrite_exp c in
     block pre (IfStmt {cond=c; then_stmt=rewrite_stmt s1; else_stmt=rewrite_stmt s2})
@@ -566,6 +568,7 @@ let stmt_to_s: d_stmt -> PPrint.t list =
     | ReadAccessStmt r -> [Line ("ro " ^ var_name r.target ^ " = " ^ subscript_to_s r.source ^ ";")]
     | ReturnStmt -> [Line "return;"]
     | GotoStmt -> [Line "goto;"]
+    | ContinueStmt -> [Line "continue;"]
     | BreakStmt -> [Line "break;"]
     | ForStmt f -> [
         Line ("for " ^ opt_for_init_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
@@ -621,6 +624,7 @@ let summarize_stmt: d_stmt -> string =
     | ReturnStmt -> "return;"
     | GotoStmt -> "goto;"
     | BreakStmt -> "break;"
+    | ContinueStmt -> "continue;"
     | ForStmt f ->
         "for (" ^
         opt_for_init_to_s f.init ^ "; " ^
