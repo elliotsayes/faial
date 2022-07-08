@@ -9,6 +9,7 @@ type 'a j_result = 'a Rjson.j_result
 type c_type = json
 type c_var = {name: variable; ty: c_type}
 type c_exp =
+  | RecoveryExpr of c_type
   | CharacterLiteral of int
   | ArraySubscriptExpr of c_array_subscript
   | BinaryOperator of c_binary
@@ -109,9 +110,10 @@ let rec exp_type (e:c_exp) : c_type =
   | MemberExpr a -> a.ty
   | EnumConstantDecl a -> a.ty
   | UnresolvedLookupExpr a -> Ctype.mk_j_type "?"
-
+  | RecoveryExpr ty -> ty
 
 let exp_name = function
+| RecoveryExpr _ -> "RecoveryExpr"
 | EnumConstantDecl _ -> "EnumConstantDecl"
 | CharacterLiteral _ -> "CharacterLiteral"
 | ArraySubscriptExpr _ -> "ArraySubscriptExpr"
@@ -241,6 +243,10 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* b = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
     Ok (MemberExpr {name=n; base=b; ty=ty})
+
+  | "RecoveryExpr" ->
+    let* ty = get_field "type" o in
+    Ok (RecoveryExpr ty)
 
   | "EnumConstantDecl" ->
     let* v = parse_variable j in
@@ -485,8 +491,21 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     in
     Ok (WhileStmt {cond=cond; body=body})
   | Some "DeclStmt" ->
-    let* children = with_field "inner" (cast_map parse_decl) o in
-    Ok (DeclStmt children)
+    let has_typedecl : bool =
+      let has_typedecl : bool j_result =
+        let* children = get_field "inner" o in
+        let* l = cast_list children in
+        let* o = get_index 0 l >>= cast_object in
+        let* k = get_kind o in
+        Ok (k = "TypedefDecl")
+      in
+      Rjson.unwrap_or false has_typedecl
+    in
+    if has_typedecl then
+      Ok (CompoundStmt [])
+    else
+      let* children = with_field "inner" (cast_map parse_decl) o in
+      Ok (DeclStmt children)
   | Some "DefaultStmt" ->
     let* c = with_field "inner" (cast_list_1 parse_stmt) o in
     Ok (DefaultStmt c)
@@ -743,6 +762,7 @@ let exp_to_s ?(modifier:bool=true) ?(provenance:bool=false) ?(types:bool=false) 
   in
   let rec exp_to_s: c_exp -> string =
     function
+    | RecoveryExpr _ -> "?"
     | FloatingLiteral f -> string_of_float f
     | CharacterLiteral i
     | IntegerLiteral i -> string_of_int i

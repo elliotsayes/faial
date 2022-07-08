@@ -80,6 +80,7 @@ let rec types_exp (env:Typing.t) (e:Dlang.d_exp) : (Typing.t * Index.t) =
   | MemberExpr {base=e; _}
   | UnaryOperator {child=e; _} -> types_exp env e
 
+  | RecoveryExpr _
   | EnumConstantDecl _
   | UnresolvedLookupExpr _
   | NonTypeTemplateParmDecl _

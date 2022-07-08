@@ -24,6 +24,12 @@
  (libraries faial cmdliner))
 
 (executable
+ (name next_gen)
+ (modes exe)
+ (modules next_gen)
+ (libraries lib_solve cmdliner))
+
+(executable
  (public_name pico)
  (name pico)
  (modules pico)
