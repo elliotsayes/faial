@@ -244,7 +244,9 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* ty = get_field "type" o in
     Ok (MemberExpr {name=n; base=b; ty=ty})
 
+  | "DependentScopeDeclRefExpr"
   | "RecoveryExpr" ->
+    (* Unknown value *)
     let* ty = get_field "type" o in
     Ok (RecoveryExpr ty)
 
