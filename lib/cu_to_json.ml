@@ -22,7 +22,7 @@ let cu_to_json_opt ?(exe="cu-to-json") ?(ignore_fail=false) (fname : string) : (
   | _, Error e -> Error (1, e)
   | _, _ -> Error (1, "Unknown error")
 
-let cu_to_json ?(exe="cu-to-json") ?(ignore_fail=true) (fname : string) : Yojson.Basic.t =
+let cu_to_json ?(exe="cu-to-json") ?(ignore_fail=false) (fname : string) : Yojson.Basic.t =
   match cu_to_json_opt ~exe:exe ~ignore_fail:ignore_fail fname with
   | Ok x -> x
   | Error (r, m) ->
