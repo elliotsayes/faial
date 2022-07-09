@@ -677,15 +677,15 @@ let parse_type_param (j:Yojson.Basic.t) : c_type_param option j_result =
   | _ -> Ok None
 
 
-let parse_def (j:Yojson.Basic.t) : c_def option j_result =
+let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
   let open Rjson in
   let* o = cast_object j in
   let* k = get_kind o in
-  let parse_k (type_params:c_type_param list) (j:Yojson.Basic.t) : c_def option j_result =
+  let parse_k (type_params:c_type_param list) (j:Yojson.Basic.t) : c_def list j_result =
     if is_kernel j then
       let* k = parse_kernel type_params j in
-      Ok (Some (Kernel k))
-    else Ok None
+      Ok [Kernel k]
+    else Ok []
   in
   match k with
   | "FunctionTemplateDecl" ->
@@ -696,7 +696,7 @@ let parse_def (j:Yojson.Basic.t) : c_def option j_result =
        might even have some more parameters after the function
        declaration, but those are discarded, as I did not understand
        what they are for. *)
-    let rec handle (type_params:c_type_param list): Yojson.Basic.t list -> c_def option j_result =
+    let rec handle (type_params:c_type_param list): Yojson.Basic.t list -> c_def list j_result =
       function
       | [] -> root_cause "Error parsing FunctionTemplateDecl: no FunctionDecl found" j
       | j :: l ->
@@ -713,19 +713,22 @@ let parse_def (j:Yojson.Basic.t) : c_def option j_result =
     | Ok d ->
       Ok (
         if List.mem c_attr_shared d.attrs
-        then Some (Declaration {name=d.name; ty=d.ty})
-        else None
+        then [Declaration {name=d.name; ty=d.ty}]
+        else []
       )
-    | _ -> Ok None)
+    | _ -> Ok [])
+  | "NamespaceDecl" ->
+    let* defs = with_field "inner" (cast_map parse_def) o in
+    Ok (List.concat defs)
   | _ ->
-    Ok None
+    Ok []
 
 
 let parse_program (j:Yojson.Basic.t) : c_program j_result =
   let open Rjson in
   let* o = cast_object j in
   let* inner = with_field "inner" (cast_map parse_def) o in
-  Ok (Common.flatten_opt inner)
+  Ok (List.concat inner)
 
 
 let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
