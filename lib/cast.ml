@@ -393,7 +393,7 @@ let rec parse_init (j:json) : c_init j_result =
   let* o = cast_object j in
   let* kind = get_kind o in
   match kind with
-    
+  | "ParenListExpr"
   | "InitListExpr" ->
     let* ty = get_field "type" o in
     let* args = with_field "inner" (cast_map parse_exp) o in
