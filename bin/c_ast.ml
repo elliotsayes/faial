@@ -27,7 +27,7 @@ let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kern
 
 
 let main (fname: string) : unit =
-  let j = Cu_to_json.cu_to_json fname in
+  let j = Cu_to_json.cu_to_json ~ignore_fail:true fname in
   let (k1, k2, k3) = analyze j in 
   Cast.print_program k1;
   print_endline "------";
