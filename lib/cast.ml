@@ -197,6 +197,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* i = with_field "value" cast_int o in
     Ok (CharacterLiteral i)
 
+  | "PackExpansionExpr"
   | "ImplicitCastExpr"
   | "CXXStaticCastExpr"
   | "ConstantExpr"
@@ -376,6 +377,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* body = with_field "inner" (cast_list_1 parse_exp) o in
     Ok body
 
+  | "CXXUnresolvedConstructExpr"
   | "CXXConstructExpr" ->
     let* ty = get_field "type" o in
     let* args = with_field_or "inner" (cast_map parse_exp) [] o in
