@@ -204,6 +204,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* ty = get_field "type" o in
     Ok (RecoveryExpr ty)
 
+  | "CXXNullPtrLiteralExpr"
   | "StringLiteral"
   | "DependentScopeDeclRefExpr"
   | "RecoveryExpr" ->
@@ -388,6 +389,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* body = with_field "inner" (cast_list_1 parse_exp) o in
     Ok body
 
+  | "InitListExpr"
   | "CXXUnresolvedConstructExpr"
   | "CXXConstructExpr" ->
     let* ty = get_field "type" o in
@@ -410,7 +412,7 @@ let rec parse_init (j:json) : c_init j_result =
   | "ParenListExpr"
   | "InitListExpr" ->
     let* ty = get_field "type" o in
-    let* args = with_field "inner" (cast_map parse_exp) o in
+    let* args = with_field_or "inner" (cast_map parse_exp) [] o in
     Ok (InitListExpr {ty=ty; args=args})
 
   | _ ->
@@ -516,7 +518,7 @@ let rec parse_stmt (j:json) : c_stmt j_result =
         let* l = cast_list children in
         let* o = get_index 0 l >>= cast_object in
         let* k = get_kind o in
-        Ok (k = "TypedefDecl" || k = "EnumDecl")
+        Ok (k = "TypedefDecl" || k = "EnumDecl" || k = "TypeAliasDecl")
       in
       Rjson.unwrap_or false has_typedecl
     in
@@ -746,7 +748,7 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
       )
     | _ -> Ok [])
   | "NamespaceDecl" ->
-    let* defs = with_field "inner" (cast_map parse_def) o in
+    let* defs = with_field_or "inner" (cast_map parse_def) [] o in
     Ok (List.concat defs)
   | _ ->
     Ok []
