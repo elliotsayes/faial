@@ -24,7 +24,9 @@ build-test:
 
 main:
 	$(DUNE) build bin/main.exe
+	$(DUNE) build bin/next_gen.exe
 	cp -f $(BIN)/main.exe faial-bin
+	cp -f $(BIN)/next_gen.exe next-gen
 
 pico:
 	$(DUNE) build bin/pico.exe

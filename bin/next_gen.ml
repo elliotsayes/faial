@@ -3,7 +3,7 @@ module VarSet = Exp.VarSet
 module VarMap = Exp.VarMap
 
 
-let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kernel list) =
+let parse_imp (j:Yojson.Basic.t) : Imp.p_kernel list =
   let open Indexflow in
   let open Cast in
   let open D_to_imp in
@@ -11,7 +11,7 @@ let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kern
   | Ok k1 ->
     let k2 = Dlang.rewrite_program k1 in
       (match D_to_imp.parse_program k2 with
-      | Ok k3 -> (k1, k2, k3)
+      | Ok k3 -> k3
       | Error e ->
         Cast.print_program k1;
         print_endline "------";
@@ -28,12 +28,17 @@ let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kern
 
 let main (fname: string) : unit =
   let j = Cu_to_json.cu_to_json ~ignore_fail:true fname in
-  let (k1, k2, k3) = analyze j in 
-  Cast.print_program k1;
-  print_endline "------";
-  Dlang.print_program k2;
-  print_endline "------";
-  List.iter Imp.print_kernel k3
+  let p = parse_imp j in
+  List.iter (fun p ->
+    let p = Imp.compile p in
+    let p = Wellformed.translate p in
+    let p = Phasealign.translate p in
+    let p = Phasesplit.translate p false in
+    let p = Locsplit.translate2 p in
+    let p = Flatacc.translate2 p in
+    let p = Symbexp.translate2 true p in
+    Z3_solver.solve p
+  ) p
 
 open Cmdliner
 

@@ -9,6 +9,7 @@ type 'a j_result = 'a Rjson.j_result
 type c_type = json
 type c_var = {name: variable; ty: c_type}
 type c_exp =
+  | RecoveryExpr of c_type
   | CharacterLiteral of int
   | ArraySubscriptExpr of c_array_subscript
   | BinaryOperator of c_binary
@@ -109,9 +110,10 @@ let rec exp_type (e:c_exp) : c_type =
   | MemberExpr a -> a.ty
   | EnumConstantDecl a -> a.ty
   | UnresolvedLookupExpr a -> Ctype.mk_j_type "?"
-
+  | RecoveryExpr ty -> ty
 
 let exp_name = function
+| RecoveryExpr _ -> "RecoveryExpr"
 | EnumConstantDecl _ -> "EnumConstantDecl"
 | CharacterLiteral _ -> "CharacterLiteral"
 | ArraySubscriptExpr _ -> "ArraySubscriptExpr"
@@ -156,7 +158,7 @@ let parse_location (j:json) : Sourceloc.location j_result =
   let open Sourceloc in
   let* o = cast_object j in
   let* s = with_field "begin" parse_position o in
-  let* e = with_field "end" parse_position o in
+  let e = with_field "end" parse_position o |> unwrap_or s in
   Ok {
     loc_start = s;
     loc_end = e;
@@ -186,15 +188,35 @@ let compound (ty:c_type) (lhs:c_exp) (opcode:string) (rhs:c_exp) : c_exp =
     }
   }
 
+let is_invalid (o: j_object) : bool =
+  let open Rjson in
+  with_opt_field "isInvalid" cast_bool o
+  |> unwrap_or None
+  |> Ojson.unwrap_or false
+
 let rec parse_exp (j:json) : c_exp j_result =
   let open Rjson in
   let* o = cast_object j in
   let* kind = get_kind o in
   match kind with
+  | _ when is_invalid o ->
+    (* Unknown value *)
+    let* ty = get_field "type" o in
+    Ok (RecoveryExpr ty)
+
+  | "CXXNullPtrLiteralExpr"
+  | "StringLiteral"
+  | "DependentScopeDeclRefExpr"
+  | "RecoveryExpr" ->
+    (* Unknown value *)
+    let* ty = get_field "type" o in
+    Ok (RecoveryExpr ty)
+
   | "CharacterLiteral" ->
     let* i = with_field "value" cast_int o in
     Ok (CharacterLiteral i)
 
+  | "PackExpansionExpr"
   | "ImplicitCastExpr"
   | "CXXStaticCastExpr"
   | "ConstantExpr"
@@ -335,6 +357,7 @@ let rec parse_exp (j:json) : c_exp j_result =
       match func, args with
       | CXXMethodDecl {name=n}, [lhs; rhs] when var_name n = "operator=" ->
         BinaryOperator {lhs=lhs; opcode="="; rhs=rhs; ty=exp_type lhs}
+      | (UnresolvedLookupExpr {name=n}, [lhs; rhs])
       | (FunctionDecl {name=n}, [lhs; rhs]) ->
         (match var_name n with
           | "operator-=" -> compound ty lhs "-" rhs  
@@ -367,6 +390,8 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* body = with_field "inner" (cast_list_1 parse_exp) o in
     Ok body
 
+  | "InitListExpr"
+  | "CXXUnresolvedConstructExpr"
   | "CXXConstructExpr" ->
     let* ty = get_field "type" o in
     let* args = with_field_or "inner" (cast_map parse_exp) [] o in
@@ -385,10 +410,10 @@ let rec parse_init (j:json) : c_init j_result =
   let* o = cast_object j in
   let* kind = get_kind o in
   match kind with
-    
+  | "ParenListExpr"
   | "InitListExpr" ->
     let* ty = get_field "type" o in
-    let* args = with_field "inner" (cast_map parse_exp) o in
+    let* args = with_field_or "inner" (cast_map parse_exp) [] o in
     Ok (InitListExpr {ty=ty; args=args})
 
   | _ ->
@@ -409,39 +434,42 @@ let is_valid_j : json -> bool =
       | Ok _ -> true)
   | _ -> false
 
-let parse_decl (j:json) : c_decl j_result =
+let parse_decl (j:json) : c_decl option j_result =
   let open Rjson in
-  let* v = parse_variable j in
   let* o = cast_object j in
-  let* ty = get_field "type" o in
-  let* kind = get_kind o in
-  let inner = List.assoc_opt "inner" o |> Ojson.unwrap_or (`List []) in
-  let* inner = cast_list inner in
-  let inner = List.filter is_valid_j inner in
-  let attrs, inits = List.partition (fun j ->
-    (
-      let* o = cast_object j in
-      let* k = get_kind o in
-      Ok (match k with 
-        | "CUDASharedAttr" -> true
-        | _ -> false
-      )
-    ) |> unwrap_or false
-  ) inner in
-  let* attrs = map parse_attr attrs in
-  let* inits = map parse_init inits in
-  (* Further enforce that there is _at most_ one init expression. *)
-  let* init = match inits with
-  | [init] -> Ok (Some init)
-  | [] -> Ok None
-  | _ ->
-    (* Print out a nice error message with provenance. *)
-    let i = List.length inits |> string_of_int in
-    let msg = "Expecting at most one expression, but got " ^ i in
-    let open StackTrace in
-    Error (Because (("Field 'init'", j), RootCause (msg, `List inner)))
-  in
-  Ok {name=v; ty=ty; init=init; attrs=attrs}
+  if is_invalid o then Ok None
+  else (
+    let* v = parse_variable j in
+    let* ty = get_field "type" o in
+    let* kind = get_kind o in
+    let inner = List.assoc_opt "inner" o |> Ojson.unwrap_or (`List []) in
+    let* inner = cast_list inner in
+    let inner = List.filter is_valid_j inner in
+    let attrs, inits = List.partition (fun j ->
+      (
+        let* o = cast_object j in
+        let* k = get_kind o in
+        Ok (match k with 
+          | "CUDASharedAttr" -> true
+          | _ -> false
+        )
+      ) |> unwrap_or false
+    ) inner in
+    let* attrs = map parse_attr attrs in
+    let* inits = map parse_init inits in
+    (* Further enforce that there is _at most_ one init expression. *)
+    let* init = match inits with
+    | [init] -> Ok (Some init)
+    | [] -> Ok None
+    | _ ->
+      (* Print out a nice error message with provenance. *)
+      let i = List.length inits |> string_of_int in
+      let msg = "Expecting at most one expression, but got " ^ i in
+      let open StackTrace in
+      Error (Because (("Field 'init'", j), RootCause (msg, `List inner)))
+    in
+    Ok (Some {name=v; ty=ty; init=init; attrs=attrs})
+  )
 
 let parse_for_init (j:json) : c_for_init j_result =
   let open Rjson in
@@ -450,7 +478,7 @@ let parse_for_init (j:json) : c_for_init j_result =
   match kind with
   | "DeclStmt" ->
     let* ds = with_field "inner" (cast_map parse_decl) o in
-    Ok (ForDecl ds)
+    Ok (ForDecl (Common.flatten_opt ds))
   | _ ->
     let* e = parse_exp j in
     Ok (ForExp e)
@@ -485,8 +513,21 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     in
     Ok (WhileStmt {cond=cond; body=body})
   | Some "DeclStmt" ->
-    let* children = with_field "inner" (cast_map parse_decl) o in
-    Ok (DeclStmt children)
+    let has_typedecl : bool =
+      let has_typedecl : bool j_result =
+        let* children = get_field "inner" o in
+        let* l = cast_list children in
+        let* o = get_index 0 l >>= cast_object in
+        let* k = get_kind o in
+        Ok (k = "TypedefDecl" || k = "EnumDecl" || k = "TypeAliasDecl")
+      in
+      Rjson.unwrap_or false has_typedecl
+    in
+    if has_typedecl then
+      Ok (CompoundStmt [])
+    else
+      let* children = with_field "inner" (cast_map parse_decl) o in
+      Ok (DeclStmt (children |> Common.flatten_opt))
   | Some "DefaultStmt" ->
     let* c = with_field "inner" (cast_list_1 parse_stmt) o in
     Ok (DefaultStmt c)
@@ -572,8 +613,8 @@ and parse_stmt_list = fun inner ->
 
 let parse_param (j:json) : c_param j_result =
   let open Rjson in
-  let* v = parse_variable j in
   let* o = cast_object j in
+  let* v = parse_variable j in
   let* ty = get_field "type" o in
   let* is_refed = with_field_or "isReferenced" cast_bool false o in
   let* is_used =  with_field_or "isUsed" cast_bool false o in
@@ -595,34 +636,43 @@ let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
   in
   res |> unwrap_or false
 
+let wrap_error (msg:string) (j:Yojson.Basic.t): 'a j_result -> 'a j_result =
+    function
+    | Ok e -> Ok e
+    | Error e -> Rjson.because msg j e
+
+
 let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j_result =
   let open Rjson in
-  let* o = cast_object j in
-  let* inner = with_field "inner" cast_list o in
-  let attrs, inner =
-    inner
-    |> List.partition
-      (j_filter_kind (Common.ends_with "Attr"))
-  in
-  let ps, body =
-    inner
-    |> List.partition
-      (j_filter_kind (fun k -> k = "ParmVarDecl" || k = "TemplateArgument"))
-  in
-  let* attrs = map parse_attr attrs in
-  let* body: c_stmt list = parse_stmt_list (Yojson.Basic.(`List body)) in
-  let body = match body with
-    | [s] -> s
-    | _ -> CompoundStmt body
-  in
-  let* name: string = with_field "name" cast_string o in
-  let* ps = map parse_param ps in
-  Ok {
-    name = name;
-    code = body;
-    params = ps;
-    type_params = type_params;
-  }
+  (
+    let* o = cast_object j in
+    let* inner = with_field "inner" cast_list o in
+    let attrs, inner =
+      inner
+      |> List.partition
+        (j_filter_kind (Common.ends_with "Attr"))
+    in
+    let ps, body =
+      inner
+      |> List.partition
+        (j_filter_kind (fun k -> k = "ParmVarDecl" || k = "TemplateArgument"))
+    in
+    let* attrs = map parse_attr attrs in
+    let* body: c_stmt list = parse_stmt_list (Yojson.Basic.(`List body)) in
+    let body = match body with
+      | [s] -> s
+      | _ -> CompoundStmt body
+    in
+    let* name: string = with_field "name" cast_string o in
+    (* Parameters may be faulty, recover: *)
+    let ps = List.map parse_param ps |> List.concat_map Result.to_list in
+    Ok {
+      name = name;
+      code = body;
+      params = ps;
+      type_params = type_params;
+    }
+  ) |> wrap_error "Kernel" j
 
 let is_kernel (j:Yojson.Basic.t) : bool =
   let open Rjson in
@@ -658,15 +708,15 @@ let parse_type_param (j:Yojson.Basic.t) : c_type_param option j_result =
   | _ -> Ok None
 
 
-let parse_def (j:Yojson.Basic.t) : c_def option j_result =
+let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
   let open Rjson in
   let* o = cast_object j in
   let* k = get_kind o in
-  let parse_k (type_params:c_type_param list) (j:Yojson.Basic.t) : c_def option j_result =
+  let parse_k (type_params:c_type_param list) (j:Yojson.Basic.t) : c_def list j_result =
     if is_kernel j then
       let* k = parse_kernel type_params j in
-      Ok (Some (Kernel k))
-    else Ok None
+      Ok [Kernel k]
+    else Ok []
   in
   match k with
   | "FunctionTemplateDecl" ->
@@ -677,7 +727,7 @@ let parse_def (j:Yojson.Basic.t) : c_def option j_result =
        might even have some more parameters after the function
        declaration, but those are discarded, as I did not understand
        what they are for. *)
-    let rec handle (type_params:c_type_param list): Yojson.Basic.t list -> c_def option j_result =
+    let rec handle (type_params:c_type_param list): Yojson.Basic.t list -> c_def list j_result =
       function
       | [] -> root_cause "Error parsing FunctionTemplateDecl: no FunctionDecl found" j
       | j :: l ->
@@ -691,22 +741,25 @@ let parse_def (j:Yojson.Basic.t) : c_def option j_result =
   | "FunctionDecl" -> parse_k [] j
   | "VarDecl" ->
     (match parse_decl j with
-    | Ok d ->
+    | Ok (Some d) ->
       Ok (
         if List.mem c_attr_shared d.attrs
-        then Some (Declaration {name=d.name; ty=d.ty})
-        else None
+        then [Declaration {name=d.name; ty=d.ty}]
+        else []
       )
-    | _ -> Ok None)
+    | _ -> Ok [])
+  | "NamespaceDecl" ->
+    let* defs = with_field_or "inner" (cast_map parse_def) [] o in
+    Ok (List.concat defs)
   | _ ->
-    Ok None
+    Ok []
 
 
 let parse_program (j:Yojson.Basic.t) : c_program j_result =
   let open Rjson in
   let* o = cast_object j in
   let* inner = with_field "inner" (cast_map parse_def) o in
-  Ok (Common.flatten_opt inner)
+  Ok (List.concat inner)
 
 
 let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
@@ -743,6 +796,7 @@ let exp_to_s ?(modifier:bool=true) ?(provenance:bool=false) ?(types:bool=false) 
   in
   let rec exp_to_s: c_exp -> string =
     function
+    | RecoveryExpr _ -> "?"
     | FloatingLiteral f -> string_of_float f
     | CharacterLiteral i
     | IntegerLiteral i -> string_of_int i

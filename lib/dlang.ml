@@ -10,6 +10,7 @@ type d_type = json
 type d_var = Cast.c_var
 
 type d_exp =
+  | RecoveryExpr of d_type
   | CharacterLiteral of int
   | BinaryOperator of d_binary
   | CallExpr of {func: d_exp; args: d_exp list; ty: d_type}
@@ -131,6 +132,7 @@ let for_dexp_in_dstmt (f: d_exp -> unit) (stmt: d_stmt) = let traversal = d_exp_
 
 
 let exp_name = function
+| RecoveryExpr _ -> "RecoveryExpr"
 | CharacterLiteral _ -> "CharacterLiteral"
 | BinaryOperator _ -> "BinaryOperator"
 | CallExpr _ -> "CallExpr"
@@ -208,6 +210,7 @@ let for_loop_vars (f:d_for) : variable list =
 
 let rec exp_type (e:d_exp) : d_type =
   match e with
+  | RecoveryExpr ty -> ty 
   | CharacterLiteral _ -> Ctype.j_char_type
   | BinaryOperator a -> a.ty
   | ConditionalOperator c -> exp_type c.then_expr
@@ -308,6 +311,9 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
       args=[ArraySubscriptExpr a; src]
     } when var_name v = "operator="
     -> rewrite_write a src
+
+  | RecoveryExpr ty ->
+    fun st -> (st, RecoveryExpr ty)
 
   | BinaryOperator {lhs=ArraySubscriptExpr a; rhs=src; opcode="="; _} ->
     rewrite_write a src
@@ -507,6 +513,7 @@ let list_to_s (f:'a -> string) (l:'a list) : string =
 let rec exp_to_s : d_exp -> string =
   let type_to_str = Cast.type_to_str in
   function
+  | RecoveryExpr _ -> "?"
   | FloatingLiteral f -> string_of_float f
   | CharacterLiteral i
   | IntegerLiteral i -> string_of_int i

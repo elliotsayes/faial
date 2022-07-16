@@ -42,6 +42,16 @@
   (libraries yojson ANSITerminal (re_export kernel)))
 
 (library
+  (name lib_solve)
+  (wrapped false)
+  (modules
+    z3_solver
+  )
+
+  (libraries pico z3))
+
+
+(library
   (name pico)
   (wrapped false)
   (modules

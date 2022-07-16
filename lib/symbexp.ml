@@ -16,7 +16,7 @@ type h_prog = {
   prog_accesses: cond_access list;
 }
 
-let mk_proof (location:variable) (goal:bexp) =
+let mk_proof (location:variable) (goal:bexp) : proof =
   let open Proto in
   let open Common in
   let decls =
@@ -85,16 +85,7 @@ type assign_task = {
   assign_index: int -> nexp -> bexp;
   assign_loc: Sourceloc.location -> bexp;
 }
-(*
-module LocationHash =
-  struct
-    type t = Sourceloc.location
-    let equal i j : bool = Sourceloc.compare_location i j = 0
-    let hash i = Sourceloc.hash_location i
-  end
 
-module LocationTbl = Hashtbl.Make(LocationHash)
-*)
 module LocationCache = struct
   type t = {
     loc_to_int: (Sourceloc.location, int) Hashtbl.t;

@@ -170,6 +170,7 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
     let* b = parse_e "not" u.child in
     ret_b (BNot b)
 
+  | RecoveryExpr _
   | UnaryOperator {opcode="~"; _}
   | CXXConstructExpr _
   | MemberExpr _
