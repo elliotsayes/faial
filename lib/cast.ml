@@ -357,6 +357,7 @@ let rec parse_exp (j:json) : c_exp j_result =
       match func, args with
       | CXXMethodDecl {name=n}, [lhs; rhs] when var_name n = "operator=" ->
         BinaryOperator {lhs=lhs; opcode="="; rhs=rhs; ty=exp_type lhs}
+      | (UnresolvedLookupExpr {name=n}, [lhs; rhs])
       | (FunctionDecl {name=n}, [lhs; rhs]) ->
         (match var_name n with
           | "operator-=" -> compound ty lhs "-" rhs  
