@@ -5,6 +5,8 @@ module Boolean = Z3.Boolean
 module Arithmetic = Z3.Arithmetic
 module Integer = Z3.Arithmetic.Integer
 module Model = Z3.Model
+module Symbol = Z3.Symbol
+module FuncDecl = Z3.FuncDecl
 
 exception Not_implemented of string
 
@@ -86,7 +88,17 @@ let solve ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.strea
 			(match Solver.get_model s with
 			| Some m ->
 				print_endline "RACY";
-				prerr_endline (Model.to_string m)
+				print_endline ("Array: " ^ p.proof_name); 
+				let decls = Model.get_const_decls m |> List.map (fun d ->
+					let e : string = FuncDecl.apply d []
+						|> (fun e -> Model.eval m e true)
+						|> Option.map Expr.to_string
+						|> Ojson.unwrap_or "?"
+					in
+					(FuncDecl.get_name d |> Symbol.get_string, e)
+				)
+				in
+				List.iter (fun (k, v) -> print_endline (k ^ ": " ^ v)) decls;
 			| None -> print_endline "INVALID")
 		| UNKNOWN -> print_endline "UNKNOWN"
 	) ps
