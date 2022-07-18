@@ -10,6 +10,11 @@ let thread_globals : VarSet.t =
       "blockDim.z"; "blockIdx.z"; "gridDim.z"; "gridIdx.z"; "threadDim.z"])
   |> VarSet.of_list
 
+let thread_locals : VarSet.t =
+  (List.map var_make
+     ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"])
+  |> VarSet.of_list
+
 (* ----------------- serialization -------------------- *)
 
 (* Gives the dummy variable string for any variable *)
@@ -80,16 +85,30 @@ let arr_to_shared (vs : array_t VarMap.t) : PPrint.t list =
                    ^ idx_to_s string_of_int v.array_size ^ ";"))
 
 let arr_to_dummy (vs : array_t VarMap.t) : PPrint.t list =
-  VarMap.bindings vs
+  VarMap.bindings vs 
   |> List.map (fun (k, v) -> 
       PPrint.Line (arr_type v ^ " " ^ var_to_dummy k ^ ";"))
+
+let local_var_to_l (vs : VarSet.t) : PPrint.t list =
+  (* A local variable must not be a tid/dummy variable *)
+  let local_var = VarSet.filter
+      (fun v -> not (VarSet.mem v thread_locals
+                     || String.starts_with "__dummy" (var_name v))) vs
+                  |> VarSet.elements in
+  match local_var with
+  | [] -> []
+  | _ -> PPrint.Line "extern int __dummy_int();" :: List.map
+           (fun v -> PPrint.Line ("int " ^ var_name v ^ " = __dummy_int();"))
+           local_var
 
 let body_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) : PPrint.t =
   let funct_protos = arr_to_proto k.kernel_arrays in
   let shared_arr = arr_to_shared (VarMap.filter (fun k -> fun v ->
       v.array_hierarchy = SharedMemory) k.kernel_arrays) in
   let dummy_var = arr_to_dummy k.kernel_arrays in
-  PPrint.Block (funct_protos @ shared_arr @ dummy_var @ (f k.kernel_code))
+  let local_var = local_var_to_l k.kernel_local_variables in
+  PPrint.Block (shared_arr @ funct_protos @ local_var @ dummy_var
+                @ (f k.kernel_code))
 
 (* Serialization of the kernel *)
 let kernel_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) : PPrint.t list =
