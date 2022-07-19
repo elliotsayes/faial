@@ -15,6 +15,22 @@ let thread_locals : VarSet.t =
      ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"])
   |> VarSet.of_list
 
+let cpp_types : Common.StringSet.t =
+  ["__builtin_va_list"; "__float128"; "__int128_t"; "__uint128_t"; "bool";
+   "char"; "char16_t"; "char32_t"; "cudaError_t"; "cudaStream"; "cudaStream_t";
+   "cudaTextureObject_t"; "curandDiscreteDistribution_st";
+   "curandDiscreteDistribution_t"; "curandState"; "curandStateMRG32k3a";
+   "curandStateMRG32k3a_t"; "curandStateMtgp32"; "curandStateMtgp32_t";
+   "curandStatePhilox4_32_10"; "curandStatePhilox4_32_10_t";
+   "curandStateScrambledSobol32"; "curandStateScrambledSobol32_t";
+   "curandStateScrambledSobol64"; "curandStateScrambledSobol64_t";
+   "curandStateSobol32"; "curandStateSobol32_t"; "curandStateSobol64";
+   "curandStateSobol64_t"; "curandStateXORWOW"; "curandStateXORWOW_t";
+   "curandState_t"; "dim4"; "double"; "enumcudaError"; "float"; "int";
+   "int16_t"; "int32_t"; "int64_t"; "int8_t"; "long"; "ptrdiff_t"; "short";
+   "size_t"; "uint"; "uint16_t"; "uint32_t"; "uint8_t"; "ushort"; "wchar_t";]
+  |> Common.StringSet.of_list
+
 (* ----------------- serialization -------------------- *)
 
 (* Gives the dummy variable string for any variable *)
@@ -63,8 +79,25 @@ let arr_type (arr : array_t) : string =
   | _ -> Common.join " " arr.array_type
 
 (* Helper functions for making the kernel header/parameters *)
-let global_arr_to_l (vs : array_t VarMap.t) : string list =
-  VarMap.bindings vs
+let declare_unknown_types (vm : array_t VarMap.t) =
+  (* Converts an array type to a declaration, or None if it is a known type *)
+  let rec arr_type_to_decl = function
+    | [] -> None
+    | [ last_type ] -> if Common.StringSet.mem last_type cpp_types then None
+      else Some ("class " ^ last_type ^ " {};")
+    | _ :: types -> arr_type_to_decl types
+  in
+  VarMap.bindings vm |>
+  List.filter_map (fun (k, v) -> arr_type_to_decl v.array_type) |>
+  (* Remove duplicates *)
+  Common.StringSet.of_list |>
+  Common.StringSet.elements |>
+  function
+  | [] -> PPrint.Nil
+  | types -> PPrint.Line (Common.join "\n" types)
+
+let global_arr_to_l (vm : array_t VarMap.t) : string list =
+  VarMap.bindings vm
   |> List.map (fun (k, v) -> arr_type v ^ " *" ^ var_name k)
 
 let global_var_to_l (vs : VarSet.t) : string list =
@@ -72,20 +105,20 @@ let global_var_to_l (vs : VarSet.t) : string list =
   |> List.map (fun v -> "int " ^ var_name v)
 
 (* Helper functions for making kernel variable declarations/prototypes *)
-let arr_to_proto (vs : array_t VarMap.t) : PPrint.t list =
-  VarMap.bindings vs 
+let arr_to_proto (vm : array_t VarMap.t) : PPrint.t list =
+  VarMap.bindings vm 
   |> List.map (fun (k, v) ->
       PPrint.Line ("extern " ^ arr_type v ^ " " ^ var_to_dummy k ^ "_w();"))
 
-let arr_to_shared (vs : array_t VarMap.t) : PPrint.t list =
-  VarMap.bindings vs
+let arr_to_shared (vm : array_t VarMap.t) : PPrint.t list =
+  VarMap.bindings vm
   |> List.map (fun (k, v) -> 
       PPrint.Line ((match v.array_size with | [] -> "extern " | _ -> "") 
                    ^ "__shared__ " ^ arr_type v ^ " " ^ var_name k
                    ^ idx_to_s string_of_int v.array_size ^ ";"))
 
-let arr_to_dummy (vs : array_t VarMap.t) : PPrint.t list =
-  VarMap.bindings vs 
+let arr_to_dummy (vm : array_t VarMap.t) : PPrint.t list =
+  VarMap.bindings vm 
   |> List.map (fun (k, v) -> 
       PPrint.Line (arr_type v ^ " " ^ var_to_dummy k ^ ";"))
 
@@ -95,6 +128,7 @@ let local_var_to_l (vs : VarSet.t) : PPrint.t list =
       (fun v -> not (VarSet.mem v thread_locals
                      || String.starts_with "__dummy" (var_name v))) vs
                   |> VarSet.elements in
+  (* Generate a single prototype to initialize local variables with *)
   match local_var with
   | [] -> []
   | _ -> PPrint.Line "extern int __dummy_int();" :: List.map
@@ -102,22 +136,24 @@ let local_var_to_l (vs : VarSet.t) : PPrint.t list =
            local_var
 
 let body_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) : PPrint.t =
-  let funct_protos = arr_to_proto k.kernel_arrays in
   let shared_arr = arr_to_shared (VarMap.filter (fun k -> fun v ->
       v.array_hierarchy = SharedMemory) k.kernel_arrays) in
-  let dummy_var = arr_to_dummy k.kernel_arrays in
+  let funct_protos = arr_to_proto k.kernel_arrays in
   let local_var = local_var_to_l k.kernel_local_variables in
+  let dummy_var = arr_to_dummy k.kernel_arrays in
   PPrint.Block (shared_arr @ funct_protos @ local_var @ dummy_var
                 @ (f k.kernel_code))
 
 (* Serialization of the kernel *)
 let kernel_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) : PPrint.t list =
   let open PPrint in
+  let decl_types = declare_unknown_types k.kernel_arrays in
   let k_name = if k.kernel_name = "main" then "kernel" else k.kernel_name in
   let global_arr = global_arr_to_l (VarMap.filter (fun k -> fun v ->
       v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
   let global_var = global_var_to_l k.kernel_global_variables in
   [
+    decl_types;
     Line "__global__";
     Line ("void " ^ k_name ^ "(" ^ Common.join
             ", " (global_arr @ global_var) ^ ")");
@@ -133,10 +169,10 @@ let print_k (k : prog kernel) : unit =
   PPrint.print_doc (kernel_to_s prog_to_s k)
 
 (* Kernel to TOML conversion *)
-let arrays_to_l (vs : array_t VarMap.t) : Toml.Types.table list =
+let arrays_to_l (vm : array_t VarMap.t) : Toml.Types.table list =
   let open Toml.Min in
   let open Toml.Types in
-  VarMap.bindings vs
+  VarMap.bindings vm
   |> List.map (fun (k, v) ->
       of_key_values [key (var_name k), TString (arr_type v)])
 
