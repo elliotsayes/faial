@@ -37,7 +37,12 @@ let main (fname: string) : unit =
     let p = Locsplit.translate2 p in
     let p = Flatacc.translate2 p in
     let p = Symbexp.translate2 true p in
-    Z3_solver.solve p
+    let open Z3_solver in
+    let open Solution in
+    solve p
+    |> Streamutil.iter (fun s ->
+      Solution.to_json s |> Yojson.Basic.pretty_to_channel stdout
+    )
   ) p
 
 open Cmdliner

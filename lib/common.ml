@@ -86,6 +86,36 @@ let ends_with suffix s =
   (suffix_len = 0) ||
   (s_len >= suffix_len && String.sub s (s_len - suffix_len) suffix_len = suffix)
 
+
+let contains ~needle:(needle:string) (s:string) : bool =
+  let n_len = String.length needle in
+  let s_len = String.length s in
+  if n_len = 0 then true
+  else if n_len > s_len then false 
+  else (
+    (* Has at least one character *)
+    let ch = needle.[0] in
+    (* Find the every character that starts with `ch`
+       extract a substring with as many chars than needle.
+       Return true if neele matches substring. *)
+    let rec contains (offset:int) : bool =
+      match String.index_from_opt s offset ch with
+      | Some idx ->
+        if s_len - idx >= n_len then (
+          (* Check if we have enough characters to search *)
+          let sub = String.sub s idx n_len in
+          (* Substring matches needle, we are done *)
+          if String.equal sub needle then true
+          (* Try again *)
+          else contains (idx + 1)
+        (* Otherwise, not enough characters, impossible
+           to find neelde. *)
+        ) else false
+      | None -> false
+    in
+    contains 0 
+  )
+
 let hashtbl_elements t =
   Hashtbl.fold (fun k v accum ->
     (k,v)::accum
