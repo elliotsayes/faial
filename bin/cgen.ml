@@ -31,6 +31,11 @@ let cpp_types : Common.StringSet.t =
    "size_t"; "uint"; "uint16_t"; "uint32_t"; "uint8_t"; "ushort"; "wchar_t";]
   |> Common.StringSet.of_list
 
+let vector_types : Common.StringSet.t =
+  ["char"; "double"; "float"; "int"; "long"; "longlong";
+   "short"; "uchar"; "uint"; "ulong"; "ulonglong"; "ushort";]
+  |> Common.StringSet.of_list
+
 (* ----------------- serialization -------------------- *)
 
 (* Gives the dummy variable string for any variable *)
@@ -73,17 +78,28 @@ let prog_to_s (p : prog) : PPrint.t list =
   List.map inst_to_s p |> List.flatten
 
 (* Get the type of an array, defaulting to int if it is unknown *)
-let arr_type (arr : array_t) : string =
-  match arr.array_type with
-  | [] -> "int"
-  | _ -> Common.join " " arr.array_type
+let arr_type (arr : array_t) (strip_const : bool) : string =
+  if arr.array_type = [] then "int"
+  else if strip_const then Common.join " "
+      (List.filter (fun x -> x <> "const") arr.array_type)
+  else Common.join " " arr.array_type
+
+(* Checks if a string is a known C++/CUDA type *)
+let is_known_type (s : string) : bool =
+  if Common.StringSet.mem s cpp_types then true
+  else match String.length s with
+    | 0 -> true
+    | len -> Common.StringSet.mem (String.sub s 0 (len - 1)) vector_types
+             && match s.[len - 1] with
+             | '1' | '2' | '3' | '4' -> true
+             | _ -> false
 
 (* Helper functions for making the kernel header/parameters *)
 let declare_unknown_types (vm : array_t VarMap.t) =
   (* Converts an array type to a declaration, or None if it is a known type *)
   let rec arr_type_to_decl = function
     | [] -> None
-    | [ last_type ] -> if Common.StringSet.mem last_type cpp_types then None
+    | [ last_type ] -> if is_known_type last_type then None
       else Some ("class " ^ last_type ^ " {};")
     | _ :: types -> arr_type_to_decl types
   in
@@ -98,7 +114,7 @@ let declare_unknown_types (vm : array_t VarMap.t) =
 
 let global_arr_to_l (vm : array_t VarMap.t) : string list =
   VarMap.bindings vm
-  |> List.map (fun (k, v) -> arr_type v ^ " *" ^ var_name k)
+  |> List.map (fun (k, v) -> arr_type v false ^ " *" ^ var_name k)
 
 let global_var_to_l (vs : VarSet.t) : string list =
   VarSet.elements (VarSet.diff vs thread_globals)
@@ -108,19 +124,19 @@ let global_var_to_l (vs : VarSet.t) : string list =
 let arr_to_proto (vm : array_t VarMap.t) : PPrint.t list =
   VarMap.bindings vm 
   |> List.map (fun (k, v) ->
-      PPrint.Line ("extern " ^ arr_type v ^ " " ^ var_to_dummy k ^ "_w();"))
+      PPrint.Line ("extern " ^ arr_type v true ^ " " ^ var_to_dummy k ^ "_w();"))
 
 let arr_to_shared (vm : array_t VarMap.t) : PPrint.t list =
   VarMap.bindings vm
   |> List.map (fun (k, v) -> 
       PPrint.Line ((match v.array_size with | [] -> "extern " | _ -> "") 
-                   ^ "__shared__ " ^ arr_type v ^ " " ^ var_name k
+                   ^ "__shared__ " ^ arr_type v false ^ " " ^ var_name k
                    ^ idx_to_s string_of_int v.array_size ^ ";"))
 
 let arr_to_dummy (vm : array_t VarMap.t) : PPrint.t list =
   VarMap.bindings vm 
   |> List.map (fun (k, v) -> 
-      PPrint.Line (arr_type v ^ " " ^ var_to_dummy k ^ ";"))
+      PPrint.Line (arr_type v true ^ " " ^ var_to_dummy k ^ ";"))
 
 let local_var_to_l (vs : VarSet.t) : PPrint.t list =
   (* A local variable must not be a tid/dummy variable *)
@@ -174,7 +190,7 @@ let arrays_to_l (vm : array_t VarMap.t) : Toml.Types.table list =
   let open Toml.Types in
   VarMap.bindings vm
   |> List.map (fun (k, v) ->
-      of_key_values [key (var_name k), TString (arr_type v)])
+      of_key_values [key (var_name k), TString (arr_type v false)])
 
 let scalars_to_l (vs : VarSet.t) : Toml.Types.table list =
   let open Toml.Min in
