@@ -58,7 +58,9 @@ build-dist:
   artifacts:
     paths:
       - faial-bin
+      - next-gen
       - faial
+      - c-ast
       - pico
       - README.md
       - LICENSE
@@ -80,13 +82,8 @@ bundle:
     - wget -nv --content-disposition https://gitlab.com/umb-svl/c-to-json/-/jobs/artifacts/$CI_COMMIT_BRANCH/raw/build/c-to-json-bin.tar.bz2?job=build
     - tar xf c-to-json-bin.tar.bz2
     - rm c-to-json-bin.tar.bz2
-    # faial-infer:
-    - wget -nv --content-disposition https://gitlab.com/umb-svl/faial-infer/-/jobs/artifacts/$CI_COMMIT_BRANCH/download?job=bin
-    - unzip artifacts.zip
-    - rm artifacts.zip
-    - mv faial-infer bin/
     # faial:
-    - cp ../faial ../faial-bin  ../pico bin/
+    - cp ../faial ../faial-bin ../pico ../c-ast ../next-gen bin/
     - cp ../README.md ../LICENSE  ./
     # display tree & bundle:
     - tree

@@ -1,5 +1,11 @@
 version: "3.8"
 services:
+    base:
+        build:
+            dockerfile: docker/base.Dockerfile
+            context: ..
+        image: registry.gitlab.com/umb-svl/faial/faial:base
+
     ci:
         build:
             dockerfile: docker/ci.Dockerfile
