@@ -27,7 +27,7 @@
  (name next_gen)
  (modes exe)
  (modules next_gen)
- (libraries lib_solve cmdliner))
+ (libraries lib_solve cmdliner printbox printbox-text))
 
 (executable
  (public_name pico)
