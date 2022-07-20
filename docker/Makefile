@@ -10,13 +10,13 @@ build-ci: build-base
 	$(DOCKER_COMPOSE) build ci
 
 build-dev:
-	$(DOCKER_COMPOSE) build from-scratch
+	$(DOCKER_COMPOSE) build dev
 
 ci:
 	$(DOCKER_COMPOSE) run ci
 
 dev:
-	$(DOCKER_COMPOSE) run from-scratch
+	$(DOCKER_COMPOSE) run dev
 
 push:
 	$(DOCKER_COMPOSE) up --no-start ci

@@ -12,9 +12,9 @@ services:
             context: ..
         image: registry.gitlab.com/umb-svl/faial/faial:ci
 
-    from-scratch:
+    dev:
         build:
-            dockerfile: docker/from-scratch.Dockerfile
+            dockerfile: docker/dev.Dockerfile
             context: ..
 
     debug-ci:
