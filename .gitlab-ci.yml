@@ -50,6 +50,8 @@ build-dist:
     - rm -f ./target/*/faial
     - eval $(opam config env)
     - dune build --release
+    - dune build bin/next_gen.exe --release
+    - dune build bin/c_ast.exe --release
     - cp -Lr _build/install/default/bin/* ./
     - cd faial-ui
     - cargo b --release
@@ -58,8 +60,8 @@ build-dist:
   artifacts:
     paths:
       - faial-bin
-      - next-gen
       - faial
+      - next-gen
       - c-ast
       - pico
       - README.md
