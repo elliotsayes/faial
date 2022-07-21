@@ -35,7 +35,7 @@ let box_environ (e:Environ.t) : PrintBox.t =
   )
 
 let vec_to_s (v: Vec3.t) : string =
-  "x = " ^ v.x ^ ", y = " ^ v.y ^ ", z = " ^ v.z
+  "x = " ^ v.x ^ " │ y = " ^ v.y ^ " │ z = " ^ v.z
 
 let box_tasks (t1:Task.t) (t2:Task.t) : PrintBox.t =
   let open PrintBox in
@@ -52,7 +52,7 @@ in
 
 let box_globals (w:Witness.t) : PrintBox.t =
   [
-    "index", "[" ^ Common.join ", " w.indices ^ "]";
+    "index", Common.join " │ " w.indices;
     "blockDim", vec_to_s w.block_dim;
     "blockIdx", vec_to_s w.block_idx;
     "gridDim", vec_to_s w.grid_dim;
@@ -81,20 +81,27 @@ let main (fname: string) : unit =
     let p = Symbexp.translate2 true p in
     let open Z3_solver in
     let open Solution in
-    solve p
-    |> Streamutil.iter (fun s ->
-      match s with
-      | Drf -> print_endline "drf"
-      | Unknown -> print_endline "unknown"
-      | Racy w ->
+    let errors = solve p
+      |> Streamutil.map_opt (
+        function
+        | Drf -> None
+        | Unknown -> Some (Either.Left p)
+        | Racy w -> Some (Either.Right (p, w))
+      )
+      |> Streamutil.to_list
+    in
+    match Common.either_split errors with
+    | [], [] -> print_endline "DRF!"
+    | _, l ->
+      let (_, l) = List.split l in
+      l |> List.iter (fun w ->
         print_endline "Globals";
         box_globals w |> print_box;
         print_endline "\n\nLocals";
         box_locals w |> print_box;
         print_endline "";
-      ;
-      (* Solution.to_json s |> Yojson.Basic.pretty_to_channel stdout *)
-    )
+      )
+    | x :: _, _ -> print_endline "unknown!"
   ) p
 
 open Cmdliner
