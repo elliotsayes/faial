@@ -315,14 +315,13 @@ module Solution = struct
 		https://github.com/icra-team/icra/blob/ee3fd360ee75490277dd3fd05d92e1548db983e4/duet/pa/paSmt.ml
 	 *)
 	let solve ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : t Streamutil.stream =
-		let ctx = Z3.mk_context [
-			("model", "true");
-			("proof", "false");
-			("timeout", "500");
-		] in
-		let s = Solver.mk_simple_solver ctx in
 		Streamutil.map (fun p ->
-			Solver.push s;
+			let ctx = Z3.mk_context [
+				("model", "true");
+				("proof", "false");
+				("timeout", "500");
+			] in
+			let s = Solver.mk_simple_solver ctx in
 			add s ctx p;
 			let r = match Solver.check s [] with
 			| UNSATISFIABLE -> Drf
@@ -332,7 +331,6 @@ module Solution = struct
 				| None -> failwith "INVALID")
 			| UNKNOWN -> Unknown
 			in
-			Solver.pop s 0;
 			r
 		) ps
 
