@@ -3,8 +3,10 @@ open Phasesplit
 open Exp
 
 type l2_kernel = {
+  (* The kernel name *)
+  l_kernel_name : string;
   (* The shared locations that can be accessed in the kernel. *)
-  l_kernel_location: variable;
+  l_kernel_array: string;
   (* The internal variables are used in the code of the kernel.  *)
   l_kernel_local_variables: VarSet.t;
   (* Global ranges *)
@@ -65,12 +67,12 @@ let filter_by_location (x:variable) (i: u_inst) : u_inst option =
   | Has p -> Some p
   | _ -> None
 
-let translate2 (stream:u_kernel Streamutil.stream) : l2_kernel Streamutil.stream =
+let translate (stream:u_kernel Streamutil.stream) : l2_kernel Streamutil.stream =
   let open Streamutil in
   stream
   |> map (fun k ->
     (* For every kernel *)
-    VarSet.elements k.u_kernel_locations
+    VarSet.elements k.u_kernel_arrays
     |> from_list
     |> map_opt (fun x ->
       (* For every location *)
@@ -78,7 +80,8 @@ let translate2 (stream:u_kernel Streamutil.stream) : l2_kernel Streamutil.stream
       | Some p ->
         (* Filter out code that does not touch location x *)
         Some {
-          l_kernel_location = x;
+          l_kernel_array = var_name x;
+          l_kernel_name = k.u_kernel_name;
           l_kernel_ranges = k.u_kernel_ranges;
           l_kernel_local_variables = k.u_kernel_local_variables;
           l_kernel_code = p;
@@ -98,7 +101,7 @@ let l_kernel_to_s (k:l2_kernel) : Serialize.PPrint.t list =
     |> Common.join "; "
   in
   [
-      Line ("array: " ^ (var_name k.l_kernel_location) ^ ";");
+      Line ("array: " ^ k.l_kernel_array ^ ";");
       Line ("locals: " ^ var_set_to_s k.l_kernel_local_variables ^ ";");
       Line ("ranges: " ^ ranges ^ ";");
       Line "{";
@@ -106,7 +109,7 @@ let l_kernel_to_s (k:l2_kernel) : Serialize.PPrint.t list =
       Line "}"
   ]
 
-let print_kernels2 (ks : l2_kernel Streamutil.stream) : unit =
+let print_kernels (ks : l2_kernel Streamutil.stream) : unit =
   print_endline "; locsplit";
   let count = ref 0 in
   Streamutil.iter (fun (k:l2_kernel) ->

@@ -12,10 +12,11 @@ let add_cond (b:bexp) (c:cond_access) : cond_access =
   { c with ca_cond = b_and c.ca_cond b }
 
 type f_kernel = {
+  f_kernel_name: string;
+  f_kernel_array: string;
   f_kernel_local_variables: VarSet.t;
   f_kernel_accesses: cond_access list;
   f_kernel_pre: bexp;
-  f_kernel_location: variable;
 }
 
 let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
@@ -89,13 +90,14 @@ let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
     else [k.l_kernel_code]
   in
   {
-    f_kernel_location = k.l_kernel_location;
+    f_kernel_name = k.l_kernel_name;
+    f_kernel_array = k.l_kernel_array;
     f_kernel_accesses = flatten_p (Bool true) code;
     f_kernel_local_variables = loop_vars_i k.l_kernel_code k.l_kernel_local_variables;
     f_kernel_pre = b_and_ex (List.map range_to_cond k.l_kernel_ranges);
   }
 
-let translate2 (stream:l2_kernel Streamutil.stream) : f_kernel Streamutil.stream =
+let translate (stream:l2_kernel Streamutil.stream) : f_kernel Streamutil.stream =
   let open Streamutil in
   map l_kernel_to_h_kernel stream
 
@@ -111,7 +113,7 @@ let f_kernel_to_s (k:f_kernel) : Serialize.PPrint.t list =
     Line (acc_val_to_s a.ca_access ^ " if " ^ b_to_s a.ca_cond ^";")
   in
   [
-      Line ("array: " ^ var_name k.f_kernel_location ^ ";");
+      Line ("array: " ^ k.f_kernel_array ^ ";");
       Line ("locals: " ^ var_set_to_s k.f_kernel_local_variables ^ ";");
       Line ("pre: " ^ b_to_s k.f_kernel_pre ^ ";");
       Line "{";
@@ -119,7 +121,7 @@ let f_kernel_to_s (k:f_kernel) : Serialize.PPrint.t list =
       Line "}"
   ]
 
-let print_kernels2 (ks : f_kernel Streamutil.stream) : unit =
+let print_kernels (ks : f_kernel Streamutil.stream) : unit =
   print_endline "; flatacc";
   let count = ref 0 in
   Streamutil.iter (fun (k:f_kernel) ->

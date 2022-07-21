@@ -5,6 +5,7 @@ module Environ = Z3_solver.Environ
 module Witness = Z3_solver.Witness
 module Vec3 = Z3_solver.Vec3
 module Task = Z3_solver.Task
+module T = ANSITerminal
 
 let parse_imp (j:Yojson.Basic.t) : Imp.p_kernel list =
   let open Indexflow in
@@ -73,12 +74,21 @@ let main (fname: string) : unit =
   let p = parse_imp j in
   List.iter (fun p ->
     let p = Imp.compile p in
+    let kernel_name = p.kernel_name in
+    let key_vals =
+      Proto.kernel_constants p
+      |> List.filter (fun (x,_) ->
+        (* Make sure we only replace thread-global variables *)
+        VarSet.mem (Exp.var_make x) p.kernel_global_variables
+      )
+    in
+    let p = Proto.replace_constants key_vals p in
     let p = Wellformed.translate p in
     let p = Phasealign.translate p in
     let p = Phasesplit.translate p false in
-    let p = Locsplit.translate2 p in
-    let p = Flatacc.translate2 p in
-    let p = Symbexp.translate2 true p in
+    let p = Locsplit.translate p in
+    let p = Flatacc.translate p in
+    let p = Symbexp.translate true p in
     let open Z3_solver in
     let open Solution in
     let errors = solve p
@@ -91,8 +101,9 @@ let main (fname: string) : unit =
       |> Streamutil.to_list
     in
     match Common.either_split errors with
-    | [], [] -> print_endline "DRF!"
+    | [], [] -> T.print_string [T.Bold; T.Foreground T.Green] ("Kernel '" ^ kernel_name ^ "' is DRF!\n")
     | _, l ->
+      T.print_string [T.Bold; T.Foreground T.Red] ("Kernel: " ^ kernel_name ^ " has errors.\n");
       let (_, l) = List.split l in
       l |> List.iter (fun w ->
         print_endline "Globals";

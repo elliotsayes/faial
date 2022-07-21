@@ -8,8 +8,10 @@ open Wellformed
 open Phasealign
 
 type u_kernel = {
+  (* The kernel name *)
+  u_kernel_name : string;
   (* The shared locations that can be accessed in the kernel. *)
-  u_kernel_locations: VarSet.t;
+  u_kernel_arrays: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
   u_kernel_global_variables: VarSet.t;
   (* The internal variables are used in the code of the kernel.  *)
@@ -115,9 +117,10 @@ let translate (ks: a_prog kernel stream) (_:bool) : u_kernel stream =
         raise (PhasesplitException errs)
       else
         {
+          u_kernel_name = k.kernel_name;
           u_kernel_local_variables = k.kernel_local_variables;
           u_kernel_global_variables = k.kernel_global_variables;
-          u_kernel_locations = locations;
+          u_kernel_arrays = locations;
           u_kernel_ranges = bi.bi_ranges;
           u_kernel_code = bi.bi_code;
         }
@@ -143,7 +146,7 @@ let u_kernel_to_s (k:u_kernel) : PPrint.t list =
     |> join "; "
   in
   [
-      Line ("arrays: " ^ var_set_to_s k.u_kernel_locations ^ ";");
+      Line ("arrays: " ^ var_set_to_s k.u_kernel_arrays ^ ";");
       Line ("globals: " ^ var_set_to_s k.u_kernel_global_variables ^ ";");
       Line ("locals: " ^ var_set_to_s k.u_kernel_local_variables ^ ";");
       Line ("ranges: " ^ ranges ^ ";");
@@ -153,7 +156,7 @@ let u_kernel_to_s (k:u_kernel) : PPrint.t list =
   ]
 
 
-let print_kernels2 (ks : u_kernel Streamutil.stream) : unit =
+let print_kernels (ks : u_kernel Streamutil.stream) : unit =
   print_endline "; conc";
   let count = ref 0 in
   Streamutil.iter (fun (k:u_kernel) ->
