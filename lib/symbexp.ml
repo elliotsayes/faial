@@ -4,7 +4,8 @@ open Subst
 open Flatacc
 
 type proof = {
-  proof_name: string;
+  proof_kernel: string;
+  proof_array: string;
   proof_preds: Predicates.t list;
   proof_funcs: Predicates.step_handler list;
   proof_decls: string list;
@@ -16,7 +17,7 @@ type h_prog = {
   prog_accesses: cond_access list;
 }
 
-let mk_proof (location:variable) (goal:bexp) : proof =
+let mk_proof ~kernel:(k:string) ~array:(a:string) (goal:bexp) : proof =
   let open Proto in
   let open Common in
   let decls =
@@ -29,7 +30,8 @@ let mk_proof (location:variable) (goal:bexp) : proof =
     proof_funcs = Predicates.get_functions goal;
     proof_decls = decls;
     proof_goal = goal;
-    proof_name = var_name location;
+    proof_array = a;
+    proof_kernel = k;
   }
 
 let proj_access (locals:VarSet.t) (t:task) (ca:cond_access) : cond_access =
@@ -200,9 +202,9 @@ let f_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (k:f_kernel) : p
   h_prog_to_bexp provenance cache k.f_kernel_local_variables k.f_kernel_accesses
   |> b_and k.f_kernel_pre
   |> Constfold.b_opt (* Optimize the output expression *)
-  |> mk_proof k.f_kernel_location
+  |> mk_proof ~kernel:k.f_kernel_name ~array:k.f_kernel_array
 
-let translate2 (provenance:bool) (stream:f_kernel Streamutil.stream) : (LocationCache.t * proof Streamutil.stream) =
+let translate (provenance:bool) (stream:f_kernel Streamutil.stream) : (LocationCache.t * proof Streamutil.stream) =
   let open Streamutil in
   let c = LocationCache.create 100 in
   c, map (f_kernel_to_proof provenance c) stream
@@ -219,7 +221,8 @@ let proof_to_s (p:proof) : Serialize.PPrint.t list =
     |> join ", "
   in
   [
-      Line ("array: " ^ p.proof_name);
+      Line ("array: " ^ p.proof_array);
+      Line ("kernel: " ^ p.proof_kernel);
       Line ("predicates: " ^ preds ^ ";");
       Line ("decls: " ^ (p.proof_decls |> join ", ") ^ ";");
       Line ("goal: " ^ b_to_s p.proof_goal ^ ";");

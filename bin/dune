@@ -18,16 +18,18 @@
  (libraries faial cmdliner))
 
 (executable
+ (public_name c-ast)
  (name c_ast)
  (modes exe)
  (modules c_ast)
  (libraries faial cmdliner))
 
 (executable
+ (public_name next-gen)
  (name next_gen)
  (modes exe)
  (modules next_gen)
- (libraries lib_solve cmdliner))
+ (libraries lib_solve cmdliner printbox printbox-text))
 
 (executable
  (public_name pico)

@@ -2,7 +2,7 @@ open OUnit2
 open Common
 
 
-let tests = "ends_with" >::: [
+let tests = "tests" >::: [
 
   "app_rev" >:: (fun _ ->
     assert_equal [4; 3; 2; 1] (append_rev [1;2;3;4] []);
@@ -31,6 +31,24 @@ let tests = "ends_with" >::: [
       assert_bool "" (starts_with "foo" "fo");
       assert_bool "" (starts_with "foo" "foo");
       assert_bool "" (not (starts_with "foo" "moo"))
+  );
+  "contains" >:: (fun _ ->
+    assert (contains ~needle:"abc" "abc");
+    assert (contains ~needle:"" "abc");
+    assert (contains ~needle:"a" "abc");
+    assert (contains ~needle:"b" "abc");
+    assert (contains ~needle:"c" "abc");
+    assert (contains ~needle:"ab" "abc");
+    assert (contains ~needle:"bc" "abc");
+    assert (contains ~needle:"abc" "aaabc");
+    assert (not (contains ~needle:"abc" "aaab"));
+    assert (not (contains ~needle:"abc" "aabab"));
+    assert (contains ~needle:"abc" "aababc");
+  );
+  "range" >:: (fun _ ->
+    assert_equal [0] (range 0 0);
+    assert_equal [0;1] (range 0 1);
+    assert_equal [1;2;3] (range 1 3);
   );
   "hashtbl_elements" >:: (fun _ ->
     let ht = Hashtbl.create 0 in

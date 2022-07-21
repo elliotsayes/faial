@@ -130,7 +130,7 @@ struct
     let open Symbexp in
     List.(flatten [
       (* String decl *)
-      decl_string "$array" p.proof_name;
+      decl_string "$array" p.proof_array;
       (* Predicates: *)
       map ser_predicate p.proof_preds;
       (* Functions: *)
