@@ -103,7 +103,7 @@ let main (fname: string) : unit =
     match Common.either_split errors with
     | [], [] -> T.print_string [T.Bold; T.Foreground T.Green] ("Kernel '" ^ kernel_name ^ "' is DRF!\n")
     | _, l ->
-      T.print_string [T.Bold; T.Foreground T.Red] ("Kernel: " ^ kernel_name ^ " has errors.\n");
+      T.print_string [T.Bold; T.Foreground T.Red] ("Kernel '" ^ kernel_name ^ "' has errors.\n");
       let (_, l) = List.split l in
       l |> List.iter (fun w ->
         print_endline "Globals";
