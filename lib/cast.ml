@@ -9,6 +9,8 @@ type 'a j_result = 'a Rjson.j_result
 type c_type = json
 type c_var = {name: variable; ty: c_type}
 type c_exp =
+  | CXXNewExpr of {arg: c_exp; ty: c_type}
+  | CXXDeleteExpr of {arg: c_exp; ty: c_type}
   | RecoveryExpr of c_type
   | CharacterLiteral of int
   | ArraySubscriptExpr of c_array_subscript
@@ -91,6 +93,8 @@ let (>>=) = Result.bind
 
 let rec exp_type (e:c_exp) : c_type =
   match e with
+  | CXXNewExpr c -> c.ty
+  | CXXDeleteExpr c -> c.ty
   | CXXConstructExpr c -> c.ty
   | CharacterLiteral _ -> Ctype.j_char_type
   | ArraySubscriptExpr a -> a.ty
@@ -113,6 +117,8 @@ let rec exp_type (e:c_exp) : c_type =
   | RecoveryExpr ty -> ty
 
 let exp_name = function
+| CXXNewExpr _ -> "CXXNewExpr"
+| CXXDeleteExpr _ -> "CXXNewExpr"
 | RecoveryExpr _ -> "RecoveryExpr"
 | EnumConstantDecl _ -> "EnumConstantDecl"
 | CharacterLiteral _ -> "CharacterLiteral"
@@ -204,6 +210,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* ty = get_field "type" o in
     Ok (RecoveryExpr ty)
 
+  | "ImplicitValueInitExpr"
   | "CXXNullPtrLiteralExpr"
   | "StringLiteral"
   | "DependentScopeDeclRefExpr"
@@ -305,6 +312,16 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* v = parse_variable j in
     let* tys = get_field "lookups" o >>= cast_list in
     Ok (UnresolvedLookupExpr {name=v; tys=tys})
+
+  | "CXXNewExpr" ->
+    let* arg = with_field "inner" (cast_list_1 parse_exp) o in
+    let* ty = get_field "type" o in
+    Ok (CXXNewExpr {arg=arg; ty=ty})
+
+  | "CXXDeleteExpr" ->
+    let* arg = with_field "inner" (cast_list_1 parse_exp) o in
+    let* ty = get_field "type" o in
+    Ok (CXXDeleteExpr {arg=arg; ty=ty})
 
   | "UnaryOperator" ->
     let* op = with_field "opcode" cast_string o in
@@ -748,6 +765,7 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
         else []
       )
     | _ -> Ok [])
+  | "LinkageSpecDecl"
   | "NamespaceDecl" ->
     let* defs = with_field_or "inner" (cast_map parse_def) [] o in
     Ok (List.concat defs)
@@ -796,6 +814,8 @@ let exp_to_s ?(modifier:bool=true) ?(provenance:bool=false) ?(types:bool=false) 
   in
   let rec exp_to_s: c_exp -> string =
     function
+    | CXXNewExpr c -> "new " ^ type_to_str c.ty ^ "[" ^ exp_to_s c.arg ^ "]"
+    | CXXDeleteExpr c -> "del " ^ exp_to_s c.arg
     | RecoveryExpr _ -> "?"
     | FloatingLiteral f -> string_of_float f
     | CharacterLiteral i

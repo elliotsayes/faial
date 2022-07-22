@@ -10,6 +10,8 @@ type d_type = json
 type d_var = Cast.c_var
 
 type d_exp =
+  | CXXNewExpr of {arg: d_exp; ty: d_type}
+  | CXXDeleteExpr of {arg: d_exp; ty: d_type}
   | RecoveryExpr of d_type
   | CharacterLiteral of int
   | BinaryOperator of d_binary
@@ -132,6 +134,8 @@ let for_dexp_in_dstmt (f: d_exp -> unit) (stmt: d_stmt) = let traversal = d_exp_
 
 
 let exp_name = function
+| CXXNewExpr _ -> "CXXNewExpr"
+| CXXDeleteExpr _ -> "CXXNewExpr"
 | RecoveryExpr _ -> "RecoveryExpr"
 | CharacterLiteral _ -> "CharacterLiteral"
 | BinaryOperator _ -> "BinaryOperator"
@@ -210,7 +214,9 @@ let for_loop_vars (f:d_for) : variable list =
 
 let rec exp_type (e:d_exp) : d_type =
   match e with
-  | RecoveryExpr ty -> ty 
+  | CXXNewExpr c -> c.ty
+  | CXXDeleteExpr c -> c.ty
+  | RecoveryExpr ty -> ty
   | CharacterLiteral _ -> Ctype.j_char_type
   | BinaryOperator a -> a.ty
   | ConditionalOperator c -> exp_type c.then_expr
@@ -332,6 +338,16 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     let (st, e2) = rewrite_exp e2 st in
     let (st, e3) = rewrite_exp e3 st in
     (st, ConditionalOperator {cond=e1; then_expr=e2; else_expr=e3; ty=ty})
+
+  | CXXNewExpr {arg=arg; ty=ty} -> 
+    fun st ->
+    let (st, arg) = rewrite_exp arg st in
+    (st, CXXNewExpr {arg=arg; ty=ty})
+
+  | CXXDeleteExpr {arg=arg; ty=ty} -> 
+    fun st ->
+    let (st, arg) = rewrite_exp arg st in
+    (st, CXXDeleteExpr {arg=arg; ty=ty})
 
   | CXXOperatorCallExpr {func=f; args=args; ty=ty} -> 
     fun st ->
@@ -513,6 +529,8 @@ let list_to_s (f:'a -> string) (l:'a list) : string =
 let rec exp_to_s : d_exp -> string =
   let type_to_str = Cast.type_to_str in
   function
+  | CXXNewExpr c -> "new " ^ type_to_str c.ty ^ "[" ^ exp_to_s c.arg ^ "]"
+  | CXXDeleteExpr c -> "del " ^ exp_to_s c.arg
   | RecoveryExpr _ -> "?"
   | FloatingLiteral f -> string_of_float f
   | CharacterLiteral i

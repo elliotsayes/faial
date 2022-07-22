@@ -78,6 +78,8 @@ let rec types_exp (env:Typing.t) (e:Dlang.d_exp) : (Typing.t * Index.t) =
     ret [ c.cond; c.then_expr; c.else_expr ]
   
   | MemberExpr {base=e; _}
+  | CXXNewExpr {arg=e} 
+  | CXXDeleteExpr {arg=e} 
   | UnaryOperator {child=e; _} -> types_exp env e
 
   | RecoveryExpr _
