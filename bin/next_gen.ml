@@ -111,6 +111,7 @@ let main (fname: string) : unit =
         print_endline "\n\nLocals";
         box_locals w |> print_box;
         print_endline "";
+        exit 1
       )
     | x :: _, _ -> print_endline "unknown!"
   ) p
