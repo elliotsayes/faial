@@ -210,6 +210,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* ty = get_field "type" o in
     Ok (RecoveryExpr ty)
 
+  | "CXXDefaultArgExpr"
   | "ImplicitValueInitExpr"
   | "CXXNullPtrLiteralExpr"
   | "StringLiteral"
@@ -223,6 +224,8 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* i = with_field "value" cast_int o in
     Ok (CharacterLiteral i)
 
+  | "CXXConstCastExpr"
+  | "CXXReinterpretCastExpr"
   | "PackExpansionExpr"
   | "ImplicitCastExpr"
   | "CXXStaticCastExpr"
@@ -362,6 +365,7 @@ let rec parse_exp (j:json) : c_exp j_result =
     in
     Ok (ArraySubscriptExpr {ty=ty; lhs=lhs; rhs=rhs})
 
+  | "CXXMemberCallExpr"
   | "CXXOperatorCallExpr" ->
     let* (func, args) = with_field "inner" (fun j ->
       let* h, t = cast_cons j in
@@ -402,11 +406,13 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* ty = get_field "type" o in
     Ok (CallExpr {func=func; args=args; ty=ty})
 
+  | "CXXBindTemporaryExpr"
   | "CXXFunctionalCastExpr"
   | "MaterializeTemporaryExpr" ->
     let* body = with_field "inner" (cast_list_1 parse_exp) o in
     Ok body
 
+  | "CXXTemporaryObjectExpr"
   | "InitListExpr"
   | "CXXUnresolvedConstructExpr"
   | "CXXConstructExpr" ->
