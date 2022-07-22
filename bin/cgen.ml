@@ -123,8 +123,8 @@ let global_var_to_l (vs : VarSet.t) : string list =
 (* Helper functions for making kernel variable declarations/prototypes *)
 let arr_to_proto (vm : array_t VarMap.t) : PPrint.t list =
   VarMap.bindings vm 
-  |> List.map (fun (k, v) ->
-      PPrint.Line ("extern " ^ arr_type v true ^ " " ^ var_to_dummy k ^ "_w();"))
+  |> List.map (fun (k, v) -> PPrint.Line ("extern " ^ arr_type v true
+                                          ^ " " ^ var_to_dummy k ^ "_w();"))
 
 let arr_to_shared (vm : array_t VarMap.t) : PPrint.t list =
   VarMap.bindings vm
