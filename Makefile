@@ -49,4 +49,4 @@ gitlab-bin:
 gitlab: gitlab-test gitlab-bin
 
 
-.PHONY: all clean main build-test test ui pico sys-test gitlab gitlab-bin gitlab-test c-ast
+.PHONY: all clean main build-test test ui pico sys-test gitlab gitlab-bin gitlab-test c-ast data-dep
