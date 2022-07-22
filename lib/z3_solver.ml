@@ -7,69 +7,138 @@ module Integer = Z3.Arithmetic.Integer
 module Model = Z3.Model
 module Symbol = Z3.Symbol
 module FuncDecl = Z3.FuncDecl
+module BitVector = Z3.BitVector
+
 module StringMap = Common.StringMap
 type json = Yojson.Basic.t
 
 exception Not_implemented of string
 
-let nbin_to_expr (op:nbin) : Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = match op with
-  BitOr
-| BitXOr
-| BitAnd
-| LeftShift
-| RightShift ->
-  let op : string = Serialize.nbin_to_string op in
-  raise (Not_implemented ("nbin_to_expr not implemented for " ^ op))
-| Plus  -> fun ctx n1 n2 -> Arithmetic.mk_add ctx [n1; n2]
-| Minus -> fun ctx n1 n2 -> Arithmetic.mk_sub ctx [n1; n2]
-| Mult  -> fun ctx n1 n2 -> Arithmetic.mk_mul ctx [n1; n2]
-| Div   -> Arithmetic.mk_div
-| Mod   -> Arithmetic.Integer.mk_mod
+module type GEN = sig
+	val n_to_expr: Z3.context -> nexp -> Expr.expr
+	val b_to_expr: Z3.context -> bexp -> Expr.expr
+end
 
-let nrel_to_expr : nrel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
-  NEq  -> Boolean.mk_eq
-| NNeq -> fun ctx n1 n2 -> Boolean.mk_not ctx (Boolean.mk_eq ctx n1 n2)
-| NLe  -> Arithmetic.mk_le
-| NGe  -> Arithmetic.mk_ge
-| NLt  -> Arithmetic.mk_lt
-| NGt  -> Arithmetic.mk_gt
+module IntGen : GEN = struct 
 
-let brel_to_expr : brel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
-  BOr  -> fun ctx b1 b2 -> Boolean.mk_or  ctx [b1; b2]
-| BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
+	let nbin_to_expr (op:nbin) : Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = match op with
+		| BitAnd
+		| BitOr
+		| BitXOr
+		| LeftShift
+		| RightShift ->
+		  fun ctx n1 n2 ->
+		  let op : string = Serialize.nbin_to_string op in
+      prerr_endline ("WARNING: operator '" ^ op ^ "' unsupported; converting to '+'. Use bit-vector integers instead");
+		  Arithmetic.mk_add ctx [n1; n2]
+		| Plus  -> fun ctx n1 n2 -> Arithmetic.mk_add ctx [n1; n2]
+		| Minus -> fun ctx n1 n2 -> Arithmetic.mk_sub ctx [n1; n2]
+		| Mult  -> fun ctx n1 n2 -> Arithmetic.mk_mul ctx [n1; n2]
+		| Div   -> Arithmetic.mk_div
+		| Mod   -> Arithmetic.Integer.mk_mod
 
-let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr = match n with
-| Var x -> var_name x |> Integer.mk_const_s ctx
-| Proj _
-| NCall _ ->
-    let n : string = Serialize.PPrint.n_to_s n in
-    raise (Not_implemented ("n_to_expr not implemented for " ^ n))
-| Num (n:int) -> Arithmetic.Integer.mk_numeral_i ctx n
-| Bin (op, n1, n2) ->
-    (nbin_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
-| NIf (b, n1, n2) -> Boolean.mk_ite ctx
-    (b_to_expr ctx b) (n_to_expr ctx n1) (n_to_expr ctx n2)
+	let nrel_to_expr : nrel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
+		| NEq  -> Boolean.mk_eq
+		| NNeq -> fun ctx n1 n2 -> Boolean.mk_not ctx (Boolean.mk_eq ctx n1 n2)
+		| NLe  -> Arithmetic.mk_le
+		| NGe  -> Arithmetic.mk_ge
+		| NLt  -> Arithmetic.mk_lt
+		| NGt  -> Arithmetic.mk_gt
 
-and b_to_expr (ctx:Z3.context) (b:bexp) : Expr.expr = match b with
-  Bool (b:bool) -> Boolean.mk_val ctx b
-| NRel (op, n1, n2) ->
-    (nrel_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
-| BRel (op, b1, b2) ->
-    (brel_to_expr op) ctx (b_to_expr ctx b1) (b_to_expr ctx b2)
-| BNot (b:bexp) -> Boolean.mk_not ctx (b_to_expr ctx b)
-| Pred _ -> raise (Not_implemented "b_to_expr not implemented for Pred")
+	let brel_to_expr : brel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
+		| BOr  -> fun ctx b1 b2 -> Boolean.mk_or  ctx [b1; b2]
+		| BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
 
+	let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr = match n with
+		| Var x -> var_name x |> Integer.mk_const_s ctx
+		| Proj _
+		| NCall _ ->
+		    let n : string = Serialize.PPrint.n_to_s n in
+		    raise (Not_implemented ("n_to_expr not implemented for " ^ n))
+		| Num (n:int) -> Arithmetic.Integer.mk_numeral_i ctx n
+		| Bin (op, n1, n2) ->
+		    (nbin_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
+		| NIf (b, n1, n2) -> Boolean.mk_ite ctx
+		    (b_to_expr ctx b) (n_to_expr ctx n1) (n_to_expr ctx n2)
+
+	and b_to_expr (ctx:Z3.context) (b:bexp) : Expr.expr = match b with
+		| Bool (b:bool) -> Boolean.mk_val ctx b
+		| NRel (op, n1, n2) ->
+		    (nrel_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
+		| BRel (op, b1, b2) ->
+		    (brel_to_expr op) ctx (b_to_expr ctx b1) (b_to_expr ctx b2)
+		| BNot (b:bexp) -> Boolean.mk_not ctx (b_to_expr ctx b)
+		| Pred _ -> raise (Not_implemented "b_to_expr not implemented for Pred")
+end
+
+let word_size = 64
+
+module BVGen : GEN = struct
+	let nbin_to_expr (op:nbin) : Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = match op with
+		| BitAnd -> BitVector.mk_and
+		| BitOr -> BitVector.mk_or
+		| BitXOr -> BitVector.mk_xor
+		| LeftShift -> BitVector.mk_shl
+		| RightShift -> BitVector.mk_ashr
+		| Plus  -> BitVector.mk_add
+		| Minus -> BitVector.mk_sub
+		| Mult  -> BitVector.mk_mul
+		| Div   -> BitVector.mk_udiv
+		| Mod   -> BitVector.mk_smod
+
+	let nrel_to_expr : nrel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
+		| NEq  -> Boolean.mk_eq
+		| NNeq -> fun ctx n1 n2 -> Boolean.mk_not ctx (Boolean.mk_eq ctx n1 n2)
+		| NLe  -> BitVector.mk_ule
+		| NGe  -> BitVector.mk_uge
+		| NLt  -> BitVector.mk_ult
+		| NGt  -> BitVector.mk_ugt
+
+	let brel_to_expr : brel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
+		| BOr  -> fun ctx b1 b2 -> Boolean.mk_or  ctx [b1; b2]
+		| BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
+
+	let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr = match n with
+		| Var x -> BitVector.mk_const_s ctx (var_name x) word_size
+		| Proj _
+		| NCall _ ->
+		    let n : string = Serialize.PPrint.n_to_s n in
+		    raise (Not_implemented ("n_to_expr not implemented for " ^ n))
+		| Num (n:int) -> BitVector.mk_numeral ctx (string_of_int n) word_size
+		| Bin (op, n1, n2) ->
+		    (nbin_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
+		| NIf (b, n1, n2) -> Boolean.mk_ite ctx
+		    (b_to_expr ctx b) (n_to_expr ctx n1) (n_to_expr ctx n2)
+
+	and b_to_expr (ctx:Z3.context) (b:bexp) : Expr.expr = match b with
+		| Bool (b:bool) -> Boolean.mk_val ctx b
+		| NRel (op, n1, n2) ->
+		    (nrel_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
+		| BRel (op, b1, b2) ->
+		    (brel_to_expr op) ctx (b_to_expr ctx b1) (b_to_expr ctx b2)
+		| BNot (b:bexp) -> Boolean.mk_not ctx (b_to_expr ctx b)
+		| Pred _ -> raise (Not_implemented "b_to_expr not implemented for Pred")
+end
+
+let b_to_expr = IntGen.b_to_expr
 
 let add (s:Solver.solver) (ctx:Z3.context) (p:Symbexp.proof) : unit =
+	
 	let mk_var (name:string) : Expr.expr =
-		let x = Integer.mk_const_s ctx name in
-		Arithmetic.mk_ge ctx x (Integer.mk_numeral_i ctx 0)
+		n_ge (Var (Exp.var_make name)) (Num 0)
+		|> b_to_expr ctx
 	in
 	List.map mk_var p.proof_decls |> Solver.add s;
 	let assign x n =
-		Boolean.mk_eq ctx (Integer.mk_const_s ctx x) (Integer.mk_numeral_i ctx n)
+		n_eq (Var (Exp.var_make x)) (Num n)
+		|> b_to_expr ctx
 	in
-	[assign "blockDim.y" 1; assign "blockDim.z" 1; b_to_expr ctx p.proof_goal] |> Solver.add s
+	[
+		assign "blockDim.y" 1;
+		assign "blockDim.z" 1;
+		b_to_expr ctx p.proof_goal
+	]
+	|> Solver.add s
 	
 module Environ = struct
 	type t = (string * string) list
@@ -229,7 +298,12 @@ module Witness = struct
 			| "0" -> Exp.R
 			| _ -> failwith ("Unknown mode: " ^ x)
 		in
-		(parse "1", parse "2")
+		try
+			(parse "1", parse "2")
+		with
+			Failure(e) ->
+				List.iter (fun (k,v) -> print_endline (k ^ ": " ^ v)) kvs;
+				failwith e
 
 	let parse_meta (env:Environ.t) : (Environ.t * (string list * Exp.mode * Exp.mode)) =
 		let (kvs, env) = List.partition (fun (k, _) ->
