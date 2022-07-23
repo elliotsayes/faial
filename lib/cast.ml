@@ -9,6 +9,7 @@ type 'a j_result = 'a Rjson.j_result
 type c_type = json
 type c_var = {name: variable; ty: c_type}
 type c_exp =
+  | SizeOfExpr of c_type
   | CXXNewExpr of {arg: c_exp; ty: c_type}
   | CXXDeleteExpr of {arg: c_exp; ty: c_type}
   | RecoveryExpr of c_type
@@ -93,6 +94,7 @@ let (>>=) = Result.bind
 
 let rec exp_type (e:c_exp) : c_type =
   match e with
+  | SizeOfExpr _ -> Ctype.j_int_type
   | CXXNewExpr c -> c.ty
   | CXXDeleteExpr c -> c.ty
   | CXXConstructExpr c -> c.ty
@@ -116,29 +118,31 @@ let rec exp_type (e:c_exp) : c_type =
   | UnresolvedLookupExpr a -> Ctype.mk_j_type "?"
   | RecoveryExpr ty -> ty
 
-let exp_name = function
-| CXXNewExpr _ -> "CXXNewExpr"
-| CXXDeleteExpr _ -> "CXXNewExpr"
-| RecoveryExpr _ -> "RecoveryExpr"
-| EnumConstantDecl _ -> "EnumConstantDecl"
-| CharacterLiteral _ -> "CharacterLiteral"
-| ArraySubscriptExpr _ -> "ArraySubscriptExpr"
-| BinaryOperator _ -> "BinaryOperator"
-| CallExpr _ -> "CallExpr"
-| ConditionalOperator _ -> "ConditionalOperator"
-| CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
-| CXXConstructExpr _ -> "CXXConstructExpr"
-| CXXMethodDecl _ -> "CXXMethodDecl"
-| CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
-| FloatingLiteral _ -> "FloatingLiteral"
-| FunctionDecl _ -> "FunctionDecl"
-| IntegerLiteral _ -> "IntegerLiteral"
-| NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
-| MemberExpr _ -> "MemberExpr"
-| ParmVarDecl _ -> "ParmVarDecl"
-| UnaryOperator _ -> "UnaryOperator"
-| VarDecl _ -> "VarDecl"
-| UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
+let exp_name =
+  function
+  | SizeOfExpr _ -> "SizeOfExpr"
+  | CXXNewExpr _ -> "CXXNewExpr"
+  | CXXDeleteExpr _ -> "CXXNewExpr"
+  | RecoveryExpr _ -> "RecoveryExpr"
+  | EnumConstantDecl _ -> "EnumConstantDecl"
+  | CharacterLiteral _ -> "CharacterLiteral"
+  | ArraySubscriptExpr _ -> "ArraySubscriptExpr"
+  | BinaryOperator _ -> "BinaryOperator"
+  | CallExpr _ -> "CallExpr"
+  | ConditionalOperator _ -> "ConditionalOperator"
+  | CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
+  | CXXConstructExpr _ -> "CXXConstructExpr"
+  | CXXMethodDecl _ -> "CXXMethodDecl"
+  | CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
+  | FloatingLiteral _ -> "FloatingLiteral"
+  | FunctionDecl _ -> "FunctionDecl"
+  | IntegerLiteral _ -> "IntegerLiteral"
+  | NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
+  | MemberExpr _ -> "MemberExpr"
+  | ParmVarDecl _ -> "ParmVarDecl"
+  | UnaryOperator _ -> "UnaryOperator"
+  | VarDecl _ -> "VarDecl"
+  | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
 
 let rec parse_position : json -> Sourceloc.position j_result =
   let open Sourceloc in
@@ -300,6 +304,10 @@ let rec parse_exp (j:json) : c_exp j_result =
     in
     let* ty = get_field "type" o in
     Ok (ConditionalOperator {cond=c; then_expr=t; else_expr=e; ty=ty})
+
+  | "UnaryExprOrTypeTraitExpr" ->
+    let* ty = get_field "type" o in
+    Ok (SizeOfExpr ty)
 
   | "ParmVarDecl" ->
     let* v = parse_variable j in
@@ -820,6 +828,7 @@ let exp_to_s ?(modifier:bool=true) ?(provenance:bool=false) ?(types:bool=false) 
   in
   let rec exp_to_s: c_exp -> string =
     function
+    | SizeOfExpr ty -> "sizeof(" ^ type_to_str ty ^ ")"
     | CXXNewExpr c -> "new " ^ type_to_str c.ty ^ "[" ^ exp_to_s c.arg ^ "]"
     | CXXDeleteExpr c -> "del " ^ exp_to_s c.arg
     | RecoveryExpr _ -> "?"

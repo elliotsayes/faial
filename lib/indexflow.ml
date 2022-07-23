@@ -82,6 +82,7 @@ let rec types_exp (env:Typing.t) (e:Dlang.d_exp) : (Typing.t * Index.t) =
   | CXXDeleteExpr {arg=e} 
   | UnaryOperator {child=e; _} -> types_exp env e
 
+  | SizeOfExpr _
   | RecoveryExpr _
   | EnumConstantDecl _
   | UnresolvedLookupExpr _

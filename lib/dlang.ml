@@ -10,6 +10,7 @@ type d_type = json
 type d_var = Cast.c_var
 
 type d_exp =
+  | SizeOfExpr of d_type
   | CXXNewExpr of {arg: d_exp; ty: d_type}
   | CXXDeleteExpr of {arg: d_exp; ty: d_type}
   | RecoveryExpr of d_type
@@ -133,37 +134,40 @@ let for_dexp_in_dstmt (f: d_exp -> unit) (stmt: d_stmt) = let traversal = d_exp_
   ) stmt
 
 
-let exp_name = function
-| CXXNewExpr _ -> "CXXNewExpr"
-| CXXDeleteExpr _ -> "CXXNewExpr"
-| RecoveryExpr _ -> "RecoveryExpr"
-| CharacterLiteral _ -> "CharacterLiteral"
-| BinaryOperator _ -> "BinaryOperator"
-| CallExpr _ -> "CallExpr"
-| ConditionalOperator _ -> "ConditionalOperator"
-| CXXConstructExpr _ -> "CXXConstructExpr"
-| CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
-| CXXMethodDecl _ -> "CXXMethodDecl"
-| CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
-| FloatingLiteral _ -> "FloatingLiteral"
-| FunctionDecl _ -> "FunctionDecl"
-| IntegerLiteral _ -> "IntegerLiteral"
-| NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
-| MemberExpr _ -> "MemberExpr"
-| ParmVarDecl _ -> "ParmVarDecl"
-| EnumConstantDecl _ -> "EnumConstantDecl"
-| UnaryOperator _ -> "UnaryOperator"
-| VarDecl _ -> "VarDecl"
-| UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
+let exp_name =
+  function
+  | SizeOfExpr _ -> "SizeOfExpr"
+  | CXXNewExpr _ -> "CXXNewExpr"
+  | CXXDeleteExpr _ -> "CXXNewExpr"
+  | RecoveryExpr _ -> "RecoveryExpr"
+  | CharacterLiteral _ -> "CharacterLiteral"
+  | BinaryOperator _ -> "BinaryOperator"
+  | CallExpr _ -> "CallExpr"
+  | ConditionalOperator _ -> "ConditionalOperator"
+  | CXXConstructExpr _ -> "CXXConstructExpr"
+  | CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
+  | CXXMethodDecl _ -> "CXXMethodDecl"
+  | CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
+  | FloatingLiteral _ -> "FloatingLiteral"
+  | FunctionDecl _ -> "FunctionDecl"
+  | IntegerLiteral _ -> "IntegerLiteral"
+  | NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
+  | MemberExpr _ -> "MemberExpr"
+  | ParmVarDecl _ -> "ParmVarDecl"
+  | EnumConstantDecl _ -> "EnumConstantDecl"
+  | UnaryOperator _ -> "UnaryOperator"
+  | VarDecl _ -> "VarDecl"
+  | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
 
-let get_variable : d_exp -> variable option = function
-| CXXMethodDecl {name=n}
-| FunctionDecl {name=n}
-| NonTypeTemplateParmDecl {name=n}
-| ParmVarDecl {name=n}
-| VarDecl {name=n}
-| UnresolvedLookupExpr {name=n} -> Some n
-| _ -> None
+let get_variable : d_exp -> variable option =
+  function
+  | CXXMethodDecl {name=n}
+  | FunctionDecl {name=n}
+  | NonTypeTemplateParmDecl {name=n}
+  | ParmVarDecl {name=n}
+  | VarDecl {name=n}
+  | UnresolvedLookupExpr {name=n} -> Some n
+  | _ -> None
 
 
 let init_to_exp (i:d_init) : d_exp list =
@@ -214,6 +218,7 @@ let for_loop_vars (f:d_for) : variable list =
 
 let rec exp_type (e:d_exp) : d_type =
   match e with
+  | SizeOfExpr c -> Ctype.j_int_type
   | CXXNewExpr c -> c.ty
   | CXXDeleteExpr c -> c.ty
   | RecoveryExpr ty -> ty
@@ -317,6 +322,9 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
       args=[ArraySubscriptExpr a; src]
     } when var_name v = "operator="
     -> rewrite_write a src
+
+  | SizeOfExpr ty ->
+    fun st -> (st, RecoveryExpr ty)
 
   | RecoveryExpr ty ->
     fun st -> (st, RecoveryExpr ty)
@@ -529,6 +537,7 @@ let list_to_s (f:'a -> string) (l:'a list) : string =
 let rec exp_to_s : d_exp -> string =
   let type_to_str = Cast.type_to_str in
   function
+  | SizeOfExpr ty -> "sizeof(" ^ type_to_str ty ^ ")"
   | CXXNewExpr c -> "new " ^ type_to_str c.ty ^ "[" ^ exp_to_s c.arg ^ "]"
   | CXXDeleteExpr c -> "del " ^ exp_to_s c.arg
   | RecoveryExpr _ -> "?"
