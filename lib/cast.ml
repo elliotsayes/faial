@@ -68,11 +68,11 @@ type c_type_param =
   | PNonTypeTemplateParmDecl of {name: variable; ty: c_type} 
 
 type c_kernel_entry =
-  | Default
+  | EntryPoint
   | Auxiliary
 
 let to_str = function
-  | Default -> "Default"
+  | EntryPoint -> "EntryPoint"
   | Auxiliary -> "Auxiliary"
 
 type c_kernel = {
@@ -627,7 +627,7 @@ let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j
   let entry_type: c_kernel_entry = if List.mem c_attr_device attrs then
     Auxiliary
   else
-    Default in
+    EntryPoint in
   Ok {
     name = name;
     code = body;

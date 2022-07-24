@@ -96,7 +96,7 @@ let parse_bin (op:string) (l:i_exp) (r:i_exp) : i_exp =
   (* bool -> bool -> bool *)
   | "||" -> BExp (BRel (BOr, l, r))
   | "&&" -> BExp (BRel (BAnd, l, r))
-  (* int -> int -> bool *) 
+  (* int -> int -> bool *)
   | "==" -> BExp (NRel (NEq, l, r))
   | "!=" -> BExp (NRel (NNeq, l, r))
   | "<=" -> BExp (NRel (NLe, l, r))
@@ -126,7 +126,7 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
 
   match e with
   (* ---------------- CUDA SPECIFIC ----------- *)
-  | MemberExpr {base=VarDecl{name=base}; name=dim} 
+  | MemberExpr {base=VarDecl{name=base}; name=dim}
     when List.mem (var_name base) cuda_vars && List.mem dim cuda_dims->
     let x = var_name base ^ "." ^ dim |> var_make in
     ret_n (Var x)
@@ -138,7 +138,7 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
     -> ret_n (Var v)
   | IntegerLiteral n
   | CharacterLiteral n -> ret_n (Num n)
-  | FloatingLiteral n -> 
+  | FloatingLiteral n ->
     prerr_endline ("WARNING: parse_nexp: converting float '" ^ Float.to_string n ^ "' to integer");
     ret_n (Num (Float.to_int n))
   | ConditionalOperator o ->
@@ -173,9 +173,9 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
   | UnaryOperator {opcode="~"; _}
   | CXXConstructExpr _
   | MemberExpr _
-  | FunctionDecl _ 
+  | FunctionDecl _
   | EnumConstantDecl _
-  | CallExpr _ 
+  | CallExpr _
   | UnaryOperator _
   | CXXOperatorCallExpr _ ->
     prerr_endline ("WARNING: parse_exp: rewriting to unknown: " ^ Dlang.exp_to_s e);
@@ -284,7 +284,7 @@ module Unknown = struct
     | x :: l ->
       let (st, x) = f st x in
       let (st, l) = mmap f st l in
-      (st, x :: l) 
+      (st, x :: l)
 
   let to_nexp_list: i_exp list -> VarSet.t * nexp list =
     convert (mmap handle_n)
@@ -509,7 +509,8 @@ let ret_assert (b:Dlang.d_exp) : Imp.stmt list d_result =
   | Some b -> ret (Imp.Assert b)
   | None -> ret_skip
 
-let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
+let rec parse_stmt (c:Dlang.d_stmt) (shared: array_t VarMap.t): Imp.stmt list d_result =
+  let parse_stmt = fun c -> parse_stmt c shared in
   let with_msg (m:string) f b = with_msg_ex (fun a -> "parse_stmt: " ^ m ^ ": " ^ Dlang.summarize_stmt c) f b in
   let ret_n = Unknown.ret_n in
   let ret_b = Unknown.ret_b in
@@ -523,7 +524,21 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
   | SExp (CallExpr {func = FunctionDecl {name = n; _}; args = [b]})
     when var_name n = "__requires" ->
     ret_assert b
-
+  | SExp (CallExpr {func = FunctionDecl {name = n; _}; args = args}) ->
+    let* arg_expressions = with_msg "call.args" (cast_map parse_exp) args in
+    let f : (Dlang.d_exp * nexp) -> Imp.arg = function
+      | (VarDecl {name=name}, nexp')
+      | (ParmVarDecl {name=name}, nexp') ->
+        let is_array = VarMap.mem name shared in
+        if is_array then
+          Arr (name, nexp')
+        else
+          Exp nexp'
+      | (stmt, nexp') -> Exp nexp'
+    in
+    arg_expressions |> ret_ns (fun args1 ->
+       Imp.Call {name = n; args = args1 |> List.combine args |> List.map f}
+    )
   | WriteAccessStmt w ->
     let x = w.target.name in
     let* idx = with_msg "write.idx" (cast_map parse_exp) w.target.index in
@@ -536,7 +551,7 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
         Imp.Acc (x, {access_index=idx; access_mode=R})
     )
 
-  | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 
+  | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]}
   | IfStmt {cond=b;then_stmt=ReturnStmt;else_stmt=CompoundStmt[]} ->
     ret_assert (UnaryOperator {opcode="!"; child=b; ty=Dlang.exp_type b})
 
@@ -695,11 +710,11 @@ let parse_shared (s:Dlang.d_stmt) : (variable * array_t) list =
   | _ -> []
 
 let parse_kernel (shared_params:(variable * array_t) list) (k:Dlang.d_kernel) : Imp.p_kernel d_result =
-  let* code = parse_stmt k.code in
   let* (params, arrays) = parse_params k.params in
   let shared = parse_shared k.code
     |> Common.append_rev shared_params
     |> Exp.list_to_var_map in
+  let* code = parse_stmt k.code shared in
   let rec add_type_params (params:VarSet.t) : Cast.c_type_param list -> VarSet.t =
     function
     | [] -> params

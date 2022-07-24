@@ -11,6 +11,10 @@ type access_expr = {access_index: nexp list; access_mode: mode}
 
 type alias_expr = {alias_source: variable; alias_target: variable; alias_offset: nexp}
 
+type arg =
+  | Exp of nexp
+  | Arr of (variable * nexp)
+
 type stmt =
 | Sync
 | Assert of bexp
@@ -20,7 +24,7 @@ type stmt =
 | Decl of (variable * locality * nexp option) list
 | If of (bexp * stmt * stmt)
 | For of (range * stmt)
-| Call of (variable * nexp) list
+| Call of {name: variable; args: arg list}
 
 type prog = stmt list
 
@@ -364,12 +368,12 @@ let stmt_to_s: stmt -> PPrint.t list =
       in
       let entries = Common.join "," (List.map entry l) in
       [Line ("decl " ^ entries ^ ";")]
-    | Call args ->
+    | Call {name=name; args=args} ->
+        let arg_str = function
+         | Exp exp -> n_to_s exp
+         | Arr (var, exp) -> var_name var ^ " " ^ n_to_s exp in
       [
-        Line (args
-                |> List.map (fun (var, exp) -> var_name var ^ " " ^ n_to_s exp)
-                |> Common.join ", ")
-
+        Line (var_name name ^ " (" ^ (args |> List.map arg_str |> Common.join ", ") ^ ")")
       ]
     | If (b, s1, Block []) -> [
         Line ("if (" ^ b_to_s b ^ ") {");

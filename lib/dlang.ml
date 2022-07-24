@@ -327,13 +327,13 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     let (st, e3) = rewrite_exp e3 st in
     (st, ConditionalOperator {cond=e1; then_expr=e2; else_expr=e3; ty=ty})
 
-  | CXXOperatorCallExpr {func=f; args=args; ty=ty} -> 
+  | CXXOperatorCallExpr {func=f; args=args; ty=ty} ->
     fun st ->
     let (st, f) = rewrite_exp f st in
     let (st, args) = state_map rewrite_exp args st in
     (st, CXXOperatorCallExpr {func=f; args=args; ty=ty})
 
-  | CallExpr {func=f; args=args; ty=ty} -> 
+  | CallExpr {func=f; args=args; ty=ty} ->
     fun st ->
     let (st, f) = rewrite_exp f st in
     let (st, args) = state_map rewrite_exp args st in
@@ -517,7 +517,7 @@ let rec exp_to_s : d_exp -> string =
   | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") (" ^ b.opcode ^ "." ^ type_to_str b.ty ^ ") (" ^ exp_to_s b.rhs ^ ")"
   | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
   | CXXBoolLiteralExpr b -> if b then "true" else "false";
-  | CXXConstructExpr c -> "@ctor " ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")" 
+  | CXXConstructExpr c -> "@ctor " ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")"
   | CXXMethodDecl v -> "@meth " ^ var_name v.name
   | CXXOperatorCallExpr c -> exp_to_s c.func ^ "!(" ^ list_to_s exp_to_s c.args  ^ ")"
   | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
