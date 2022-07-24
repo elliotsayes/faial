@@ -764,7 +764,7 @@ let has_array_type (j:Yojson.Basic.t) : bool =
   is_array |> Rjson.unwrap_or false
 
 
-let is_kernel (j:Yojson.Basic.t) : bool =
+let is_kernel ?(include_auxiliary=false) (j:Yojson.Basic.t) : bool =
   let open Rjson in
   let is_kernel =
     let* o = cast_object j in
@@ -797,7 +797,7 @@ let is_kernel (j:Yojson.Basic.t) : bool =
       | None -> false
       | Some KernelAttr.Auxiliary ->
         (* We only care about __device__ functions that manipulate arrays *)
-        List.exists has_array_type params
+        include_auxiliary && List.exists has_array_type params
       )
     ) else Ok false
   in
@@ -818,12 +818,12 @@ let parse_type_param (j:Yojson.Basic.t) : c_type_param option j_result =
   | _ -> Ok None
 
 
-let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
+let rec parse_def ?(include_auxiliary=false) (j:Yojson.Basic.t) : c_def list j_result =
   let open Rjson in
   let* o = cast_object j in
   let* k = get_kind o in
   let parse_k (type_params:c_type_param list) (j:Yojson.Basic.t) : c_def list j_result =
-    if is_kernel j then
+    if is_kernel ~include_auxiliary:include_auxiliary j then
       let* k = parse_kernel type_params j in
       Ok [Kernel k]
     else Ok []
@@ -866,10 +866,10 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
     Ok []
 
 
-let parse_program (j:Yojson.Basic.t) : c_program j_result =
+let parse_program ?(include_auxiliary=false) (j:Yojson.Basic.t) : c_program j_result =
   let open Rjson in
   let* o = cast_object j in
-  let* inner = with_field "inner" (cast_map parse_def) o in
+  let* inner = with_field "inner" (cast_map (parse_def ~include_auxiliary:include_auxiliary)) o in
   Ok (List.concat inner)
 
 
