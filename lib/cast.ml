@@ -72,11 +72,49 @@ type c_type_param =
   | PTemplateTypeParmDecl of variable
   | PNonTypeTemplateParmDecl of {name: variable; ty: c_type} 
 
+let c_attr (k:string) : string =
+  " __attribute__((" ^ k ^ "))"
+
+let c_attr_shared = c_attr "shared"
+let c_attr_global = c_attr "global"
+let c_attr_device = c_attr "device"
+
+module KernelAttr = struct
+  type t =
+    | Default
+    | Auxiliary
+
+  let to_string : t -> string =
+    function
+    | Default -> c_attr_global
+    | Auxiliary -> c_attr_device
+
+  let is_global : t -> bool =
+    function
+    | Default -> true
+    | Auxiliary -> false
+
+  let is_device : t -> bool =
+    function
+    | Default -> false
+    | Auxiliary -> true
+
+  let parse (x:string) : t option =
+    if x = c_attr_global then Some Default
+    else if x = c_attr_device then Some Auxiliary
+    else None
+
+  let can_parse (x:string) : bool =
+    parse x |> Option.is_some
+
+end
+
 type c_kernel = {
   name: string;
   code: c_stmt;
   type_params: c_type_param list;
   params: c_param list;
+  attribute: KernelAttr.t;
 }
 
 type c_def =
@@ -652,12 +690,6 @@ let parse_param (j:json) : c_param j_result =
   let* is_shared = with_field_or "shared" cast_bool false o in
   Ok {name=v; is_used=(is_refed || is_used); is_shared=is_shared; ty=ty}
 
-let c_attr (k:string) : string =
-  " __attribute__((" ^ k ^ "))"
-
-let c_attr_shared = c_attr "shared"
-let c_attr_global = c_attr "global"
-
 let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
   let open Rjson in
   let res =
@@ -671,6 +703,12 @@ let wrap_error (msg:string) (j:Yojson.Basic.t): 'a j_result -> 'a j_result =
     function
     | Ok e -> Ok e
     | Error e -> Rjson.because msg j e
+
+let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* ty = with_field "qualType" cast_string o in
+  Ok (Ctype.make ty)
 
 
 let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j_result =
@@ -689,6 +727,9 @@ let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j
         (j_filter_kind (fun k -> k = "ParmVarDecl" || k = "TemplateArgument"))
     in
     let* attrs = map parse_attr attrs in
+    (* we can safely convert the option with Option.get because parse_kernel
+       is only invoked when we are able to parse *)
+    let m: KernelAttr.t = List.find_map KernelAttr.parse attrs |> Option.get in
     let* body: c_stmt list = parse_stmt_list (Yojson.Basic.(`List body)) in
     let body = match body with
       | [s] -> s
@@ -702,8 +743,26 @@ let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j
       code = body;
       params = ps;
       type_params = type_params;
+      attribute = m;
     }
   ) |> wrap_error "Kernel" j
+
+(* Function that checks if a variable is of type array and is being used *)
+let has_array_type (j:Yojson.Basic.t) : bool =
+  let open Rjson in
+  let is_array =
+    let* o = cast_object j in
+    let is_used = match List.assoc_opt "isUsed" o with
+      | Some (`Bool true) -> true
+      | _ -> false
+    in
+    let* k = get_kind o in
+    let* ty = get_field "type" o in
+    let* ty = parse_type ty in
+    Ok (is_used && Ctype.is_array ty)
+  in
+  is_array |> Rjson.unwrap_or false
+
 
 let is_kernel (j:Yojson.Basic.t) : bool =
   let open Rjson in
@@ -711,15 +770,35 @@ let is_kernel (j:Yojson.Basic.t) : bool =
     let* o = cast_object j in
     let* k = get_kind o in
     if k = "FunctionDecl" then (
+      let* name: string = with_field "name" cast_string o in
       let* inner = with_field "inner" cast_list o in
+      let attrs, inner =
+        inner
+        |> List.partition (j_filter_kind (String.ends_with ~suffix:"Attr"))
+      in
       (* Try to parse attrs *)
-      let attrs = inner
+      let attrs = attrs
         |> Common.map_opt (fun j ->
           parse_attr j >>= (fun a -> Ok (Some a))
           |> unwrap_or None
         )
       in
-      Ok (List.mem c_attr_global attrs)
+      let params, inner =
+        inner
+        |> List.partition (j_filter_kind (fun k -> k = "ParmVarDecl"))
+      in
+      let ps, body =
+        inner
+        |> List.partition
+          (j_filter_kind (fun k -> k = "TemplateArgument"))
+      in
+      Ok (match List.find_map KernelAttr.parse attrs with
+      | Some KernelAttr.Default -> true
+      | None -> false
+      | Some KernelAttr.Auxiliary ->
+        (* We only care about __device__ functions that manipulate arrays *)
+        List.exists has_array_type params
+      )
     ) else Ok false
   in
   is_kernel |> unwrap_or false
@@ -793,12 +872,6 @@ let parse_program (j:Yojson.Basic.t) : c_program j_result =
   let* inner = with_field "inner" (cast_map parse_def) o in
   Ok (List.concat inner)
 
-
-let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* ty = with_field "qualType" cast_string o in
-  Ok (Ctype.make ty)
 
 let type_to_str (j:Yojson.Basic.t) : string =
   match parse_type j with
@@ -953,9 +1026,9 @@ let type_param_to_s (p:c_type_param) : string =
 let kernel_to_s ?(modifier:bool=true) ?(provenance:bool=false) (k:c_kernel) : PPrint.t list =
   let open PPrint in
   [
-    Line ("name: " ^ k.name);
-    Line ("params: " ^ list_to_s param_to_s k.params);
-    Line ("type params: " ^ list_to_s type_param_to_s k.type_params);
+    Line ("kernel " ^ k.name ^ "[" ^
+      list_to_s type_param_to_s k.type_params ^
+    "](" ^ list_to_s param_to_s k.params ^ ")");
   ]
   @
   stmt_to_s ~modifier ~provenance k.code
