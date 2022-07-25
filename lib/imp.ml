@@ -190,7 +190,6 @@ module Post = struct
     in
     let rec inline_i (known:VarSet.t) (st:SubstAssoc.t) (i:inst) : prog =
       let add_var (x:variable) : variable * VarSet.t * SubstAssoc.t =
-        let old_x = x in
         let x, st =
           if VarSet.mem x known
           then (

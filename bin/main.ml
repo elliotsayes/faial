@@ -171,13 +171,6 @@ let main_t =
               VarSet.mem (var_make x) k.kernel_global_variables
             )
           in
-          let missed_keys =
-            sets @ Proto.kernel_constants k
-            |> List.filter (fun (x,_) ->
-              (* Make sure we only replace thread-global variables *)
-              not (VarSet.mem (var_make x) k.kernel_global_variables)
-            )
-          in
           let thread_count : int list = Common.map_opt (fun (k, v) ->
             if List.mem k ["blockDim.x"; "blockDim.y"; "blockDim.z"] then
               Some v

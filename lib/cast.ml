@@ -787,11 +787,6 @@ let is_kernel ?(include_auxiliary=false) (j:Yojson.Basic.t) : bool =
         inner
         |> List.partition (j_filter_kind (fun k -> k = "ParmVarDecl"))
       in
-      let ps, body =
-        inner
-        |> List.partition
-          (j_filter_kind (fun k -> k = "TemplateArgument"))
-      in
       Ok (match List.find_map KernelAttr.parse attrs with
       | Some KernelAttr.Default -> true
       | None -> false
