@@ -1,4 +1,5 @@
 module StringMap = Common.StringMap
+module StringMapUtil = Common.StringMapUtil
 module VarSet = Exp.VarSet
 module VarMap = Exp.VarMap
 
@@ -42,7 +43,7 @@ let make_array_map (ks:Imp.p_kernel list) : VarSet.t StringMap.t =
       in
       (k.p_kernel_name, arrays)
     )
-  |> Common.list_to_string_map
+  |> StringMapUtil.from_list
 
 let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kernel list) =
   let open Indexflow in
