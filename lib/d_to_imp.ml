@@ -1,4 +1,5 @@
 module StackTrace = Common.StackTrace
+module KernelAttr = Cast.KernelAttr
 
 open Exp
 
@@ -742,9 +743,12 @@ let parse_program (p:Dlang.d_program) : Imp.p_kernel list d_result =
       in
       parse_p params l
     | Kernel k :: l ->
-      let* k = parse_kernel params k in
       let* ks = parse_p params l in
-      Ok (k::ks) 
+      if KernelAttr.is_global k.attribute then
+        let* k = parse_kernel params k in
+        Ok (k::ks)
+      else
+        Ok ks
     | [] -> Ok []
   in
   parse_p [] p
