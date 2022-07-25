@@ -719,7 +719,7 @@ let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j
     let attrs, inner =
       inner
       |> List.partition
-        (j_filter_kind (Common.ends_with "Attr"))
+        (j_filter_kind (String.ends_with ~suffix:"Attr"))
     in
     let ps, body =
       inner
