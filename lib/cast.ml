@@ -86,8 +86,8 @@ module KernelAttr = struct
 
   let to_string : t -> string =
     function
-    | Default -> c_attr_global
-    | Auxiliary -> c_attr_device
+    | Default -> "__global__"
+    | Auxiliary -> "__device__"
 
   let is_global : t -> bool =
     function
@@ -1024,11 +1024,14 @@ let type_param_to_s (p:c_type_param) : string =
   var_name name
 
 let kernel_to_s ?(modifier:bool=true) ?(provenance:bool=false) (k:c_kernel) : PPrint.t list =
+  let tps = if k.type_params <> [] then "[" ^
+      list_to_s type_param_to_s k.type_params ^
+    "]" else ""
+  in
   let open PPrint in
   [
-    Line ("kernel " ^ k.name ^ "[" ^
-      list_to_s type_param_to_s k.type_params ^
-    "](" ^ list_to_s param_to_s k.params ^ ")");
+    Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^
+      " " ^ tps ^ "(" ^ list_to_s param_to_s k.params ^ ")");
   ]
   @
   stmt_to_s ~modifier ~provenance k.code
@@ -1040,7 +1043,7 @@ let def_to_s ?(modifier:bool=true) ?(provenance:bool=false) (d:c_def) : PPrint.t
   | Kernel k -> kernel_to_s ~modifier ~provenance k
 
 let program_to_s ?(modifier:bool=true) ?(provenance:bool=false) (p:c_program) : PPrint.t list =
-  List.concat_map (def_to_s ~modifier ~provenance) p
+  List.concat_map (fun k -> def_to_s ~modifier ~provenance k @ [Line ""]) p
 
 let print_program ?(modifier:bool=true) ?(provenance:bool=false) (p:c_program) : unit =
   PPrint.print_doc (program_to_s ~modifier ~provenance p)

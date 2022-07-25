@@ -1,5 +1,5 @@
 module StackTrace = Common.StackTrace
-
+module KernelAttr = Cast.KernelAttr
 open Exp
 open Serialize
 type json = Yojson.Basic.t
@@ -79,6 +79,7 @@ type d_kernel = {
   code: d_stmt;
   type_params: Cast.c_type_param list;
   params: Cast.c_param list;
+  attribute: KernelAttr.t;
 }
 
 type d_def =
@@ -519,6 +520,7 @@ let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
     code = rewrite_stmt k.code;
     params = k.params;
     type_params = k.type_params;
+    attribute = k.attribute;
   }
 
 let rewrite_def (d:Cast.c_def) : d_def =
@@ -682,11 +684,15 @@ let summarize_stmt: d_stmt -> string =
   stmt_to_s
 
 let kernel_to_s (k:d_kernel) : PPrint.t list =
+  let tps = let open Cast in if k.type_params <> [] then "[" ^
+      list_to_s type_param_to_s k.type_params ^
+    "]" else ""
+  in
   let open PPrint in
   [
-    Line ("name: " ^ k.name);
-    Line ("params: " ^ list_to_s Cast.param_to_s k.params);
-    Line ("type params: " ^ list_to_s Cast.type_param_to_s k.type_params);
+    let open Cast in
+    Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^ " " ^ tps ^
+    "(" ^ list_to_s param_to_s k.params ^ ")");
   ]
   @
   stmt_to_s k.code
@@ -698,7 +704,7 @@ let def_to_s (d:d_def) : PPrint.t list =
   | Kernel k -> kernel_to_s k
 
 let program_to_s (p:d_program) : PPrint.t list =
-  List.concat_map def_to_s p
+  List.concat_map (fun k -> def_to_s k @ [Line ""]) p
 
 let print_program (p:d_program) : unit =
   PPrint.print_doc (program_to_s p)
