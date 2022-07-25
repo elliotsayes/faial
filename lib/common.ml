@@ -3,13 +3,16 @@ module StringOT = struct
   let compare = Stdlib.compare
 end
 
+module MapUtil (M:Map.S) = struct
+  let from_list (l:(M.key * 'a) list) : 'a M.t =
+    List.fold_left (fun m (k,v) ->
+      M.add k v m
+    ) M.empty l
+end
+
 module StringSet = Set.Make(StringOT)
 module StringMap = Map.Make(StringOT)
-
-let list_to_string_map (l:(string * 'a) list) : 'a StringMap.t =
-  List.fold_left (fun m (k,v) ->
-    StringMap.add k v m
-  ) StringMap.empty l
+module StringMapUtil = MapUtil(StringMap)
 
 let append_tr (l1:'a list) (l2:'a list) : 'a list =
   let rec app (ret:'a list -> 'a list) (l:'a list) : 'a list =
