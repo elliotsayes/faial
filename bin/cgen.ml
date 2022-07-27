@@ -44,7 +44,7 @@ let var_to_dummy (v : variable) : string =
 
 (* Maps a list of values to an index-separated string containing them *)
 let idx_to_s (f : 'a -> string) (l : 'a list) : string =
-  "[" ^ (Common.join "][" (List.map f l)) ^ "]"
+  "[" ^ (Common.join "][" (List.map f l |> List.rev)) ^ "]"
 
 (* Gives the dummy instruction string for any array read/write *)
 let acc_expr_to_dummy (x, a) : PPrint.t list =
