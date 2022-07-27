@@ -7,12 +7,8 @@ let analyze (j:Yojson.Basic.t) : unit =
   | Ok k1 ->
     let k2 = Dlang.rewrite_program k1 in
        Indexflow.types_program k2
-       |> List.iter (function
-        | x, Ok _ ->
-          print_endline (x ^ ",INDEPENDENT")
-        | x, Error e ->
-          Indexflow.print_s_error e;
-          print_endline (x  ^ ",DEPENDENT");
+       |> List.iter (fun (name, d) ->
+        print_endline (name ^ "," ^ Stmt.to_string d)
       )
 
   | Error e ->
