@@ -18,20 +18,6 @@ let tests = "tests" >::: [
     assert_equal [1; 2; 3; 4] (append_tr [1] [2;3;4]);
     assert_equal [1; 2; 3; 4] (append_tr [] [1;2;3;4])
   );
-  "ends_with" >:: (fun _ ->
-      assert_bool "" (ends_with "" "foo");
-      assert_bool "" (ends_with "o" "foo");
-      assert_bool "" (ends_with "oo" "foo");
-      assert_bool "" (ends_with "foo" "foo");
-      assert_bool "" (not (ends_with "moo" "foo"))
-  );
-  "starts_with" >:: (fun _ ->
-      assert_bool "" (starts_with "foo" "");
-      assert_bool "" (starts_with "foo" "f");
-      assert_bool "" (starts_with "foo" "fo");
-      assert_bool "" (starts_with "foo" "foo");
-      assert_bool "" (not (starts_with "foo" "moo"))
-  );
   "contains" >:: (fun _ ->
     assert (contains ~needle:"abc" "abc");
     assert (contains ~needle:"" "abc");

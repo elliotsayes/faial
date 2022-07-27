@@ -7,7 +7,7 @@ let run_process (cmd:string) (f:in_channel -> 'a) : (Unix.process_status * 'a) =
     (Unix.close_process_in in_c, j)
 
 let cu_to_json_opt ?(exe="cu-to-json") ?(ignore_fail=false) (fname : string) : (Yojson.Basic.t, int * string) Result.t =
-  let cmd = exe ^ " " ^ fname in
+  let cmd = Filename.quote_command exe [fname] in
   let (r, j) = run_process cmd
     (fun ic -> try Ok (Yojson.Basic.from_channel ic) with
       Yojson.Json_error e -> Error e

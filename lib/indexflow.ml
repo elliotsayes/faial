@@ -11,6 +11,10 @@ module Index = struct
     | _, _ -> Dependent
 
   let sum : t list -> t = List.fold_left add Independent
+  let to_string: t -> string =
+    function
+    | Dependent -> "dependent"
+    | Independent -> "independent"
 end
 
 module Typing = struct
@@ -78,8 +82,11 @@ let rec types_exp (env:Typing.t) (e:Dlang.d_exp) : (Typing.t * Index.t) =
     ret [ c.cond; c.then_expr; c.else_expr ]
   
   | MemberExpr {base=e; _}
+  | CXXNewExpr {arg=e} 
+  | CXXDeleteExpr {arg=e} 
   | UnaryOperator {child=e; _} -> types_exp env e
 
+  | SizeOfExpr _
   | RecoveryExpr _
   | EnumConstantDecl _
   | UnresolvedLookupExpr _
@@ -100,37 +107,46 @@ and types_exp_list (env:Typing.t) (l: d_exp list) : Typing.t * Index.t =
     let (env, a2) = types_exp_list env es in
     (env, Index.add a1 a2)
 
-type s_error = string StackTrace.t
+module Stmt = struct
+  type t =
+    | Empty
+    | Has of {data: Index.t; control: Index.t}
 
-let print_s_error : s_error -> unit =
-  StackTrace.iter prerr_endline
+  let empty : t = Empty
 
-let s_error_to_buffer (e: s_error) : Buffer.t =
-  let b = Buffer.create 512 in
-  StackTrace.iter (Buffer.add_string b) e;
-  b
+  let from_data (d:Index.t) : t =
+    Has { control = Index.Independent; data = d}
 
-type 'a s_result = ('a, s_error) Result.t
+  let add_control (s:t) (c:Index.t) : t =
+    match s with
+    | Empty -> Empty
+    | Has s -> Has {s with control = Index.add s.control c}
 
-let s_root_cause (msg:string) : 'a s_result =
-  Error (RootCause msg)
+  let add (lhs:t) (rhs:t) : t =
+    match lhs, rhs with
+    | Empty, x
+    | x, Empty -> x
+    | Has lhs, Has rhs ->
+      Has {
+        control = Index.add lhs.control rhs.control;
+        data = Index.add lhs.data rhs.data;
+      }
 
-(* Monadic let *)
-let (let*) = Result.bind
-(* Monadic pipe *)
-let (>>=) = Result.bind
+  let to_string: t -> string =
+    function
+    | Empty -> "ind,ind"
+    | Has {data=d; control=c} ->
+      let d = match d with
+      | Dependent -> "data"
+      | Independent -> "ind"
+      in
+      let c = match c with
+      | Dependent -> "ctrl"
+      | Independent -> "ind"
+      in
+      d ^ "," ^ c 
 
-let ensure_i_exp (env:Typing.t) (e:d_exp) (msg:string) : Typing.t s_result =
-  let (env, a) = types_exp env e in
-  if a = Index.Dependent then
-    s_root_cause (msg ^  ": " ^ Dlang.exp_to_s e)
-  else Ok env
-
-let ensure_i_exp_list (env:Typing.t) (es:d_exp list) (msg:string) : Typing.t s_result =
-  let (env, a) = types_exp_list env es in
-  if a = Index.Dependent then
-    s_root_cause (msg ^  ": " ^ Dlang.list_to_s Dlang.exp_to_s es)
-  else Ok env
+end
 
 let types_init (env:Typing.t) (e:d_init) : Typing.t * Index.t =
   let open Index in
@@ -139,56 +155,17 @@ let types_init (env:Typing.t) (e:d_init) : Typing.t * Index.t =
   | InitListExpr l -> types_exp_list env l.args
   | IExp e -> types_exp env e
 
-let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t s_result =
+let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
   match s with
-  | IfStmt s ->
-    let* env = ensure_i_exp env s.cond "if" in
-    let* env1 = types_stmt env s.then_stmt in
-    let* env2 = types_stmt env s.else_stmt in
-    Ok (Typing.add env1 env2)
+  | WriteAccessStmt d ->
+    (* Abort if any index is dependent *)
+    let (env, ty) = types_exp_list env d.target.index in
+    (env, Stmt.from_data ty)
 
   | ReadAccessStmt s ->
-    let* env = ensure_i_exp_list env s.source.index "read" in
-    Ok (Typing.put s.target Index.Dependent env)
-
-  | SExp _
-  | DeclStmt []
-  | BreakStmt
-  | GotoStmt
-  | ContinueStmt
-  | ReturnStmt -> Ok env
-  
-
-  | CaseStmt {body=s}
-  | SwitchStmt {body=s}
-  | DefaultStmt s
-  | WhileStmt {body=s}
-  | DoStmt {body=s} -> types_stmt env s
-  | WriteAccessStmt d ->
-
-    let* env = ensure_i_exp_list env d.target.index "write" in
-    Ok env
-  
-  | CompoundStmt s ->
-    types_stmt_list env s
-
-  | ForStmt s ->
-    let orig_env = env in
-    (* 1. Make sure that all variables used in the loop range are independent *)
-    let* env = ensure_i_exp_list env (for_to_exp s) "for.range" in
-    (* 2. Get all loop variables being "declared" *)
-    let xs = for_loop_vars s in
-    (* 3. Get the old values of each loop variable (if any) *)
-    let old = List.map (fun x -> Typing.get_opt x env) xs in
-    (* 4. Mark each loop variable as independent *)
-    let env = List.fold_left (fun e x -> Typing.add_i x e) env xs in
-    (* 5. Typecheck the loop body *)
-    let* env = types_stmt env s.body in
-    (* 6. Undo the bindings of the loop variables *)
-    let bindings = Common.zip xs old in
-    let env = List.fold_left (fun e (x,o) -> Typing.update x o e) env bindings in
-    (* 7. Merge the original with the final one *)
-    Ok (env |> Typing.add orig_env)
+    (* Abort if any index is dependent *)
+    let (env, ty) = types_exp_list env s.source.index in
+    (Typing.put s.target Index.Dependent env, Stmt.from_data ty)
 
   | DeclStmt (d::is) ->
     let x = d.name in
@@ -198,28 +175,72 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t s_result =
     in
     types_stmt (Typing.put x ty env) (DeclStmt is)
 
+  | IfStmt s ->
+    let (env, ty) = types_exp env s.cond in
+    let (env1, ty1) = types_stmt env s.then_stmt in
+    let (env2, ty2) = types_stmt env s.else_stmt in
+    (Typing.add env1 env2, Stmt.add_control ty1 ty |> Stmt.add ty2)
+
+  | ForStmt s ->
+    let orig_env = env in
+    (* 1. Abort if any variable used in the loop range is dependent *)
+    let (env, ctl) = types_exp_list env (for_to_exp s) in
+    (* 2. Get all loop variables being "declared" *)
+    let xs = for_loop_vars s in
+    (* 3. Get the old values of each loop variable (if any) *)
+    let old = List.map (fun x -> Typing.get_opt x env) xs in
+    (* 4. Mark each loop variable as independent *)
+    let env = List.fold_left (fun e x -> Typing.add_i x e) env xs in
+    (* 5. Typecheck the loop body *)
+    let (env, ty) = types_stmt env s.body in
+    (* 6. Undo the bindings of the loop variables *)
+    let bindings = Common.zip xs old in
+    let env = List.fold_left (fun e (x,o) -> Typing.update x o e) env bindings in
+    (* 7. Merge the original with the final one *)
+    (env |> Typing.add orig_env, Stmt.add_control ty ctl)
+
+  | SExp _
+  | DeclStmt []
+  | BreakStmt
+  | GotoStmt
+  | ContinueStmt
+  | ReturnStmt -> (env, Stmt.empty)
+  
+
+  | CaseStmt {body=s}
+  | SwitchStmt {body=s}
+  | DefaultStmt s
+  | WhileStmt {body=s}
+  | DoStmt {body=s} -> types_stmt env s
+  
+  | CompoundStmt s ->
+    types_stmt_list env s
 
 
 
-and types_stmt_list (env:Typing.t) (s:d_stmt list) : Typing.t s_result =
+
+
+and types_stmt_list (env:Typing.t) (s:d_stmt list) : Typing.t * Stmt.t =
   match s with
-  | [] -> Ok env
+  | [] -> (env, Stmt.empty)
   | s :: ss ->
-    let* env = types_stmt env s in
-    types_stmt_list env ss
+    let (env, ty1) = types_stmt env s in
+    let (env, ty2) = types_stmt_list env ss in
+    (env, Stmt.add ty1 ty2)
 
-let types_kernel (k:d_kernel) : Typing.t s_result =
+let types_kernel (k:d_kernel) : Stmt.t =
+  (* Initialize the environment: each parameter is independent *)
   let env =
     k.params
     |> List.map (fun (p:Cast.c_param) -> p.name)
     |> List.fold_left (fun env x -> Typing.add_i x env) Typing.make
   in
-  types_stmt env k.code
+  types_stmt env k.code |> snd
 
-let types_def : d_def -> (string * (Typing.t s_result)) option =
+let types_def : d_def -> (string * Stmt.t) option =
   function
   | Declaration _ -> None
   | Kernel k -> Some (k.name, types_kernel k)
 
-let types_program : d_program -> (string * Typing.t s_result) list =
+let types_program : d_program -> (string * Stmt.t) list =
   Common.map_opt types_def

@@ -1,4 +1,5 @@
 module StackTrace = Common.StackTrace
+module KernelAttr = Cast.KernelAttr
 
 open Exp
 
@@ -132,10 +133,19 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
     ret_n (Var x)
 
   (* ------------------ nexp ------------------------ *)
-  | NonTypeTemplateParmDecl { name = v ; _ }
-  | ParmVarDecl { name = v ; _ }
-  | VarDecl { name = v ; _ }
+  | NonTypeTemplateParmDecl { name = v }
+  | ParmVarDecl { name = v }
+  | VarDecl { name = v }
     -> ret_n (Var v)
+  | SizeOfExpr ty ->
+    (match Cast.parse_type ty with
+    | Ok ty ->
+      let size = Ctype.sizeof ty |> Ojson.unwrap_or 4 in
+      prerr_endline ("WARNING: sizeof(" ^ Ctype.to_string ty ^ ") = " ^ string_of_int size);
+      ret_n (Num size)
+    | Error _ ->
+      prerr_endline ("WARNING: could not parse type: sizeof(" ^ Cast.type_to_str ty ^ ") = ?");
+      Ok Unknown)
   | IntegerLiteral n
   | CharacterLiteral n -> ret_n (Num n)
   | FloatingLiteral n -> 
@@ -733,9 +743,12 @@ let parse_program (p:Dlang.d_program) : Imp.p_kernel list d_result =
       in
       parse_p params l
     | Kernel k :: l ->
-      let* k = parse_kernel params k in
       let* ks = parse_p params l in
-      Ok (k::ks) 
+      if KernelAttr.is_global k.attribute then
+        let* k = parse_kernel params k in
+        Ok (k::ks)
+      else
+        Ok ks
     | [] -> Ok []
   in
   parse_p [] p

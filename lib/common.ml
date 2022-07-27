@@ -3,13 +3,16 @@ module StringOT = struct
   let compare = Stdlib.compare
 end
 
+module MapUtil (M:Map.S) = struct
+  let from_list (l:(M.key * 'a) list) : 'a M.t =
+    List.fold_left (fun m (k,v) ->
+      M.add k v m
+    ) M.empty l
+end
+
 module StringSet = Set.Make(StringOT)
 module StringMap = Map.Make(StringOT)
-
-let list_to_string_map (l:(string * 'a) list) : 'a StringMap.t =
-  List.fold_left (fun m (k,v) ->
-    StringMap.add k v m
-  ) StringMap.empty l
+module StringMapUtil = MapUtil(StringMap)
 
 let append_tr (l1:'a list) (l2:'a list) : 'a list =
   let rec app (ret:'a list -> 'a list) (l:'a list) : 'a list =
@@ -60,32 +63,14 @@ let enumerate l =
   in
   iter 0 l
 
-let opt_to_list = function
-  | Some x -> [x]
-  | None -> []
-
-let flatten_opt l =
-  List.map opt_to_list l |> List.flatten
+let flatten_opt : 'a option list -> 'a list =
+  fun (l:'a option list) -> List.concat_map Option.to_list l
 
 let either_split (l: ('a, 'b) Either.t list) : 'a list * 'b list =
   List.partition_map (fun a -> a) l
 
-let map_opt f l =
-  List.map f l |> flatten_opt
-
-let starts_with txt prefix =
-  let txt_len = String.length txt in
-  let pre_len = String.length prefix in
-  if txt_len < pre_len then false
-  else
-  String.equal (String.sub txt 0 pre_len) prefix
-
-let ends_with suffix s =
-  let suffix_len = String.length suffix in
-  let s_len = String.length s in
-  (suffix_len = 0) ||
-  (s_len >= suffix_len && String.sub s (s_len - suffix_len) suffix_len = suffix)
-
+let map_opt (f:'a -> 'b option) : 'a list -> 'b list  =
+  List.concat_map (fun x -> f x |> Option.to_list)
 
 let contains ~needle:(needle:string) (s:string) : bool =
   let n_len = String.length needle in

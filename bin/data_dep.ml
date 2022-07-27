@@ -6,29 +6,19 @@ let analyze (j:Yojson.Basic.t) : unit =
   match Cast.parse_program j with
   | Ok k1 ->
     let k2 = Dlang.rewrite_program k1 in
-      let errors = Indexflow.types_program k2
-      |> Common.map_opt (fun (x, r) -> 
-        match r with
-        | Error e -> Some (x, e)
-        | Ok _ -> None
-      )
-      in
-      (match errors with
-      | [] ->
-        print_endline "INDEPENDENT"
-      | (_, e) :: _ ->
-        Indexflow.print_s_error e;
-        prerr_endline "DATA-DEPENDENT";
-        exit (-1)
+       Indexflow.types_program k2
+       |> List.iter (fun (name, d) ->
+        print_endline (name ^ "," ^ Stmt.to_string d)
       )
 
   | Error e ->
+    prerr_endline ("Error parsing file");
     Rjson.print_error e;
     exit(-1)
 
 let main (fname: string) : unit =
   fname
-  |> Cu_to_json.cu_to_json
+  |> Cu_to_json.cu_to_json ~ignore_fail:true
   |> analyze 
 
 open Cmdliner

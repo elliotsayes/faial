@@ -56,7 +56,7 @@ let to_string (c:t) : string =
   | CType x -> x
 
 let is_pointer (c:t) =
-  to_string c |> Common.ends_with " *"
+  to_string c |> String.ends_with ~suffix:" *"
 
 let get_array_length (c:t) : int list =
   to_string c
@@ -72,6 +72,25 @@ let is_array (c:t) : bool =
   to_string c
   |> parse_array_type_opt
   |> Option.is_some
+
+let sizeof (x:t) : int option =
+  let x = to_string x in
+  if String.ends_with ~suffix:"*" x then Some 8
+  else
+  let x =
+    x
+    |> String.split_on_char ' '
+    |> List.filter (fun x -> x = "const" || x = "unsigned")
+    |> Common.join " "
+  in
+  if String.starts_with ~prefix:"long" x then Some 8
+  else if x = "int" then Some 4
+  else if x = "short" then Some 2
+  else if x = "char" then Some 1
+  else if x = "float" then Some 4
+  else if x = "double" then Some 8
+  else None
+
 
 let is_int (c:t) : bool =
   List.mem (to_string c) [

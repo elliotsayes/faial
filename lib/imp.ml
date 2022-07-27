@@ -190,7 +190,6 @@ module Post = struct
     in
     let rec inline_i (known:VarSet.t) (st:SubstAssoc.t) (i:inst) : prog =
       let add_var (x:variable) : variable * VarSet.t * SubstAssoc.t =
-        let old_x = x in
         let x, st =
           if VarSet.mem x known
           then (
@@ -386,12 +385,16 @@ let stmt_to_s: stmt -> PPrint.t list =
 
 let kernel_to_s (k:p_kernel) : PPrint.t list =
   let open PPrint in
+  let pre = match k.p_kernel_pre with
+  | Bool true -> ""
+  | _ -> " if (" ^ b_to_s k.p_kernel_pre ^ ")"
+  in
   [
-    Line ("arrays: " ^ array_map_to_s k.p_kernel_arrays ^ ";");
-    Line ("globals: " ^ var_set_to_s k.p_kernel_params ^ ";");
-    Line ("pre: " ^ b_to_s k.p_kernel_pre ^";");
-    Line "";
-    Line "code {";
+    Line (
+      k.p_kernel_name ^
+      " (" ^ array_map_to_s k.p_kernel_arrays ^ ", " ^
+      var_set_to_s k.p_kernel_params ^ ")" ^
+      pre ^ " {");
     Block (stmt_to_s k.p_kernel_code);
     Line "}"
   ]

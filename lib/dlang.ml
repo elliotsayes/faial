@@ -1,5 +1,5 @@
 module StackTrace = Common.StackTrace
-
+module KernelAttr = Cast.KernelAttr
 open Exp
 open Serialize
 type json = Yojson.Basic.t
@@ -10,6 +10,9 @@ type d_type = json
 type d_var = Cast.c_var
 
 type d_exp =
+  | SizeOfExpr of d_type
+  | CXXNewExpr of {arg: d_exp; ty: d_type}
+  | CXXDeleteExpr of {arg: d_exp; ty: d_type}
   | RecoveryExpr of d_type
   | CharacterLiteral of int
   | BinaryOperator of d_binary
@@ -76,6 +79,7 @@ type d_kernel = {
   code: d_stmt;
   type_params: Cast.c_type_param list;
   params: Cast.c_param list;
+  attribute: KernelAttr.t;
 }
 
 type d_def =
@@ -131,35 +135,40 @@ let for_dexp_in_dstmt (f: d_exp -> unit) (stmt: d_stmt) = let traversal = d_exp_
   ) stmt
 
 
-let exp_name = function
-| RecoveryExpr _ -> "RecoveryExpr"
-| CharacterLiteral _ -> "CharacterLiteral"
-| BinaryOperator _ -> "BinaryOperator"
-| CallExpr _ -> "CallExpr"
-| ConditionalOperator _ -> "ConditionalOperator"
-| CXXConstructExpr _ -> "CXXConstructExpr"
-| CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
-| CXXMethodDecl _ -> "CXXMethodDecl"
-| CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
-| FloatingLiteral _ -> "FloatingLiteral"
-| FunctionDecl _ -> "FunctionDecl"
-| IntegerLiteral _ -> "IntegerLiteral"
-| NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
-| MemberExpr _ -> "MemberExpr"
-| ParmVarDecl _ -> "ParmVarDecl"
-| EnumConstantDecl _ -> "EnumConstantDecl"
-| UnaryOperator _ -> "UnaryOperator"
-| VarDecl _ -> "VarDecl"
-| UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
+let exp_name =
+  function
+  | SizeOfExpr _ -> "SizeOfExpr"
+  | CXXNewExpr _ -> "CXXNewExpr"
+  | CXXDeleteExpr _ -> "CXXNewExpr"
+  | RecoveryExpr _ -> "RecoveryExpr"
+  | CharacterLiteral _ -> "CharacterLiteral"
+  | BinaryOperator _ -> "BinaryOperator"
+  | CallExpr _ -> "CallExpr"
+  | ConditionalOperator _ -> "ConditionalOperator"
+  | CXXConstructExpr _ -> "CXXConstructExpr"
+  | CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
+  | CXXMethodDecl _ -> "CXXMethodDecl"
+  | CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
+  | FloatingLiteral _ -> "FloatingLiteral"
+  | FunctionDecl _ -> "FunctionDecl"
+  | IntegerLiteral _ -> "IntegerLiteral"
+  | NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
+  | MemberExpr _ -> "MemberExpr"
+  | ParmVarDecl _ -> "ParmVarDecl"
+  | EnumConstantDecl _ -> "EnumConstantDecl"
+  | UnaryOperator _ -> "UnaryOperator"
+  | VarDecl _ -> "VarDecl"
+  | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
 
-let get_variable : d_exp -> variable option = function
-| CXXMethodDecl {name=n}
-| FunctionDecl {name=n}
-| NonTypeTemplateParmDecl {name=n}
-| ParmVarDecl {name=n}
-| VarDecl {name=n}
-| UnresolvedLookupExpr {name=n} -> Some n
-| _ -> None
+let get_variable : d_exp -> variable option =
+  function
+  | CXXMethodDecl {name=n}
+  | FunctionDecl {name=n}
+  | NonTypeTemplateParmDecl {name=n}
+  | ParmVarDecl {name=n}
+  | VarDecl {name=n}
+  | UnresolvedLookupExpr {name=n} -> Some n
+  | _ -> None
 
 
 let init_to_exp (i:d_init) : d_exp list =
@@ -210,7 +219,10 @@ let for_loop_vars (f:d_for) : variable list =
 
 let rec exp_type (e:d_exp) : d_type =
   match e with
-  | RecoveryExpr ty -> ty 
+  | SizeOfExpr c -> Ctype.j_int_type
+  | CXXNewExpr c -> c.ty
+  | CXXDeleteExpr c -> c.ty
+  | RecoveryExpr ty -> ty
   | CharacterLiteral _ -> Ctype.j_char_type
   | BinaryOperator a -> a.ty
   | ConditionalOperator c -> exp_type c.then_expr
@@ -312,6 +324,9 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     } when var_name v = "operator="
     -> rewrite_write a src
 
+  | SizeOfExpr ty ->
+    fun st -> (st, RecoveryExpr ty)
+
   | RecoveryExpr ty ->
     fun st -> (st, RecoveryExpr ty)
 
@@ -332,6 +347,16 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     let (st, e2) = rewrite_exp e2 st in
     let (st, e3) = rewrite_exp e3 st in
     (st, ConditionalOperator {cond=e1; then_expr=e2; else_expr=e3; ty=ty})
+
+  | CXXNewExpr {arg=arg; ty=ty} -> 
+    fun st ->
+    let (st, arg) = rewrite_exp arg st in
+    (st, CXXNewExpr {arg=arg; ty=ty})
+
+  | CXXDeleteExpr {arg=arg; ty=ty} -> 
+    fun st ->
+    let (st, arg) = rewrite_exp arg st in
+    (st, CXXDeleteExpr {arg=arg; ty=ty})
 
   | CXXOperatorCallExpr {func=f; args=args; ty=ty} -> 
     fun st ->
@@ -442,49 +467,55 @@ let rewrite_for_init (f:Cast.c_for_init) : (d_stmt list * d_for_init) =
     let (s, e) = rewrite_exp e in
     (s, ForExp e)
 
-let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
+let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt list =
   let block (pre:d_stmt list) (s:d_stmt) =
     match pre with
-    | [] -> s
-    | _ -> CompoundStmt (pre @ [s])
+    | [] -> [s]
+    | _ -> [CompoundStmt (pre @ [s])]
   in
   match s with
-  | BreakStmt -> BreakStmt
-  | GotoStmt -> GotoStmt
-  | ReturnStmt -> ReturnStmt
-  | ContinueStmt -> ContinueStmt
+  | BreakStmt -> [BreakStmt]
+  | GotoStmt -> [GotoStmt]
+  | ReturnStmt -> [ReturnStmt]
+  | ContinueStmt -> [ContinueStmt]
   | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
     let (pre, c) = rewrite_exp c in
-    block pre (IfStmt {cond=c; then_stmt=rewrite_stmt s1; else_stmt=rewrite_stmt s2})
-  | CompoundStmt l -> CompoundStmt (List.map rewrite_stmt l)
+    block pre (IfStmt {
+      cond=c;
+      then_stmt=CompoundStmt (rewrite_stmt s1);
+      else_stmt=CompoundStmt (rewrite_stmt s2)
+    })
+  | CompoundStmt l -> [CompoundStmt (List.concat_map rewrite_stmt l)]
 
   | DeclStmt d ->
     let (pre, d) = List.map rewrite_decl d |> List.split in
-    block (List.concat pre) (DeclStmt d)
+    List.concat pre @ [DeclStmt d]
 
   | WhileStmt {cond=c; body=b} ->
     let (pre, c) = rewrite_exp c in
-    block pre (WhileStmt {cond=c; body=rewrite_stmt b})
+    block pre (WhileStmt {cond=c; body=CompoundStmt (rewrite_stmt b)})
 
   | ForStmt {init=e1; cond=e2; inc=e3; body=b} ->
     let (pre1, e1) = map_opt rewrite_for_init e1 in
     let (pre2, e2) = map_opt rewrite_exp e2 in
     let (pre3, e3) = map_opt rewrite_exp e3 in
-    block (pre1 @ pre2 @ pre3) (ForStmt {init=e1; cond=e2; inc=e3; body=rewrite_stmt b})
+    block (pre1 @ pre2 @ pre3) (
+      ForStmt {init=e1; cond=e2; inc=e3; body=CompoundStmt (rewrite_stmt b)}
+    )
 
   | DoStmt {cond=c; body=b} ->
     let (pre, c) = rewrite_exp c in
-    block pre (DoStmt {cond=c; body=rewrite_stmt b})
+    block pre (DoStmt {cond=c; body=CompoundStmt (rewrite_stmt b)})
 
   | SwitchStmt {cond=c; body=b} ->
     let (pre, c) = rewrite_exp c in
-    block pre (SwitchStmt {cond=c; body=rewrite_stmt b})
+    block pre (SwitchStmt {cond=c; body=CompoundStmt (rewrite_stmt b)})
 
   | CaseStmt {case=c; body=b} ->
     let (pre, c) = rewrite_exp c in
-    block pre (CaseStmt {case=c; body=rewrite_stmt b})
+    block pre (CaseStmt {case=c; body=CompoundStmt (rewrite_stmt b)})
   | DefaultStmt s ->
-    DefaultStmt (rewrite_stmt s)
+    [DefaultStmt (CompoundStmt (rewrite_stmt s))]
   | SExp e ->
     let (pre, e) = rewrite_exp e in
     block pre (SExp e)
@@ -492,9 +523,10 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
 let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
   {
     name = k.name;
-    code = rewrite_stmt k.code;
+    code = CompoundStmt (rewrite_stmt k.code);
     params = k.params;
     type_params = k.type_params;
+    attribute = k.attribute;
   }
 
 let rewrite_def (d:Cast.c_def) : d_def =
@@ -513,6 +545,9 @@ let list_to_s (f:'a -> string) (l:'a list) : string =
 let rec exp_to_s : d_exp -> string =
   let type_to_str = Cast.type_to_str in
   function
+  | SizeOfExpr ty -> "sizeof(" ^ type_to_str ty ^ ")"
+  | CXXNewExpr c -> "new " ^ type_to_str c.ty ^ "[" ^ exp_to_s c.arg ^ "]"
+  | CXXDeleteExpr c -> "del " ^ exp_to_s c.arg
   | RecoveryExpr _ -> "?"
   | FloatingLiteral f -> string_of_float f
   | CharacterLiteral i
@@ -655,11 +690,15 @@ let summarize_stmt: d_stmt -> string =
   stmt_to_s
 
 let kernel_to_s (k:d_kernel) : PPrint.t list =
+  let tps = let open Cast in if k.type_params <> [] then "[" ^
+      list_to_s type_param_to_s k.type_params ^
+    "]" else ""
+  in
   let open PPrint in
   [
-    Line ("name: " ^ k.name);
-    Line ("params: " ^ list_to_s Cast.param_to_s k.params);
-    Line ("type params: " ^ list_to_s Cast.type_param_to_s k.type_params);
+    let open Cast in
+    Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^ " " ^ tps ^
+    "(" ^ list_to_s param_to_s k.params ^ ")");
   ]
   @
   stmt_to_s k.code
@@ -671,7 +710,7 @@ let def_to_s (d:d_def) : PPrint.t list =
   | Kernel k -> kernel_to_s k
 
 let program_to_s (p:d_program) : PPrint.t list =
-  List.concat_map def_to_s p
+  List.concat_map (fun k -> def_to_s k @ [Line ""]) p
 
 let print_program (p:d_program) : unit =
   PPrint.print_doc (program_to_s p)
