@@ -179,7 +179,9 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
     let (env, ty) = types_exp env s.cond in
     let (env1, ty1) = types_stmt env s.then_stmt in
     let (env2, ty2) = types_stmt env s.else_stmt in
-    (Typing.add env1 env2, Stmt.add_control ty1 ty |> Stmt.add ty2)
+    let ty1 = Stmt.add_control ty1 ty in
+    let ty2 = Stmt.add_control ty2 ty in
+    (Typing.add env1 env2, Stmt.add ty1 ty2)
 
   | ForStmt s ->
     let orig_env = env in
