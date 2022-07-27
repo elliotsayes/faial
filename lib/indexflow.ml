@@ -107,45 +107,35 @@ and types_exp_list (env:Typing.t) (l: d_exp list) : Typing.t * Index.t =
     let (env, a2) = types_exp_list env es in
     (env, Index.add a1 a2)
 
-type s_error = string StackTrace.t
-
-let print_s_error : s_error -> unit =
-  StackTrace.iter prerr_endline
-
-let s_error_to_buffer (e: s_error) : Buffer.t =
-  let b = Buffer.create 512 in
-  StackTrace.iter (Buffer.add_string b) e;
-  b
-
-type 'a s_result = ('a, s_error) Result.t
-
-let s_root_cause (msg:string) : 'a s_result =
-  Error (RootCause msg)
-
-(* Monadic let *)
-let (let*) = Result.bind
-(* Monadic pipe *)
-let (>>=) = Result.bind
-
 module Stmt = struct
-  type t = {data: Index.t; control: Index.t}
+  type t =
+    | Empty
+    | Has of {data: Index.t; control: Index.t}
 
-  let make : t = { control = Index.Independent; data = Index.Independent }
+  let empty : t = Empty
 
   let from_data (d:Index.t) : t =
-    { control = Index.Independent; data = d}
+    Has { control = Index.Independent; data = d}
 
-  let add_control (s:t) (c:Index.t) : t=
-    {s with control = Index.add s.control c}
+  let add_control (s:t) (c:Index.t) : t =
+    match s with
+    | Empty -> Empty
+    | Has s -> Has {s with control = Index.add s.control c}
 
   let add (lhs:t) (rhs:t) : t =
-    {
-      control = Index.add lhs.control rhs.control;
-      data = Index.add lhs.data rhs.data;
-    }
+    match lhs, rhs with
+    | Empty, x
+    | x, Empty -> x
+    | Has lhs, Has rhs ->
+      Has {
+        control = Index.add lhs.control rhs.control;
+        data = Index.add lhs.data rhs.data;
+      }
+
   let to_string: t -> string =
     function
-    | {data=d; control=c} ->
+    | Empty -> "ind,ind"
+    | Has {data=d; control=c} ->
       let d = match d with
       | Dependent -> "data"
       | Independent -> "ind"
@@ -167,37 +157,29 @@ let types_init (env:Typing.t) (e:d_init) : Typing.t * Index.t =
 
 let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
   match s with
-  | IfStmt s ->
-    let (env, ty) = types_exp env s.cond in
-    let (env1, ty1) = types_stmt env s.then_stmt in
-    let (env2, ty2) = types_stmt env s.else_stmt in
-    (Typing.add env1 env2, Stmt.add_control ty1 ty |> Stmt.add ty2)
+  | WriteAccessStmt d ->
+    (* Abort if any index is dependent *)
+    let (env, ty) = types_exp_list env d.target.index in
+    (env, Stmt.from_data ty)
 
   | ReadAccessStmt s ->
     (* Abort if any index is dependent *)
     let (env, ty) = types_exp_list env s.source.index in
     (Typing.put s.target Index.Dependent env, Stmt.from_data ty)
 
-  | SExp _
-  | DeclStmt []
-  | BreakStmt
-  | GotoStmt
-  | ContinueStmt
-  | ReturnStmt -> (env, Stmt.make)
-  
+  | DeclStmt (d::is) ->
+    let x = d.name in
+    let (env, ty) = match d.init with
+      | Some i -> types_init env i
+      | None -> (env, Index.Independent)
+    in
+    types_stmt (Typing.put x ty env) (DeclStmt is)
 
-  | CaseStmt {body=s}
-  | SwitchStmt {body=s}
-  | DefaultStmt s
-  | WhileStmt {body=s}
-  | DoStmt {body=s} -> types_stmt env s
-  | WriteAccessStmt d ->
-    (* Abort if any index is dependent *)
-    let (env, ty) = types_exp_list env d.target.index in
-    (env, Stmt.from_data ty)
-  
-  | CompoundStmt s ->
-    types_stmt_list env s
+  | IfStmt s ->
+    let (env, ty) = types_exp env s.cond in
+    let (env1, ty1) = types_stmt env s.then_stmt in
+    let (env2, ty2) = types_stmt env s.else_stmt in
+    (Typing.add env1 env2, Stmt.add_control ty1 ty |> Stmt.add ty2)
 
   | ForStmt s ->
     let orig_env = env in
@@ -217,20 +199,30 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
     (* 7. Merge the original with the final one *)
     (env |> Typing.add orig_env, Stmt.add_control ty ctl)
 
-  | DeclStmt (d::is) ->
-    let x = d.name in
-    let (env, ty) = match d.init with
-      | Some i -> types_init env i
-      | None -> (env, Index.Independent)
-    in
-    types_stmt (Typing.put x ty env) (DeclStmt is)
+  | SExp _
+  | DeclStmt []
+  | BreakStmt
+  | GotoStmt
+  | ContinueStmt
+  | ReturnStmt -> (env, Stmt.empty)
+  
+
+  | CaseStmt {body=s}
+  | SwitchStmt {body=s}
+  | DefaultStmt s
+  | WhileStmt {body=s}
+  | DoStmt {body=s} -> types_stmt env s
+  
+  | CompoundStmt s ->
+    types_stmt_list env s
+
 
 
 
 
 and types_stmt_list (env:Typing.t) (s:d_stmt list) : Typing.t * Stmt.t =
   match s with
-  | [] -> (env, Stmt.make)
+  | [] -> (env, Stmt.empty)
   | s :: ss ->
     let (env, ty1) = types_stmt env s in
     let (env, ty2) = types_stmt_list env ss in
