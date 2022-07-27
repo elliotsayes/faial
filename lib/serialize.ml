@@ -320,6 +320,7 @@ module PPrint = struct
     | [] -> ""
     | _ ->
     let idx = ns
+      |> List.rev
       |> List.map n_to_s
       |> join ", "
     in
