@@ -123,12 +123,14 @@ let (let*) = Result.bind
 (* Monadic pipe *)
 let (>>=) = Result.bind
 
+(* Fail if the given expression is dependent *)
 let ensure_i_exp (env:Typing.t) (e:d_exp) (msg:string) : Typing.t s_result =
   let (env, a) = types_exp env e in
   if a = Index.Dependent then
     s_root_cause (msg ^  ": " ^ Dlang.exp_to_s e)
   else Ok env
 
+(* Fail if any of the expressions is dependent *)
 let ensure_i_exp_list (env:Typing.t) (es:d_exp list) (msg:string) : Typing.t s_result =
   let (env, a) = types_exp_list env es in
   if a = Index.Dependent then
@@ -151,6 +153,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t s_result =
     Ok (Typing.add env1 env2)
 
   | ReadAccessStmt s ->
+    (* Abort if any index is dependent *)
     let* env = ensure_i_exp_list env s.source.index "read" in
     Ok (Typing.put s.target Index.Dependent env)
 
@@ -169,6 +172,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t s_result =
   | DoStmt {body=s} -> types_stmt env s
   | WriteAccessStmt d ->
 
+    (* Abort if any index is dependent *)
     let* env = ensure_i_exp_list env d.target.index "write" in
     Ok env
   
@@ -177,7 +181,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t s_result =
 
   | ForStmt s ->
     let orig_env = env in
-    (* 1. Make sure that all variables used in the loop range are independent *)
+    (* 1. Abort if any variable used in the loop range is dependent *)
     let* env = ensure_i_exp_list env (for_to_exp s) "for.range" in
     (* 2. Get all loop variables being "declared" *)
     let xs = for_loop_vars s in
@@ -212,6 +216,7 @@ and types_stmt_list (env:Typing.t) (s:d_stmt list) : Typing.t s_result =
     types_stmt_list env ss
 
 let types_kernel (k:d_kernel) : Typing.t s_result =
+  (* Initialize the environment: each parameter is independent *)
   let env =
     k.params
     |> List.map (fun (p:Cast.c_param) -> p.name)
