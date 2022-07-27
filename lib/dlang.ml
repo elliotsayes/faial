@@ -467,49 +467,55 @@ let rewrite_for_init (f:Cast.c_for_init) : (d_stmt list * d_for_init) =
     let (s, e) = rewrite_exp e in
     (s, ForExp e)
 
-let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
+let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt list =
   let block (pre:d_stmt list) (s:d_stmt) =
     match pre with
-    | [] -> s
-    | _ -> CompoundStmt (pre @ [s])
+    | [] -> [s]
+    | _ -> [CompoundStmt (pre @ [s])]
   in
   match s with
-  | BreakStmt -> BreakStmt
-  | GotoStmt -> GotoStmt
-  | ReturnStmt -> ReturnStmt
-  | ContinueStmt -> ContinueStmt
+  | BreakStmt -> [BreakStmt]
+  | GotoStmt -> [GotoStmt]
+  | ReturnStmt -> [ReturnStmt]
+  | ContinueStmt -> [ContinueStmt]
   | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
     let (pre, c) = rewrite_exp c in
-    block pre (IfStmt {cond=c; then_stmt=rewrite_stmt s1; else_stmt=rewrite_stmt s2})
-  | CompoundStmt l -> CompoundStmt (List.map rewrite_stmt l)
+    block pre (IfStmt {
+      cond=c;
+      then_stmt=CompoundStmt (rewrite_stmt s1);
+      else_stmt=CompoundStmt (rewrite_stmt s2)
+    })
+  | CompoundStmt l -> [CompoundStmt (List.concat_map rewrite_stmt l)]
 
   | DeclStmt d ->
     let (pre, d) = List.map rewrite_decl d |> List.split in
-    block (List.concat pre) (DeclStmt d)
+    List.concat pre @ [DeclStmt d]
 
   | WhileStmt {cond=c; body=b} ->
     let (pre, c) = rewrite_exp c in
-    block pre (WhileStmt {cond=c; body=rewrite_stmt b})
+    block pre (WhileStmt {cond=c; body=CompoundStmt (rewrite_stmt b)})
 
   | ForStmt {init=e1; cond=e2; inc=e3; body=b} ->
     let (pre1, e1) = map_opt rewrite_for_init e1 in
     let (pre2, e2) = map_opt rewrite_exp e2 in
     let (pre3, e3) = map_opt rewrite_exp e3 in
-    block (pre1 @ pre2 @ pre3) (ForStmt {init=e1; cond=e2; inc=e3; body=rewrite_stmt b})
+    block (pre1 @ pre2 @ pre3) (
+      ForStmt {init=e1; cond=e2; inc=e3; body=CompoundStmt (rewrite_stmt b)}
+    )
 
   | DoStmt {cond=c; body=b} ->
     let (pre, c) = rewrite_exp c in
-    block pre (DoStmt {cond=c; body=rewrite_stmt b})
+    block pre (DoStmt {cond=c; body=CompoundStmt (rewrite_stmt b)})
 
   | SwitchStmt {cond=c; body=b} ->
     let (pre, c) = rewrite_exp c in
-    block pre (SwitchStmt {cond=c; body=rewrite_stmt b})
+    block pre (SwitchStmt {cond=c; body=CompoundStmt (rewrite_stmt b)})
 
   | CaseStmt {case=c; body=b} ->
     let (pre, c) = rewrite_exp c in
-    block pre (CaseStmt {case=c; body=rewrite_stmt b})
+    block pre (CaseStmt {case=c; body=CompoundStmt (rewrite_stmt b)})
   | DefaultStmt s ->
-    DefaultStmt (rewrite_stmt s)
+    [DefaultStmt (CompoundStmt (rewrite_stmt s))]
   | SExp e ->
     let (pre, e) = rewrite_exp e in
     block pre (SExp e)
@@ -517,7 +523,7 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt =
 let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
   {
     name = k.name;
-    code = rewrite_stmt k.code;
+    code = CompoundStmt (rewrite_stmt k.code);
     params = k.params;
     type_params = k.type_params;
     attribute = k.attribute;
