@@ -36,8 +36,16 @@ let vector_types : Common.StringSet.t =
    "short"; "uchar"; "uint"; "ulong"; "ulonglong"; "ushort";]
   |> Common.StringSet.of_list
 
-let base_protos : string list =
+let cuda_protos : string list =
   ["extern __device__ int __dummy_int();"]
+
+let racuda_protos : string list =
+  ["extern int __dummy_int();";
+   "extern int __bor(int, int);";
+   "extern int __bxor(int, int);";
+   "extern int __band(int, int);";
+   "extern int __lshift(int, int);";
+   "extern int __rshift(int, int);"]
 
 (* ----------------- serialization -------------------- *)
 
@@ -49,22 +57,66 @@ let var_to_dummy (v : variable) : string =
 let idx_to_s (f : 'a -> string) (l : 'a list) : string =
   "[" ^ (Common.join "][" (List.map f l |> List.rev)) ^ "]"
 
+let rec n_par (n : nexp) : string =
+  match n with
+  | Proj _
+  | Num _
+  | Var _
+  | NCall _
+    -> n_to_s n
+  | NIf _
+  | Bin _
+    -> "(" ^ n_to_s n ^ ")"
+and n_to_s : nexp -> string = function
+  | Proj (t, x) ->
+    "proj(" ^ task_to_string t ^ ", "  ^ var_name x ^ ")"
+  | Num n -> string_of_int n
+  | Var x -> var_name x
+  | Bin (b, a1, a2) ->
+    (match b with
+     | BitOr -> "__bor(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
+     | BitXOr -> "__bxor(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
+     | BitAnd -> "__band(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
+     | LeftShift -> "__lshift(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
+     | RightShift -> "__rshift(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
+     | _ -> n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2)
+  | NCall (x, arg) ->
+    x ^ "(" ^ n_to_s arg ^ ")"
+  | NIf (b, n1, n2) ->
+    b_par b ^ " ? " ^ n_par n1 ^ " : " ^ n_par n2
+and b_to_s : bexp -> string = function
+  | Bool b -> if b then "true" else "false"
+  | NRel (b, n1, n2) ->
+    n_to_s n1 ^ " " ^ PPrint.nrel_to_string b ^ " " ^ n_to_s n2
+  | BRel (b, b1, b2) ->
+    b_par b1 ^ " " ^ brel_to_string b ^ " " ^ b_par b2
+  | BNot b -> "!" ^ b_par b
+  | Pred (x, v) -> x ^ "(" ^ n_to_s v ^ ")"
+and b_par (b : bexp) : string =
+  match b with
+  | Pred _
+  | Bool _
+  | NRel _ -> b_to_s b
+  | BNot _
+  | BRel _ -> "("  ^ b_to_s b ^ ")"
+
 (* Gives the dummy instruction for any array read/write *)
-let acc_expr_to_dummy (x, a) : PPrint.t list =
-  let var = var_name x ^ idx_to_s PPrint.n_to_s a.access_index in
+let acc_expr_to_dummy (x, a) (racuda : bool) : PPrint.t list =
+  let var = if racuda then var_name x ^ idx_to_s n_to_s a.access_index 
+    else var_name x ^ idx_to_s PPrint.n_to_s a.access_index in
   [Line (match a.access_mode with
        | R -> var_to_dummy x ^ " = " ^ var ^ ";"
        | W -> var ^ " = " ^ var_to_dummy x ^ "_w();")]
 
 (* Converts source instruction to a valid CUDA operation *)
-let rec inst_to_s : inst -> PPrint.t list =
+let rec inst_to_s (racuda : bool) : inst -> PPrint.t list =
   let open PPrint in
   function
   | Sync -> [Line "__syncthreads();"]
-  | Acc e -> acc_expr_to_dummy e
+  | Acc e -> (acc_expr_to_dummy e racuda)
   | Cond (b, p1) -> [
       Line ("if (" ^ b_to_s b ^ ") {");
-      Block (List.map inst_to_s p1 |> List.flatten);
+      Block (List.map (inst_to_s racuda) p1 |> List.flatten);
       Line "}"
     ]
   | Loop (r, p) ->
@@ -73,12 +125,9 @@ let rec inst_to_s : inst -> PPrint.t list =
             n_to_s r.range_lower_bound ^ "; " ^ ident r.range_var ^ " < " ^
             n_to_s r.range_upper_bound ^ "; " ^ ident r.range_var ^ " = " ^
             ident r.range_var ^ " " ^ s_to_s r.range_step ^ ") {");
-      Block (List.map inst_to_s p |> List.flatten);
+      Block (List.map (inst_to_s racuda) p |> List.flatten);
       Line "}" 
     ]
-
-let prog_to_s (p : prog) : PPrint.t list =
-  List.map inst_to_s p |> List.flatten
 
 (* Get the type of an array, defaulting to int if it is unknown *)
 let arr_type (arr : array_t) (strip_const : bool) : string =
@@ -87,10 +136,15 @@ let arr_type (arr : array_t) (strip_const : bool) : string =
       (List.filter (fun x -> x <> "const") arr.array_type)
   else Common.join " " arr.array_type
 
+(* Include prototypes for bitwise operators in RaCUDA-friendly kernels *)
+let base_protos (racuda : bool) : string list =
+  if racuda then racuda_protos else cuda_protos
+
 (* Create external function prototypes for writing to each array *)
-let arr_to_proto (vm : array_t VarMap.t) : string list =
+let arr_to_proto (vm : array_t VarMap.t) (racuda : bool) : string list =
+  let modifiers = if racuda then "extern " else "extern __device__ " in
   VarMap.bindings vm 
-  |> List.map (fun (k, v) -> ("extern __device__ " ^ arr_type v true
+  |> List.map (fun (k, v) -> (modifiers ^ arr_type v true
                               ^ " " ^ var_to_dummy k ^ "_w();"))
 
 (* Checks if a string is a known C++/CUDA type *)
@@ -155,9 +209,14 @@ let body_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) : PPrint.t =
   PPrint.Block (shared_arr @ local_var @ dummy_var @ (f k.kernel_code))
 
 (* Serialization of the kernel *)
-let kernel_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) : PPrint.t list =
+let kernel_to_s
+    (f : 'a -> PPrint.t list)
+    (k : 'a kernel)
+    (racuda : bool) : PPrint.t list
+  =
   let open PPrint in
-  let funct_protos = base_protos @ (arr_to_proto k.kernel_arrays) in
+  let funct_protos = (base_protos racuda) @
+                     (arr_to_proto k.kernel_arrays racuda) in
   let unknown_type_decls = declare_unknown_types k.kernel_arrays in
   let k_name = if k.kernel_name = "main" then "kernel" else k.kernel_name in
   let global_arr = global_arr_to_l (VarMap.filter (fun k -> fun v ->
@@ -173,11 +232,11 @@ let kernel_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) : PPrint.t list =
     Line "}"
   ]
 
-let print_kernel (f : 'a -> PPrint.t list) (k : 'a kernel) : unit =
-  PPrint.print_doc (kernel_to_s f k)
+let prog_to_s (racuda : bool) (p : prog) : PPrint.t list =
+  List.map (inst_to_s racuda) p |> List.flatten
 
-let print_k (k : prog kernel) : unit =
-  PPrint.print_doc (kernel_to_s prog_to_s k)
+let print_k (k : prog kernel) (racuda : bool) : unit =
+  PPrint.print_doc (kernel_to_s (prog_to_s racuda) k racuda)
 
 (* Kernel to TOML conversion *)
 open Toml.Min
@@ -192,16 +251,18 @@ let scalars_to_l (vs : VarSet.t) : Toml.Types.table list =
   VarSet.elements (VarSet.diff vs thread_globals)
   |> List.map (fun v -> of_key_values [key (var_name v), TString "int"])
 
-let kernel_to_toml (k : prog kernel) : Toml.Types.table =
-  let funct_protos = base_protos @ (arr_to_proto k.kernel_arrays) in
+let kernel_to_toml (k : prog kernel) (racuda : bool) : Toml.Types.table =
+  let body = [body_to_s (prog_to_s racuda) k] in
+  let funct_protos = (base_protos racuda) @
+                     (arr_to_proto k.kernel_arrays racuda) in
   let unknown_type_decls = declare_unknown_types k.kernel_arrays in
+  let header = funct_protos @ unknown_type_decls in
   let global_arr = (VarMap.filter (fun k -> fun v ->
       v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
   let open PPrint in
   [
-    key "body", TString (doc_to_string (Line "" :: [body_to_s prog_to_s k]));
-    key "header", TString ("\n" ^ Common.join "\n" (funct_protos @
-                                                    unknown_type_decls) ^ "\n");
+    key "body", TString (doc_to_string (Line "" :: body));
+    key "header", TString ("\n" ^ Common.join "\n" header ^ "\n");
     key "includes", TArray (NodeInt []);
     key "pass", TBool true;
     key "arrays", TArray (NodeTable (arrays_to_l global_arr));

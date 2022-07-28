@@ -9,9 +9,9 @@ let tid = var_make "threadIdx.x"
 
 let thread_globals : VarSet.t =
   VarSet.of_list (List.map var_make
-  ["gridDim.x"; "blockIdx.x"; "blockDim.x";
-  "gridDim.y"; "blockIdx.y"; "blockDim.y";
-  "gridDim.z"; "blockIdx.z"; "blockDim.z"])
+                    ["gridDim.x"; "blockIdx.x"; "blockDim.x";
+                     "gridDim.y"; "blockIdx.y"; "blockDim.y";
+                     "gridDim.z"; "blockIdx.z"; "blockDim.z"])
 
 let write (p : prog) : prog =
   p @ [Acc (arr, {access_index = [Var tid]; access_mode = W})]
@@ -41,11 +41,11 @@ let cond2 (p : prog) : prog =
 let rec choose (k : int) (l : ('a list -> 'a list) list) : 'a list list =
   if k <= 0 then [[]]
   else match l with
-  | [] -> []
-  | h :: t ->
-    let with_h = List.map (fun l -> h l) (choose (k - 1) t) in
-    let without_h = choose k t in
-  with_h @ without_h
+    | [] -> []
+    | h :: t ->
+      let with_h = List.map (fun l -> h l) (choose (k - 1) t) in
+      let without_h = choose k t in
+      with_h @ without_h
 
 let program = [sync; loop1; loop2; cond1; cond2; read; write]
 
@@ -54,18 +54,19 @@ let program_k (k : int) : prog list = choose k program
 (* Template kernel for random code generation *)
 let kernel (p : prog) : prog kernel =
   {kernel_name = "kernel";
-  kernel_global_variables = VarSet.of_list [ub];
-  kernel_local_variables = VarSet.of_list [tid];
-  kernel_arrays = mk_array_map GlobalMemory [arr];
-  kernel_pre = distinct [tid];
-  kernel_code = p}
+   kernel_global_variables = VarSet.of_list [ub];
+   kernel_local_variables = VarSet.of_list [tid];
+   kernel_arrays = mk_array_map GlobalMemory [arr];
+   kernel_pre = distinct [tid];
+   kernel_code = p}
 
 let test_kernel = kernel (sync @@ loop2 @@ read @@ write [])
 
-let () = print_string (Toml.Printer.string_of_table (Cgen.kernel_to_toml test_kernel))
+let () = print_string (Cgen.kernel_to_toml test_kernel false
+                       |> Toml.Printer.string_of_table)
 
 (* Generate all combinations *)
 
 (* let () = 
-  List.iter (fun p -> print_newline (Cgen.print_k (kernel p)))
+  List.iter (fun p -> print_newline (Cgen.print_k (kernel p) false))
     (List.map program_k (Common.range 1 (List.length program)) |> List.concat) *)

@@ -41,27 +41,33 @@ let p2c_t =
   in
   let use_cuda =
     let doc = "Parse a CUDA file" in
-    Arg.(value & flag & info ["cuda"] ~doc)
+    Arg.(value & flag & info ["c"; "cuda"] ~doc)
+  in
+  let racuda =
+    let doc = "Generate a RaCUDA-friendly kernel" in
+    Arg.(value & flag & info ["r"; "racuda"] ~doc)
   in
   let output_toml =
     let doc = "Output a TOML file" in
-    Arg.(value & flag & info ["toml"] ~doc)
+    Arg.(value & flag & info ["t"; "toml"] ~doc)
   in
   let do_p2c
       (fname : string)
       (use_cuda : bool)
+      (racuda : bool)
       (output_toml : bool) : unit =
     let open Cgen in
     let kernels = read_kernels fname use_cuda in
     if output_toml then
-      List.iter (fun k -> print_toml (kernel_to_toml k)) kernels
+      List.iter (fun k -> print_toml (kernel_to_toml k racuda)) kernels
     else
-      List.iter (fun k -> print_k k) kernels
+      List.iter (fun k -> print_k k racuda) kernels
   in
   Term.(
     const do_p2c
     $ get_fname
     $ use_cuda
+    $ racuda
     $ output_toml
   )
 
