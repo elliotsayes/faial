@@ -193,13 +193,17 @@ let scalars_to_l (vs : VarSet.t) : Toml.Types.table list =
   |> List.map (fun v -> of_key_values [key (var_name v), TString "int"])
 
 let kernel_to_toml (k : prog kernel) : Toml.Types.table =
+  let funct_protos = base_protos @ (arr_to_proto k.kernel_arrays) in
+  let unknown_type_decls = declare_unknown_types k.kernel_arrays in
   let global_arr = (VarMap.filter (fun k -> fun v ->
       v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
   let open PPrint in
   [
-    key "pass", TBool true;
-    key "includes", TArray (NodeInt []);
     key "body", TString (doc_to_string (Line "" :: [body_to_s prog_to_s k]));
+    key "header", TString ("\n" ^ Common.join "\n" (funct_protos @
+                                                    unknown_type_decls) ^ "\n");
+    key "includes", TArray (NodeInt []);
+    key "pass", TBool true;
     key "arrays", TArray (NodeTable (arrays_to_l global_arr));
     key "scalars", TArray (NodeTable (scalars_to_l k.kernel_global_variables));
   ]
