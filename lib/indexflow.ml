@@ -109,23 +109,23 @@ and types_exp_list (env:Typing.t) (l: d_exp list) : Typing.t * Index.t =
 
 module Stmt = struct
   type t =
-    | Empty
+    | NoAccesses
     | Has of {data: Index.t; control: Index.t}
 
-  let empty : t = Empty
+  let no_access : t = NoAccesses
 
-  let from_data (d:Index.t) : t =
+  let has_access (d:Index.t) : t =
     Has { control = Index.Independent; data = d}
 
   let add_control (s:t) (c:Index.t) : t =
     match s with
-    | Empty -> Empty
+    | NoAccesses -> NoAccesses
     | Has s -> Has {s with control = Index.add s.control c}
 
   let add (lhs:t) (rhs:t) : t =
     match lhs, rhs with
-    | Empty, x
-    | x, Empty -> x
+    | NoAccesses, x
+    | x, NoAccesses -> x
     | Has lhs, Has rhs ->
       Has {
         control = Index.add lhs.control rhs.control;
@@ -134,7 +134,7 @@ module Stmt = struct
 
   let to_string: t -> string =
     function
-    | Empty -> "ind,ind"
+    | NoAccesses -> "ind,ind"
     | Has {data=d; control=c} ->
       let d = match d with
       | Dependent -> "data"
@@ -160,12 +160,12 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
   | WriteAccessStmt d ->
     (* Abort if any index is dependent *)
     let (env, ty) = types_exp_list env d.target.index in
-    (env, Stmt.from_data ty)
+    (env, Stmt.has_access ty)
 
   | ReadAccessStmt s ->
     (* Abort if any index is dependent *)
     let (env, ty) = types_exp_list env s.source.index in
-    (Typing.put s.target Index.Dependent env, Stmt.from_data ty)
+    (Typing.put s.target Index.Dependent env, Stmt.has_access ty)
 
   | DeclStmt (d::is) ->
     let x = d.name in
@@ -179,7 +179,9 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
     let (env, ty) = types_exp env s.cond in
     let (env1, ty1) = types_stmt env s.then_stmt in
     let (env2, ty2) = types_stmt env s.else_stmt in
-    (Typing.add env1 env2, Stmt.add_control ty1 ty |> Stmt.add ty2)
+    let ty1 = Stmt.add_control ty1 ty in
+    let ty2 = Stmt.add_control ty2 ty in
+    (Typing.add env1 env2, Stmt.add ty1 ty2)
 
   | ForStmt s ->
     let orig_env = env in
@@ -204,7 +206,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
   | BreakStmt
   | GotoStmt
   | ContinueStmt
-  | ReturnStmt -> (env, Stmt.empty)
+  | ReturnStmt -> (env, Stmt.no_access)
   
 
   | CaseStmt {body=s}
@@ -222,7 +224,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
 
 and types_stmt_list (env:Typing.t) (s:d_stmt list) : Typing.t * Stmt.t =
   match s with
-  | [] -> (env, Stmt.empty)
+  | [] -> (env, Stmt.no_access)
   | s :: ss ->
     let (env, ty1) = types_stmt env s in
     let (env, ty2) = types_stmt_list env ss in
