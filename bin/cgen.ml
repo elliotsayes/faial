@@ -99,6 +99,11 @@ and b_par (b : bexp) : string =
   | NRel _ -> b_to_s b
   | BNot _
   | BRel _ -> "("  ^ b_to_s b ^ ")"
+and s_to_s s =
+  match s with
+  | Default x -> "+ " ^ n_to_s x
+  | StepName "pow2" -> "* 2"
+  | StepName x -> x
 
 (* Gives the dummy instruction for any array read/write *)
 let acc_expr_to_dummy (x, a) (racuda : bool) : PPrint.t list =
@@ -110,21 +115,21 @@ let acc_expr_to_dummy (x, a) (racuda : bool) : PPrint.t list =
 
 (* Converts source instruction to a valid CUDA operation *)
 let rec inst_to_s (racuda : bool) : inst -> PPrint.t list =
-  let open PPrint in
   function
   | Sync -> [Line "__syncthreads();"]
   | Acc e -> (acc_expr_to_dummy e racuda)
   | Cond (b, p1) -> [
-      Line ("if (" ^ b_to_s b ^ ") {");
+      Line ("if (" ^ (if racuda then b_to_s else PPrint.b_to_s) b ^ ") {");
       Block (List.map (inst_to_s racuda) p1 |> List.flatten);
       Line "}"
     ]
   | Loop (r, p) ->
     [ 
-      Line ("for (" ^ "int " ^ ident r.range_var ^ " = " ^
-            n_to_s r.range_lower_bound ^ "; " ^ ident r.range_var ^ " < " ^
-            n_to_s r.range_upper_bound ^ "; " ^ ident r.range_var ^ " = " ^
-            ident r.range_var ^ " " ^ s_to_s r.range_step ^ ") {");
+      Line ("for (" ^ "int " ^ var_name r.range_var ^ " = "
+            ^ n_to_s r.range_lower_bound ^ "; " ^ var_name r.range_var ^ " < "
+            ^ n_to_s r.range_upper_bound ^ "; " ^ var_name r.range_var ^ " = "
+            ^ var_name r.range_var ^ " "
+            ^ (if racuda then s_to_s else PPrint.s_to_s) r.range_step ^ ") {");
       Block (List.map (inst_to_s racuda) p |> List.flatten);
       Line "}" 
     ]
