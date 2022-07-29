@@ -1158,14 +1158,14 @@ let stmt_to_s ?(modifier:bool=false) ?(provenance:bool=false) : c_stmt -> PPrint
     in 
     let block (s:c_stmt) : PPrint.t list = ret (stmt_to_s s) in 
     function
-    | ReturnStmt -> [Line "return;"]
-    | GotoStmt -> [Line "goto;"]
-    | BreakStmt -> [Line "break;"]
-    | ContinueStmt -> [Line "continue;"]
+    | ReturnStmt -> [Line "return"]
+    | GotoStmt -> [Line "goto"]
+    | BreakStmt -> [Line "break"]
+    | ContinueStmt -> [Line "continue"]
     | ForStmt f -> [
-        Line ("for (" ^ opt_for_init_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
+        Line ("for (" ^ opt_for_init_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ")");
       ]
-      @ block (f.body);
+      @ block (f.body)
     | WhileStmt {cond=b; body=s} -> [
         Line ("while (" ^ exp_to_s b ^ ") {");
         Block (stmt_to_s s);
@@ -1194,7 +1194,9 @@ let stmt_to_s ?(modifier:bool=false) ?(provenance:bool=false) : c_stmt -> PPrint
         ret s1 @
         (if s2 = [] then [] else [ Line "else"; ] @ ret s2)
     | CompoundStmt [] -> []
-    | CompoundStmt l -> [Line "{"; Block (List.concat_map stmt_to_s l); Line "}"]
+    | CompoundStmt l ->
+      let l = List.concat_map stmt_to_s l in
+      if l = [] then [] else ret l
     | DeclStmt [] -> []
     | DeclStmt [d] -> [Line ("decl " ^ decl_to_s d)]
     | DeclStmt d -> [Line "decl {"; Block (List.map (fun e -> Line (decl_to_s e)) d); Line "}"]
