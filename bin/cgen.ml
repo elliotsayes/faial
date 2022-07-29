@@ -130,11 +130,17 @@ let rec inst_to_s (racuda : bool) : inst -> PPrint.t list =
     ]
 
 (* Get the type of an array, defaulting to int if it is unknown *)
-let arr_type (arr : array_t) (strip_const : bool) : string =
+let arr_type (arr : array_t) (rem_const : bool) (rem_unsigned : bool) : string =
+  let mod_filter (modifier : string) : bool =
+    match rem_const, rem_unsigned with
+    | true, true -> modifier <> "const" && modifier <> "unsigned"
+    | true, false -> modifier <> "const"
+    | false, true -> modifier <> "unsigned"
+    | false, false -> true
+  in
   if arr.array_type = [] then "int"
-  else if strip_const then Common.join " "
-      (List.filter (fun x -> x <> "const") arr.array_type)
-  else Common.join " " arr.array_type
+  else List.filter mod_filter arr.array_type
+       |> Common.join " "
 
 (* Include prototypes for bitwise operators in RaCUDA-friendly kernels *)
 let base_protos (racuda : bool) : string list =
@@ -144,7 +150,7 @@ let base_protos (racuda : bool) : string list =
 let arr_to_proto (vm : array_t VarMap.t) (racuda : bool) : string list =
   let modifiers = if racuda then "extern " else "extern __device__ " in
   VarMap.bindings vm 
-  |> List.map (fun (k, v) -> (modifiers ^ arr_type v true
+  |> List.map (fun (k, v) -> (modifiers ^ arr_type v true racuda
                               ^ " " ^ var_to_dummy k ^ "_w();"))
 
 (* Checks if a string is a known C++/CUDA type *)
@@ -171,26 +177,26 @@ let declare_unknown_types (vm : array_t VarMap.t) : string list =
   Common.StringSet.of_list |>
   Common.StringSet.elements
 
-let global_arr_to_l (vm : array_t VarMap.t) : string list =
+let global_arr_to_l (vm : array_t VarMap.t) (racuda : bool) : string list =
   VarMap.bindings vm
-  |> List.map (fun (k, v) -> arr_type v false ^ " *" ^ var_name k)
+  |> List.map (fun (k, v) -> arr_type v false racuda ^ " *" ^ var_name k)
 
 let global_var_to_l (vs : VarSet.t) : string list =
   VarSet.elements (VarSet.diff vs thread_globals)
   |> List.map (fun v -> "int " ^ var_name v)
 
 (* Helper functions for making kernel variable declarations *)
-let arr_to_shared (vm : array_t VarMap.t) : PPrint.t list =
+let arr_to_shared (vm : array_t VarMap.t) (racuda : bool) : PPrint.t list =
   VarMap.bindings vm
   |> List.map (fun (k, v) -> 
       PPrint.Line ((match v.array_size with | [] -> "extern " | _ -> "") 
-                   ^ "__shared__ " ^ arr_type v false ^ " " ^ var_name k
+                   ^ "__shared__ " ^ arr_type v false racuda ^ " " ^ var_name k
                    ^ idx_to_s string_of_int v.array_size ^ ";"))
 
-let arr_to_dummy (vm : array_t VarMap.t) : PPrint.t list =
-  VarMap.bindings vm 
+let arr_to_dummy (vm : array_t VarMap.t) (racuda : bool) : PPrint.t list =
+  VarMap.bindings vm
   |> List.map (fun (k, v) -> 
-      PPrint.Line (arr_type v true ^ " " ^ var_to_dummy k ^ ";"))
+      PPrint.Line (arr_type v true racuda ^ " " ^ var_to_dummy k ^ ";"))
 
 let local_var_to_l (vs : VarSet.t) : PPrint.t list =
   (* A local variable must not be a tid/dummy variable *)
@@ -201,11 +207,11 @@ let local_var_to_l (vs : VarSet.t) : PPrint.t list =
   (* Use a single function to initialize all local variables *)
   List.map (fun v -> PPrint.Line ("int " ^ var_name v ^ " = __dummy_int();"))
 
-let body_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) : PPrint.t =
+let body_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) (racuda : bool) : PPrint.t =
   let shared_arr = arr_to_shared (VarMap.filter (fun k -> fun v ->
-      v.array_hierarchy = SharedMemory) k.kernel_arrays) in
+      v.array_hierarchy = SharedMemory) k.kernel_arrays) racuda in
   let local_var = local_var_to_l k.kernel_local_variables in
-  let dummy_var = arr_to_dummy k.kernel_arrays in
+  let dummy_var = arr_to_dummy k.kernel_arrays racuda in
   PPrint.Block (shared_arr @ local_var @ dummy_var @ (f k.kernel_code))
 
 (* Serialization of the kernel *)
@@ -220,7 +226,7 @@ let kernel_to_s
   let unknown_type_decls = declare_unknown_types k.kernel_arrays in
   let k_name = if k.kernel_name = "main" then "kernel" else k.kernel_name in
   let global_arr = global_arr_to_l (VarMap.filter (fun k -> fun v ->
-      v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
+      v.array_hierarchy = GlobalMemory) k.kernel_arrays) racuda in
   let global_var = global_var_to_l k.kernel_global_variables in
   [
     Line (Common.join "\n" (funct_protos @ unknown_type_decls));
@@ -228,7 +234,7 @@ let kernel_to_s
     Line ("void " ^ k_name ^ "(" ^ Common.join
             ", " (global_arr @ global_var) ^ ")");
     Line "{";
-    (body_to_s f k);
+    (body_to_s f k racuda);
     Line "}"
   ]
 
@@ -242,17 +248,17 @@ let print_k (k : prog kernel) (racuda : bool) : unit =
 open Toml.Min
 open Toml.Types
 
-let arrays_to_l (vm : array_t VarMap.t) : Toml.Types.table list =
+let arrays_to_l (vm : array_t VarMap.t) (racuda : bool) : table list =
   VarMap.bindings vm
   |> List.map (fun (k, v) ->
-      of_key_values [key (var_name k), TString (arr_type v false)])
+      of_key_values [key (var_name k), TString (arr_type v false racuda)])
 
-let scalars_to_l (vs : VarSet.t) : Toml.Types.table list =
+let scalars_to_l (vs : VarSet.t) : table list =
   VarSet.elements (VarSet.diff vs thread_globals)
   |> List.map (fun v -> of_key_values [key (var_name v), TString "int"])
 
-let kernel_to_toml (k : prog kernel) (racuda : bool) : Toml.Types.table =
-  let body = [body_to_s (prog_to_s racuda) k] in
+let kernel_to_toml (k : prog kernel) (racuda : bool) : table =
+  let body = [body_to_s (prog_to_s racuda) k racuda] in
   let funct_protos = (base_protos racuda) @
                      (arr_to_proto k.kernel_arrays racuda) in
   let unknown_type_decls = declare_unknown_types k.kernel_arrays in
@@ -265,10 +271,10 @@ let kernel_to_toml (k : prog kernel) (racuda : bool) : Toml.Types.table =
     key "header", TString ("\n" ^ Common.join "\n" header ^ "\n");
     key "includes", TArray (NodeInt []);
     key "pass", TBool true;
-    key "arrays", TArray (NodeTable (arrays_to_l global_arr));
+    key "arrays", TArray (NodeTable (arrays_to_l global_arr racuda));
     key "scalars", TArray (NodeTable (scalars_to_l k.kernel_global_variables));
   ]
   |> of_key_values
 
-let print_toml (table : Toml.Types.table) : unit =
+let print_toml (table : table) : unit =
   print_string (Toml.Printer.string_of_table table)
