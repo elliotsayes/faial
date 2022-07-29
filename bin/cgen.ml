@@ -120,18 +120,20 @@ let rec inst_to_s (racuda : bool) : inst -> PPrint.t list =
   function
   | Sync -> [Line "__syncthreads();"]
   | Acc e -> (acc_expr_to_dummy e racuda)
-  | Cond (b, p1) -> [
+  | Cond (b, p1) ->
+    [
       Line ("if (" ^ (if racuda then b_to_s else PPrint.b_to_s) b ^ ") {");
       Block (List.map (inst_to_s racuda) p1 |> List.flatten);
       Line "}"
     ]
   | Loop (r, p) ->
+    let n_to_s = if racuda then n_to_s else PPrint.n_to_s in
+    let s_to_s = if racuda then s_to_s else PPrint.s_to_s in
     [ 
       Line ("for (" ^ "int " ^ var_name r.range_var ^ " = "
             ^ n_to_s r.range_lower_bound ^ "; " ^ var_name r.range_var ^ " < "
             ^ n_to_s r.range_upper_bound ^ "; " ^ var_name r.range_var ^ " = "
-            ^ var_name r.range_var ^ " "
-            ^ (if racuda then s_to_s else PPrint.s_to_s) r.range_step ^ ") {");
+            ^ var_name r.range_var ^ " " ^ s_to_s r.range_step ^ ") {");
       Block (List.map (inst_to_s racuda) p |> List.flatten);
       Line "}" 
     ]
@@ -156,8 +158,8 @@ let base_protos (racuda : bool) : string list =
 let arr_to_proto (vm : array_t VarMap.t) (racuda : bool) : string list =
   let modifiers = if racuda then "extern " else "extern __device__ " in
   VarMap.bindings vm 
-  |> List.map (fun (k, v) -> (modifiers ^ arr_type v true racuda
-                              ^ " " ^ var_to_dummy k ^ "_w();"))
+  |> List.map (fun (k, v) -> modifiers ^ arr_type v true racuda
+                             ^ " " ^ var_to_dummy k ^ "_w();")
 
 (* Checks if a string is a known C++/CUDA type *)
 let is_known_type (s : string) : bool =
@@ -195,7 +197,7 @@ let global_var_to_l (vs : VarSet.t) : string list =
 let arr_to_shared (vm : array_t VarMap.t) (racuda : bool) : PPrint.t list =
   VarMap.bindings vm
   |> List.map (fun (k, v) -> 
-      PPrint.Line ((match v.array_size with | [] -> "extern " | _ -> "") 
+      PPrint.Line ((if v.array_size = [] then "extern " else "") 
                    ^ "__shared__ " ^ arr_type v false racuda ^ " " ^ var_name k
                    ^ idx_to_s string_of_int v.array_size ^ ";"))
 
