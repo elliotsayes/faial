@@ -66,6 +66,172 @@ type c_stmt =
   | CaseStmt of {case: c_exp; body: c_stmt}
   | SExp of c_exp
 
+module VisitExp = struct
+  type 'a t =
+    | SizeOf of c_type
+    | CXXNew of {arg: 'a; ty: c_type}
+    | CXXDelete of {arg: 'a; ty: c_type}
+    | Recovery of c_type
+    | CharacterLiteral of int
+    | ArraySubscript of {lhs: 'a; rhs: 'a; ty: c_type}
+    | BinaryOperator of {opcode: string; lhs: 'a; rhs: 'a; ty: c_type}
+    | Call of {func: 'a; args: 'a list; ty: c_type}
+    | ConditionalOperator of {cond: 'a; then_expr: 'a; else_expr: 'a; ty: c_type}
+    | CXXConstruct of {args: 'a list; ty: c_type}
+    | CXXBoolLiteral of bool
+    | CXXMethodDecl of c_var
+    | CXXOperatorCall of {func: 'a; args: 'a list; ty: c_type}
+    | FloatingLiteral of float
+    | FunctionDecl of c_var
+    | IntegerLiteral of int
+    | NonTypeTemplateParmDecl of c_var
+    | Member of {name: string; base: 'a; ty: c_type}
+    | ParmVarDecl of c_var
+    | UnaryOperator of {opcode: string; child: 'a; ty: c_type}
+    | VarDecl of c_var
+    | EnumConstantDecl of c_var
+    | UnresolvedLookup of {name: variable; tys: c_type list}
+
+  let rec fold (f: 'a t -> 'a) : c_exp -> 'a =
+    function
+    | SizeOfExpr e -> f (SizeOf e)
+    | CXXNewExpr e -> f (CXXNew {arg=fold f e.arg; ty=e.ty})
+    | CXXDeleteExpr e -> f (CXXDelete {arg=fold f e.arg; ty=e.ty})
+    | RecoveryExpr e -> f (Recovery e)
+    | CharacterLiteral e -> f (CharacterLiteral e)
+    | ArraySubscriptExpr e -> f (ArraySubscript {lhs=fold f e.lhs; rhs=fold f e.rhs; ty=e.ty})
+    | BinaryOperator e -> f (BinaryOperator {
+        opcode=e.opcode;
+        lhs=fold f e.lhs;
+        rhs=fold f e.rhs;
+        ty=e.ty
+      })
+    | CallExpr e -> f (Call {func=fold f e.func; args=List.map (fold f) e.args; ty=e.ty})
+    | ConditionalOperator e -> f (ConditionalOperator {
+        cond=fold f e.cond;
+        then_expr=fold f e.then_expr;
+        else_expr=fold f e.else_expr;
+        ty=e.ty
+      })
+    | CXXConstructExpr e -> f (CXXConstruct {args=List.map (fold f) e.args; ty=e.ty})
+    | CXXBoolLiteralExpr e -> f (CXXBoolLiteral e)
+    | CXXMethodDecl e -> f (CXXMethodDecl e)
+    | CXXOperatorCallExpr e -> f (CXXOperatorCall {
+        func=fold f e.func;
+        args=List.map (fold f) e.args;
+        ty=e.ty
+      })
+    | FloatingLiteral e -> f (FloatingLiteral e)
+    | FunctionDecl e -> f (FunctionDecl e)
+    | IntegerLiteral e -> f (IntegerLiteral e)
+    | NonTypeTemplateParmDecl e -> f (NonTypeTemplateParmDecl e)
+    | MemberExpr e -> f (Member {
+        name=e.name;
+        base=fold f e.base;
+        ty=e.ty
+      })
+    | ParmVarDecl e -> f (ParmVarDecl e)
+    | UnaryOperator e -> f (UnaryOperator {
+        opcode=e.opcode;
+        child=fold f e.child;
+        ty=e.ty
+      })
+    | VarDecl e -> f (VarDecl e)
+    | EnumConstantDecl e -> f (EnumConstantDecl e)
+    | UnresolvedLookupExpr e ->
+      f (UnresolvedLookup {name=e.name; tys=e.tys})
+end
+
+module VisitStmt = struct
+  type 'a t =
+    | Break
+    | Goto
+    | Return
+    | Continue
+    | If of {cond: c_exp; then_stmt: 'a; else_stmt: 'a}
+    | Compound of 'a list
+    | Decl of c_decl list
+    | While of {cond: c_exp; body: 'a}
+    | For of {init: c_for_init option; cond: c_exp option; inc: c_exp option; body: 'a}
+    | Do of {cond: c_exp; body: 'a}
+    | Switch of {cond: c_exp; body: 'a}
+    | Default of 'a
+    | Case of {case: c_exp; body: 'a}
+    | SExp of c_exp
+
+  let rec fold (f: 'a t -> 'a) : c_stmt -> 'a =
+    function
+    | BreakStmt -> f Break
+    | GotoStmt -> f Goto
+    | ReturnStmt -> f Return
+    | ContinueStmt -> f Continue
+    | IfStmt c -> f (If {
+        cond=c.cond;
+        then_stmt=fold f c.then_stmt;
+        else_stmt=fold f c.else_stmt;
+      })
+    | CompoundStmt l -> f (Compound (List.map (fold f) l))
+    | DeclStmt l -> f (Decl l)
+    | WhileStmt w -> f (While {
+        cond=w.cond;
+        body=fold f w.body;
+      })
+    | ForStmt s -> f (For {
+        init=s.init;
+        cond=s.cond;
+        inc=s.inc;
+        body=fold f s.body;
+      })
+    | DoStmt s -> f (Do {
+        cond=s.cond;
+        body=fold f s.body;
+      })
+    | SwitchStmt s -> f (Switch {
+        cond=s.cond;
+        body=fold f s.body;
+      })
+    | DefaultStmt s -> f (Default (fold f s))
+    | CaseStmt s -> f (Case {case=s.case; body=fold f s.body})
+    | SExp e -> f (SExp e)
+
+  let to_expr_seq: c_stmt -> c_exp Seq.t =
+    let init_to_expr : c_init -> c_exp Seq.t =
+      function
+      | InitListExpr l -> List.to_seq l.args
+      | IExp e -> Seq.return e
+    in
+    fold (function
+      | Break | Goto | Return | Continue -> Seq.empty
+      | If {cond=c; then_stmt=s1; else_stmt=s2} ->
+        Seq.return c
+        |> Seq.append s1
+        |> Seq.append s2
+      | Compound l -> List.to_seq l |> Seq.concat
+      | Decl d ->
+        List.to_seq d
+        |> Seq.concat_map (fun d ->
+          Option.to_seq d.init
+          |> Seq.concat_map init_to_expr 
+        )
+      | While {cond=c; body=b}
+      | Do {cond=c; body=b}
+      | Switch {cond=c; body=b}
+      | Case {case=c; body=b}
+        -> Seq.cons c b
+      | For s ->
+        Option.to_seq s.init
+        |> Seq.concat_map (function
+          | ForDecl l ->
+            List.to_seq l
+            |> Seq.concat_map (fun x -> Option.to_seq x.init |> Seq.concat_map init_to_expr) 
+          | ForExp e -> Seq.return e
+        )
+      | Default s -> s
+      | SExp e -> Seq.return e
+    )
+
+end
+
 type c_param = {name: variable; is_used: bool; is_shared: bool; ty: c_type}
 
 type c_type_param =
