@@ -74,11 +74,11 @@ and n_to_s : nexp -> string = function
   | Bin (b, a1, a2) ->
     (
       match b with
-      | BitOr -> "__bor(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
-      | BitXOr -> "__bxor(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
-      | BitAnd -> "__band(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
-      | LeftShift -> "__lshift(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
-      | RightShift -> "__rshift(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
+      | BitOr -> "__bor(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
+      | BitXOr -> "__bxor(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
+      | BitAnd -> "__band(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
+      | LeftShift -> "__lshift(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
+      | RightShift -> "__rshift(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
       | _ -> n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
     )
   | NCall (x, arg) ->
