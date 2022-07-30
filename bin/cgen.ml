@@ -4,15 +4,15 @@ open Serialize
 
 (* ----------------- constants -------------------- *)
 let thread_globals : VarSet.t =
-  (List.map var_make 
-     ["blockDim.x"; "blockIdx.x"; "gridDim.x"; "gridIdx.x"; "threadDim.x";
-      "blockDim.y"; "blockIdx.y"; "gridDim.y"; "gridIdx.y"; "threadDim.y";
-      "blockDim.z"; "blockIdx.z"; "gridDim.z"; "gridIdx.z"; "threadDim.z"])
+  List.map var_make 
+    ["blockDim.x"; "blockIdx.x"; "gridDim.x"; "gridIdx.x"; "threadDim.x";
+     "blockDim.y"; "blockIdx.y"; "gridDim.y"; "gridIdx.y"; "threadDim.y";
+     "blockDim.z"; "blockIdx.z"; "gridDim.z"; "gridIdx.z"; "threadDim.z"]
   |> VarSet.of_list
 
 let thread_locals : VarSet.t =
-  (List.map var_make
-     ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"])
+  List.map var_make
+    ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"]
   |> VarSet.of_list
 
 let cpp_types : Common.StringSet.t =
@@ -28,7 +28,8 @@ let cpp_types : Common.StringSet.t =
    "curandStateSobol64_t"; "curandStateXORWOW"; "curandStateXORWOW_t";
    "curandState_t"; "dim4"; "double"; "enumcudaError"; "float"; "int";
    "int16_t"; "int32_t"; "int64_t"; "int8_t"; "long"; "ptrdiff_t"; "short";
-   "size_t"; "uint"; "uint16_t"; "uint32_t"; "uint8_t"; "ushort"; "wchar_t";]
+   "size_t"; "uint"; "uint16_t"; "uint32_t"; "uint8_t"; "ushort"; "wchar_t";
+   "void"]
   |> Common.StringSet.of_list
 
 let vector_types : Common.StringSet.t =
