@@ -72,13 +72,15 @@ and n_to_s : nexp -> string = function
   | Num n -> string_of_int n
   | Var x -> var_name x
   | Bin (b, a1, a2) ->
-    (match b with
-     | BitOr -> "__bor(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
-     | BitXOr -> "__bxor(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
-     | BitAnd -> "__band(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
-     | LeftShift -> "__lshift(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
-     | RightShift -> "__rshift(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
-     | _ -> n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2)
+    (
+      match b with
+      | BitOr -> "__bor(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
+      | BitXOr -> "__bxor(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
+      | BitAnd -> "__band(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
+      | LeftShift -> "__lshift(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
+      | RightShift -> "__rshift(" ^ n_par a1 ^ ", " ^ n_par a2 ^ ")"
+      | _ -> n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
+    )
   | NCall (x, arg) ->
     x ^ "(" ^ n_to_s arg ^ ")"
   | NIf (b, n1, n2) ->
@@ -88,7 +90,7 @@ and b_to_s : bexp -> string = function
   | NRel (b, n1, n2) ->
     n_to_s n1 ^ " " ^ PPrint.nrel_to_string b ^ " " ^ n_to_s n2
   | BRel (b, b1, b2) ->
-    b_par b1 ^ " " ^ brel_to_string b ^ " " ^ b_par b2
+    b_par b1 ^ " " ^ PPrint.brel_to_string b ^ " " ^ b_par b2
   | BNot b -> "!" ^ b_par b
   | Pred (x, v) -> x ^ "(" ^ n_to_s v ^ ")"
 and b_par (b : bexp) : string =
