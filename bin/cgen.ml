@@ -119,8 +119,7 @@ let acc_expr_to_dummy (x, a) (racuda : bool) : PPrint.t list =
        | W -> var ^ " = " ^ var_to_dummy x ^ "_w();")]
 
 (* Converts source instruction to a valid CUDA operation *)
-let rec inst_to_s (racuda : bool) : inst -> PPrint.t list =
-  function
+let rec inst_to_s (racuda : bool) : inst -> PPrint.t list = function
   | Sync -> [Line "__syncthreads();"]
   | Acc e -> (acc_expr_to_dummy e racuda)
   | Cond (b, p1) ->
@@ -160,15 +159,18 @@ let mk_types_compatible
     (racuda : bool) : array_t VarMap.t
   =
   (* If needed, remove unsigned modifier to make arrays RaCUDA-friendly *)
-  let rec compatible_type = function
+  let rec convert_type (strip_unsigned : bool) : string list -> string list =
+    function
     | [] -> []
-    | [ last_type ] -> [remove_template last_type]
-    | modifier :: types -> if racuda && modifier = "unsigned"
-      then compatible_type types else modifier :: compatible_type types
+    | [last_type] -> [remove_template last_type]
+    | modifier :: types -> if strip_unsigned && modifier = "unsigned"
+      then convert_type strip_unsigned types
+      else modifier :: convert_type strip_unsigned types
   in
   let mk_array_compatible (arr : array_t) : array_t =
     { arr with
-      array_type = compatible_type arr.array_type
+      array_type = convert_type (racuda && arr.array_hierarchy = SharedMemory)
+          arr.array_type
     }
   in
   VarMap.mapi (fun k -> fun v -> mk_array_compatible v) arrays
@@ -185,9 +187,9 @@ let is_known_type (s : string) : bool =
 
 let declare_unknown_types (vm : array_t VarMap.t) : string list =
   (* Converts an array type to a declaration, or None if it is a known type *)
-  let rec arr_type_to_decl = function
+  let rec arr_type_to_decl : string list -> string option = function
     | [] -> None
-    | [ last_type ] -> if is_known_type last_type then None
+    | [last_type] -> if is_known_type last_type then None
       else Some ("class " ^ last_type ^ " {};")
     | _ :: types -> arr_type_to_decl types
   in
