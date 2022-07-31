@@ -73,15 +73,14 @@ and n_to_s : nexp -> string = function
   | Num n -> string_of_int n
   | Var x -> var_name x
   | Bin (b, a1, a2) ->
-    (
-      match b with
+    begin match b with
       | BitOr -> "__bor(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
       | BitXOr -> "__bxor(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
       | BitAnd -> "__band(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
       | LeftShift -> "__lshift(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
       | RightShift -> "__rshift(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
       | _ -> n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
-    )
+    end
   | NCall (x, arg) ->
     x ^ "(" ^ n_to_s arg ^ ")"
   | NIf (b, n1, n2) ->
@@ -101,11 +100,6 @@ and b_par (b : bexp) : string =
   | NRel _ -> b_to_s b
   | BNot _
   | BRel _ -> "("  ^ b_to_s b ^ ")"
-and s_to_s s =
-  match s with
-  | Default x -> "+ " ^ n_to_s x
-  | StepName "pow2" -> "* 2"
-  | StepName x -> x
 
 (* Gives the dummy variable string for any variable *)
 let var_to_dummy (v : variable) : string =
@@ -115,9 +109,26 @@ let var_to_dummy (v : variable) : string =
 let acc_expr_to_dummy (x, a) (racuda : bool) : PPrint.t list =
   let var = if racuda then var_name x ^ idx_to_s n_to_s a.access_index 
     else var_name x ^ idx_to_s PPrint.n_to_s a.access_index in
-  [Line (match a.access_mode with
-       | R -> var_to_dummy x ^ " = " ^ var ^ ";"
-       | W -> var ^ " = " ^ var_to_dummy x ^ "_w();")]
+  match a.access_mode with
+  | R -> [Line (var_to_dummy x ^ " = " ^ var ^ ";")]
+  | W -> [Line (var ^ " = " ^ var_to_dummy x ^ "_w();")]
+
+(* Converts a loop increment to a string *)
+let inc_to_s (r : range) (n_to_s : nexp -> string) : string =
+  let pred_to_s (pred : string) : string = 
+    if String.starts_with "pow" pred
+    then String.sub pred 3 (String.length pred - 3)
+    else begin Printf.eprintf "WARNING: range step %s unsupported in range %s\n"
+        pred (PPrint.r_to_s r);
+      pred
+    end
+  in
+  var_name r.range_var ^
+  match r.range_step, r.range_dir with
+  | Default step, Increase -> " += " ^ n_to_s step
+  | Default step, Decrease -> " -= " ^ n_to_s step
+  | StepName pred_name, Increase -> " *= " ^ pred_to_s pred_name
+  | StepName pred_name, Decrease -> " /= " ^ pred_to_s pred_name
 
 (* Converts source instruction to a valid CUDA operation *)
 let rec inst_to_s (racuda : bool) : inst -> PPrint.t list = function
@@ -131,12 +142,10 @@ let rec inst_to_s (racuda : bool) : inst -> PPrint.t list = function
     ]
   | Loop (r, p) ->
     let n_to_s = if racuda then n_to_s else PPrint.n_to_s in
-    let s_to_s = if racuda then s_to_s else PPrint.s_to_s in
     [ 
       Line ("for (" ^ "int " ^ var_name r.range_var ^ " = "
             ^ n_to_s r.range_lower_bound ^ "; " ^ var_name r.range_var ^ " < "
-            ^ n_to_s r.range_upper_bound ^ "; " ^ var_name r.range_var ^ " = "
-            ^ var_name r.range_var ^ " " ^ s_to_s r.range_step ^ ") {");
+            ^ n_to_s r.range_upper_bound ^ "; " ^ inc_to_s r n_to_s ^ ") {");
       Block (List.map (inst_to_s racuda) p |> List.flatten);
       Line "}" 
     ]
