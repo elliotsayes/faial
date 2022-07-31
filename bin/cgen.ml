@@ -37,10 +37,6 @@ let vector_types : Common.StringSet.t =
    "short"; "uchar"; "uint"; "ulong"; "ulonglong"; "ushort";]
   |> Common.StringSet.of_list
 
-let racuda_types : Common.StringSet.t =
-  ["char"; "double"; "float"; "int"; "long"; "short"; "void"]
-  |> Common.StringSet.of_list
-
 let cuda_protos : string list =
   ["extern __device__ int __dummy_int();"]
 
@@ -152,10 +148,6 @@ let arr_type (arr : array_t) (strip_const : bool) : string =
                            |> join " "
   else join " " arr.array_type  
 
-(* Checks if a string is a RaCUDA-compatible type *)
-let is_racuda_type (s : string) : bool =
-  Common.StringSet.mem s racuda_types
-
 (* Removes template parameters from a C++ type *)
 let remove_template (s : string) : string =
   match String.index_opt s '<' with
@@ -167,18 +159,20 @@ let mk_types_compatible
     (arrays : array_t VarMap.t)
     (racuda : bool) : array_t VarMap.t
   =
-  (* Unknown types will automatically be converted to int in RaCUDA output *)
-  let rec convert_type (strip_unsigned : bool) : string list -> string list =
+  let rec convert_type (racuda_shared : bool) : string list -> string list =
     function
     | [] -> []
+    (* Unknown/incompatible types are converted to int in RaCUDA output *)
     | [last_type] -> if racuda then
-        if is_racuda_type last_type then [last_type]
-        else ["int"]
+        match last_type with
+        | "char" | "double" | "float" | "int" | "void" -> [last_type]
+        | "long" | "short" -> if racuda_shared then ["int"] else [last_type]
+        | _ -> ["int"]
       else [remove_template last_type]
-    (* If needed, remove unsigned modifier to make arrays RaCUDA-friendly *)
-    | modifier :: types -> if strip_unsigned && modifier = "unsigned"
-      then convert_type strip_unsigned types
-      else modifier :: convert_type strip_unsigned types
+    (* Remove unsigned modifier to make shared arrays RaCUDA-friendly *)
+    | modifier :: types -> if racuda_shared && modifier = "unsigned"
+      then convert_type racuda_shared types
+      else modifier :: convert_type racuda_shared types
   in
   let mk_array_compatible (arr : array_t) : array_t =
     { arr with
