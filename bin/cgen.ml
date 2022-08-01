@@ -52,7 +52,7 @@ let racuda_protos : string list =
 let join (sep : string) (elems : string list) : string =
   List.rev elems |> Common.join sep
 
-(* Maps a list of values to an index-separated string containing them *)
+(* Converts an array index to a string *)
 let idx_to_s (f : 'a -> string) (l : 'a list) : string =
   "[" ^ (join "][" (List.map f l)) ^ "]"
 
@@ -141,13 +141,21 @@ let rec inst_to_s (racuda : bool) : inst -> PPrint.t list = function
       Line "}"
     ]
   | Loop (r, p) ->
+    let x = var_name r.range_var in
     let n_to_s = if racuda then n_to_s else PPrint.n_to_s in
+    let lb, ub, op = match r.range_dir with
+      | Increase -> n_to_s r.range_lower_bound,
+                    n_to_s r.range_upper_bound,
+                    " < "
+      | Decrease -> n_minus r.range_upper_bound (Num 1) |> n_to_s,
+                    n_minus r.range_lower_bound (Num 1) |> n_to_s,
+                    " > "
+    in
     [ 
-      Line ("for (" ^ "int " ^ var_name r.range_var ^ " = "
-            ^ n_to_s r.range_lower_bound ^ "; " ^ var_name r.range_var ^ " < "
-            ^ n_to_s r.range_upper_bound ^ "; " ^ inc_to_s r n_to_s ^ ") {");
+      Line ("for (" ^ "int " ^ x ^ " = " ^ lb ^ "; " ^ x
+            ^ op ^ ub ^ "; " ^ inc_to_s r n_to_s ^ ") {");
       Block (List.map (inst_to_s racuda) p |> List.flatten);
-      Line "}" 
+      Line "}"
     ]
 
 (* Get the type of an array, defaulting to int if it is unknown *)
