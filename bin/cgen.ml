@@ -301,7 +301,7 @@ let kernel_to_s
   ]
 
 let prog_to_s (racuda : bool) (p : prog) : PPrint.t list =
-  List.map (inst_to_s racuda) p |> List.flatten
+  p_opt p |> List.map (inst_to_s racuda) |> List.flatten
 
 let print_k (k : prog kernel) (racuda : bool) : unit =
   PPrint.print_doc (kernel_to_s (prog_to_s racuda) k racuda)
