@@ -86,7 +86,7 @@ and n_to_s : nexp -> string = function
   | NIf (b, n1, n2) ->
     b_par b ^ " ? " ^ n_par n1 ^ " : " ^ n_par n2
 and b_to_s : bexp -> string = function
-  | Bool b -> if b then "true" else "false"
+  | Bool b -> if b then "(0 == 0)" else "(0 != 0)"
   | NRel (b, n1, n2) ->
     n_to_s n1 ^ " " ^ PPrint.nrel_to_string b ^ " " ^ n_to_s n2
   | BRel (b, b1, b2) ->
