@@ -325,18 +325,19 @@ module Unknown = struct
   let ret_u (l:Imp.locality) (vars:VarSet.t) (s:Imp.stmt) : Imp.stmt list d_result = 
     Ok (decl_unknown l vars @ [s])
 
-  let ret_f (f:'a -> VarSet.t * 'b) (handler:'b -> Imp.stmt) (n:'a) : Imp.stmt list d_result =
+  let ret_f ?(extra_vars=VarSet.empty) (f:'a -> VarSet.t * 'b) (handler:'b -> Imp.stmt) (n:'a) : Imp.stmt list d_result =
     let vars, n = f n in
+    let vars = VarSet.union extra_vars vars in
     ret_u Imp.Local vars (handler n)
 
-  let ret_n: (nexp -> Imp.stmt) -> i_exp -> Imp.stmt list d_result =
-    ret_f to_nexp
+  let ret_n ?(extra_vars=VarSet.empty): (nexp -> Imp.stmt) -> i_exp -> Imp.stmt list d_result =
+    ret_f ~extra_vars to_nexp
 
-  let ret_ns: (nexp list -> Imp.stmt) -> i_exp list -> Imp.stmt list d_result =
-    ret_f to_nexp_list
+  let ret_ns ?(extra_vars=VarSet.empty): (nexp list -> Imp.stmt) -> i_exp list -> Imp.stmt list d_result =
+    ret_f ~extra_vars to_nexp_list
 
-  let ret_b: (bexp -> Imp.stmt) -> i_exp -> Imp.stmt list d_result =
-    ret_f to_bexp
+  let ret_b ?(extra_vars=VarSet.empty): (bexp -> Imp.stmt) -> i_exp -> Imp.stmt list d_result =
+    ret_f ~extra_vars to_bexp
 
 
 end
@@ -542,8 +543,10 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
   | ReadAccessStmt r ->
     let x = r.source.name in
     let* idx = with_msg "read.idx" (cast_map parse_exp) r.source.index in
-    idx |> ret_ns (fun idx ->
-        Imp.Acc (x, {access_index=idx; access_mode=R})
+    idx
+    |> ret_ns ~extra_vars:(VarSet.of_list [r.target]) (fun idx ->
+      let open Imp in
+      Acc (x, {access_index=idx; access_mode=R})
     )
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 

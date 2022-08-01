@@ -66,6 +66,172 @@ type c_stmt =
   | CaseStmt of {case: c_exp; body: c_stmt}
   | SExp of c_exp
 
+module VisitExp = struct
+  type 'a t =
+    | SizeOf of c_type
+    | CXXNew of {arg: 'a; ty: c_type}
+    | CXXDelete of {arg: 'a; ty: c_type}
+    | Recovery of c_type
+    | CharacterLiteral of int
+    | ArraySubscript of {lhs: 'a; rhs: 'a; ty: c_type}
+    | BinaryOperator of {opcode: string; lhs: 'a; rhs: 'a; ty: c_type}
+    | Call of {func: 'a; args: 'a list; ty: c_type}
+    | ConditionalOperator of {cond: 'a; then_expr: 'a; else_expr: 'a; ty: c_type}
+    | CXXConstruct of {args: 'a list; ty: c_type}
+    | CXXBoolLiteral of bool
+    | CXXMethodDecl of c_var
+    | CXXOperatorCall of {func: 'a; args: 'a list; ty: c_type}
+    | FloatingLiteral of float
+    | FunctionDecl of c_var
+    | IntegerLiteral of int
+    | NonTypeTemplateParmDecl of c_var
+    | Member of {name: string; base: 'a; ty: c_type}
+    | ParmVarDecl of c_var
+    | UnaryOperator of {opcode: string; child: 'a; ty: c_type}
+    | VarDecl of c_var
+    | EnumConstantDecl of c_var
+    | UnresolvedLookup of {name: variable; tys: c_type list}
+
+  let rec fold (f: 'a t -> 'a) : c_exp -> 'a =
+    function
+    | SizeOfExpr e -> f (SizeOf e)
+    | CXXNewExpr e -> f (CXXNew {arg=fold f e.arg; ty=e.ty})
+    | CXXDeleteExpr e -> f (CXXDelete {arg=fold f e.arg; ty=e.ty})
+    | RecoveryExpr e -> f (Recovery e)
+    | CharacterLiteral e -> f (CharacterLiteral e)
+    | ArraySubscriptExpr e -> f (ArraySubscript {lhs=fold f e.lhs; rhs=fold f e.rhs; ty=e.ty})
+    | BinaryOperator e -> f (BinaryOperator {
+        opcode=e.opcode;
+        lhs=fold f e.lhs;
+        rhs=fold f e.rhs;
+        ty=e.ty
+      })
+    | CallExpr e -> f (Call {func=fold f e.func; args=List.map (fold f) e.args; ty=e.ty})
+    | ConditionalOperator e -> f (ConditionalOperator {
+        cond=fold f e.cond;
+        then_expr=fold f e.then_expr;
+        else_expr=fold f e.else_expr;
+        ty=e.ty
+      })
+    | CXXConstructExpr e -> f (CXXConstruct {args=List.map (fold f) e.args; ty=e.ty})
+    | CXXBoolLiteralExpr e -> f (CXXBoolLiteral e)
+    | CXXMethodDecl e -> f (CXXMethodDecl e)
+    | CXXOperatorCallExpr e -> f (CXXOperatorCall {
+        func=fold f e.func;
+        args=List.map (fold f) e.args;
+        ty=e.ty
+      })
+    | FloatingLiteral e -> f (FloatingLiteral e)
+    | FunctionDecl e -> f (FunctionDecl e)
+    | IntegerLiteral e -> f (IntegerLiteral e)
+    | NonTypeTemplateParmDecl e -> f (NonTypeTemplateParmDecl e)
+    | MemberExpr e -> f (Member {
+        name=e.name;
+        base=fold f e.base;
+        ty=e.ty
+      })
+    | ParmVarDecl e -> f (ParmVarDecl e)
+    | UnaryOperator e -> f (UnaryOperator {
+        opcode=e.opcode;
+        child=fold f e.child;
+        ty=e.ty
+      })
+    | VarDecl e -> f (VarDecl e)
+    | EnumConstantDecl e -> f (EnumConstantDecl e)
+    | UnresolvedLookupExpr e ->
+      f (UnresolvedLookup {name=e.name; tys=e.tys})
+end
+
+module VisitStmt = struct
+  type 'a t =
+    | Break
+    | Goto
+    | Return
+    | Continue
+    | If of {cond: c_exp; then_stmt: 'a; else_stmt: 'a}
+    | Compound of 'a list
+    | Decl of c_decl list
+    | While of {cond: c_exp; body: 'a}
+    | For of {init: c_for_init option; cond: c_exp option; inc: c_exp option; body: 'a}
+    | Do of {cond: c_exp; body: 'a}
+    | Switch of {cond: c_exp; body: 'a}
+    | Default of 'a
+    | Case of {case: c_exp; body: 'a}
+    | SExp of c_exp
+
+  let rec fold (f: 'a t -> 'a) : c_stmt -> 'a =
+    function
+    | BreakStmt -> f Break
+    | GotoStmt -> f Goto
+    | ReturnStmt -> f Return
+    | ContinueStmt -> f Continue
+    | IfStmt c -> f (If {
+        cond=c.cond;
+        then_stmt=fold f c.then_stmt;
+        else_stmt=fold f c.else_stmt;
+      })
+    | CompoundStmt l -> f (Compound (List.map (fold f) l))
+    | DeclStmt l -> f (Decl l)
+    | WhileStmt w -> f (While {
+        cond=w.cond;
+        body=fold f w.body;
+      })
+    | ForStmt s -> f (For {
+        init=s.init;
+        cond=s.cond;
+        inc=s.inc;
+        body=fold f s.body;
+      })
+    | DoStmt s -> f (Do {
+        cond=s.cond;
+        body=fold f s.body;
+      })
+    | SwitchStmt s -> f (Switch {
+        cond=s.cond;
+        body=fold f s.body;
+      })
+    | DefaultStmt s -> f (Default (fold f s))
+    | CaseStmt s -> f (Case {case=s.case; body=fold f s.body})
+    | SExp e -> f (SExp e)
+
+  let to_expr_seq: c_stmt -> c_exp Seq.t =
+    let init_to_expr : c_init -> c_exp Seq.t =
+      function
+      | InitListExpr l -> List.to_seq l.args
+      | IExp e -> Seq.return e
+    in
+    fold (function
+      | Break | Goto | Return | Continue -> Seq.empty
+      | If {cond=c; then_stmt=s1; else_stmt=s2} ->
+        Seq.return c
+        |> Seq.append s1
+        |> Seq.append s2
+      | Compound l -> List.to_seq l |> Seq.concat
+      | Decl d ->
+        List.to_seq d
+        |> Seq.concat_map (fun d ->
+          Option.to_seq d.init
+          |> Seq.concat_map init_to_expr 
+        )
+      | While {cond=c; body=b}
+      | Do {cond=c; body=b}
+      | Switch {cond=c; body=b}
+      | Case {case=c; body=b}
+        -> Seq.cons c b
+      | For s ->
+        Option.to_seq s.init
+        |> Seq.concat_map (function
+          | ForDecl l ->
+            List.to_seq l
+            |> Seq.concat_map (fun x -> Option.to_seq x.init |> Seq.concat_map init_to_expr) 
+          | ForExp e -> Seq.return e
+        )
+      | Default s -> s
+      | SExp e -> Seq.return e
+    )
+
+end
+
 type c_param = {name: variable; is_used: bool; is_shared: bool; ty: c_type}
 
 type c_type_param =
@@ -878,7 +1044,7 @@ let type_to_str (j:Yojson.Basic.t) : string =
 let list_to_s (f:'a -> string) (l:'a list) : string =
   List.map f l |> Common.join ", "
 
-let exp_to_s ?(modifier:bool=true) ?(provenance:bool=false) ?(types:bool=false) : c_exp -> string =
+let exp_to_s ?(modifier:bool=false) ?(provenance:bool=false) ?(types:bool=false) : c_exp -> string =
   let attr (s:string) : string =
     if modifier
     then "@" ^ s ^ " "
@@ -895,33 +1061,60 @@ let exp_to_s ?(modifier:bool=true) ?(provenance:bool=false) ?(types:bool=false) 
     else var_name
   in
   let rec exp_to_s: c_exp -> string =
+    let par (e: c_exp) : string =
+      match e with
+      | BinaryOperator _
+      | ConditionalOperator _
+        -> "(" ^ exp_to_s e ^ ")"
+      | UnaryOperator _
+      | CXXNewExpr _
+      | CXXDeleteExpr _
+      | FunctionDecl _
+      | ParmVarDecl _
+      | EnumConstantDecl _
+      | NonTypeTemplateParmDecl _
+      | UnresolvedLookupExpr _
+      | VarDecl _
+      | CallExpr _
+      | CXXMethodDecl _
+      | CXXOperatorCallExpr _
+      | CXXConstructExpr _
+      | CXXBoolLiteralExpr _
+      | ArraySubscriptExpr _
+      | MemberExpr _
+      | IntegerLiteral _
+      | CharacterLiteral _
+      | RecoveryExpr _
+      | FloatingLiteral _
+      | SizeOfExpr _
+        ->  exp_to_s e
+    in
     function
     | SizeOfExpr ty -> "sizeof(" ^ type_to_str ty ^ ")"
-    | CXXNewExpr c -> "new " ^ type_to_str c.ty ^ "[" ^ exp_to_s c.arg ^ "]"
-    | CXXDeleteExpr c -> "del " ^ exp_to_s c.arg
+    | CXXNewExpr c -> "new " ^ type_to_str c.ty ^ "(" ^ exp_to_s c.arg ^ ")"
+    | CXXDeleteExpr c -> "del " ^ par c.arg
     | RecoveryExpr _ -> "?"
     | FloatingLiteral f -> string_of_float f
     | CharacterLiteral i
     | IntegerLiteral i -> string_of_int i
     | ConditionalOperator c ->
-      "(" ^ exp_to_s c.cond ^ ") ? (" ^
-            exp_to_s c.then_expr ^ ") : (" ^
-            exp_to_s c.else_expr ^ ")"
-    | BinaryOperator b -> "(" ^ exp_to_s b.lhs ^ ") " ^ opcode b.opcode b.ty ^ " (" ^ exp_to_s b.rhs ^ ")"
-    | MemberExpr m -> "("^ exp_to_s m.base  ^ ")." ^ m.name
-    | ArraySubscriptExpr b -> exp_to_s b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
+      par c.cond ^ " ? " ^ par c.then_expr ^ " : " ^ par c.else_expr
+    | BinaryOperator b ->
+      par b.lhs ^ " " ^ opcode b.opcode b.ty ^ " " ^ par b.rhs
+    | MemberExpr m -> par m.base  ^ "." ^ m.name
+    | ArraySubscriptExpr b -> par b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
     | CXXBoolLiteralExpr b -> if b then "true" else "false";
     | CXXConstructExpr c -> attr "ctor" ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")" 
     | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
     | CXXMethodDecl v -> attr "meth" ^ var_name v.name
-    | CallExpr c -> exp_to_s c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
+    | CallExpr c -> par c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
     | VarDecl v -> var_name v.name
     | UnresolvedLookupExpr v -> attr "unresolv" ^ var_name v.name
     | NonTypeTemplateParmDecl v -> attr "tpl" ^ var_name v.name
     | FunctionDecl v -> attr "func" ^ var_name v.name
     | ParmVarDecl v -> attr "parm" ^ var_name v.name
     | EnumConstantDecl v -> attr "enum" ^ var_name v.name
-    | UnaryOperator u -> u.opcode ^ exp_to_s u.child
+    | UnaryOperator u -> u.opcode ^ par u.child
   in
   exp_to_s
 
@@ -948,7 +1141,7 @@ let opt_for_init_to_s (o:c_for_init option) : string =
   | Some o -> for_init_to_s o
   | None -> ""
 
-let stmt_to_s ?(modifier:bool=true) ?(provenance:bool=false) : c_stmt -> PPrint.t list =
+let stmt_to_s ?(modifier:bool=false) ?(provenance:bool=false) : c_stmt -> PPrint.t list =
   let exp_to_s : c_exp -> string = exp_to_s ~modifier ~provenance in
   let opt_exp_to_s: c_exp option -> string =
     function
@@ -957,16 +1150,22 @@ let stmt_to_s ?(modifier:bool=true) ?(provenance:bool=false) : c_stmt -> PPrint.
   in
   let open PPrint in
   let rec stmt_to_s : c_stmt -> PPrint.t list =
+    let ret l : PPrint.t list =
+      match l with
+      | [] -> [Line ";"]
+      | [Line "{"; Block l; Line "}"]
+      | l -> [Line "{"; Block l; Line "}"]
+    in 
+    let block (s:c_stmt) : PPrint.t list = ret (stmt_to_s s) in 
     function
-    | ReturnStmt -> [Line "return;"]
-    | GotoStmt -> [Line "goto;"]
-    | BreakStmt -> [Line "break;"]
-    | ContinueStmt -> [Line "continue;"]
+    | ReturnStmt -> [Line "return"]
+    | GotoStmt -> [Line "goto"]
+    | BreakStmt -> [Line "break"]
+    | ContinueStmt -> [Line "continue"]
     | ForStmt f -> [
-        Line ("for " ^ opt_for_init_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ") {");
-        Block(stmt_to_s f.body);
-        Line ("}")
+        Line ("for (" ^ opt_for_init_to_s f.init ^ "; " ^ opt_exp_to_s f.cond ^ "; " ^ opt_exp_to_s f.inc ^ ")");
       ]
+      @ block (f.body)
     | WhileStmt {cond=b; body=s} -> [
         Line ("while (" ^ exp_to_s b ^ ") {");
         Block (stmt_to_s s);
@@ -986,21 +1185,20 @@ let stmt_to_s ?(modifier:bool=true) ?(provenance:bool=false) : c_stmt -> PPrint.
       [ Line ("case " ^ exp_to_s c.case ^ ":"); Block(stmt_to_s c.body) ]
     | DefaultStmt d ->
       [ Line ("default:"); Block(stmt_to_s d) ]
-    | IfStmt {cond=b; then_stmt=s1; else_stmt=CompoundStmt[]} -> [
-        Line ("if (" ^ exp_to_s b ^ ") {");
-        Block (stmt_to_s s1);
-        Line "}";
-      ]
-    | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} -> [
-        Line ("if (" ^ exp_to_s b ^ ") {");
-        Block (stmt_to_s s1);
-        Line "} else {";
-        Block (stmt_to_s s2);
-        Line "}"
-      ]
+    | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
+      let s1 = stmt_to_s s1 in
+      let s2 = stmt_to_s s2 in
+      if s1 = [] && s2 = [] then []
+      else
+        [Line ("if (" ^ exp_to_s b ^ ")")] @
+        ret s1 @
+        (if s2 = [] then [] else [ Line "else"; ] @ ret s2)
     | CompoundStmt [] -> []
-    | CompoundStmt l -> [Line "{"; Block (List.concat_map stmt_to_s l); Line "}"]
+    | CompoundStmt l ->
+      let l = List.concat_map stmt_to_s l in
+      if l = [] then [] else ret l
     | DeclStmt [] -> []
+    | DeclStmt [d] -> [Line ("decl " ^ decl_to_s d)]
     | DeclStmt d -> [Line "decl {"; Block (List.map (fun e -> Line (decl_to_s e)) d); Line "}"]
     | SExp e -> [Line (exp_to_s e)]
   in
@@ -1018,7 +1216,7 @@ let type_param_to_s (p:c_type_param) : string =
   in
   var_name name
 
-let kernel_to_s ?(modifier:bool=true) ?(provenance:bool=false) (k:c_kernel) : PPrint.t list =
+let kernel_to_s ?(modifier:bool=false) ?(provenance:bool=false) (k:c_kernel) : PPrint.t list =
   let tps = if k.type_params <> [] then "[" ^
       list_to_s type_param_to_s k.type_params ^
     "]" else ""
@@ -1031,16 +1229,16 @@ let kernel_to_s ?(modifier:bool=true) ?(provenance:bool=false) (k:c_kernel) : PP
   @
   stmt_to_s ~modifier ~provenance k.code
 
-let def_to_s ?(modifier:bool=true) ?(provenance:bool=false) (d:c_def) : PPrint.t list =
+let def_to_s ?(modifier:bool=false) ?(provenance:bool=false) (d:c_def) : PPrint.t list =
   let open PPrint in
   match d with
   | Declaration d -> [Line (type_to_str d.ty ^ " " ^ var_name d.name ^ ";")]
   | Kernel k -> kernel_to_s ~modifier ~provenance k
 
-let program_to_s ?(modifier:bool=true) ?(provenance:bool=false) (p:c_program) : PPrint.t list =
+let program_to_s ?(modifier:bool=false) ?(provenance:bool=false) (p:c_program) : PPrint.t list =
   List.concat_map (fun k -> def_to_s ~modifier ~provenance k @ [Line ""]) p
 
-let print_program ?(modifier:bool=true) ?(provenance:bool=false) (p:c_program) : unit =
+let print_program ?(modifier:bool=false) ?(provenance:bool=false) (p:c_program) : unit =
   PPrint.print_doc (program_to_s ~modifier ~provenance p)
 
 
