@@ -144,16 +144,14 @@ let rec inst_to_s (racuda : bool) : inst -> PPrint.t list = function
     let x = var_name r.range_var in
     let n_to_s = if racuda then n_to_s else PPrint.n_to_s in
     let lb, ub, op = match r.range_dir with
-      | Increase -> n_to_s r.range_lower_bound,
-                    n_to_s r.range_upper_bound,
-                    " < "
-      | Decrease -> n_minus r.range_upper_bound (Num 1) |> n_to_s,
-                    n_minus r.range_lower_bound (Num 1) |> n_to_s,
+      | Increase -> r.range_lower_bound, r.range_upper_bound, " < "
+      | Decrease -> n_plus (Num (-1)) r.range_upper_bound |> Constfold.n_opt,
+                    n_plus (Num (-1)) r.range_lower_bound |> Constfold.n_opt,
                     " > "
     in
     [ 
-      Line ("for (" ^ "int " ^ x ^ " = " ^ lb ^ "; " ^ x
-            ^ op ^ ub ^ "; " ^ inc_to_s r n_to_s ^ ") {");
+      Line ("for (" ^ "int " ^ x ^ " = " ^ n_to_s lb ^ "; " ^ x
+            ^ op ^ n_to_s ub ^ "; " ^ inc_to_s r n_to_s ^ ") {");
       Block (List.map (inst_to_s racuda) p |> List.flatten);
       Line "}"
     ]
