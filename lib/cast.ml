@@ -285,7 +285,7 @@ type c_kernel = {
 
 type c_def =
   | Kernel of c_kernel
-  | Declaration of c_var
+  | Declaration of c_decl
 
 type c_program = c_def list
 
@@ -684,7 +684,7 @@ let parse_decl (j:json) : c_decl option j_result =
       (
         let* o = cast_object j in
         let* k = get_kind o in
-        Ok (match k with 
+        Ok (match k with
           | "CUDASharedAttr" -> true
           | _ -> false
         )
@@ -1013,11 +1013,7 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
   | "VarDecl" ->
     (match parse_decl j with
     | Ok (Some d) ->
-      Ok (
-        if List.mem c_attr_shared d.attrs
-        then [Declaration {name=d.name; ty=d.ty}]
-        else []
-      )
+      Ok ([Declaration d])
     | _ -> Ok [])
   | "LinkageSpecDecl"
   | "NamespaceDecl" ->
@@ -1128,7 +1124,11 @@ let decl_to_s (d: c_decl): string =
     | Some e -> " = " ^ init_to_s e
     | None -> ""
   in
-  var_name d.name ^ i
+  let attr = if d.attrs = [] then "" else
+    let attrs = Common.join " " d.attrs |> String.trim in
+    attrs ^ " "
+  in
+  attr ^ type_to_str d.ty ^ " " ^ var_name d.name ^ i
 
 
 let for_init_to_s (f:c_for_init) : string =
@@ -1232,7 +1232,7 @@ let kernel_to_s ?(modifier:bool=false) ?(provenance:bool=false) (k:c_kernel) : P
 let def_to_s ?(modifier:bool=false) ?(provenance:bool=false) (d:c_def) : PPrint.t list =
   let open PPrint in
   match d with
-  | Declaration d -> [Line (type_to_str d.ty ^ " " ^ var_name d.name ^ ";")]
+  | Declaration d -> [Line (decl_to_s d ^ ";")]
   | Kernel k -> kernel_to_s ~modifier ~provenance k
 
 let program_to_s ?(modifier:bool=false) ?(provenance:bool=false) (p:c_program) : PPrint.t list =

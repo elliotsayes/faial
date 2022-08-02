@@ -84,7 +84,7 @@ type d_kernel = {
 
 type d_def =
   | Kernel of d_kernel
-  | Declaration of d_var
+  | Declaration of d_decl
 
 type d_program = d_def list
 
@@ -542,7 +542,9 @@ let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
 let rewrite_def (d:Cast.c_def) : d_def =
   match d with
   | Kernel k -> Kernel (rewrite_kernel k)
-  | Declaration d -> Declaration d
+  | Declaration d ->
+    let (pre, d) = rewrite_decl d in
+    Declaration d
 
 let rewrite_program: Cast.c_program -> d_program =
   List.map rewrite_def
@@ -636,7 +638,11 @@ let decl_to_s (d: d_decl): string =
     | Some e -> " = " ^ init_to_s e
     | None -> ""
   in
-  var_name d.name ^ i
+  let attr = if d.attrs = [] then "" else
+    let attrs = Common.join " " d.attrs |> String.trim in
+    attrs ^ " "
+  in
+  attr ^ Cast.type_to_str d.ty ^ " " ^ var_name d.name ^ i
 
 let subscript_to_s (s:d_subscript) : string =
   var_name s.name ^ "[" ^ list_to_s exp_to_s s.index ^ "]"
@@ -766,7 +772,7 @@ let kernel_to_s (k:d_kernel) : PPrint.t list =
 let def_to_s (d:d_def) : PPrint.t list =
   let open PPrint in
   match d with
-  | Declaration d -> [Line (Cast.type_to_str d.ty ^ " " ^ var_name d.name ^ ";")]
+  | Declaration d -> [Line (decl_to_s d ^ ";")]
   | Kernel k -> kernel_to_s k
 
 let program_to_s (p:d_program) : PPrint.t list =

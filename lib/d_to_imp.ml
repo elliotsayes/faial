@@ -708,9 +708,19 @@ let parse_shared (s:Dlang.d_stmt) : (variable * array_t) list =
       | _ -> [])
   | _ -> []
 
-let parse_kernel (shared_params:(variable * array_t) list) (k:Dlang.d_kernel) : Imp.p_kernel d_result =
+let parse_kernel
+  (shared_params:(variable * array_t) list)
+  (globals:variable list)
+  (assigns:(variable * nexp) list)
+  (k:Dlang.d_kernel)
+: Imp.p_kernel d_result =
   let* code = parse_stmt k.code in
   let* (params, arrays) = parse_params k.params in
+  let params =
+    globals
+    |> VarSet.of_list
+    |> VarSet.union params
+  in 
   let shared = parse_shared k.code
     |> Common.append_rev shared_params
     |> Exp.list_to_var_map in
@@ -729,7 +739,10 @@ let parse_kernel (shared_params:(variable * array_t) list) (k:Dlang.d_kernel) : 
   Ok {
     p_kernel_name = k.name;
     p_kernel_pre = Exp.b_true; (* TODO: implement this *)
-    p_kernel_code = cuda_preamble (Block code);
+    p_kernel_code = ( 
+      let assigns = Decl (List.map (fun (k,v) -> (k, Global, Some v)) assigns) in
+      cuda_preamble (Block (assigns :: code))
+    );
     p_kernel_params = add_type_params params k.type_params;
     p_kernel_arrays = VarMap.union 
       (fun k l r -> Some r)
@@ -737,21 +750,42 @@ let parse_kernel (shared_params:(variable * array_t) list) (k:Dlang.d_kernel) : 
   }
 
 let parse_program (p:Dlang.d_program) : Imp.p_kernel list d_result =
-  let rec parse_p (params:(variable * array_t) list) (p:Dlang.d_program) : Imp.p_kernel list d_result =
+  let rec parse_p
+    (arrays:(variable * array_t) list)
+    (globals:variable list)
+    (assigns:(variable * nexp) list)
+    (p:Dlang.d_program)
+  : Imp.p_kernel list d_result =
     match p with
     | Declaration v :: l ->
-      let params = match Cast.parse_type v.ty with
-        | Ok ty -> (v.name, mk_array SharedMemory ty)::params
-        | _ -> params
+      let (arrays, globals, assigns) =
+          match Cast.parse_type v.ty with
+          | Ok ty ->
+            if List.mem Cast.c_attr_shared v.attrs then
+              (v.name, mk_array SharedMemory ty)::arrays, globals, assigns
+            else if Ctype.is_int ty then
+              let g = match v.init with
+              | Some (IExp n) ->
+                (match parse_exp n with
+                | Ok n -> Unknown.try_to_nexp n
+                | Error _ -> None) 
+              | _ -> None
+              in
+              match g with
+              | Some g -> arrays, globals, (v.name, g) :: assigns
+              | None -> arrays, v.name :: globals, assigns
+            else
+              arrays, globals, assigns
+          | Error _ -> arrays, globals, assigns
       in
-      parse_p params l
+      parse_p arrays globals assigns l
     | Kernel k :: l ->
-      let* ks = parse_p params l in
+      let* ks = parse_p arrays globals assigns l in
       if KernelAttr.is_global k.attribute then
-        let* k = parse_kernel params k in
+        let* k = parse_kernel arrays globals assigns k in
         Ok (k::ks)
       else
         Ok ks
     | [] -> Ok []
   in
-  parse_p [] p
+  parse_p [] [] [] p
