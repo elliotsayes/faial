@@ -35,16 +35,57 @@ type c_exp =
 and c_binary = {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
 and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type}
 
-type c_init =
-  | InitListExpr of {ty: c_type; args: c_exp list}
-  | IExp of c_exp
+module Init = struct
+  type t =
+    | InitListExpr of {ty: c_type; args: c_exp list}
+    | IExp of c_exp
+  let map_expr (f:c_exp -> c_exp) : t -> t =
+    function
+    | InitListExpr {ty=ty; args=l} ->
+      InitListExpr {ty=ty; args=List.map f l}
+    | IExp e -> IExp (f e)
+end
 
-type c_decl = {
-  name: variable;
-  ty: c_type;
-  init: c_init option;
-  attrs: string list
-}
+type c_init = Init.t
+
+let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* ty = with_field "qualType" cast_string o in
+  Ok (Ctype.make ty)
+
+
+let c_attr (k:string) : string =
+  " __attribute__((" ^ k ^ "))"
+
+let c_attr_shared = c_attr "shared"
+let c_attr_global = c_attr "global"
+let c_attr_device = c_attr "device"
+
+module Decl = struct
+  type t = {
+    name: variable;
+    ty: c_type;
+    init: c_init option;
+    attrs: string list
+  }
+  let name (x:t) : variable = x.name
+  let ty (x:t) : c_type = x.ty
+  let init (x:t) : c_init option = x.init
+  let attrs (x:t) : string list = x.attrs  
+  let is_shared (x:t) : bool =
+    List.mem c_attr_shared x.attrs
+
+  let map_expr (f: c_exp -> c_exp) (x:t) : t =
+    { x with init=x.init |> Option.map (Init.map_expr f) }
+
+  let is_array (x:t) : bool =
+    match parse_type x.ty with
+    | Ok ty -> Ctype.is_array ty
+    | Error _ -> false    
+end
+
+type c_decl = Decl.t
 
 type c_for_init =
   | ForDecl of c_decl list
@@ -140,6 +181,45 @@ module VisitExp = struct
     | EnumConstantDecl e -> f (EnumConstantDecl e)
     | UnresolvedLookupExpr e ->
       f (UnresolvedLookup {name=e.name; tys=e.tys})
+
+  let rec map (f: c_exp -> c_exp) (e: c_exp) : c_exp =
+    let ret : c_exp -> c_exp = map f in 
+    match e with
+      | FloatingLiteral _
+      | IntegerLiteral _
+      | ParmVarDecl _
+      | CharacterLiteral _
+      | FunctionDecl _
+      | NonTypeTemplateParmDecl _
+      | CXXMethodDecl _ 
+      | VarDecl _
+      | EnumConstantDecl _
+      | RecoveryExpr _
+      | SizeOfExpr _
+      | UnresolvedLookupExpr _
+      | CXXBoolLiteralExpr _
+        -> f e
+      | CXXNewExpr {arg=a; ty=ty} ->
+        f (CXXNewExpr {arg=ret a; ty=ty})
+      | CXXDeleteExpr {arg=a; ty=ty} ->
+        f (CXXDeleteExpr {arg=ret a; ty=ty})
+      | ArraySubscriptExpr {lhs=e1; rhs=e2; ty=ty} ->
+        f (ArraySubscriptExpr {lhs=ret e1; rhs=ret e2; ty=ty})
+      | BinaryOperator {opcode=o; lhs=e1; rhs=e2; ty=ty} ->
+        f (BinaryOperator {opcode=o; lhs=ret e1; rhs=ret e2; ty=ty})
+      | CallExpr {func=e; args=l; ty=ty} ->
+        f (CallExpr {func=f e; args=List.map ret l; ty=ty})
+      | ConditionalOperator {cond=e1;then_expr=e2;else_expr=e3; ty=ty} ->
+        f (ConditionalOperator {cond=f e1;then_expr=ret e2;else_expr=ret e3; ty=ty})
+      | CXXConstructExpr  {args=l; ty=ty} ->
+        f (CXXConstructExpr {args=List.map ret l; ty=ty})
+      | CXXOperatorCallExpr {func=e; args=l; ty=ty} ->
+        f (CXXOperatorCallExpr {func=ret e; args=List.map ret l; ty=ty})
+      | MemberExpr {name=x; base=e; ty=ty} ->
+        f (MemberExpr {name=x; base=ret e; ty=ty})
+      | UnaryOperator {opcode=o; child=e; ty=ty} ->
+        f (UnaryOperator {opcode=o; child=ret e; ty=ty})
+
 end
 
 module VisitStmt = struct
@@ -210,6 +290,7 @@ module VisitStmt = struct
       | Decl d ->
         List.to_seq d
         |> Seq.concat_map (fun d ->
+          let open Decl in
           Option.to_seq d.init
           |> Seq.concat_map init_to_expr 
         )
@@ -223,7 +304,7 @@ module VisitStmt = struct
         |> Seq.concat_map (function
           | ForDecl l ->
             List.to_seq l
-            |> Seq.concat_map (fun x -> Option.to_seq x.init |> Seq.concat_map init_to_expr) 
+            |> Seq.concat_map (fun x -> Option.to_seq (Decl.init x) |> Seq.concat_map init_to_expr) 
           | ForExp e -> Seq.return e
         )
       | Default s -> s
@@ -237,13 +318,6 @@ type c_param = {name: variable; is_used: bool; is_shared: bool; ty: c_type}
 type c_type_param =
   | PTemplateTypeParmDecl of variable
   | PNonTypeTemplateParmDecl of {name: variable; ty: c_type} 
-
-let c_attr (k:string) : string =
-  " __attribute__((" ^ k ^ "))"
-
-let c_attr_shared = c_attr "shared"
-let c_attr_global = c_attr "global"
-let c_attr_device = c_attr "device"
 
 module KernelAttr = struct
   type t =
@@ -649,10 +723,12 @@ let rec parse_init (j:json) : c_init j_result =
   | "InitListExpr" ->
     let* ty = get_field "type" o in
     let* args = with_field_or "inner" (cast_map parse_exp) [] o in
+    let open Init in
     Ok (InitListExpr {ty=ty; args=args})
 
   | _ ->
     let* e = parse_exp j in
+    let open Init in
     Ok (IExp e)
 
 let parse_attr (j:Yojson.Basic.t) : string j_result =
@@ -703,7 +779,7 @@ let parse_decl (j:json) : c_decl option j_result =
       let open StackTrace in
       Error (Because (("Field 'init'", j), RootCause (msg, `List inner)))
     in
-    Ok (Some {name=v; ty=ty; init=init; attrs=attrs})
+    Ok (Some {Decl.name=v; Decl.ty=ty; Decl.init=init; Decl.attrs=attrs})
   )
 
 let parse_for_init (j:json) : c_for_init j_result =
@@ -869,12 +945,6 @@ let wrap_error (msg:string) (j:Yojson.Basic.t): 'a j_result -> 'a j_result =
     function
     | Ok e -> Ok e
     | Error e -> Rjson.because msg j e
-
-let parse_type (j:Yojson.Basic.t) : Ctype.t j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* ty = with_field "qualType" cast_string o in
-  Ok (Ctype.make ty)
 
 
 let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j_result =
@@ -1242,3 +1312,110 @@ let print_program ?(modifier:bool=false) ?(provenance:bool=false) (p:c_program) 
   PPrint.print_doc (program_to_s ~modifier ~provenance p)
 
 
+(* ------------------------------------------------- *)
+
+let rewrite_shared_arrays: c_program -> c_program =
+  (* Rewrites expressions: when it finds a variable that has been defined as
+     a shared variable, we replace that by an array subscript:
+     x becomes x[0] *)
+  let rw_exp (vars:VarSet.t) (e:c_exp) : c_exp =
+    e |> VisitExp.map (fun e ->
+      print_endline (exp_to_s e); 
+      match e with
+      | VarDecl x ->
+        if VarSet.mem x.name vars
+        then ArraySubscriptExpr {lhs=VarDecl x; rhs=IntegerLiteral 0; ty=x.ty}
+        else e
+      | _ -> e)
+  in
+  (* When rewriting a variable declaration, we must return as the side-effect
+     the shadowing of the available variables when it makes sense *) 
+  let rw_decl (vars:VarSet.t) (d:Decl.t) : VarSet.t * Decl.t =
+    let vars =
+      if Decl.is_shared d && not (Decl.is_array d) then
+        VarSet.add d.name vars
+      else
+        VarSet.remove d.name vars
+    in
+    (vars, Decl.map_expr (rw_exp vars) d)
+  in
+  (* This is just a monadic map *)
+  let rec rw_list: 'a. (VarSet.t -> 'a -> VarSet.t * 'a) -> VarSet.t -> 'a list -> VarSet.t * 'a list =
+    fun f vars l ->
+      if VarSet.is_empty vars then
+        (vars, l)
+      else
+        match l with
+        | [] -> (vars, [])
+        | x :: l ->
+          let (vars, x) = f vars x in
+          if VarSet.is_empty vars then
+            (vars, x::l)
+          else
+            let (vars, l) = rw_list f vars l in
+            (vars, x::l)
+  in
+  (* We now rewrite statements *)
+  let rw_stmt (vars:VarSet.t) (s:c_stmt) : c_stmt =
+    let rec rw_s (vars:VarSet.t) (s: c_stmt) : VarSet.t * c_stmt =
+      let ret (s: c_stmt) : c_stmt = rw_s vars s |> snd in
+      let rw_e: c_exp -> c_exp = rw_exp vars in
+      if VarSet.is_empty vars then (vars, s) else
+      match s with
+      | BreakStmt
+      | GotoStmt
+      | ReturnStmt
+      | ContinueStmt
+        -> (vars, s)
+      | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
+        (vars, IfStmt {cond=rw_e c; then_stmt=ret s1; else_stmt=ret s2})
+      | CompoundStmt l ->
+        (* This is one of the interesting cases, since we
+           propagate scoping through the monadic map (rw_list). *)
+        (vars, CompoundStmt (rw_list rw_s vars l |> snd))
+      | DeclStmt l ->
+        (* Variable declaration introduces a scope *)
+        let (vars, l) = rw_list rw_decl vars l in
+        (vars, DeclStmt l)
+      | WhileStmt {cond=e; body=s} ->
+        (vars, WhileStmt {cond=rw_e e; body=ret s})
+      | ForStmt {init=e1; cond=e2; inc=e3; body=s} ->
+        (* The init may create a scope *)
+        let (vars_body, e1) = match e1 with
+        | None -> (vars, None)
+        | Some (ForDecl l) ->
+          let (vars, l) = rw_list rw_decl vars l in
+          (vars, Some (ForDecl l))
+        | Some (ForExp e) -> (vars, Some (ForExp (rw_e e)))
+        in
+        if VarSet.is_empty vars_body then
+          (vars, ForStmt {init=e1; cond=e2; inc=e3; body=s})
+        else
+          let e2 = Option.map (rw_exp vars_body) e2 in
+          let e3 = Option.map (rw_exp vars_body) e3 in
+          (vars, ForStmt {init=e1; cond=e2; inc=e3; body=rw_s vars_body s |> snd})
+      | DoStmt {cond=e; body=s} ->
+        (vars, DoStmt {cond=rw_e e; body=ret s})
+      | SwitchStmt {cond=e; body=s} ->
+        (vars, SwitchStmt {cond=rw_e e; body=ret s})
+      | DefaultStmt s ->
+        (vars, DefaultStmt (ret s))
+      | CaseStmt  {case=e; body=s} ->
+        (vars, CaseStmt {case=rw_e e; body=ret s})
+      | SExp e ->
+        (vars, SExp (rw_e e))
+    in
+    rw_s vars s |> snd
+  in
+  let rec rw_p (vars:VarSet.t): c_program -> c_program =
+    function
+    | Declaration d :: p ->
+      let vars = if Decl.is_shared d && not (Decl.is_array d)
+        then VarSet.add d.name vars
+        else vars
+      in
+      Declaration d :: rw_p vars p
+    | Kernel k :: p -> Kernel { k with code = rw_stmt vars k.code } :: rw_p vars p
+    | [] -> []
+  in
+  rw_p VarSet.empty

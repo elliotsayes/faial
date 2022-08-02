@@ -56,6 +56,7 @@ let parse_from_ctj ic : Imp.p_kernel list =
   let j = Yojson.Basic.from_channel ic in
   match Cast.parse_program j with
   | Ok k1 ->
+    let k1 = Cast.rewrite_shared_arrays k1 in
     let k2 = Dlang.rewrite_program k1 in
       (match D_to_imp.parse_program k2 with
       | Ok k3 -> k3

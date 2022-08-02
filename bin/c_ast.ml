@@ -9,6 +9,7 @@ let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kern
   let open D_to_imp in
   match Cast.parse_program j with
   | Ok k1 ->
+    let k1 = Cast.rewrite_shared_arrays k1 in
     let k2 = Dlang.rewrite_program k1 in
       (match D_to_imp.parse_program k2 with
       | Ok k3 -> (k1, k2, k3)
