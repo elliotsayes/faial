@@ -278,9 +278,11 @@ module PPrint = struct
     match b with
     | Pred _
     | Bool _
-    | NRel _ -> b_to_s b
     | BNot _
-    | BRel _ -> "("  ^ b_to_s b ^ ")"
+      -> b_to_s b
+    | BRel _
+    | NRel _
+      -> "("  ^ b_to_s b ^ ")"
 
   let print_n (n:nexp) : unit =
     print_string (n_to_s n)
