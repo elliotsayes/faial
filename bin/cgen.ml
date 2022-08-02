@@ -172,8 +172,8 @@ let remove_template (s : string) : string =
 (* Replaces the type of each array with a compatible alternative *)
 let mk_types_compatible
     (arrays : array_t VarMap.t)
-    (racuda : bool) : array_t VarMap.t
-  =
+    (racuda : bool)
+  : array_t VarMap.t =
   let rec convert_type (racuda_shared : bool) : string list -> string list =
     function
     | [] -> []
@@ -251,8 +251,8 @@ let arr_to_shared (vm : array_t VarMap.t) : PPrint.t list =
 
 let local_var_to_l (vs : VarSet.t) : PPrint.t list =
   (* A local variable must not be a tid/dummy variable *)
-  VarSet.filter (fun v -> not (VarSet.mem v thread_locals ||
-                               String.starts_with "__dummy" (var_name v))) vs
+  VarSet.diff vs thread_locals
+  |> VarSet.filter (fun v -> not (String.starts_with "__dummy" (var_name v)))
   |> VarSet.elements
   (* Use a single function to initialize all local variables *)
   |> List.map (fun v -> PPrint.Line ("int " ^ var_name v ^ " = __dummy_int();"))
@@ -262,39 +262,34 @@ let arr_to_dummy (vm : array_t VarMap.t) : PPrint.t list =
   |> List.map (fun (k, v) -> 
       PPrint.Line (arr_type v true ^ " " ^ var_to_dummy k ^ ";"))
 
-let body_to_s
-    (f : 'a -> PPrint.t list)
-    (arrays : array_t VarMap.t)
-    (locals : VarSet.t)
-    (code : 'a) : PPrint.t
-  =
+let body_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) : PPrint.t =
   let shared_arr = arr_to_shared (VarMap.filter (fun k -> fun v ->
-      v.array_hierarchy = SharedMemory) arrays) in
-  let local_var = local_var_to_l locals in
-  let dummy_var = arr_to_dummy arrays in
-  PPrint.Block (shared_arr @ local_var @ dummy_var @ (f code))
+      v.array_hierarchy = SharedMemory) k.kernel_arrays) in
+  let local_var = local_var_to_l k.kernel_local_variables in
+  let dummy_var = arr_to_dummy k.kernel_arrays in
+  PPrint.Block (shared_arr @ local_var @ dummy_var @ (f k.kernel_code))
 
 (* Serialization of the kernel *)
 let kernel_to_s
     (f : 'a -> PPrint.t list)
     (k : 'a kernel)
-    (racuda : bool) : PPrint.t list
-  =
+    (racuda : bool)
+  : PPrint.t list =
   let open PPrint in
-  let arrays = mk_types_compatible k.kernel_arrays racuda in
-  let type_decls = if racuda then [] else declare_unknown_types arrays in
-  let funct_protos = (base_protos racuda) @
-                     (arr_to_proto arrays racuda) in
+  let k = {k with kernel_arrays = mk_types_compatible k.kernel_arrays racuda} in
+  let type_decls = if racuda then []
+    else declare_unknown_types k.kernel_arrays in
+  let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
   let k_name = if k.kernel_name = "main" then "kernel" else k.kernel_name in
   let global_arr = global_arr_to_l (VarMap.filter (fun k -> fun v ->
-      v.array_hierarchy = GlobalMemory) arrays) in
+      v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
   let global_var = global_var_to_l k.kernel_global_variables in
   [
     Line (join "\n" (type_decls @ funct_protos));
     Line "__global__";
     Line ("void " ^ k_name ^ "(" ^ join ", " (global_arr @ global_var) ^ ")");
     Line "{";
-    (body_to_s f arrays k.kernel_local_variables k.kernel_code);
+    (body_to_s f k);
     Line "}"
   ]
 
@@ -308,25 +303,24 @@ let print_k (k : prog kernel) (racuda : bool) : unit =
 open Toml.Min
 open Toml.Types
 
-let arrays_to_l (vm : array_t VarMap.t) : table list =
+let arrays_to_l (vm : array_t VarMap.t) : Toml.Types.table list =
   VarMap.bindings vm
   |> List.map (fun (k, v) ->
       of_key_values [key (var_name k), TString (arr_type v false)])
 
-let scalars_to_l (vs : VarSet.t) : table list =
+let scalars_to_l (vs : VarSet.t) : Toml.Types.table list =
   VarSet.elements (VarSet.diff vs thread_globals)
   |> List.map (fun v -> of_key_values [key (var_name v), TString "int"])
 
-let kernel_to_toml (k : prog kernel) (racuda : bool) : table =
-  let arrays = mk_types_compatible k.kernel_arrays racuda in
-  let body = [body_to_s (prog_to_s racuda) arrays
-                k.kernel_local_variables k.kernel_code] in
-  let type_decls = if racuda then [] else declare_unknown_types arrays in
-  let funct_protos = (base_protos racuda) @
-                     (arr_to_proto arrays racuda) in
+let kernel_to_toml (k : 'a kernel) (racuda : bool) : Toml.Types.table =
+  let k = {k with kernel_arrays = mk_types_compatible k.kernel_arrays racuda} in
+  let body = [body_to_s (prog_to_s racuda) k] in
+  let type_decls = if racuda then []
+    else declare_unknown_types k.kernel_arrays in
+  let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
   let header = type_decls @ funct_protos in
-  let global_arr = (VarMap.filter (fun k -> fun v ->
-      v.array_hierarchy = GlobalMemory) arrays) in
+  let global_arr = VarMap.filter (fun k -> fun v ->
+      v.array_hierarchy = GlobalMemory) k.kernel_arrays in
   let open PPrint in
   [
     key "body", TString (doc_to_string (Line "" :: body));
@@ -338,5 +332,5 @@ let kernel_to_toml (k : prog kernel) (racuda : bool) : table =
   ]
   |> of_key_values
 
-let print_toml (table : table) : unit =
+let print_toml (table : Toml.Types.table) : unit =
   print_string (Toml.Printer.string_of_table table)
