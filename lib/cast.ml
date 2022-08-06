@@ -1319,8 +1319,8 @@ let rewrite_shared_arrays: c_program -> c_program =
      a shared variable, we replace that by an array subscript:
      x becomes x[0] *)
   let rw_exp (vars:VarSet.t) (e:c_exp) : c_exp =
+    if VarSet.is_empty vars then e else
     e |> VisitExp.map (fun e ->
-      print_endline (exp_to_s e); 
       match e with
       | VarDecl x ->
         if VarSet.mem x.name vars
@@ -1342,25 +1342,18 @@ let rewrite_shared_arrays: c_program -> c_program =
   (* This is just a monadic map *)
   let rec rw_list: 'a. (VarSet.t -> 'a -> VarSet.t * 'a) -> VarSet.t -> 'a list -> VarSet.t * 'a list =
     fun f vars l ->
-      if VarSet.is_empty vars then
-        (vars, l)
-      else
         match l with
         | [] -> (vars, [])
         | x :: l ->
           let (vars, x) = f vars x in
-          if VarSet.is_empty vars then
-            (vars, x::l)
-          else
-            let (vars, l) = rw_list f vars l in
-            (vars, x::l)
+          let (vars, l) = rw_list f vars l in
+          (vars, x::l)
   in
   (* We now rewrite statements *)
   let rw_stmt (vars:VarSet.t) (s:c_stmt) : c_stmt =
     let rec rw_s (vars:VarSet.t) (s: c_stmt) : VarSet.t * c_stmt =
       let ret (s: c_stmt) : c_stmt = rw_s vars s |> snd in
       let rw_e: c_exp -> c_exp = rw_exp vars in
-      if VarSet.is_empty vars then (vars, s) else
       match s with
       | BreakStmt
       | GotoStmt
@@ -1388,12 +1381,9 @@ let rewrite_shared_arrays: c_program -> c_program =
           (vars, Some (ForDecl l))
         | Some (ForExp e) -> (vars, Some (ForExp (rw_e e)))
         in
-        if VarSet.is_empty vars_body then
-          (vars, ForStmt {init=e1; cond=e2; inc=e3; body=s})
-        else
-          let e2 = Option.map (rw_exp vars_body) e2 in
-          let e3 = Option.map (rw_exp vars_body) e3 in
-          (vars, ForStmt {init=e1; cond=e2; inc=e3; body=rw_s vars_body s |> snd})
+        let e2 = Option.map (rw_exp vars_body) e2 in
+        let e3 = Option.map (rw_exp vars_body) e3 in
+        (vars, ForStmt {init=e1; cond=e2; inc=e3; body=rw_s vars_body s |> snd})
       | DoStmt {cond=e; body=s} ->
         (vars, DoStmt {cond=rw_e e; body=ret s})
       | SwitchStmt {cond=e; body=s} ->
