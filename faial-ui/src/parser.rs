@@ -444,7 +444,7 @@ impl TryFrom<Atom> for AccessMode {
 struct TaskBuilder {
     tid:Tid,
     prefix:String,
-    indices:HashMap<i32, i32>,
+    indices:HashMap<usize, String>,
     variables:HashMap<String,Atom>,
     mode: Option<AccessMode>,
     location_id: Option<usize>,
@@ -477,15 +477,15 @@ impl TaskBuilder {
         self.mode = Some(m)
     }
 
-    fn add_index(&mut self, index:i32, value:i32) {
+    fn add_index(&mut self, index:usize, value:String) {
         self.indices.insert(index, value);
     }
 
-    fn get_indices(&self) -> Result<Vec<i32>,String> {
-        let mut indices : Vec<i32> = Vec::new();
+    fn get_indices(&self) -> Result<Vec<String>,String> {
+        let mut indices : Vec<String> = Vec::new();
         for i in 0..self.indices.len() {
-            match &self.indices.get(&(i as i32)) {
-                Some(n) => indices.push(*n.clone()),
+            match &self.indices.get(&i) {
+                Some(n) => indices.push(n.to_string()),
                 None => return Err(format!("When building task {:?} missing index {}", self.tid, i)),
             }
         }
@@ -515,10 +515,10 @@ impl Task {
 
 impl TaskBuilder {
     fn build(self) -> Result<Task,String> {
-        let mut indices : Vec<i32> = Vec::new();
+        let mut indices : Vec<String> = Vec::new();
         for i in 0..self.indices.len() {
-            match &self.indices.get(&(i as i32)) {
-                Some(n) => indices.push(*n.clone()),
+            match &self.indices.get(&i) {
+                Some(n) => indices.push(n.to_string()),
                 None => return Err(format!("When building task {:?} missing index {}", self.tid, i)),
             }
         }
@@ -538,7 +538,7 @@ struct DataRace {
     t1: Task,
     t2: Task,
     array: String,
-    indices: Vec<i32>,
+    indices: Vec<String>,
     globals: HashMap<String, Atom>,
 }
 
@@ -578,7 +578,7 @@ impl DataRaceBuilder {
         self.get(t).set_mode(m);
     }
 
-    fn add_index(&mut self, t:Tid, index:i32, value:i32) {
+    fn add_index(&mut self, t:Tid, index:usize, value:String) {
         self.get(t).add_index(index, value);
     }
 
@@ -654,8 +654,8 @@ impl TryFrom<Model> for DataRace {
                 // (define-fun $T2$idx$0 () Int 1)
                 &[_, tid, _, num] => {
                     let t:Tid = tid.parse()?;
-                    match (num.parse::<i32>(), val) {
-                        (Ok(idx), Atom::I(v))  => b.add_index(t, idx, *v as i32),
+                    match (num.parse::<usize>(), val) {
+                        (Ok(idx), Atom::I(v))  => b.add_index(t, idx, v.to_string()),
                         (x,y) => return Err(format!("Error parsing index task={:?} index={:?} value={}", t, x, y)),
                     }
                 },
@@ -1085,9 +1085,9 @@ fn render_data_race(dr:&DataRace, locs:&Vec<String>) {
         Row::new(vec![
             Cell::new("Array:").with_style(Attr::Bold),
             Cell::new(
-                format!("{}{:?}",
+                format!("{}[{}]",
                     dr.array,
-                    dr.indices
+                    dr.indices.join("][")
                 ).as_str()
             ),
         ])
