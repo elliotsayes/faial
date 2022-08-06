@@ -170,6 +170,9 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
   | BinaryOperator {lhs=l; opcode="&"; rhs=IntegerLiteral 1} ->
     let* n = parse_exp l in
     ret_b (NRel (NEq, NExp (Bin (Mod, n, NExp (Num 2))), NExp (Num 0)))
+
+  | BinaryOperator {opcode="&"; lhs=n1; rhs=BinaryOperator {opcode="-"; lhs=n2; rhs=IntegerLiteral 1}; ty=ty} ->
+    parse_exp (BinaryOperator {opcode="%"; lhs=n1; rhs=n2; ty=ty})
   | BinaryOperator {opcode=o; lhs=n1; rhs=n2} ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
