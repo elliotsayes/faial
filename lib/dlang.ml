@@ -390,6 +390,9 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     let (st, args) = state_map rewrite_exp c.args st in
     (st, CXXConstructExpr {args=args; ty=c.ty})
 
+  | UnaryOperator {child=ArraySubscriptExpr a; opcode="&"; ty=ty} ->
+    rewrite_exp (BinaryOperator{lhs=a.lhs; opcode="+"; rhs=a.rhs; ty=ty})
+
   | UnaryOperator {child=e; opcode=o; ty=ty} ->
     fun st ->
     let (st, e) = rewrite_exp e st in
