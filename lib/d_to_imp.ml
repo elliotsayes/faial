@@ -693,20 +693,36 @@ let mk_array (h:hierarchy_t) (ty:Ctype.t) : array_t =
 
 let parse_shared (s:Dlang.d_stmt) : (variable * array_t) list =
   let open Dlang in
-  match s with
-  | CompoundStmt l ->
-    l |> List.concat_map (function
-      | DeclStmt l ->
-        l |> Common.(map_opt (fun d ->
-          if List.mem Cast.c_attr_shared d.attrs then
-            (match Cast.parse_type d.ty with
-            | Ok ty ->
-              Some (d.name, mk_array SharedMemory ty)
-            | Error _ -> None)
-          else None
-        ))
-      | _ -> [])
-  | _ -> []
+  let rec find_shared (arrays:(variable * array_t) list) (s:d_stmt) : (variable * array_t) list =
+    match s with
+    | DeclStmt l ->
+      Common.map_opt (fun (d:Decl.t) ->
+        Decl.get_shared d
+        |> Option.map (fun a -> (d.name, a))
+      ) l
+      |> Common.append_tr arrays
+    | WriteAccessStmt _
+    | ReadAccessStmt _
+    | GotoStmt
+    | ReturnStmt
+    | ContinueStmt
+    | BreakStmt
+    | SExp _
+      -> arrays
+    | IfStmt {then_stmt=s1; else_stmt=s2} ->
+      let arrays = find_shared arrays s1 in
+      find_shared arrays s2
+    | CompoundStmt l ->
+      List.fold_left find_shared arrays l
+    | ForStmt {body=d}
+    | WhileStmt {body=d}
+    | DoStmt {body=d}
+    | SwitchStmt {body=d}
+    | DefaultStmt d
+    | CaseStmt {body=d}
+      -> find_shared arrays d
+  in
+  find_shared [] s
 
 let parse_kernel
   (shared_params:(variable * array_t) list)
