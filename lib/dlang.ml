@@ -39,12 +39,27 @@ type d_init =
   | InitListExpr of {ty: d_type; args: d_exp list}
   | IExp of d_exp
 
-type d_decl = {
-  name: variable;
-  ty: d_type;
-  init: d_init option;
-  attrs: string list
-}
+module Decl = struct
+  type t = {
+    name: variable;
+    ty: d_type;
+    init: d_init option;
+    attrs: string list
+  }
+  let get_shared (d:t) : Exp.array_t option =
+    if List.mem Cast.c_attr_shared d.attrs
+    then match Cast.parse_type d.ty with
+      | Ok ty ->
+        Some {
+          array_hierarchy = SharedMemory;
+          array_size = Ctype.get_array_length ty;
+          array_type = Ctype.get_array_type ty;
+        }
+      | Error _ -> None
+    else None
+end
+
+type d_decl = Decl.t
 
 type d_for_init =
   | ForDecl of d_decl list
