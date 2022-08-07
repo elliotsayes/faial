@@ -5,7 +5,6 @@ let analyze (j:Yojson.Basic.t) : unit =
   let open D_to_imp in
   match Cast.parse_program j with
   | Ok k1 ->
-    let k1 = Cast.rewrite_shared_arrays k1 in
     let k2 = Dlang.rewrite_program k1 in
        Indexflow.types_program k2
        |> List.iter (fun (name, d) ->
