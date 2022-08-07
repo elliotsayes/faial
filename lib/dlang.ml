@@ -200,7 +200,7 @@ let decl_to_exp (d:d_decl) : d_exp list =
 let for_init_to_exp (f:d_for_init) : d_exp list =
   match f with
   | ForDecl l -> List.fold_left
-    (fun l d -> Common.append_rev (decl_to_exp d) l)
+    (fun l d -> Common.append_rev1 (decl_to_exp d) l)
     []
     l
   | ForExp e -> [e]
@@ -210,14 +210,14 @@ let for_to_exp (f:d_for) : d_exp list =
   let l2 = f.cond |> Option.map (fun x -> [x]) |> Ojson.unwrap_or [] in
   let l3 = f.inc |> Option.map (fun x -> [x]) |> Ojson.unwrap_or [] in
   l1
-  |> Common.append_rev l2
-  |> Common.append_rev l3
+  |> Common.append_rev1 l2
+  |> Common.append_rev1 l3
 
 let for_loop_vars (f:d_for) : variable list =
   let rec exp_var (e:d_exp) : variable list =
     match e with
     | BinaryOperator {lhs=l; opcode=","; rhs=r} ->
-      exp_var l |> Common.append_rev (exp_var r)
+      exp_var l |> Common.append_rev1 (exp_var r)
     | BinaryOperator {lhs=l; opcode="="; rhs=r} ->
       (match get_variable l with
       | Some x -> [x]

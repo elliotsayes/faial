@@ -5,11 +5,11 @@ open Common
 let tests = "tests" >::: [
 
   "app_rev" >:: (fun _ ->
-    assert_equal [4; 3; 2; 1] (append_rev [1;2;3;4] []);
-    assert_equal [3; 2; 1; 4] (append_rev [1;2;3] [4]);
-    assert_equal [2; 1; 3; 4] (append_rev [1;2] [3;4]);
-    assert_equal [1; 2; 3; 4] (append_rev [1] [2;3;4]);
-    assert_equal [1; 2; 3; 4] (append_rev [] [1;2;3;4])
+    assert_equal [4; 3; 2; 1] (append_rev1 [1;2;3;4] []);
+    assert_equal [3; 2; 1; 4] (append_rev1 [1;2;3] [4]);
+    assert_equal [2; 1; 3; 4] (append_rev1 [1;2] [3;4]);
+    assert_equal [1; 2; 3; 4] (append_rev1 [1] [2;3;4]);
+    assert_equal [1; 2; 3; 4] (append_rev1 [] [1;2;3;4])
   );
   "app_tr" >:: (fun _ ->
     assert_equal [1; 2; 3; 4] (append_tr [1;2;3;4] []);
@@ -32,9 +32,10 @@ let tests = "tests" >::: [
     assert (contains ~needle:"abc" "aababc");
   );
   "range" >:: (fun _ ->
-    assert_equal [0] (range 0 0);
-    assert_equal [0;1] (range 0 1);
-    assert_equal [1;2;3] (range 1 3);
+    assert_equal [0] (range 0);
+    assert_equal [0] (range ~from:0 0);
+    assert_equal [0;1] (range 1);
+    assert_equal [1;2;3] (range ~from:1 3);
   );
   "hashtbl_elements" >:: (fun _ ->
     let ht = Hashtbl.create 0 in

@@ -74,7 +74,7 @@ let u_subst = S1.u_subst
 
 let u_seq (u1:u_prog) (u2:u_prog) =
   (* The order of appending doesn't matter for unsync insts *)
-  append_rev u1 u2
+  append_rev1 u1 u2
 
 (* Given a regular program, return a well-formed one *)
 let make_well_formed (p:Proto.prog) : w_prog Streamutil.stream =

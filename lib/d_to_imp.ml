@@ -741,7 +741,7 @@ let parse_kernel
     |> VarSet.union params
   in 
   let shared = parse_shared k.code
-    |> Common.append_rev shared_params
+    |> Common.append_rev1 shared_params
     |> Exp.list_to_var_map in
   let rec add_type_params (params:VarSet.t) : Cast.c_type_param list -> VarSet.t =
     function
