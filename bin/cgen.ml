@@ -41,12 +41,7 @@ let cuda_protos : string list =
   ["extern __device__ int __dummy_int();"]
 
 let racuda_protos : string list =
-  ["extern int __dummy_int();";
-   "extern int __bor(int, int);";
-   "extern int __bxor(int, int);";
-   "extern int __band(int, int);";
-   "extern int __lshift(int, int);";
-   "extern int __rshift(int, int);"]
+  ["extern int __dummy_int();";]
 
 (* ----------------- serialization -------------------- *)
 let join (sep : string) (elems : string list) : string =
@@ -72,15 +67,7 @@ and n_to_s : nexp -> string = function
     "proj(" ^ task_to_string t ^ ", "  ^ var_name x ^ ")"
   | Num n -> string_of_int n
   | Var x -> var_name x
-  | Bin (b, a1, a2) ->
-    begin match b with
-      | BitOr -> "__bor(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
-      | BitXOr -> "__bxor(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
-      | BitAnd -> "__band(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
-      | LeftShift -> "__lshift(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
-      | RightShift -> "__rshift(" ^ n_to_s a1 ^ ", " ^ n_to_s a2 ^ ")"
-      | _ -> n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
-    end
+  | Bin (b, a1, a2) -> n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
   | NCall (x, arg) ->
     x ^ "(" ^ n_to_s arg ^ ")"
   | NIf (b, n1, n2) ->
