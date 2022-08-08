@@ -39,12 +39,27 @@ type d_init =
   | InitListExpr of {ty: d_type; args: d_exp list}
   | IExp of d_exp
 
-type d_decl = {
-  name: variable;
-  ty: d_type;
-  init: d_init option;
-  attrs: string list
-}
+module Decl = struct
+  type t = {
+    name: variable;
+    ty: d_type;
+    init: d_init option;
+    attrs: string list
+  }
+  let get_shared (d:t) : Exp.array_t option =
+    if List.mem Cast.c_attr_shared d.attrs
+    then match Cast.parse_type d.ty with
+      | Ok ty ->
+        Some {
+          array_hierarchy = SharedMemory;
+          array_size = Ctype.get_array_length ty;
+          array_type = Ctype.get_array_type ty;
+        }
+      | Error _ -> None
+    else None
+end
+
+type d_decl = Decl.t
 
 type d_for_init =
   | ForDecl of d_decl list
@@ -84,7 +99,7 @@ type d_kernel = {
 
 type d_def =
   | Kernel of d_kernel
-  | Declaration of d_var
+  | Declaration of d_decl
 
 type d_program = d_def list
 
@@ -185,7 +200,7 @@ let decl_to_exp (d:d_decl) : d_exp list =
 let for_init_to_exp (f:d_for_init) : d_exp list =
   match f with
   | ForDecl l -> List.fold_left
-    (fun l d -> Common.append_rev (decl_to_exp d) l)
+    (fun l d -> Common.append_rev1 (decl_to_exp d) l)
     []
     l
   | ForExp e -> [e]
@@ -195,14 +210,14 @@ let for_to_exp (f:d_for) : d_exp list =
   let l2 = f.cond |> Option.map (fun x -> [x]) |> Ojson.unwrap_or [] in
   let l3 = f.inc |> Option.map (fun x -> [x]) |> Ojson.unwrap_or [] in
   l1
-  |> Common.append_rev l2
-  |> Common.append_rev l3
+  |> Common.append_rev1 l2
+  |> Common.append_rev1 l3
 
 let for_loop_vars (f:d_for) : variable list =
   let rec exp_var (e:d_exp) : variable list =
     match e with
     | BinaryOperator {lhs=l; opcode=","; rhs=r} ->
-      exp_var l |> Common.append_rev (exp_var r)
+      exp_var l |> Common.append_rev1 (exp_var r)
     | BinaryOperator {lhs=l; opcode="="; rhs=r} ->
       (match get_variable l with
       | Some x -> [x]
@@ -375,6 +390,9 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
     let (st, args) = state_map rewrite_exp c.args st in
     (st, CXXConstructExpr {args=args; ty=c.ty})
 
+  | UnaryOperator {child=ArraySubscriptExpr a; opcode="&"; ty=ty} ->
+    rewrite_exp (BinaryOperator{lhs=a.lhs; opcode="+"; rhs=a.rhs; ty=ty})
+
   | UnaryOperator {child=e; opcode=o; ty=ty} ->
     fun st ->
     let (st, e) = rewrite_exp e st in
@@ -542,7 +560,9 @@ let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
 let rewrite_def (d:Cast.c_def) : d_def =
   match d with
   | Kernel k -> Kernel (rewrite_kernel k)
-  | Declaration d -> Declaration d
+  | Declaration d ->
+    let (pre, d) = rewrite_decl d in
+    Declaration d
 
 let rewrite_program: Cast.c_program -> d_program =
   List.map rewrite_def
@@ -636,7 +656,11 @@ let decl_to_s (d: d_decl): string =
     | Some e -> " = " ^ init_to_s e
     | None -> ""
   in
-  var_name d.name ^ i
+  let attr = if d.attrs = [] then "" else
+    let attrs = Common.join " " d.attrs |> String.trim in
+    attrs ^ " "
+  in
+  attr ^ Cast.type_to_str d.ty ^ " " ^ var_name d.name ^ i
 
 let subscript_to_s (s:d_subscript) : string =
   var_name s.name ^ "[" ^ list_to_s exp_to_s s.index ^ "]"
@@ -766,7 +790,7 @@ let kernel_to_s (k:d_kernel) : PPrint.t list =
 let def_to_s (d:d_def) : PPrint.t list =
   let open PPrint in
   match d with
-  | Declaration d -> [Line (Cast.type_to_str d.ty ^ " " ^ var_name d.name ^ ";")]
+  | Declaration d -> [Line (decl_to_s d ^ ";")]
   | Kernel k -> kernel_to_s k
 
 let program_to_s (p:d_program) : PPrint.t list =

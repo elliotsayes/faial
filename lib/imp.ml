@@ -347,7 +347,7 @@ let stmt_to_s: stmt -> PPrint.t list =
     | Block [] -> []
     | Block l -> [Line "{"; Block (List.map stmt_to_s l |> List.flatten); Line "}"]
     | LocationAlias l ->
-      [Line (
+      [Line ("alias " ^
         var_name l.alias_target ^ " = " ^
         var_name l.alias_source ^ " + " ^
         n_to_s l.alias_offset ^ ";"

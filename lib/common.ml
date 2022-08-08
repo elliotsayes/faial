@@ -22,16 +22,18 @@ let append_tr (l1:'a list) (l2:'a list) : 'a list =
   in
     app (fun x -> x) l1
 
-let rec append_rev (l1:'a list) (l2:'a list): 'a list =
+(* Concatenates a reversed version of lhs to rhs *)
+let rec append_rev1 (l1:'a list) (l2:'a list): 'a list =
   match l1 with
   | [] -> l2
-  | x :: l1 -> append_rev l1 (x::l2)
+  | x :: l1 -> append_rev1 l1 (x::l2)
 
-let rec repeat (s:string) n : string =
+(* Repeats string s n times *)
+let rec repeat (s:string) (n:int) : string =
   if n <= 0 then ""
   else s ^ repeat s (n - 1)
 
-let join sep elems =
+let join (sep:string) (elems:string list) : string =
   let on_elem accum x =
     if String.equal accum ""
     then x
@@ -50,12 +52,12 @@ let split (c:char) (s:string) :  (string * string) option =
   | None -> None
 
 
-let list_is_empty (l:'a list) =
+let list_is_empty (l:'a list) : bool =
   match l with
   | [] -> true
   | _ -> false
 
-let enumerate l =
+let enumerate (l:'a list) : (int * 'a) list =
   let rec iter idx l =
     match l with
     | h::t -> (idx,h) :: iter (idx + 1) t
@@ -101,32 +103,32 @@ let contains ~needle:(needle:string) (s:string) : bool =
     contains 0 
   )
 
-let hashtbl_elements t =
+let hashtbl_elements (t: ('a, 'b) Hashtbl.t) : ('a * 'b) list =
   Hashtbl.fold (fun k v accum ->
     (k,v)::accum
   ) t []
 
-let hashtbl_update ht kvs =
+let hashtbl_update (ht: ('a, 'b) Hashtbl.t) (kvs:('a * 'b) list) : unit =
   List.iter (fun (k,v) -> Hashtbl.add ht k v) kvs
 
-let hashtbl_from_list kvs =
+let hashtbl_from_list (kvs: ('a * 'b) list) : ('a, 'b) Hashtbl.t =
   let ht = Hashtbl.create (List.length kvs) in
   hashtbl_update ht kvs;
   ht
 
-let rec zip l1 l2 =
+let rec zip (l1:'a list) (l2:'b list) : ('a * 'b) list =
   match l1, l2 with
   | [], _ | _, [] -> []
   | x::l1, y::l2 -> (x,y) :: (zip l1 l2)
 
-let range (i:int) (j:int) : int list =
-  let rec iter n acc =
-    if n < i then acc else iter (n-1) (n :: acc)
+let range ?(from=0) (until:int) : int list =
+  let rec iter (curr:int) (acc:int list) : int list =
+    if curr < from then acc else iter (curr - 1) (curr :: acc)
   in
-  iter j []
+  iter until []
 
 (* https://stackoverflow.com/a/46759007/2327050 *)
-let modulo x y =
+let modulo (x:int) (y:int) : int =
   let result = x mod y in
   if result >= 0 then result
   else result + y
@@ -138,7 +140,7 @@ let string_to_buffer (s:string) =
   Buffer.add_string b s;
   b
 
-let buffer_prepend b s =
+let buffer_prepend (b:Buffer.t) (s:string) : Buffer.t =
   let result = Buffer.create (Buffer.length b + String.length s) in
   Buffer.add_string result s;
   Buffer.add_buffer result b;

@@ -180,9 +180,14 @@ let h_prog_to_bexp
   (* Make sure all indexeses match *)
   (* $T1$index$0 = $T2$index$0 ... *)
   let gen_eq_index (n:int) : bexp =
-    range 0 (n - 1)
+    range (n - 1)
     |> List.map (fun i ->
-      n_eq (mk_idx Task1 i) (mk_idx Task2 i)
+      let t1 = mk_idx Task1 i in
+      let t2 = mk_idx Task2 i in
+      b_and_ex [
+        n_eq t1 t2;
+        n_ge t1 (Num 0);
+      ]
     )
     |> b_and_ex
   in

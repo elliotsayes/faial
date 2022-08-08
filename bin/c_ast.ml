@@ -4,7 +4,6 @@ module VarMap = Exp.VarMap
 type json = Yojson.Basic.t
 
 let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kernel list) =
-  let open Indexflow in
   let open Cast in
   let open D_to_imp in
   match Cast.parse_program j with

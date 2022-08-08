@@ -107,7 +107,7 @@ let all_predicates : t list =
       pred_body = gen_pow base;
       pred_step = Some handler;
     }
-  ) (range 2 4)
+  ) (range ~from:2 4)
   @
   [
       mk_uint 32;

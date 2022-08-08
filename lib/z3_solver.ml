@@ -285,7 +285,7 @@ module Witness = struct
 					| None -> failwith "Index malformed!")
 		in
 		(* Range over all indices *)
-		Common.range 0 biggest_idx
+		Common.range biggest_idx
 		(* Convert them to strings *)
 		|> List.map string_of_int
 		(* And look them up using parse_idx *)
