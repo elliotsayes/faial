@@ -1,6 +1,8 @@
 module StackTrace = Common.StackTrace
 module KernelAttr = Cast.KernelAttr
 
+let (@) = Common.append_tr
+
 open Exp
 
 (* Monadic let *)

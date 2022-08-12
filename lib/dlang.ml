@@ -284,7 +284,7 @@ let state_map (f:'a -> ('s, 'b) state) (l:'a list) : ('s, 'b list) state =
 let (let*) = state_bind
 (* Monadic pipe *)
 let (>>=) = state_bind
-
+let (@) = Common.append_tr
 
 module AccessState = struct
   type t = d_stmt list

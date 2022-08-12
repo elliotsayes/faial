@@ -1,3 +1,5 @@
+let (@) = Common.append_tr
+
 open Exp
 open Proto
 open Common
@@ -146,7 +148,7 @@ let make_well_formed (p:Proto.prog) : w_prog Streamutil.stream =
           begin match j with
           | WInst i -> Some (i::p), c2
           | UInst c -> Some (w_add c p), c2
-          | Both (i, c) -> Some (append_tr i (w_seq c p)), c2
+          | Both (i, c) -> Some (i @ (w_seq c p)), c2
           end
         )
       ) |> concat
@@ -155,7 +157,7 @@ let make_well_formed (p:Proto.prog) : w_prog Streamutil.stream =
   let open Streamutil in
   p_infer false p
   |> map (function
-    | Some p, c -> append_tr p [SSync c]
+    | Some p, c -> p @ [SSync c]
     | None, c -> [SSync c]
   )
 

@@ -1,3 +1,5 @@
+let (@) = Common.append_tr
+
 open Exp
 open Proto
 open Serialize
@@ -272,7 +274,7 @@ let imp_to_post (s:stmt) : Post.prog =
     | Decl ((x,v,o)::l) :: p ->
       [Post.Decl (x, v, o, imp_to_post_p (Decl l :: p))]
     | s :: p ->
-      Common.append_tr (imp_to_post_s s) (imp_to_post_p p)
+      imp_to_post_s s @ imp_to_post_p p
   in
   imp_to_post_s (Block [s])
 
@@ -294,9 +296,7 @@ let post_to_proto (p: Post.prog) : Proto.prog =
     match p with
     | [] -> []
     | i::p -> 
-      let p1 = post_to_proto_i i in
-      let p2 = post_to_proto_p p in
-      Common.append_tr p1 p2
+      post_to_proto_i i @ post_to_proto_p p
   in
   post_to_proto_p p
 

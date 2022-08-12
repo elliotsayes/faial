@@ -1,3 +1,5 @@
+let (@) = Common.append_tr
+
 open Common
 open Exp
 open Subst

@@ -1,3 +1,5 @@
+let (@) = Common.append_tr
+
 type variable =
   | LocVariable of Sourceloc.location * string
   | Variable of string
@@ -38,6 +40,7 @@ end
 
 module VarSet = Set.Make(VarOT)
 module VarMap = Map.Make(VarOT)
+module VarMapUtil = Common.MapUtil(VarMap)
 
 let var_set_to_map (s:VarSet.t) (f:variable -> 'a option) : 'a VarMap.t =
   VarSet.fold (fun k m ->
