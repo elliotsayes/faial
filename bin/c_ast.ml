@@ -202,31 +202,270 @@ module Loops = struct
     |> Seq.fold_left (fun d e -> max d (depth e)) 0
 end
 
-let main (fname: string) : unit =
+module ScopeVar = struct
+  open Cast
+  (* Checks if a variable is updated inside a conditional/loop *)
+  (* Keeps track of the scope level a variable was defined *)
+
+  let rec get_writes (e:c_exp) (writes:VarSet.t) : VarSet.t =
+    match e with
+    | BinaryOperator {lhs=ParmVarDecl{name=x}; opcode="="; rhs=s2; ty=ty}
+    | BinaryOperator {lhs=VarDecl{name=x}; opcode="="; rhs=s2; ty=ty}
+    ->
+      let is_int =
+        match parse_type ty with
+        | Ok ty -> Ctype.is_int ty
+        | Error _ -> false
+      in
+      let w = if is_int then VarSet.add x writes else writes in
+      get_writes s2 w
+
+    | CallExpr {func=f; args=a}
+    | CXXOperatorCallExpr {func=f; args=a}
+    -> f::a |> List.fold_left (fun writes e -> get_writes e writes) writes
+
+    | ParmVarDecl _
+    | VarDecl _
+    | CXXBoolLiteralExpr _
+    | SizeOfExpr _
+    | RecoveryExpr _
+    | CharacterLiteral _
+    | CXXMethodDecl _
+    | FloatingLiteral _
+    | FunctionDecl _
+    | IntegerLiteral _
+    | NonTypeTemplateParmDecl _
+    | EnumConstantDecl _
+    | UnresolvedLookupExpr _
+    -> writes
+
+    | UnaryOperator {child=e}
+    | MemberExpr {base=e}
+    | CXXNewExpr {arg=e}
+    | CXXDeleteExpr {arg=e}
+    -> get_writes e writes
+
+    | BinaryOperator {lhs=s1; rhs=s2}
+    | ArraySubscriptExpr {lhs=s1; rhs=s2}
+    ->
+      writes
+      |> get_writes s1
+      |> get_writes s2
+
+    | ConditionalOperator e ->
+      writes
+      |> get_writes e.cond
+      |> get_writes e.then_expr
+      |> get_writes e.else_expr
+
+    | CXXConstructExpr {args=l} ->
+       List.fold_left (fun writes e -> get_writes e writes) writes l
+  let typecheck (s: c_stmt) : VarSet.t =
+    let rec typecheck (scope:int) (env:int VarMap.t) : c_stmt -> int VarMap.t * VarSet.t =
+      let typecheck_e ?(scope=scope) (e:c_exp) : VarSet.t =
+        get_writes e VarSet.empty
+        |> VarSet.filter (fun x ->
+          match VarMap.find_opt x env with
+          | Some n -> scope > n
+          | None -> false
+        )
+      in
+      let typecheck_o ?(scope=scope) (e:c_exp option) : VarSet.t =
+        match e with
+        | Some e -> typecheck_e ~scope:scope e
+        | None -> VarSet.empty
+      in
+      let typecheck_f ?(scope=scope) (e:c_for_init option) : VarSet.t =
+        match e with
+        | Some (ForDecl l) ->
+          VisitStmt.to_expr_seq (DeclStmt l)
+          |> Seq.fold_left (fun vars e ->
+              VarSet.union vars (typecheck_e ~scope e)
+          ) VarSet.empty 
+        | Some (ForExp e) -> typecheck_e ~scope:scope e 
+        | None -> VarSet.empty
+      in
+      function
+        | DeclStmt l ->
+          let env2 =
+            l
+            |> List.map (fun x -> Decl.(x.name, scope))
+            |> Exp.VarMapUtil.from_list in
+          let env = VarMap.union (fun k e1 e2 ->
+            Some (max e1 e2)
+          ) env2 env
+          in
+          (env, VarSet.empty) 
+        | DoStmt {cond=e; body=s}
+        | WhileStmt {cond=e; body=s}
+        ->
+          let (env, vars) = typecheck (scope + 1) env s in
+          (env, VarSet.union (typecheck_e e) vars)
+
+        | SExp e ->
+          (env, typecheck_e e)
+
+        | ForStmt w ->
+          let (env, vars) = typecheck (scope + 1) env w.body in
+          let vars =
+            vars
+            |> VarSet.union (typecheck_f ~scope:(scope + 1) w.init)
+            |> VarSet.union (typecheck_o ~scope:(scope + 1) w.cond)
+            |> VarSet.union (typecheck_o ~scope:(scope + 1) w.inc)
+          in
+          (env, vars)
+
+        | BreakStmt
+        | GotoStmt
+        | ReturnStmt
+        | ContinueStmt
+        -> (env, VarSet.empty)
+
+        | IfStmt s ->
+          let (_, vars1) = typecheck (scope + 1) env s.else_stmt in
+          let (_, vars2) = typecheck (scope + 1) env s.then_stmt in
+          let vars =
+            VarSet.union vars1 vars2
+            |> VarSet.union (typecheck_e s.cond)
+          in
+          (env, vars)
+
+        | CompoundStmt l ->
+          List.fold_left (fun (env, vars1) s ->
+            let (env, vars2) = typecheck scope env s in
+            (env, VarSet.union vars1 vars2)
+          ) (env, VarSet.empty) l
+
+        | DefaultStmt s
+        | SwitchStmt {body=s}
+        | CaseStmt {body=s}
+          -> typecheck (scope + 1) env s 
+    in
+    typecheck 0 VarMap.empty s |> snd
+
+  let summarize (s: c_stmt) : json =
+    let l = typecheck s
+    |> VarSet.elements
+    |> List.map (fun x -> `String (Exp.var_name x))
+    in
+    `List l
+end
+
+module ForEach = struct
+  (* Loop inference *)
+  open Dlang
+
+  type t =
+    | For of d_for
+    | While of {cond: d_exp; body: d_stmt}
+    | Do of {cond: d_exp; body: d_stmt}
+
+  let to_string : t -> string =
+    let opt_exp_to_s: d_exp option -> string =
+      function
+      | Some c -> exp_to_s c
+      | None -> ""
+    in
+    function
+    | For f -> 
+      "for (" ^
+      opt_for_init_to_s f.init ^ "; " ^
+      opt_exp_to_s f.cond ^ "; " ^
+      opt_exp_to_s f.inc ^
+      ")"
+    | While {cond=b} -> "while (" ^ exp_to_s b ^ ")"     
+    | Do {cond=b} -> "do (" ^ exp_to_s b ^ ")"
+
+  (* Search for all loops available *)
+  let rec to_seq: d_stmt -> t Seq.t =
+    function
+    | ForStmt d ->
+      Seq.return (For d)
+    | WhileStmt {body=s; cond=c} ->
+      Seq.return (While {body=s; cond=c})
+    | DoStmt {body=s; cond=c} ->
+      Seq.return (Do {body=s; cond=c})
+    | WriteAccessStmt _
+    | ReadAccessStmt _
+    | BreakStmt
+    | GotoStmt
+    | ContinueStmt
+    | ReturnStmt
+    | DeclStmt _
+    | SExp _
+      -> Seq.empty
+    | IfStmt {then_stmt=s1; else_stmt=s2}
+      -> to_seq s1 |> Seq.append (to_seq s2)
+    | SwitchStmt {body=s}
+    | DefaultStmt s
+    | CaseStmt {body=s}
+      -> to_seq s
+    | CompoundStmt l ->
+      List.to_seq l
+      |> Seq.concat_map to_seq
+
+  let infer (s: d_stmt) : (t * Exp.range option) Seq.t =
+    to_seq s
+    |> Seq.map (function
+      | For r ->
+        let o = match D_to_imp.infer_range r with
+        | Ok (Some r) -> Some r
+        | _ -> None
+        in
+        (For r, o)
+      | l -> (l, None)
+    )
+
+  let summarize (s:d_stmt) : json =
+    let elems = infer s |> List.of_seq in
+    let count = List.length elems in
+    let found =
+      elems
+      |> List.filter (fun (_, o) -> Option.is_some o)
+      |> List.length
+    in
+    let missing = elems |> Common.map_opt (function
+      | (x, None) -> Some (`String (to_string x))
+      | (x, Some _) -> None
+    ) in
+    `Assoc [
+      "total", `Int count;
+      "inferred", `Int found;
+      "missing", `List missing;
+    ]    
+end
+
+let main (fname: string) (silent:bool) : unit =
   let j = Cu_to_json.cu_to_json ~ignore_fail:true fname in
-  let (k1, k2, k3) = analyze j in 
-  print_endline "\n==================== STAGE 1: C\n";
-  Cast.print_program ~modifier:false k1;
-  print_endline "==================== STAGE 2: C with reads/writes as statements\n";
-  Dlang.print_program k2;
-  print_endline "==================== STAGE 3: Memory access protocols\n";
-  List.iter Imp.print_kernel k3;
-  print_endline "==================== STAGE 4: stats\n";
-  k1 |> List.iter Cast.(function
+  let (k1, k2, k3) = analyze j in
+  if silent then () else ( 
+    print_endline "\n==================== STAGE 1: C\n";
+    Cast.print_program ~modifier:false k1;
+    print_endline "==================== STAGE 2: C with reads/writes as statements\n";
+    Dlang.print_program k2;
+    print_endline "==================== STAGE 3: Memory access protocols\n";
+    List.iter Imp.print_kernel k3;
+    print_endline "==================== STAGE 4: stats\n";
+  );
+  let l = k1 |> Common.map_opt Cast.(function
     | Kernel k ->
       let func_count : (string * json) list = Calls.count k.code
       |> StringMap.bindings
       |> List.map (fun (k,v) -> k, `Int v)
       in
-      let stats : json = `Assoc [
+      let k2 = Dlang.rewrite_kernel k in
+      Some (`Assoc [
         "name", `String k.name;
         "function count", `Assoc func_count;
         "max loop depth", `Int (Loops.max_depth k.code);
         "max sync-loop depth", `Int (Loops.max_sync_depth k.code);
-      ] in
-      print_endline (Yojson.Basic.pretty_to_string stats);
-    | Declaration _ -> ()
+        "loop inference", ForEach.summarize k2.code;
+        "mutated vars", ScopeVar.summarize k.code;
+      ])
+    | Declaration _ -> None
   )
+  in
+  print_endline (Yojson.Basic.pretty_to_string (`List l));
 
 open Cmdliner
 
@@ -234,7 +473,11 @@ let get_fname =
   let doc = "The path $(docv) of the GPU program." in
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
 
-let main_t = Term.(const main $ get_fname)
+let silent =
+  let doc = "Silence output" in
+  Arg.(value & flag & info ["silent"] ~doc)
+
+let main_t = Term.(const main $ get_fname $ silent)
 
 let info =
   let doc = "Print the C-AST" in
