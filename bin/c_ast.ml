@@ -28,12 +28,18 @@ let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kern
 module Calls = struct
   type t = {func: Cast.c_exp; args: Cast.c_exp list}
 
+  (* Returns all function calls in a statement, as
+        a sequence. *)
   let to_seq (c:Cast.c_stmt) : t Seq.t =
+    (** Returns all function calls in an expression, as
+        a sequence. *)
     let rec to_seq (e:Cast.c_exp) : t Seq.t =
       match e with
+      (* Found a function call *)
       | CallExpr {func=f; args=a}
       | CXXOperatorCallExpr {func=f; args=a}
       -> Seq.return {func=f; args=a}
+
       | CXXBoolLiteralExpr _
       | SizeOfExpr _
       | RecoveryExpr _
@@ -48,32 +54,41 @@ module Calls = struct
       | EnumConstantDecl _
       | UnresolvedLookupExpr _
       -> Seq.empty
+
       | UnaryOperator {child=e}
       | MemberExpr {base=e}
       | CXXNewExpr {arg=e}
       | CXXDeleteExpr {arg=e}
       -> to_seq e
+
       | ArraySubscriptExpr {lhs=s1; rhs=s2}
       | BinaryOperator {lhs=s1; rhs=s2}
       -> Seq.append (to_seq s1) (to_seq s2)
+
       | ConditionalOperator e ->
         to_seq e.cond
         |> Seq.append (to_seq e.then_expr)
         |> Seq.append (to_seq e.else_expr)
+
       | CXXConstructExpr l ->
         List.to_seq l.args
         |> Seq.concat_map to_seq
     in
+    (* Use an expression iterator, extract function
+       calls for each expression therein. *)
     Cast.VisitStmt.to_expr_seq c
     |> Seq.concat_map to_seq
 
   let count (c:Cast.c_stmt) : int StringMap.t =
     to_seq c
+    (* Only get function calls that have a function name
+       in the position of the function *)
     |> Seq.concat_map (fun c ->
       match c.func with
       | FunctionDecl x -> Seq.return (Exp.var_name x.name)
       | _ -> Seq.empty
     )
+    (* Count how many times each name is used *)
     |> Seq.fold_left (fun wc name ->
       wc |> StringMap.update name (function
         | Some n -> Some (n + 1)
@@ -81,21 +96,70 @@ module Calls = struct
       )
     ) StringMap.empty
 
+  (* Returns true if it contains thread synchronization *)
   let has_sync (c:Cast.c_stmt) : bool =
     count c |> StringMap.mem "__syncthreads"
 
 end
 
+(* Serializes a set of variables as a list of strings *)
+let var_set_to_json (vars:VarSet.t) : json =
+  let vars = vars
+  |> VarSet.elements
+  |> List.map (fun x -> `String (Exp.var_name x))
+  in
+  `List vars
+
+(* Performs loop analysis. *)
 module Loops = struct
   open Cast
-  type 'a t =
-    | While of {cond: c_exp; body: 'a t}
-    | For of {init: c_for_init option; cond: c_exp option; inc: c_exp option; body: 'a t}
-    | Do of {cond: c_exp; body: 'a t}
-    | Data of 'a
+  (* Represents a nesting of loops, ends with data *)
+  type t =
+    | While of {cond: c_exp; body: t}
+    | For of {init: c_for_init option; cond: c_exp option; inc: c_exp option; body: t}
+    | Do of {cond: c_exp; body: t}
+    | Data of c_stmt
 
-  let to_seq (c:Cast.c_stmt) : c_stmt t Seq.t =
-    let rec to_seq ~in_loop:(in_loop:bool) (c:Cast.c_stmt) : c_stmt t Seq.t=
+  let to_seq (c:Cast.c_stmt) : t Seq.t =
+    let rec to_seq ~in_loop:(in_loop:bool) (c:Cast.c_stmt) : t Seq.t=
+      (*
+        We want to return _all_ loops that are identified,
+        even if the same loop may appar multiple times.
+
+        For example, if we have
+
+            for (int x; ...) {
+              for (int z; ...) {
+                 s1
+              }
+              s2
+            }
+
+        We want to return two objects:
+
+            For (int x; ...) {
+              Data (
+                for (int z; ...) {
+                   s1
+                }
+                s2
+              )
+            }
+
+            For (int x; ...) {
+              For (int z; ...) {
+                 s1
+              }
+            }
+
+        The basic idea is therefore to keep track of
+        when we are inside a loop. If we are inside a loop,
+        then just return its loop body with `Seq.return (Data c)`,
+        and then recurse.
+        
+        If we are not inside a loop, just recurse to find a
+        loop somewhere.
+       *)
       (if in_loop then Seq.return (Data c) else Seq.empty)
       |> Seq.append (match c with
       | WhileStmt w ->
@@ -133,21 +197,21 @@ module Loops = struct
     in
     (* the last step is to filter out Data blocks, as they
        are loop-less *)
-    let is_loop : 'a t -> bool =
+    let is_loop : t -> bool =
       function
       | Data _ -> false
       | _ -> true
     in
     to_seq ~in_loop:false c |> Seq.filter is_loop
 
-  let to_string (s: c_stmt t) : string =
+  let to_string (s: t) : string =
     let open Serialize in
     let opt_exp_to_s: c_exp option -> string =
       function
       | Some c -> Cast.exp_to_s c
       | None -> ""
     in
-    let rec stmt_to_s : c_stmt t -> PPrint.t list =
+    let rec stmt_to_s : t -> PPrint.t list =
       function
       | Data s -> Cast.stmt_to_s s
       | For f -> [
@@ -172,7 +236,7 @@ module Loops = struct
     in
     stmt_to_s s |> PPrint.doc_to_string
 
-  let rec depth: 'a t -> int =
+  let rec depth: t -> int =
     function
     | Data _ -> 0
     | For {body=s}
@@ -181,7 +245,7 @@ module Loops = struct
       ->
       1 + depth s
 
-  let rec get: 'a t -> 'a =
+  let rec get: t -> c_stmt =
     function
     | For {body=s}
     | While {body=s}
@@ -190,7 +254,7 @@ module Loops = struct
     | Data a -> a
 
   let max_sync_depth (s: Cast.c_stmt) : int =
-    let has_sync (s: Cast.c_stmt t) : bool =
+    let has_sync (s: t) : bool =
       get s |> Calls.has_sync
     in
     to_seq s
@@ -202,7 +266,7 @@ module Loops = struct
     |> Seq.fold_left (fun d e -> max d (depth e)) 0
 end
 
-module ScopeVar = struct
+module MutatedVar = struct
   open Cast
   (* Checks if a variable is updated inside a conditional/loop *)
   (* Keeps track of the scope level a variable was defined *)
@@ -260,6 +324,7 @@ module ScopeVar = struct
 
     | CXXConstructExpr {args=l} ->
        List.fold_left (fun writes e -> get_writes e writes) writes l
+
   let typecheck (s: c_stmt) : VarSet.t =
     let rec typecheck (scope:int) (env:int VarMap.t) : c_stmt -> int VarMap.t * VarSet.t =
       let typecheck_e ?(scope=scope) (e:c_exp) : VarSet.t =
@@ -344,12 +409,63 @@ module ScopeVar = struct
     typecheck 0 VarMap.empty s |> snd
 
   let summarize (s: c_stmt) : json =
-    let l = typecheck s
-    |> VarSet.elements
-    |> List.map (fun x -> `String (Exp.var_name x))
-    in
-    `List l
+    typecheck s
+    |> var_set_to_json
 end
+
+
+module IntVars = struct
+  open Cast
+  let rec find_vars (s:c_stmt) (vars:VarSet.t) : VarSet.t =
+    let add_decls (decls:Decl.t list) : VarSet.t =
+      decls
+      |> List.map Decl.name
+      |> VarSet.of_list
+      |> VarSet.union vars
+    in
+    match s with
+    | DeclStmt l ->
+      add_decls l
+
+    | ForStmt {init=i; body=s} ->
+      let decls = match i with
+      | Some (ForDecl l) -> l 
+      | _ -> []
+      in
+      add_decls decls
+
+    | SExp _
+    | BreakStmt
+    | GotoStmt
+    | ReturnStmt
+    | ContinueStmt
+    -> vars
+
+    | IfStmt s ->
+      vars
+      |> find_vars s.then_stmt
+      |> find_vars s.else_stmt
+
+    | CompoundStmt l ->
+      List.fold_left (fun vars s ->
+        find_vars s vars
+      ) vars l
+
+    | DoStmt {body=s}
+    | WhileStmt {body=s}
+    | DefaultStmt s
+    | SwitchStmt {body=s}
+    | CaseStmt {body=s}
+      -> find_vars s vars
+
+  let summarize (s: c_stmt) : json =
+    let n =
+      find_vars s VarSet.empty
+      |> VarSet.cardinal
+    in
+    `Int n
+end
+
 
 module ForEach = struct
   (* Loop inference *)
@@ -460,7 +576,8 @@ let main (fname: string) (silent:bool) : unit =
         "max loop depth", `Int (Loops.max_depth k.code);
         "max sync-loop depth", `Int (Loops.max_sync_depth k.code);
         "loop inference", ForEach.summarize k2.code;
-        "mutated vars", ScopeVar.summarize k.code;
+        "mutated vars", MutatedVar.summarize k.code;
+        "var count", IntVars.summarize k.code;
       ])
     | Declaration _ -> None
   )
