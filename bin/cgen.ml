@@ -287,37 +287,34 @@ let print_k (k : prog kernel) (racuda : bool) : unit =
   PPrint.print_doc (kernel_to_s (prog_to_s racuda) k racuda)
 
 (* Kernel to TOML conversion *)
-open Toml.Min
-open Toml.Types
-
-let arrays_to_l (vm : array_t VarMap.t) : Toml.Types.table list =
+let arrays_to_l (vm : array_t VarMap.t) : (string * Otoml.t) list =
   VarMap.bindings vm
-  |> List.map (fun (k, v) ->
-      of_key_values [key (var_name k), TString (arr_type v false)])
+  |> List.map (fun (k, v) -> (var_name k, Otoml.TomlString (arr_type v false)))
 
-let scalars_to_l (vs : VarSet.t) : Toml.Types.table list =
+let scalars_to_l (vs : VarSet.t) : (string * Otoml.t) list =
   VarSet.elements (VarSet.diff vs thread_globals)
-  |> List.map (fun v -> of_key_values [key (var_name v), TString "int"])
+  |> List.map (fun v -> (var_name v, Otoml.TomlString "int"))
 
-let kernel_to_toml (k : 'a kernel) (racuda : bool) : Toml.Types.table =
+let kernel_to_toml (k : 'a kernel) (racuda : bool) : Otoml.t =
   let k = {k with kernel_arrays = mk_types_compatible k.kernel_arrays racuda} in
-  let body = [body_to_s (prog_to_s racuda) k] in
   let type_decls = if racuda then []
     else declare_unknown_types k.kernel_arrays in
   let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
-  let header = type_decls @ funct_protos in
+  let header = (type_decls @ funct_protos |> join "\n") ^ "\n" in
+  let body = PPrint.doc_to_string [body_to_s (prog_to_s racuda) k] in
   let global_arr = VarMap.filter (fun k -> fun v ->
       v.array_hierarchy = GlobalMemory) k.kernel_arrays in
-  let open PPrint in
-  [
-    key "body", TString (doc_to_string (Line "" :: body));
-    key "header", TString ("\n" ^ (join "\n" header) ^ "\n");
-    key "includes", TArray (NodeInt []);
-    key "pass", TBool true;
-    key "arrays", TArray (NodeTable (arrays_to_l global_arr));
-    key "scalars", TArray (NodeTable (scalars_to_l k.kernel_global_variables));
-  ]
-  |> of_key_values
+  VarSet.iter (fun x -> print_endline (var_name x)) k.kernel_global_variables;
+  let open Otoml in
+  TomlTable
+    [
+      ("pass", TomlBoolean true);
+      ("includes", TomlArray []);
+      ("header", TomlString header);
+      ("body", TomlString body);
+      ("scalars", TomlTable (scalars_to_l k.kernel_global_variables));
+      ("arrays", TomlTable (arrays_to_l global_arr));
+    ]
 
-let print_toml (table : Toml.Types.table) : unit =
-  print_string (Toml.Printer.string_of_table table)
+let print_toml (table : Otoml.t) : unit =
+  print_string (Otoml.Printer.to_string table)

@@ -41,7 +41,7 @@
  (name cgen)
  (modules cgen)
  (wrapped false)
- (libraries faial toml))
+ (libraries faial otoml))
 
 (executable
  (public_name proto-to-cuda)
