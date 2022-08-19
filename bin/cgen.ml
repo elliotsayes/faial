@@ -304,7 +304,6 @@ let kernel_to_toml (k : 'a kernel) (racuda : bool) : Otoml.t =
   let body = PPrint.doc_to_string [body_to_s (prog_to_s racuda) k] in
   let global_arr = VarMap.filter (fun k -> fun v ->
       v.array_hierarchy = GlobalMemory) k.kernel_arrays in
-  VarSet.iter (fun x -> print_endline (var_name x)) k.kernel_global_variables;
   let open Otoml in
   TomlTable
     [
@@ -318,3 +317,6 @@ let kernel_to_toml (k : 'a kernel) (racuda : bool) : Otoml.t =
 
 let print_toml (table : Otoml.t) : unit =
   print_string (Otoml.Printer.to_string table)
+
+let print_t (k : 'a kernel) (racuda : bool) : unit =
+  print_toml (kernel_to_toml k racuda)

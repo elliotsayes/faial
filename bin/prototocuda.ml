@@ -59,7 +59,7 @@ let p2c_t =
     let open Cgen in
     let kernels = read_kernels fname use_cuda in
     if output_toml then
-      List.iter (fun k -> print_toml (kernel_to_toml k racuda)) kernels
+      List.iter (fun k -> print_t k racuda) kernels
     else
       List.iter (fun k -> print_k k racuda) kernels
   in

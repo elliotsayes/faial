@@ -62,11 +62,10 @@ let kernel (p : prog) : prog kernel =
 
 let test_kernel = kernel (sync @@ loop2 @@ read @@ write [])
 
-let () = print_string (Cgen.kernel_to_toml test_kernel false
-                       |> Toml.Printer.string_of_table)
+let () = Cgen.print_t test_kernel false
 
 (* Generate all combinations *)
 
 (* let () = 
-  List.iter (fun p -> print_newline (Cgen.print_k (kernel p) false))
+   List.iter (fun p -> print_newline (Cgen.print_k (kernel p) false))
     (List.map program_k (Common.range 1 (List.length program)) |> List.concat) *)
