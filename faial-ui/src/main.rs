@@ -579,7 +579,7 @@ impl Faial {
                 )
                 .arg(Arg::with_name("timeout")
                     .help("Sets the timeout value (in milliseconds) when running the solver z3. Default: 500")
-                    .short("t")
+                    .short("T")
                     .validator(can_parse::<u32>)
                     .long("timeout")
                     .takes_value(true)
