@@ -136,7 +136,7 @@ let add (s:Solver.solver) (ctx:Z3.context) (p:Symbexp.proof) : unit =
 	[
 		assign "blockDim.y" 1;
 		assign "blockDim.z" 1;
-		b_to_expr ctx p.proof_goal
+		b_to_expr ctx (Predicates.inline p.proof_goal)
 	]
 	|> Solver.add s
 	
