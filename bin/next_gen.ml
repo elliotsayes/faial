@@ -33,6 +33,13 @@ module Dim3 = struct
     let y = string_of_int d.y in
     let z = string_of_int d.z in
     "{x=" ^ x ^ ", y=" ^ y ^ ", z=" ^ z ^ "}"
+
+  let to_vec3 (d:t) : Vec3.t =
+    let x = string_of_int d.x in
+    let y = string_of_int d.y in
+    let z = string_of_int d.z in
+    Vec3.mk ~x ~y ~z
+
   let to_assoc (prefix:string) (d:t) : (string * int) list =
     [
       (prefix ^ "x", d.x);
@@ -202,6 +209,12 @@ let main (fname: string) (timeout:int) : unit =
     | Some gv -> GvParser.to_assoc gv @ key_vals
     | None -> key_vals
     in
+    let dim (f:GvParser.t -> Dim3.t) : Vec3.t = match gv with
+      | Some gv -> Dim3.to_vec3 (f gv)
+      | None -> Vec3.default
+    in
+    let grid_dim = dim (fun gv -> gv.grid_dim) in
+    let block_dim = dim (fun gv -> gv.block_dim) in
     let p = Proto.replace_constants key_vals p in
     let p = Wellformed.translate p in
     let p = Phasealign.translate p in
@@ -211,7 +224,7 @@ let main (fname: string) (timeout:int) : unit =
     let p = Symbexp.translate true p in
     let open Z3_solver in
     let open Solution in
-    let errors = solve ~timeout:timeout p
+    let errors = solve ~grid_dim ~block_dim ~timeout:timeout p
       |> Streamutil.map_opt (
         function
         | Drf -> None

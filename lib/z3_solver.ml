@@ -188,6 +188,8 @@ module Vec3 = struct
 	type t = {x : string; y: string; z: string;}
 	let mk ~x:x ~y:y ~z:z : t = {x=x; y=y; z=z}
 
+	let default : t = {x="?"; y="?"; z="?"}
+
 	let to_json (v:t) : json =
 		let open Yojson.Basic in
 		`Assoc [
@@ -263,12 +265,21 @@ module Witness = struct
 		to_json v |> pretty_to_string
 
 
-	let parse_vec3 (prefix:string) (globals:Environ.t) : Environ.t * Vec3.t =
+	let parse_vec3 (d:Vec3.t) (prefix:string) (globals:Environ.t) : Environ.t * Vec3.t =
 		let (env, globals) = List.partition (fun (k, _) -> String.starts_with ~prefix:(prefix ^ ".") k) globals in
-		let get (x:string) : string =
-			Environ.get (prefix ^ "." ^ x) env |> Ojson.unwrap_or "?"
+		let get ~default (x:string) : string =
+			let z = match Environ.get (prefix ^ "." ^ x) env with
+			| Some x -> x
+			| None -> default
+			in
+			z
 		in
-		(globals, Vec3.{x = get "x"; y = get "y"; z = get "z";})
+		let v = Vec3.{
+			x = get ~default:d.x "x";
+			y = get ~default:d.y "y";
+			z = get ~default:d.z "z";
+		} in
+		(globals, v)
 
 	let parse_indices (kvs:Environ.t) : string list =
 		(* 
@@ -328,7 +339,7 @@ module Witness = struct
 		let (t1_mode, t2_mode) = parse_mode kvs in
 		(env, (parse_indices kvs, t1_mode, t2_mode)) 
 
-	let parse (m:Model.model) : t =
+	let parse ~block_dim ~grid_dim (m:Model.model) : t =
 		let env = Environ.parse m in
 		(* put all special variables in kvs
 			$T2$loc: 0
@@ -351,9 +362,9 @@ module Witness = struct
 			String.ends_with ~suffix:"$T1" k
 		) locals
 		in
-		let (globals, block_idx) = parse_vec3 "blockIdx" globals in
-		let (globals, block_dim) = parse_vec3 "blockDim" globals in
-		let (globals, grid_dim) = parse_vec3 "gridDim" globals in
+		let (globals, block_idx) = parse_vec3 Vec3.default "blockIdx" globals in
+		let (globals, block_dim) = parse_vec3 block_dim "blockDim" globals in
+		let (globals, grid_dim) = parse_vec3 grid_dim "gridDim" globals in
 
 		let fix_locals (x:string) : string =
 			match Common.rsplit '$' x with
@@ -403,7 +414,7 @@ module Solution = struct
 
 		https://github.com/icra-team/icra/blob/ee3fd360ee75490277dd3fd05d92e1548db983e4/duet/pa/paSmt.ml
 	 *)
-	let solve ?(timeout=1000) ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : t Streamutil.stream =
+	let solve ?(timeout=1000) ~block_dim ~grid_dim ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : t Streamutil.stream =
 		let b_to_expr = ref IntGen.b_to_expr in
 		Streamutil.map (fun p ->
 			let ctx = Z3.mk_context [
@@ -430,7 +441,7 @@ module Solution = struct
 			| UNSATISFIABLE -> Drf
 			| SATISFIABLE ->
 				(match Solver.get_model s with
-				| Some m -> Racy (Witness.parse m)
+				| Some m -> Racy (Witness.parse ~block_dim ~grid_dim m)
 				| None -> failwith "INVALID")
 			| UNKNOWN -> Unknown
 			in
