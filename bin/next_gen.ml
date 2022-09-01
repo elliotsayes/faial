@@ -222,18 +222,18 @@ let main (fname: string) : unit =
     in
     match Common.either_split errors with
     | [], [] -> T.print_string [T.Bold; T.Foreground T.Green] ("Kernel '" ^ kernel_name ^ "' is DRF!\n")
-    | _, l ->
+    | unk, errs ->
       T.print_string [T.Bold; T.Foreground T.Red] ("Kernel '" ^ kernel_name ^ "' has errors.\n");
-      let (_, l) = List.split l in
-      l |> List.iter (fun w ->
+      let (_, errs) = List.split errs in
+      errs |> List.iter (fun w ->
         print_endline "Globals";
         box_globals w |> print_box;
         print_endline "\n\nLocals";
         box_locals w |> print_box;
         print_endline "";
         exit 1
-      )
-    | x :: _, _ -> print_endline "unknown!"
+      );
+      print_endline "Unknown!"
   ) p
 
 open Cmdliner
