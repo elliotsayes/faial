@@ -19,92 +19,106 @@ module type GEN = sig
 	val b_to_expr: Z3.context -> bexp -> Expr.expr
 end
 
-module IntGen : GEN = struct 
+type binop = Z3.context -> Expr.expr -> Expr.expr -> Expr.expr
+type unop = Z3.context -> Expr.expr -> Expr.expr
 
-	let nbin_to_expr (op:nbin) : Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = match op with
-		| BitAnd
-		| BitOr
-		| BitXOr
-		| LeftShift
-		| RightShift ->
-		  fun ctx n1 n2 ->
-		  let op : string = Serialize.nbin_to_string op in
-      prerr_endline ("WARNING: operator '" ^ op ^ "' unsupported; converting to '+'. Use bit-vector integers instead");
-		  Arithmetic.mk_add ctx [n1; n2]
-		| Plus  -> fun ctx n1 n2 -> Arithmetic.mk_add ctx [n1; n2]
-		| Minus -> fun ctx n1 n2 -> Arithmetic.mk_sub ctx [n1; n2]
-		| Mult  -> fun ctx n1 n2 -> Arithmetic.mk_mul ctx [n1; n2]
-		| Div   -> Arithmetic.mk_div
-		| Mod   -> Arithmetic.Integer.mk_mod
+(* We define an abstract module to handle numeric operations
+	 so that we can support arbitrary backends. *)
+module type NUMERIC_OPS = sig
+	val mk_var: Z3.context -> string -> Expr.expr
+	val mk_num: Z3.context -> int -> Expr.expr
+	val mk_bit_and: binop
+	val mk_bit_or: binop
+	val mk_bit_xor: binop
+	val mk_left_shift: binop
+	val mk_right_shift: binop
+	val mk_plus: binop
+	val mk_minus: binop
+	val mk_mult: binop
+	val mk_div: binop
+	val mk_mod: binop
+	val mk_le: binop
+	val mk_ge: binop
+	val mk_gt: binop
+	val mk_lt: binop
+end
 
-	let nrel_to_expr : nrel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
-		| NEq  -> Boolean.mk_eq
-		| NNeq -> fun ctx n1 n2 -> Boolean.mk_not ctx (Boolean.mk_eq ctx n1 n2)
-		| NLe  -> Arithmetic.mk_le
-		| NGe  -> Arithmetic.mk_ge
-		| NLt  -> Arithmetic.mk_lt
-		| NGt  -> Arithmetic.mk_gt
-
-	let brel_to_expr : brel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
-		| BOr  -> fun ctx b1 b2 -> Boolean.mk_or  ctx [b1; b2]
-		| BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
-
-	let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr = match n with
-		| Var x -> var_name x |> Integer.mk_const_s ctx
-		| Proj _
-		| NCall _ ->
-		    let n : string = Serialize.PPrint.n_to_s n in
-		    raise (Not_implemented ("n_to_expr not implemented for " ^ n))
-		| Num (n:int) -> Arithmetic.Integer.mk_numeral_i ctx n
-		| Bin (op, n1, n2) ->
-		    (nbin_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
-		| NIf (b, n1, n2) -> Boolean.mk_ite ctx
-		    (b_to_expr ctx b) (n_to_expr ctx n1) (n_to_expr ctx n2)
-
-	and b_to_expr (ctx:Z3.context) (b:bexp) : Expr.expr = match b with
-		| Bool (b:bool) -> Boolean.mk_val ctx b
-		| NRel (op, n1, n2) ->
-		    (nrel_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
-		| BRel (op, b1, b2) ->
-		    (brel_to_expr op) ctx (b_to_expr ctx b1) (b_to_expr ctx b2)
-		| BNot (b:bexp) -> Boolean.mk_not ctx (b_to_expr ctx b)
-		| Pred _ -> raise (Not_implemented "b_to_expr not implemented for Pred")
+module ArithmeticOps : NUMERIC_OPS = struct
+	let missing (name:string) : binop = fun _ _ _ -> raise (Not_implemented name)
+	let mk_var = Integer.mk_const_s
+	let mk_num = Arithmetic.Integer.mk_numeral_i
+	let mk_bit_and = missing "&"
+	let mk_bit_or = missing "|"
+	let mk_bit_xor =  missing "^"
+	let mk_left_shift = missing "<<"
+	let mk_right_shift = missing ">>"
+	let mk_plus ctx n1 n2 = Arithmetic.mk_add ctx [n1; n2]
+	let mk_minus ctx n1 n2 = Arithmetic.mk_sub ctx [n1; n2]
+	let mk_mult ctx n1 n2 = Arithmetic.mk_mul ctx [n1; n2]
+	let mk_div = Arithmetic.mk_div
+	let mk_mod = Arithmetic.Integer.mk_mod
+	let mk_le = Arithmetic.mk_le
+	let mk_ge = Arithmetic.mk_ge
+	let mk_gt = Arithmetic.mk_gt
+	let mk_lt = Arithmetic.mk_lt
 end
 
 let word_size = 64
 
-module BVGen : GEN = struct
+module BitVectorOps : NUMERIC_OPS = struct
+	let mk_var ctx x = BitVector.mk_const_s ctx x word_size
+	let mk_num ctx n = BitVector.mk_numeral ctx (string_of_int n) word_size
+	let mk_bit_and = BitVector.mk_and
+	let mk_bit_or = BitVector.mk_or
+	let mk_bit_xor =  BitVector.mk_xor
+	let mk_left_shift = BitVector.mk_shl
+	let mk_right_shift = BitVector.mk_ashr
+	let mk_minus = BitVector.mk_sub
+	let mk_plus = BitVector.mk_add
+	let mk_mult = BitVector.mk_mul
+	let mk_div = BitVector.mk_udiv
+	let mk_mod = BitVector.mk_smod
+	let mk_le = BitVector.mk_ule
+	let mk_ge = BitVector.mk_uge
+	let mk_gt = BitVector.mk_ult
+	let mk_lt = BitVector.mk_ugt
+end
+
+
+module CodeGen (N:NUMERIC_OPS) = struct 
+
 	let nbin_to_expr (op:nbin) : Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = match op with
-		| BitAnd -> BitVector.mk_and
-		| BitOr -> BitVector.mk_or
-		| BitXOr -> BitVector.mk_xor
-		| LeftShift -> BitVector.mk_shl
-		| RightShift -> BitVector.mk_ashr
-		| Plus  -> BitVector.mk_add
-		| Minus -> BitVector.mk_sub
-		| Mult  -> BitVector.mk_mul
-		| Div   -> BitVector.mk_udiv
-		| Mod   -> BitVector.mk_smod
+		| BitAnd -> N.mk_bit_and
+		| BitOr -> N.mk_bit_or
+		| BitXOr -> N.mk_bit_xor
+		| LeftShift -> N.mk_left_shift
+		| RightShift -> N.mk_right_shift
+		| Plus -> N.mk_plus
+		| Minus -> N.mk_minus
+		| Mult -> N.mk_mult
+		| Div -> N.mk_div
+		| Mod -> N.mk_mod
 
 	let nrel_to_expr : nrel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
-		| NEq  -> Boolean.mk_eq
+		| NEq -> Boolean.mk_eq
 		| NNeq -> fun ctx n1 n2 -> Boolean.mk_not ctx (Boolean.mk_eq ctx n1 n2)
-		| NLe  -> BitVector.mk_ule
-		| NGe  -> BitVector.mk_uge
-		| NLt  -> BitVector.mk_ult
-		| NGt  -> BitVector.mk_ugt
+		| NLe -> N.mk_le
+		| NGe -> N.mk_ge
+		| NLt -> N.mk_lt
+		| NGt -> N.mk_gt
 
 	let brel_to_expr : brel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
-		| BOr  -> fun ctx b1 b2 -> Boolean.mk_or  ctx [b1; b2]
+		| BOr -> fun ctx b1 b2 -> Boolean.mk_or ctx [b1; b2]
 		| BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
 
 	let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr = match n with
-		| Var x -> BitVector.mk_const_s ctx (var_name x) word_size
-		| Proj _
-		| NCall _ ->
+		| Var x -> var_name x |> N.mk_var ctx
+		| Proj _ ->
 		    let n : string = Serialize.PPrint.n_to_s n in
-		    raise (Not_implemented ("n_to_expr not implemented for " ^ n))
-		| Num (n:int) -> BitVector.mk_numeral ctx (string_of_int n) word_size
+		    raise (Not_implemented ("n_to_expr: not implemented for Proj of " ^ n))
+		| NCall _ ->
+				failwith "b_to_expr: invoke Predicates.inline to remove predicates"
+		| Num (n:int) -> N.mk_num ctx n
 		| Bin (op, n1, n2) ->
 		    (nbin_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
 		| NIf (b, n1, n2) -> Boolean.mk_ite ctx
@@ -117,12 +131,13 @@ module BVGen : GEN = struct
 		| BRel (op, b1, b2) ->
 		    (brel_to_expr op) ctx (b_to_expr ctx b1) (b_to_expr ctx b2)
 		| BNot (b:bexp) -> Boolean.mk_not ctx (b_to_expr ctx b)
-		| Pred _ -> raise (Not_implemented "b_to_expr not implemented for Pred")
+		| Pred _ -> failwith "b_to_expr: invoke Predicates.inline to remove predicates"
 end
 
-let b_to_expr = IntGen.b_to_expr
+module IntGen = CodeGen (ArithmeticOps)
+module BvGen = CodeGen (BitVectorOps)
 
-let add (s:Solver.solver) (ctx:Z3.context) (p:Symbexp.proof) : unit =
+let add (b_to_expr : Z3.context -> bexp -> Expr.expr) (s:Solver.solver) (ctx:Z3.context) (p:Symbexp.proof) : unit =
 	
 	let mk_var (name:string) : Expr.expr =
 		n_ge (Var (Exp.var_make name)) (Num 0)
@@ -134,9 +149,9 @@ let add (s:Solver.solver) (ctx:Z3.context) (p:Symbexp.proof) : unit =
 		|> b_to_expr ctx
 	in
 	[
-		assign "blockDim.y" 1;
+ 		assign "blockDim.y" 1;
 		assign "blockDim.z" 1;
-		b_to_expr ctx (Predicates.inline p.proof_goal)
+ 		b_to_expr ctx (Predicates.inline p.proof_goal)
 	]
 	|> Solver.add s
 	
@@ -395,8 +410,20 @@ module Solution = struct
 				("proof", "false");
 				("timeout", "1000");
 			] in
-			let s = Solver.mk_simple_solver ctx in
-			add s ctx p;
+			let s =
+				(* Create a solver and try to solve, might fail with Not_Implemented *)
+				let solve b_to_expr =
+					let s = Solver.mk_simple_solver ctx in
+					add b_to_expr s ctx p;
+					s
+				in
+				try
+					solve IntGen.b_to_expr
+				with
+					Not_implemented x ->
+						prerr_endline ("WARNING: arithmetic solver cannot handle operator '" ^ x ^ "', trying bit-vector arithmetic instead.");
+						solve BvGen.b_to_expr
+			in
 			let r = match Solver.check s [] with
 			| UNSATISFIABLE -> Drf
 			| SATISFIABLE ->
