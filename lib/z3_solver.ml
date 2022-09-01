@@ -404,6 +404,7 @@ module Solution = struct
 		https://github.com/icra-team/icra/blob/ee3fd360ee75490277dd3fd05d92e1548db983e4/duet/pa/paSmt.ml
 	 *)
 	let solve ?(timeout=1000) ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : t Streamutil.stream =
+		let b_to_expr = ref IntGen.b_to_expr in
 		Streamutil.map (fun p ->
 			let ctx = Z3.mk_context [
 				("model", "true");
@@ -418,11 +419,12 @@ module Solution = struct
 					s
 				in
 				try
-					solve IntGen.b_to_expr
+					solve !b_to_expr
 				with
 					Not_implemented x ->
 						prerr_endline ("WARNING: arithmetic solver cannot handle operator '" ^ x ^ "', trying bit-vector arithmetic instead.");
-						solve BvGen.b_to_expr
+						b_to_expr := BvGen.b_to_expr;
+						solve !b_to_expr
 			in
 			let r = match Solver.check s [] with
 			| UNSATISFIABLE -> Drf
