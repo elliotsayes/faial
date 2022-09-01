@@ -180,7 +180,7 @@ let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
 
 
-let main (fname: string) : unit =
+let main (fname: string) (timeout:int) : unit =
   let gv = GvParser.parse fname in
   (match gv with
     | Some x -> prerr_endline ("WARNING: parsed GV args: " ^ GvParser.to_string x);
@@ -211,7 +211,7 @@ let main (fname: string) : unit =
     let p = Symbexp.translate true p in
     let open Z3_solver in
     let open Solution in
-    let errors = solve p
+    let errors = solve ~timeout:timeout p
       |> Streamutil.map_opt (
         function
         | Drf -> None
@@ -242,7 +242,11 @@ let get_fname =
   let doc = "The path $(docv) of the GPU program." in
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
 
-let main_t = Term.(const main $ get_fname)
+let get_timeout =
+  let doc = "Sets a timeout in millisecs. Default: $(docv)" in
+  Arg.(value & opt int 1000 & info ["t"; "timeout"] ~docv:"MILISECS" ~doc)
+
+let main_t = Term.(const main $ get_fname $ get_timeout)
 
 let info =
   let doc = "Print the C-AST" in

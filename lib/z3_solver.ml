@@ -403,12 +403,12 @@ module Solution = struct
 
 		https://github.com/icra-team/icra/blob/ee3fd360ee75490277dd3fd05d92e1548db983e4/duet/pa/paSmt.ml
 	 *)
-	let solve ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : t Streamutil.stream =
+	let solve ?(timeout=1000) ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : t Streamutil.stream =
 		Streamutil.map (fun p ->
 			let ctx = Z3.mk_context [
 				("model", "true");
 				("proof", "false");
-				("timeout", "1000");
+				("timeout", string_of_int timeout);
 			] in
 			let s =
 				(* Create a solver and try to solve, might fail with Not_Implemented *)
