@@ -177,6 +177,31 @@ let get_functions (b:bexp) : step_handler list =
   |> StringSet.elements
   |> List.map (Hashtbl.find all_step_handlers_db)
 
+
+let inline: bexp -> bexp =
+  let rec inline_n (n: nexp) : nexp =
+    match n with
+    | NCall (x, v) ->
+      let h = Hashtbl.find all_step_handlers_db x in
+      h.step_handler_body v
+    | Var _
+    | Num _
+    | Proj _
+      -> n
+    | Bin (o, n1, n2) -> Bin (o, inline_n n1, inline_n n2)
+    | NIf (b, n1, n2) -> NIf (inline_b b, inline_n n1, inline_n n2)
+  and inline_b (b: bexp) : bexp =
+    match b with
+    | Pred (x, n) ->
+      let p = Hashtbl.find all_predicates_db x in
+      p.pred_body n
+    | Bool _ -> b
+    | BNot b -> inline_b b
+    | NRel (o, n1, n2) -> NRel (o, inline_n n1, inline_n n2)
+    | BRel (o, b1, b2) -> BRel (o, inline_b b1, inline_b b2)
+  in
+  inline_b
+
 let get_step_handler (pred_name:string) : step_handler =
     let (p:t) = Hashtbl.find all_predicates_db pred_name in
     match p.pred_step with
