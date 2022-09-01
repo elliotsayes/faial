@@ -183,7 +183,7 @@ let inline: bexp -> bexp =
     match n with
     | NCall (x, v) ->
       let h = Hashtbl.find all_step_handlers_db x in
-      h.step_handler_body v
+      h.step_handler_body (inline_n v)
     | Var _
     | Num _
     | Proj _
@@ -194,7 +194,7 @@ let inline: bexp -> bexp =
     match b with
     | Pred (x, n) ->
       let p = Hashtbl.find all_predicates_db x in
-      p.pred_body n
+      p.pred_body (inline_n n)
     | Bool _ -> b
     | BNot b -> inline_b b
     | NRel (o, n1, n2) -> NRel (o, inline_n n1, inline_n n2)
