@@ -393,7 +393,7 @@ module Solution = struct
 			let ctx = Z3.mk_context [
 				("model", "true");
 				("proof", "false");
-				("timeout", "500");
+				("timeout", "1000");
 			] in
 			let s = Solver.mk_simple_solver ctx in
 			add s ctx p;
