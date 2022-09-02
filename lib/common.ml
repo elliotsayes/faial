@@ -39,7 +39,7 @@ let join (sep:string) (elems:string list) : string =
     then x
     else x ^ sep ^ accum
   in
-  List.fold_left on_elem "" elems
+  List.fold_left on_elem "" (List.rev elems)
 
 let rsplit (c:char) (s:string) :  (string * string) option =
   match String.rindex_opt s c with
