@@ -137,7 +137,7 @@ end
 module IntGen = CodeGen (ArithmeticOps)
 module BvGen = CodeGen (BitVectorOps)
 
-let add (b_to_expr : Z3.context -> bexp -> Expr.expr) (s:Solver.solver) (ctx:Z3.context) (p:Symbexp.proof) : unit =
+let add ?(add_block_dim=false) (b_to_expr : Z3.context -> bexp -> Expr.expr) (s:Solver.solver) (ctx:Z3.context) (p:Symbexp.proof) : unit =
 	
 	let mk_var (name:string) : Expr.expr =
 		n_ge (Var (Exp.var_make name)) (Num 0)
@@ -148,10 +148,14 @@ let add (b_to_expr : Z3.context -> bexp -> Expr.expr) (s:Solver.solver) (ctx:Z3.
 		n_eq (Var (Exp.var_make x)) (Num n)
 		|> b_to_expr ctx
 	in
-	[
- 		assign "blockDim.y" 1;
-		assign "blockDim.z" 1;
- 		b_to_expr ctx (Predicates.inline p.proof_goal)
+  (if add_block_dim then [
+    assign "blockDim.y" 1;
+    assign "blockDim.z" 1;
+  ]
+  else [])
+  @
+ 	[
+    b_to_expr ctx (Predicates.inline p.proof_goal)
 	]
 	|> Solver.add s
 	
@@ -190,6 +194,20 @@ module Vec3 = struct
 
 	let default : t = {x="?"; y="?"; z="?"}
 
+  let to_assoc (v:t) : (string * string) list =
+    [
+      "x", v.x;
+      "y", v.y;
+      "z", v.z;
+    ]
+(*
+  let get (key:string) : string option =
+    match key with
+    | "x" -> Some v.x
+    | "y" -> Some v.y
+    | "z" -> Some v.z
+    | _ -> None
+*)
 	let to_json (v:t) : json =
 		let open Yojson.Basic in
 		`Assoc [
@@ -426,7 +444,7 @@ module Solution = struct
 				(* Create a solver and try to solve, might fail with Not_Implemented *)
 				let solve b_to_expr =
 					let s = Solver.mk_simple_solver ctx in
-					add b_to_expr s ctx p;
+					add ~add_block_dim:(Option.is_none block_dim) b_to_expr s ctx p;
 					s
 				in
 				try
@@ -437,6 +455,8 @@ module Solution = struct
 						b_to_expr := BvGen.b_to_expr;
 						solve !b_to_expr
 			in
+      let block_dim = block_dim |> Ojson.unwrap_or Vec3.default in
+      let grid_dim = grid_dim |> Ojson.unwrap_or Vec3.default in
 			let r = match Solver.check s [] with
 			| UNSATISFIABLE -> Drf
 			| SATISFIABLE ->

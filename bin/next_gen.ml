@@ -23,6 +23,7 @@ module Dim3 = struct
       | _ -> None
     else
       None
+
   let parse (l:string) : t =
     match parse_opt l with
     | Some x -> x
@@ -153,10 +154,39 @@ let box_environ (e:Environ.t) : PrintBox.t =
     |> frame
   )
 
-let vec_to_s (v: Vec3.t) : string =
-  "x = " ^ v.x ^ " │ y = " ^ v.y ^ " │ z = " ^ v.z
+let struct_to_s (l:(string * string) list) : string =
+  l
+  |> List.map (fun (key, elem) -> (key ^ " = " ^ elem))
+  |> Common.join " | "
 
-let box_tasks (t1:Task.t) (t2:Task.t) : PrintBox.t =
+let vec_to_s (v: Vec3.t) : string =
+  ["x", v.x; "y", v.y; "z", v.z]
+  |> struct_to_s
+
+let dim_to_s (v: Vec3.t) : string =
+  ["x", v.x; "y", v.y; "z", v.z]
+  |> List.filter (fun (_, v) -> v <> "1")
+  |> struct_to_s
+
+
+let idx_to_s ~idx ~dim =
+  let pos_fields =
+    Vec3.to_assoc dim
+    |> Common.map_opt (fun (k, v) -> if v = "1" then None else Some k)
+  in
+  idx
+  |> Vec3.to_assoc
+  |> List.filter (fun (k, _) -> List.mem k pos_fields)
+  |> struct_to_s
+
+
+let box_idx key ~idx ~dim =
+  let idx = idx_to_s ~idx ~dim in
+  if idx = "" then []
+  else [key, idx]
+
+
+let box_tasks (block_dim:Vec3.t) (t1:Task.t) (t2:Task.t) : PrintBox.t =
   let open PrintBox in
   let locals =
     t1.locals
@@ -164,24 +194,39 @@ let box_tasks (t1:Task.t) (t2:Task.t) : PrintBox.t =
       [| text k; text v1; text (List.assoc k t2.locals) |]
     )
   in
-  let locals = [| text "threadIdx"; text @@ vec_to_s t1.thread_idx; text @@ vec_to_s t2.thread_idx |] :: locals
-  |> Array.of_list
-in
+  let locals =
+    [|
+      text "threadIdx";
+      text @@ idx_to_s ~idx:t1.thread_idx ~dim:block_dim;
+      text @@ idx_to_s ~idx:t2.thread_idx ~dim:block_dim;
+    |] :: locals
+    |> Array.of_list
+  in
   grid locals |> frame
 
 let box_globals (w:Witness.t) : PrintBox.t =
+  let dim x = if x = "1" then 0 else 1 in
+  let dim_len v =
+    let open Vec3 in
+    dim v.x + dim v.y + dim v.z
+  in
+  let box_dim name v =
+    if dim_len v = 0 then []
+    else
+      [name, dim_to_s v]
+  in
   [
     "index", Common.join " │ " w.indices;
-    "blockDim", vec_to_s w.block_dim;
-    "blockIdx", vec_to_s w.block_idx;
-    "gridDim", vec_to_s w.grid_dim;
-  ] @
-  w.globals
+  ]
+  @ box_dim "gridDim" w.grid_dim
+  @ box_idx "blockIdx" ~idx:w.block_idx ~dim:w.grid_dim
+  @ box_dim "blockDim" w.block_dim
+  @ w.globals
   |> box_environ
 
 let box_locals (w:Witness.t) : PrintBox.t =
   let (t1, t2) = w.tasks in
-  box_tasks t1 t2
+  box_tasks w.block_dim t1 t2
 
 let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
@@ -209,9 +254,9 @@ let main (fname: string) (timeout:int) : unit =
     | Some gv -> GvParser.to_assoc gv @ key_vals
     | None -> key_vals
     in
-    let dim (f:GvParser.t -> Dim3.t) : Vec3.t = match gv with
-      | Some gv -> Dim3.to_vec3 (f gv)
-      | None -> Vec3.default
+    let dim (f:GvParser.t -> Dim3.t) : Vec3.t option = match gv with
+      | Some gv -> Some (Dim3.to_vec3 (f gv))
+      | None -> None
     in
     let grid_dim = dim (fun gv -> gv.grid_dim) in
     let block_dim = dim (fun gv -> gv.block_dim) in
