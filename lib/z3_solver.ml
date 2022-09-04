@@ -41,6 +41,7 @@ module type NUMERIC_OPS = sig
 	val mk_ge: binop
 	val mk_gt: binop
 	val mk_lt: binop
+  val parse_num: string -> string
 end
 
 module ArithmeticOps : NUMERIC_OPS = struct
@@ -61,11 +62,12 @@ module ArithmeticOps : NUMERIC_OPS = struct
 	let mk_ge = Arithmetic.mk_ge
 	let mk_gt = Arithmetic.mk_gt
 	let mk_lt = Arithmetic.mk_lt
+	let parse_num (x:string) = x
 end
 
-let word_size = 64
 
 module BitVectorOps : NUMERIC_OPS = struct
+	let word_size = 32
 	let mk_var ctx x = BitVector.mk_const_s ctx x word_size
 	let mk_num ctx n = BitVector.mk_numeral ctx (string_of_int n) word_size
 	let mk_bit_and = BitVector.mk_and
@@ -82,10 +84,30 @@ module BitVectorOps : NUMERIC_OPS = struct
 	let mk_ge = BitVector.mk_uge
 	let mk_gt = BitVector.mk_ult
 	let mk_lt = BitVector.mk_ugt
+	let parse_num x =
+		(* Input is: #x0000004000000000 *)
+		let offset n x = String.sub x n (String.length x - n) in
+		(* We need to remove the prefix #x *)
+		let x = offset 2 x in (* Removes the prefix: #x *)
+		(* Then we need to remove the prefix 0s,
+		   otherwise Int64.of_string doesn't like it *)
+		let rec trim_0 x =
+			if String.length x > 0 && String.get x 0 = '0'
+			then trim_0 (offset 1 x)
+			else x
+		in
+		(* Prefix it with a 0x so that Int64.of_string knows it's an hex *)
+    let x = "0x" ^ trim_0 x in
+		(* Finally, convert it into an int64 (signed),
+	     and then render it back to a string, as this is for display only *)
+    if x = "0x"
+    then "0"
+    else Int32.of_string x |> Int32.to_string
 end
 
 
 module CodeGen (N:NUMERIC_OPS) = struct 
+	let parse_num = N.parse_num
 
 	let nbin_to_expr (op:nbin) : Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = match op with
 		| BitAnd -> N.mk_bit_and
@@ -174,7 +196,7 @@ module Environ = struct
 
 	let get: string -> t -> string option = List.assoc_opt
 
-	let parse (m:Model.model) : t =
+	let parse (parse_num:string -> string) (m:Model.model) : t =
 		Model.get_const_decls m
 		|> List.map (fun d ->
 			let key: string = FuncDecl.get_name d |> Symbol.get_string in
@@ -183,7 +205,7 @@ module Environ = struct
 				|> Option.map Expr.to_string
 				|> Ojson.unwrap_or "?"
 			in
-			(key, e)
+			(key, parse_num e)
 		)
 
 end
@@ -200,15 +222,8 @@ module Vec3 = struct
       "y", v.y;
       "z", v.z;
     ]
-(*
-  let get (key:string) : string option =
-    match key with
-    | "x" -> Some v.x
-    | "y" -> Some v.y
-    | "z" -> Some v.z
-    | _ -> None
-*)
-	let to_json (v:t) : json =
+
+    let to_json (v:t) : json =
 		let open Yojson.Basic in
 		`Assoc [
 			"x", `String v.x;
@@ -357,8 +372,8 @@ module Witness = struct
 		let (t1_mode, t2_mode) = parse_mode kvs in
 		(env, (parse_indices kvs, t1_mode, t2_mode)) 
 
-	let parse ~block_dim ~grid_dim (m:Model.model) : t =
-		let env = Environ.parse m in
+	let parse (parse_num:string -> string) ~block_dim ~grid_dim (m:Model.model) : t =
+		let env = Environ.parse parse_num m in
 		(* put all special variables in kvs
 			$T2$loc: 0
 			$T1$mode: 0
@@ -434,6 +449,7 @@ module Solution = struct
 	 *)
 	let solve ?(timeout=1000) ~block_dim ~grid_dim ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : t Streamutil.stream =
 		let b_to_expr = ref IntGen.b_to_expr in
+		let parse_num = ref IntGen.parse_num in
 		Streamutil.map (fun p ->
 			let ctx = Z3.mk_context [
 				("model", "true");
@@ -453,6 +469,7 @@ module Solution = struct
 					Not_implemented x ->
 						prerr_endline ("WARNING: arithmetic solver cannot handle operator '" ^ x ^ "', trying bit-vector arithmetic instead.");
 						b_to_expr := BvGen.b_to_expr;
+						parse_num := BvGen.parse_num;
 						solve !b_to_expr
 			in
       let block_dim = block_dim |> Ojson.unwrap_or Vec3.default in
@@ -461,7 +478,7 @@ module Solution = struct
 			| UNSATISFIABLE -> Drf
 			| SATISFIABLE ->
 				(match Solver.get_model s with
-				| Some m -> Racy (Witness.parse ~block_dim ~grid_dim m)
+				| Some m -> Racy (Witness.parse !parse_num ~block_dim ~grid_dim m)
 				| None -> failwith "INVALID")
 			| UNKNOWN -> Unknown
 			in
