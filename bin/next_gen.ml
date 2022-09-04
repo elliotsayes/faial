@@ -278,20 +278,32 @@ let main (fname: string) (timeout:int) : unit =
       )
       |> Streamutil.to_list
     in
+    let print_errors errs =
+      errs |> List.iteri (fun i err ->
+        T.print_string [T.Bold; T.Foreground T.Blue] ("\n~~~~ Data-race " ^ string_of_int (i + 1) ^ " ~~~~\n\n");
+        T.print_string [T.Bold] ("Globals\n");
+        box_globals err |> print_box;
+        T.print_string [T.Bold] ("\n\nLocals\n");
+        box_locals err |> print_box;
+        print_endline "";
+      );
+    in
     match Common.either_split errors with
     | [], [] -> T.print_string [T.Bold; T.Foreground T.Green] ("Kernel '" ^ kernel_name ^ "' is DRF!\n")
     | unk, errs ->
-      T.print_string [T.Bold; T.Foreground T.Red] ("Kernel '" ^ kernel_name ^ "' has errors.\n");
-      let (_, errs) = List.split errs in
-      errs |> List.iter (fun w ->
-        print_endline "Globals";
-        box_globals w |> print_box;
-        print_endline "\n\nLocals";
-        box_locals w |> print_box;
-        print_endline "";
+      let has_unknown = List.length unk > 0 in
+      let errs = List.split errs |> snd in
+      let err_count = List.length errs |> string_of_int in
+      let dr = "data-race" ^ (if err_count = "1" then "" else "s") in
+      T.print_string [T.Bold; T.Foreground T.Red] ("Kernel '" ^ kernel_name ^ "' has " ^ err_count ^ " " ^ dr ^ ".\n");
+      print_errors errs;
+      if has_unknown then
+        T.print_string [T.Foreground T.Red] ("A portion of the kernel was not analyzable. Try to increasing the timeout.\n")
+      else ();
+      if err_count <> "0" || has_unknown then
         exit 1
-      );
-      print_endline "Unknown!"
+      else
+        ()
   ) p
 
 open Cmdliner
