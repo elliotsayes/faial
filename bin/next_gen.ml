@@ -191,7 +191,7 @@ let box_tasks (block_dim:Vec3.t) (t1:Task.t) (t2:Task.t) : PrintBox.t =
   let locals =
     t1.locals
     |> List.map (fun (k, v1) -> 
-      [| text k; text v1; text (List.assoc k t2.locals) |]
+      [| text k; text v1; text (List.assoc_opt k t2.locals |> Ojson.unwrap_or "?") |]
     )
   in
   let locals =
