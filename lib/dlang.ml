@@ -65,7 +65,7 @@ type d_for_init =
   | ForDecl of d_decl list
   | ForExp of d_exp
 
-type d_subscript = {name: variable; index: d_exp list; ty: d_type}
+type d_subscript = {name: variable; index: d_exp list; ty: d_type; location: Sourceloc.location}
 type d_write = {target: d_subscript; source: d_exp}
 type d_read = {target: variable; source: d_subscript}
 
@@ -426,13 +426,13 @@ and rewrite_subscript (c:Cast.c_array_subscript) : (AccessState.t, d_subscript) 
 
     | VarDecl {name=n; ty=ty}
     | ParmVarDecl {name=n; ty=ty} ->
-      state_pure {name=n; index=indices; ty=ty} st
+      state_pure {name=n; index=indices; ty=ty; location=c.location} st
 
     | e ->
       let ty = Cast.exp_type e in
       let (st, e) = rewrite_exp e st in
       let (st, x) = AccessState.add_exp e ty st in
-      state_pure {name=x; index=indices; ty=ty} st
+      state_pure {name=x; index=indices; ty=ty; location=c.location} st
   in
   rewrite_subscript c []
 and rewrite_write (a:Cast.c_array_subscript) (src:Cast.c_exp) : (AccessState.t, d_exp) state =

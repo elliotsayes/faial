@@ -33,7 +33,7 @@ type c_exp =
   | EnumConstantDecl of c_var
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
 and c_binary = {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
-and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type}
+and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type; location: Sourceloc.location}
 
 module Init = struct
   type t =
@@ -114,7 +114,7 @@ module VisitExp = struct
     | CXXDelete of {arg: 'a; ty: c_type}
     | Recovery of c_type
     | CharacterLiteral of int
-    | ArraySubscript of {lhs: 'a; rhs: 'a; ty: c_type}
+    | ArraySubscript of {lhs: 'a; rhs: 'a; ty: c_type; location: Sourceloc.location}
     | BinaryOperator of {opcode: string; lhs: 'a; rhs: 'a; ty: c_type}
     | Call of {func: 'a; args: 'a list; ty: c_type}
     | ConditionalOperator of {cond: 'a; then_expr: 'a; else_expr: 'a; ty: c_type}
@@ -140,7 +140,7 @@ module VisitExp = struct
     | CXXDeleteExpr e -> f (CXXDelete {arg=fold f e.arg; ty=e.ty})
     | RecoveryExpr e -> f (Recovery e)
     | CharacterLiteral e -> f (CharacterLiteral e)
-    | ArraySubscriptExpr e -> f (ArraySubscript {lhs=fold f e.lhs; rhs=fold f e.rhs; ty=e.ty})
+    | ArraySubscriptExpr e -> f (ArraySubscript {lhs=fold f e.lhs; rhs=fold f e.rhs; ty=e.ty; location=e.location})
     | BinaryOperator e -> f (BinaryOperator {
         opcode=e.opcode;
         lhs=fold f e.lhs;
@@ -203,8 +203,8 @@ module VisitExp = struct
         f (CXXNewExpr {arg=ret a; ty=ty})
       | CXXDeleteExpr {arg=a; ty=ty} ->
         f (CXXDeleteExpr {arg=ret a; ty=ty})
-      | ArraySubscriptExpr {lhs=e1; rhs=e2; ty=ty} ->
-        f (ArraySubscriptExpr {lhs=ret e1; rhs=ret e2; ty=ty})
+      | ArraySubscriptExpr {lhs=e1; rhs=e2; ty=ty; location=l} ->
+        f (ArraySubscriptExpr {lhs=ret e1; rhs=ret e2; ty=ty; location=l})
       | BinaryOperator {opcode=o; lhs=e1; rhs=e2; ty=ty} ->
         f (BinaryOperator {opcode=o; lhs=ret e1; rhs=ret e2; ty=ty})
       | CallExpr {func=e; args=l; ty=ty} ->
@@ -649,7 +649,8 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* lhs, rhs = with_field "inner"
       (cast_list_2 parse_exp parse_exp) o
     in
-    Ok (ArraySubscriptExpr {ty=ty; lhs=lhs; rhs=rhs})
+    let* loc = with_field "range" parse_location o in
+    Ok (ArraySubscriptExpr {ty=ty; lhs=lhs; rhs=rhs; location=loc})
 
   | "CXXMemberCallExpr"
   | "CXXOperatorCallExpr" ->
@@ -1105,7 +1106,12 @@ let rewrite_shared_arrays: c_program -> c_program =
       match e with
       | VarDecl x ->
         if VarSet.mem x.name vars
-        then ArraySubscriptExpr {lhs=VarDecl x; rhs=IntegerLiteral 0; ty=x.ty}
+        then ArraySubscriptExpr {
+          lhs=VarDecl x;
+          rhs=IntegerLiteral 0;
+          ty=x.ty;
+          location=var_loc x.name
+        }
         else e
       | _ -> e)
   in

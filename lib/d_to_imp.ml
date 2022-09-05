@@ -540,12 +540,12 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
     ret_assert b
 
   | WriteAccessStmt w ->
-    let x = w.target.name in
+    let x = w.target.name |> var_set_loc w.target.location in
     let* idx = with_msg "write.idx" (cast_map parse_exp) w.target.index in
     idx |> ret_ns (fun idx -> Imp.Acc (x, {access_index=idx; access_mode=W}))
 
   | ReadAccessStmt r ->
-    let x = r.source.name in
+    let x = r.source.name |> var_set_loc r.source.location in
     let* idx = with_msg "read.idx" (cast_map parse_exp) r.source.index in
     idx
     |> ret_ns ~extra_vars:(VarSet.of_list [r.target]) (fun idx ->
