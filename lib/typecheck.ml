@@ -43,7 +43,7 @@ let typecheck_kernel (k:prog kernel) : err_t list =
   let errs = undef_vars (VarSet.of_list all_vars) k.kernel_code errs in
   let errs = undef_locs (k.kernel_arrays |> var_map_to_set) k.kernel_code errs in
   let on_msg msg =
-    List.map (fun x -> (msg ^ " '" ^ var_name x ^ "'", var_loc x))
+    List.map (fun x -> (msg ^ " '" ^ var_name x ^ "'", var_loc_opt x))
   in
   errs |>
   List.concat_map (fun es ->

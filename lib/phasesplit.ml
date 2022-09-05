@@ -110,7 +110,7 @@ let translate (ks: a_prog kernel stream) (_:bool) : u_kernel stream =
         |> List.map (fun (x:variable) ->
           "Barrier divergence error: cannot use thread-local variable '" ^
           (var_name x) ^ "' in synchronized control flow",
-          (var_loc x)
+          (var_loc_opt x)
           )
       in
       if List.length errs > 0 then
