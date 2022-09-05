@@ -78,12 +78,12 @@ module BitVectorOps : NUMERIC_OPS = struct
 	let mk_minus = BitVector.mk_sub
 	let mk_plus = BitVector.mk_add
 	let mk_mult = BitVector.mk_mul
-	let mk_div = BitVector.mk_udiv
+	let mk_div = BitVector.mk_sdiv
 	let mk_mod = BitVector.mk_smod
-	let mk_le = BitVector.mk_ule
-	let mk_ge = BitVector.mk_uge
-	let mk_gt = BitVector.mk_ult
-	let mk_lt = BitVector.mk_ugt
+	let mk_le = BitVector.mk_sle
+	let mk_ge = BitVector.mk_sge
+	let mk_gt = BitVector.mk_slt
+	let mk_lt = BitVector.mk_sgt
 	let parse_num x =
 		(* Input is: #x0000004000000000 *)
 		let offset n x = String.sub x n (String.length x - n) in
