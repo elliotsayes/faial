@@ -279,12 +279,23 @@ let main (fname: string) (timeout:int) : unit =
       |> Streamutil.to_list
     in
     let print_errors errs =
-      errs |> List.iteri (fun i err ->
+      errs |> List.iteri (fun i (w:Witness.t) ->
         T.print_string [T.Bold; T.Foreground T.Blue] ("\n~~~~ Data-race " ^ string_of_int (i + 1) ^ " ~~~~\n\n");
+        let locs =
+          let (t1, t2) = w.tasks in
+          let l = [t1.location; t2.location] |> Common.flatten_opt in
+          match l with
+          | [x1; x2] when x1 = x2 -> [x1]
+          | [x1; x2] when x2 < x1 -> [x2; x1]
+          | _ -> l
+        in
+        locs |> List.iter (fun x ->
+          Sourceloc.print_location x
+        );
         T.print_string [T.Bold] ("Globals\n");
-        box_globals err |> print_box;
+        box_globals w |> print_box;
         T.print_string [T.Bold] ("\n\nLocals\n");
-        box_locals err |> print_box;
+        box_locals w |> print_box;
         print_endline "";
       );
     in

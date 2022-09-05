@@ -110,6 +110,9 @@ module LocationCache = struct
       ht.all_locs <- l::ht.all_locs;
       n
 
+  let nth (ht:t) (idx:int) =
+    List.nth ht.all_locs idx
+
   let all (ht:t) : Sourceloc.location list =
     ht.all_locs
 end

@@ -90,7 +90,7 @@ module BitVectorOps : NUMERIC_OPS = struct
 		(* We need to remove the prefix #x *)
 		let x = offset 2 x in (* Removes the prefix: #x *)
 		(* Then we need to remove the prefix 0s,
-		   otherwise Int64.of_string doesn't like it *)
+		   otherwise Int32.of_string doesn't like it *)
 		let rec trim_0 x =
 			if String.length x > 0 && String.get x 0 = '0'
 			then trim_0 (offset 1 x)
@@ -251,10 +251,11 @@ module Task = struct
 		thread_idx: Vec3.t;
 		locals: Environ.t;
 		mode: Exp.mode;
+		location: Sourceloc.location option;
 	}
 
-	let mk ~thread_idx:tid ~locals:locals ~mode:mode =
-		{thread_idx=tid; locals=locals; mode=mode}
+	let mk ~thread_idx:tid ~locals:locals ~mode:mode ~location:location =
+		{thread_idx=tid; locals=locals; mode=mode; location=location}
 
 	let to_json (x:t) : json =
 		let open Yojson.Basic in
@@ -262,6 +263,11 @@ module Task = struct
 			"threadIdx", Vec3.to_json x.thread_idx;
 			"locals", Environ.to_json x.locals;
 			"mode", `String (match x.mode with R -> "rw" | W -> "rd");
+			"location", `String (
+        x.location
+        |> Option.map Sourceloc.location_repr
+        |> Option.value ~default:"?"
+      )
 		]
 
 	let to_string (v:t) : string =
@@ -372,8 +378,19 @@ module Witness = struct
 		let (t1_mode, t2_mode) = parse_mode kvs in
 		(env, (parse_indices kvs, t1_mode, t2_mode)) 
 
-	let parse (parse_num:string -> string) ~block_dim ~grid_dim (m:Model.model) : t =
+	let parse (cache:Symbexp.LocationCache.t) (parse_num:string -> string) ~block_dim ~grid_dim (m:Model.model) : t =
 		let env = Environ.parse parse_num m in
+    let parse_loc (tid:string) =
+      env
+      |> Environ.get ("$T" ^ tid ^ "$loc")
+      |> Option.map (fun x ->
+        x
+        |> int_of_string
+        |> Symbexp.LocationCache.nth cache
+      )
+    in
+    let t1_loc = parse_loc "1" in
+    let t2_loc = parse_loc "2" in
 		(* put all special variables in kvs
 			$T2$loc: 0
 			$T1$mode: 0
@@ -414,11 +431,13 @@ module Witness = struct
 			thread_idx = t1_tid;
 			locals = t1_locals;
 			mode = t1_mode;
+      location = t1_loc;
 		} in
 		let t2 = Task.{
 			thread_idx = t2_tid;
 			locals = t2_locals;
 			mode = t2_mode;
+      location = t2_loc;
 		}
 		in
 		{
@@ -478,7 +497,7 @@ module Solution = struct
 			| UNSATISFIABLE -> Drf
 			| SATISFIABLE ->
 				(match Solver.get_model s with
-				| Some m -> Racy (Witness.parse !parse_num ~block_dim ~grid_dim m)
+				| Some m -> Racy (Witness.parse cache !parse_num ~block_dim ~grid_dim m)
 				| None -> failwith "INVALID")
 			| UNKNOWN -> Unknown
 			in

@@ -8,6 +8,10 @@ type position = {
 
 let pos_empty = {pos_filename = ""; pos_line = 1; pos_column=1}
 
+let pos_to_tuple (p:position) = (p.pos_filename, p.pos_line, p.pos_column)
+
+let pos_lt (p1:position) (p2:position) = pos_to_tuple p1 < pos_to_tuple p2
+
 (* Return the line number and position of a position *)
 let of_lex_position pos =
   let open Lexing in
@@ -41,10 +45,12 @@ type location = {
   loc_end : position;
 }
 
-
 let location_repr (l:location) =
   "{start=" ^ position_repr l.loc_start ^", " ^
    "end=" ^ position_repr l.loc_end ^"}"
+
+let location_lt (l1:location) (l2:location) =
+  pos_lt l1.loc_start l2.loc_start || (l1.loc_start = l2.loc_start && pos_lt l1.loc_end l2.loc_end)
 
 let loc_empty = {
   loc_start = pos_empty;
@@ -130,21 +136,32 @@ let location_title loc =
 (** Prints the location; highlights the locations *)
 
 let make_bold =
-   ANSITerminal.sprintf [ANSITerminal.Bold] "%s"
+   ANSITerminal.sprintf [ANSITerminal.Bold; ANSITerminal.Foreground ANSITerminal.Red] "%s"
 
 let location_bprint_title (outx:Buffer.t) (loc:location) : unit =
   let underline offset count : string =
+    let count = if count = 0 then 1 else count in
     (String.make offset ' ') ^ (String.make count '^' |> make_bold)
   in
   let txt, hl = location_title loc in
+  let lineno = loc.loc_start.pos_line in
   let left = String.sub txt 0 hl.range_offset in
-  Printf.bprintf outx "%s" left;
+  Printf.bprintf outx "%d | %s" lineno left;
   let mid = String.sub txt hl.range_offset hl.range_count in
+  let spaces =
+    let count = Printf.sprintf "%d | " lineno |> String.length in
+    String.make count ' '
+  in
   Printf.bprintf outx "%s" (make_bold mid);
   let idx = hl.range_offset + hl.range_count in
   let right = String.sub txt idx (String.length txt - idx) in
   Printf.bprintf outx "%s\n" right;
-  Printf.bprintf outx "%s\n" (underline hl.range_offset hl.range_count)
+  Printf.bprintf outx "%s%s\n" spaces (underline hl.range_offset hl.range_count)
+
+let print_location (l:location) : unit =
+  let out = Buffer.create 1024 in
+  location_bprint_title out l;
+  Buffer.output_buffer stdout out
 
 let bprint_errs b (errs:(string * location option) list) : bool =
   let print_err (msg,loc:string * location option) =
