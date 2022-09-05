@@ -662,6 +662,15 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
   let mk_var (name:string) (suffix:string) (x:string) : nexp =
     Var (var_make (name ^ suffix ^ "." ^ x))
   in
+  let vars_ge_0 : bexp list =
+    cuda_dims
+    |> List.concat_map (fun (x:string) ->
+      cuda_vars
+      |> List.map (fun (name:string) ->
+        n_ge (Var (var_make (name ^ "." ^ x))) (Num 0)
+      )
+    )
+  in
   let idx_lt_dim (name1, name2) : bexp list =
     List.map (fun x ->
       n_lt (mk_var name1 "Idx" x) (mk_var name2 "Dim" x)
@@ -680,6 +689,8 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
   Block [
     Decl all_vars;
     Assert (
+      vars_ge_0
+      @
       (Exp.distinct local_vars ::
         List.concat_map idx_lt_dim [("thread", "block"); ("block", "grid")]
       )
