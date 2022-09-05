@@ -63,9 +63,8 @@ type d_location_alias = {
 }
 
 let cuda_global_vars = [
-  "threadDim";
   "blockIdx"; "blockDim";
-  "gridIdx"; "gridDim";
+  "gridDim";
 ]
 
 let cuda_local_vars = ["threadIdx"]
