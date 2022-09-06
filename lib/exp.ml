@@ -1,7 +1,7 @@
 let (@) = Common.append_tr
 
 type variable =
-  | LocVariable of Sourceloc.location * string
+  | LocVariable of Location.t * string
   | Variable of string
 
 let var_make (name:string) : variable = Variable name
@@ -12,23 +12,23 @@ let var_set_name (v:variable) (name:string) =
   | Variable _ -> Variable name
 
 let var_of_loc name pair =
-  LocVariable (Sourceloc.of_lex_position_pair pair, name)
+  LocVariable (Location.of_lex_position_pair pair, name)
 
 let var_name (x:variable) : string =
   match x with
   | LocVariable (_, x) -> x
   | Variable x -> x
 
-let var_loc_opt (x:variable) : Sourceloc.location option =
+let var_loc_opt (x:variable) : Location.t option =
   match x with
   | LocVariable (l, _) -> Some l
   | Variable _ -> None
 
-let var_set_loc (l:Sourceloc.location) (x:variable) : variable =
+let var_set_loc (l:Location.t) (x:variable) : variable =
   LocVariable (l, var_name x)
 
-let var_loc (x:variable) : Sourceloc.location =
-  var_loc_opt x |> Option.value ~default:Sourceloc.loc_empty
+let var_loc (x:variable) : Location.t =
+  var_loc_opt x |> Option.value ~default:Location.empty
 
 let var_equal (x:variable) (y:variable) =
   String.equal (var_name x) (var_name y)
@@ -37,7 +37,7 @@ let var_repr (x:variable) : string =
   match x with
   | Variable x -> "Variable{name=\""^ x ^"\"}"
   | LocVariable (l, x) ->
-    "LocVariable{name=\"" ^ x ^ "\", loc="^ Sourceloc.location_repr l ^ "}"
+    "LocVariable{name=\"" ^ x ^ "\", loc="^ Location.location_repr l ^ "}"
 
 module VarOT = struct
   type t = variable

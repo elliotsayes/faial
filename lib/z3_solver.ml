@@ -251,7 +251,7 @@ module Task = struct
 		thread_idx: Vec3.t;
 		locals: Environ.t;
 		mode: Exp.mode;
-		location: Sourceloc.location option;
+		location: Location.t option;
 	}
 
 	let mk ~thread_idx:tid ~locals:locals ~mode:mode ~location:location =
@@ -265,7 +265,7 @@ module Task = struct
 			"mode", `String (match x.mode with R -> "rw" | W -> "rd");
 			"location", `String (
         x.location
-        |> Option.map Sourceloc.location_repr
+        |> Option.map Location.location_repr
         |> Option.value ~default:"?"
       )
 		]

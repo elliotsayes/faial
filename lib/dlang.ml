@@ -65,7 +65,7 @@ type d_for_init =
   | ForDecl of d_decl list
   | ForExp of d_exp
 
-type d_subscript = {name: variable; index: d_exp list; ty: d_type; location: Sourceloc.location}
+type d_subscript = {name: variable; index: d_exp list; ty: d_type; location: Location.t}
 type d_write = {target: d_subscript; source: d_exp}
 type d_read = {target: variable; source: d_subscript}
 

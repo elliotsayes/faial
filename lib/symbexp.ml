@@ -87,13 +87,13 @@ let proj_accesses locals t = List.map (proj_access locals t)
 type assign_task = {
   assign_mode : mode -> bexp;
   assign_index: int -> nexp -> bexp;
-  assign_loc: Sourceloc.location -> bexp;
+  assign_loc: Location.t -> bexp;
 }
 
 module LocationCache = struct
   type t = {
-    loc_to_int: (Sourceloc.location, int) Hashtbl.t;
-    mutable all_locs: Sourceloc.location list;
+    loc_to_int: (Location.t, int) Hashtbl.t;
+    mutable all_locs: Location.t list;
   }
 
   let create (size:int) : t = {
@@ -101,7 +101,7 @@ module LocationCache = struct
     all_locs = []
   }
 
-  let get (ht:t) (l:Sourceloc.location) : int =
+  let get (ht:t) (l:Location.t) : int =
     match Hashtbl.find_opt ht.loc_to_int l with
     | Some n -> n
     | None ->
@@ -113,7 +113,7 @@ module LocationCache = struct
   let nth (ht:t) (idx:int) =
     List.nth ht.all_locs idx
 
-  let all (ht:t) : Sourceloc.location list =
+  let all (ht:t) : Location.t list =
     ht.all_locs
 end
 
@@ -140,7 +140,7 @@ let mk_task_gen (cache:LocationCache.t) (t:task) : assign_task =
       |> b_and b
     else b
   in
-  let assign_loc (l:Sourceloc.location) : bexp =
+  let assign_loc (l:Location.t) : bexp =
         n_eq (mk_loc (other_task t))
             (Num (LocationCache.get cache l))
   in

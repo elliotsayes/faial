@@ -290,7 +290,7 @@ let main (fname: string) (timeout:int) : unit =
           | _ -> l
         in
         locs |> List.iter (fun x ->
-          Sourceloc.print_location x
+          Location.print_location x
         );
         T.print_string [T.Bold] ("Globals\n");
         box_globals w |> print_box;

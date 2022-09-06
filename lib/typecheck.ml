@@ -8,7 +8,7 @@ type type_error =
 | UndefinedLocs of variable list
 | UndefinedVars of variable list
 
-type err_t = string * Sourceloc.location option
+type err_t = string * Location.t option
 
 let typecheck_kernel (k:prog kernel) : err_t list =
   let handle (ctr: variable list -> type_error) (errs:type_error list) (l:VarSet.t) : type_error list =

@@ -3,7 +3,7 @@ open Locsplit
 open Exp
 
 type cond_access = {
-  ca_location: Sourceloc.location option;
+  ca_location: Location.t option;
   ca_access: access;
   ca_cond: bexp;
 }

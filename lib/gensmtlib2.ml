@@ -152,19 +152,19 @@ let bv_serialize_proofs : Symbexp.proof list -> Smtlib.sexp list = Bv2.serialize
 
 let int_serialize_proofs : Symbexp.proof list -> Smtlib.sexp list = Std2.serialize_proofs
 
-let location_to_sexp (l:Sourceloc.location) : Smtlib.sexp =
-  let open Sourceloc in
-  let add_pos (b:Buffer.t) (p:Sourceloc.position) =
-    Buffer.add_string b (string_of_int p.pos_line);
+let location_to_sexp (l:Location.t) : Smtlib.sexp =
+  let open Location in
+  let add_pos (b:Buffer.t) (p:Location.Position.t) =
+    Buffer.add_string b (string_of_int p.line);
     Buffer.add_char b ':';
-    Buffer.add_string b (string_of_int p.pos_column)
+    Buffer.add_string b (string_of_int p.column)
   in
   let b = Buffer.create 100 in
-  Buffer.add_string b l.loc_start.pos_filename;
+  Buffer.add_string b l.first.filename;
   Buffer.add_char b ':';
-  add_pos b l.loc_start;
+  add_pos b l.first;
   Buffer.add_char b ':';
-  add_pos b l.loc_end;
+  add_pos b l.last;
   let b = Buffer.contents b in
   let open Smtlib in
   let b = atom_to_string (String b) in

@@ -3,7 +3,7 @@
 ; Otherwise dune thinks there's a circular dependency
 (library
   (name kernel)
-  (modules common sourceloc exp proto smtlib  serialize subst constfold predicates bindings)
+  (modules common location exp proto smtlib  serialize subst constfold predicates bindings)
   (wrapped false)
   (libraries yojson ANSITerminal)
 )

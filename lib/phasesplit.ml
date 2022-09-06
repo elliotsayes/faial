@@ -90,7 +90,7 @@ let u_free_names (p:u_prog) : VarSet.t -> VarSet.t =
   in
   fn_p p
 
-exception PhasesplitException of (string * Sourceloc.location option) list
+exception PhasesplitException of (string * Location.t option) list
 
 let translate (ks: a_prog kernel stream) (_:bool) : u_kernel stream =
   let translate_k (k: a_prog kernel) : u_kernel stream =

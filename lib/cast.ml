@@ -33,7 +33,7 @@ type c_exp =
   | EnumConstantDecl of c_var
   | UnresolvedLookupExpr of {name: variable; tys: c_type list}
 and c_binary = {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
-and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type; location: Sourceloc.location}
+and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type; location: Location.t}
 
 module Init = struct
   type t =
@@ -114,7 +114,7 @@ module VisitExp = struct
     | CXXDelete of {arg: 'a; ty: c_type}
     | Recovery of c_type
     | CharacterLiteral of int
-    | ArraySubscript of {lhs: 'a; rhs: 'a; ty: c_type; location: Sourceloc.location}
+    | ArraySubscript of {lhs: 'a; rhs: 'a; ty: c_type; location: Location.t}
     | BinaryOperator of {opcode: string; lhs: 'a; rhs: 'a; ty: c_type}
     | Call of {func: 'a; args: 'a list; ty: c_type}
     | ConditionalOperator of {cond: 'a; then_expr: 'a; else_expr: 'a; ty: c_type}
@@ -422,8 +422,8 @@ let exp_name =
   | VarDecl _ -> "VarDecl"
   | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
 
-let rec parse_position : json -> Sourceloc.position j_result =
-  let open Sourceloc in
+let rec parse_position : json -> Location.Position.t j_result =
+  let open Location in
   let open Rjson in
   fun (j:json) ->
     let* o = cast_object j in
@@ -431,26 +431,23 @@ let rec parse_position : json -> Sourceloc.position j_result =
       let* line = with_field "line" cast_int o in
       let* col = with_field "col" cast_int o in
       let* filename = with_field_or "file" cast_string "" o in
-      Ok {
-        pos_line = line;
-        pos_column = col;
-        pos_filename = filename
+      Ok Location.Position.{
+        line = line;
+        column = col;
+        filename = filename
       }
     ) with
     | Ok p -> Ok p
     | Error e -> with_field "expansionLoc" parse_position o
     
 
-let parse_location (j:json) : Sourceloc.location j_result =
+let parse_location (j:json) : Location.t j_result =
   let open Rjson in
-  let open Sourceloc in
+  let open Location in
   let* o = cast_object j in
   let* s = with_field "begin" parse_position o in
   let e = with_field "end" parse_position o |> unwrap_or s in
-  Ok {
-    loc_start = s;
-    loc_end = e;
-  }
+  Ok (Location.make ~first:s ~last:e)
 
 let parse_variable (j:json) : variable j_result =
   let open Rjson in
