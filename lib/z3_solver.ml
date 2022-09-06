@@ -134,7 +134,7 @@ module CodeGen (N:NUMERIC_OPS) = struct
 		| BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
 
 	let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr = match n with
-		| Var x -> var_name x |> N.mk_var ctx
+		| Var x -> Variable.name x |> N.mk_var ctx
 		| Proj _ ->
 		    let n : string = Serialize.PPrint.n_to_s n in
 		    raise (Not_implemented ("n_to_expr: not implemented for Proj of " ^ n))
@@ -162,12 +162,12 @@ module BvGen = CodeGen (BitVectorOps)
 let add ?(add_block_dim=false) (b_to_expr : Z3.context -> bexp -> Expr.expr) (s:Solver.solver) (ctx:Z3.context) (p:Symbexp.proof) : unit =
 	
 	let mk_var (name:string) : Expr.expr =
-		n_ge (Var (Exp.var_make name)) (Num 0)
+		n_ge (Var (Variable.from_name name)) (Num 0)
 		|> b_to_expr ctx
 	in
 	List.map mk_var p.proof_decls |> Solver.add s;
 	let assign x n =
-		n_eq (Var (Exp.var_make x)) (Num n)
+		n_eq (Var (Variable.from_name x)) (Num n)
 		|> b_to_expr ctx
 	in
   (if add_block_dim then [
@@ -265,7 +265,7 @@ module Task = struct
 			"mode", `String (match x.mode with R -> "rw" | W -> "rd");
 			"location", `String (
         x.location
-        |> Option.map Location.location_repr
+        |> Option.map Location.repr
         |> Option.value ~default:"?"
       )
 		]

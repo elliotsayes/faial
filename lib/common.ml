@@ -10,9 +10,23 @@ module MapUtil (M:Map.S) = struct
     ) M.empty l
 end
 
+module MapSetUtil (S:Set.S) (M:Map.S with type key = S.elt) = struct
+  let set_to_map (s:S.t) (f:S.elt -> 'a option) : 'a M.t =
+    S.fold (fun k m ->
+      match f k with
+      | Some v -> M.add k v m
+      | None -> m
+    ) s M.empty
+
+  let map_to_set (m:'a M.t) : S.t =
+    M.bindings m |> List.map fst |> S.of_list
+
+end
+
 module StringSet = Set.Make(StringOT)
 module StringMap = Map.Make(StringOT)
 module StringMapUtil = MapUtil(StringMap)
+module StringMapSetUtil = MapSetUtil(StringSet)(StringMap)
 
 let append_tr (l1:'a list) (l2:'a list) : 'a list =
   let rec app (ret:'a list -> 'a list) (l:'a list) : 'a list =

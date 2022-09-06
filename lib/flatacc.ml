@@ -14,7 +14,7 @@ let add_cond (b:bexp) (c:cond_access) : cond_access =
 type f_kernel = {
   f_kernel_name: string;
   f_kernel_array: string;
-  f_kernel_local_variables: VarSet.t;
+  f_kernel_local_variables: Variable.Set.t;
   f_kernel_accesses: cond_access list;
   f_kernel_pre: bexp;
 }
@@ -69,19 +69,19 @@ let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
   let rec flatten_i (b:bexp) (i:u_inst) : cond_access list =
     match i with
     | UAssert _ -> failwith "Internall error: call rm_asserts first!"
-    | UAcc (x, e) -> [{ca_location = var_loc_opt x; ca_access = e; ca_cond = b}]
+    | UAcc (x, e) -> [{ca_location = Variable.location_opt x; ca_access = e; ca_cond = b}]
     | UCond (b', p) -> flatten_p (b_and b' b) p
     | ULoop (r, p) -> flatten_p (b_and (range_to_cond r) b) p
   and flatten_p (b:bexp) (p:u_prog) : cond_access list =
     List.map (flatten_i b) p |> List.flatten
   in
-  let rec loop_vars_i (i:u_inst) (vars:VarSet.t) : VarSet.t =
+  let rec loop_vars_i (i:u_inst) (vars:Variable.Set.t) : Variable.Set.t =
     match i with
     | UAssert _
     | UAcc _ -> vars
     | UCond (_, p) -> loop_vars_p p vars
-    | ULoop (r, p) -> loop_vars_p p (VarSet.add r.range_var vars)
-  and loop_vars_p (p:u_prog) (vars:VarSet.t) : VarSet.t =
+    | ULoop (r, p) -> loop_vars_p p (Variable.Set.add r.range_var vars)
+  and loop_vars_p (p:u_prog) (vars:Variable.Set.t) : Variable.Set.t =
     List.fold_right loop_vars_i p vars
   in
   let code =

@@ -11,11 +11,11 @@ type u_kernel = {
   (* The kernel name *)
   u_kernel_name : string;
   (* The shared locations that can be accessed in the kernel. *)
-  u_kernel_arrays: VarSet.t;
+  u_kernel_arrays: Variable.Set.t;
   (* The internal variables are used in the code of the kernel.  *)
-  u_kernel_global_variables: VarSet.t;
+  u_kernel_global_variables: Variable.Set.t;
   (* The internal variables are used in the code of the kernel.  *)
-  u_kernel_local_variables: VarSet.t;
+  u_kernel_local_variables: Variable.Set.t;
   (* Global ranges *)
   u_kernel_ranges: range list;
   (* The code of a kernel performs the actual memory accesses. *)
@@ -75,8 +75,8 @@ let a_prog_to_bi (pre:bexp) : a_prog -> barrier_interval stream =
   in
   p_phase
 
-let u_free_names (p:u_prog) : VarSet.t -> VarSet.t =
-  let rec fn_i (i:u_inst) (fns:VarSet.t) : VarSet.t =
+let u_free_names (p:u_prog) : Variable.Set.t -> Variable.Set.t =
+  let rec fn_i (i:u_inst) (fns:Variable.Set.t) : Variable.Set.t =
     match i with
     | UAssert b -> Freenames.free_names_bexp b fns
     | UAcc (_,e) ->
@@ -85,7 +85,7 @@ let u_free_names (p:u_prog) : VarSet.t -> VarSet.t =
       Freenames.free_names_range r fns |> fn_p l
     | UCond (b, l) ->
       Freenames.free_names_bexp b fns |> fn_p l
-  and fn_p (p:u_prog) (fns:VarSet.t) : VarSet.t =
+  and fn_p (p:u_prog) (fns:Variable.Set.t) : Variable.Set.t =
     List.fold_right fn_i p fns
   in
   fn_p p
@@ -94,23 +94,23 @@ exception PhasesplitException of (string * Location.t option) list
 
 let translate (ks: a_prog kernel stream) (_:bool) : u_kernel stream =
   let translate_k (k: a_prog kernel) : u_kernel stream =
-    let p_to_k ((bi,locations):(barrier_interval * VarSet.t)) : u_kernel =
+    let p_to_k ((bi,locations):(barrier_interval * Variable.Set.t)) : u_kernel =
       (* Check for undefs *)
       (* 1. compute all globals *)
       let globals =
         List.map (fun r -> r.range_var) bi.bi_ranges
-        |> VarSet.of_list
-        |> VarSet.union k.kernel_global_variables
+        |> Variable.Set.of_list
+        |> Variable.Set.union k.kernel_global_variables
       in
       (* 2. compute all free names in the ranges *)
-      let fns = List.fold_right Freenames.free_names_range bi.bi_ranges VarSet.empty in
+      let fns = List.fold_right Freenames.free_names_range bi.bi_ranges Variable.Set.empty in
       (* 3. check if there are any locals *)
-      let errs = VarSet.diff fns globals
-        |> VarSet.elements
-        |> List.map (fun (x:variable) ->
+      let errs = Variable.Set.diff fns globals
+        |> Variable.Set.elements
+        |> List.map (fun (x:Variable.t) ->
           "Barrier divergence error: cannot use thread-local variable '" ^
-          (var_name x) ^ "' in synchronized control flow",
-          (var_loc_opt x)
+          (Variable.name x) ^ "' in synchronized control flow",
+          (Variable.location_opt x)
           )
       in
       if List.length errs > 0 then
@@ -128,8 +128,8 @@ let translate (ks: a_prog kernel stream) (_:bool) : u_kernel stream =
     a_prog_to_bi k.kernel_pre k.kernel_code
     |> map_opt (fun b ->
       (* Get locations of u_prog *)
-      let locations:VarSet.t = Wellformed.get_locs [b.bi_code] VarSet.empty in
-      if VarSet.is_empty locations then None
+      let locations:Variable.Set.t = Wellformed.get_locs [b.bi_code] Variable.Set.empty in
+      if Variable.Set.is_empty locations then None
       else Some (b, locations)
     )
     |> Streamutil.map p_to_k

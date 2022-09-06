@@ -5,9 +5,9 @@ module type SUBST =
   sig
     type t
     (* Given a substitution map and a variable perform the substitution if possible. *)
-    val find: t -> variable -> nexp option
+    val find: t -> Variable.t -> nexp option
     (* Removes a variable from the current substitution map; return None if the map became empty *)
-    val remove: t -> variable -> t option
+    val remove: t -> Variable.t -> t option
     (* Renders as a string *)
     val to_string: t -> string
     (* Tests if the map is empty *)
@@ -15,12 +15,12 @@ module type SUBST =
   end
 
 module Make (S:SUBST) = struct
-  let shadows (s:S.t) (x:variable) : bool =
+  let shadows (s:S.t) (x:Variable.t) : bool =
     match S.find s x with
     | Some _ -> true
     | None -> false
 
-  let add (s:S.t) (x:variable) (cont: S.t option -> 'a) : 'a  =
+  let add (s:S.t) (x:Variable.t) (cont: S.t option -> 'a) : 'a  =
     if shadows s x then
       match S.remove s x with
       | Some s -> cont (Some s)
@@ -46,7 +46,7 @@ module Make (S:SUBST) = struct
             let exp = PPrint.n_to_s n in
             let repl = S.to_string s in
             failwith (
-              "Error: cannot replace thread-local variable " ^ var_name x ^
+              "Error: cannot replace thread-local variable " ^ Variable.name x ^
               " by constant\n" ^
               "substitution(expression=" ^ exp ^ ", replacement=" ^ repl ^ ")"
             )
@@ -92,11 +92,11 @@ end
 
 module SubstPair =
   struct
-    type t = (variable * nexp)
+    type t = (Variable.t * nexp)
     let make (x, v) : t = (x, v)
-    let find (x, v) y = if var_equal x y then Some v else None
-    let remove (x, v) y = if var_equal x y then None else Some (x, v)
-    let to_string (x, v) = "[" ^ var_name x ^ "=" ^ PPrint.n_to_s v ^ "]"
+    let find (x, v) y = if Variable.equal x y then Some v else None
+    let remove (x, v) y = if Variable.equal x y then None else Some (x, v)
+    let to_string (x, v) = "[" ^ Variable.name x ^ "=" ^ PPrint.n_to_s v ^ "]"
     let is_empty (_, _) = false
   end
 
@@ -110,21 +110,21 @@ module SubstAssoc =
 
     let make kvs = Common.hashtbl_from_list kvs
 
-    let find ht k = Hashtbl.find_opt ht (var_name k)
+    let find ht k = Hashtbl.find_opt ht (Variable.name k)
 
-    let put_mut (ht:t) (k:variable) (n:nexp) : unit =
-      Hashtbl.replace ht (var_name k) n
+    let put_mut (ht:t) (k:Variable.t) (n:nexp) : unit =
+      Hashtbl.replace ht (Variable.name k) n
       
     let is_empty (ht:t) : bool = Hashtbl.length ht = 0
 
-    let put (ht:t) (k:variable) (n:nexp) : t =
+    let put (ht:t) (k:Variable.t) (n:nexp) : t =
       let ht = Hashtbl.copy ht in
       put_mut ht k n;
       ht
 
     let del ht k =
       let ht = Hashtbl.copy ht in
-      Hashtbl.remove ht (var_name k);
+      Hashtbl.remove ht (Variable.name k);
       ht
 
     let remove ht k =

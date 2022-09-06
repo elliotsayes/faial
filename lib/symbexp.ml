@@ -15,7 +15,7 @@ type proof = {
 }
 
 type h_prog = {
-  prog_locals: VarSet.t;
+  prog_locals: Variable.Set.t;
   prog_accesses: cond_access list;
 }
 
@@ -23,9 +23,9 @@ let mk_proof ~kernel:(k:string) ~array:(a:string) (goal:bexp) : proof =
   let open Proto in
   let open Common in
   let decls =
-    Freenames.free_names_bexp goal VarSet.empty
-    |> VarSet.elements
-    |> List.map var_name
+    Freenames.free_names_bexp goal Variable.Set.empty
+    |> Variable.Set.elements
+    |> List.map Variable.name
   in
   {
     proof_preds = Predicates.get_predicates goal;
@@ -36,21 +36,21 @@ let mk_proof ~kernel:(k:string) ~array:(a:string) (goal:bexp) : proof =
     proof_kernel = k;
   }
 
-let proj_access (locals:VarSet.t) (t:task) (ca:cond_access) : cond_access =
+let proj_access (locals:Variable.Set.t) (t:task) (ca:cond_access) : cond_access =
   (* Add a suffix to a variable *)
-  let var_append (x:variable) (suffix:string) : variable =
-    var_set_name x (var_name x ^ suffix)
+  let var_append (x:Variable.t) (suffix:string) : Variable.t =
+    Variable.set_name (Variable.name x ^ suffix) x
   in
   (* Add a suffix to all variables to make them unique. Use $ to ensure
     these variables did not come from C *)
   let task_suffix (t:task) = "$" ^ task_to_string t in
-  let proj_var (t:task) (x:variable) : variable =
+  let proj_var (t:task) (x:Variable.t) : Variable.t =
     var_append x (task_suffix t)
   in
   let rec inline_proj_n (t:task) (n: nexp) : nexp =
     match n with
     | Num _ -> n
-    | Var x when VarSet.mem x locals -> Var (proj_var t x)
+    | Var x when Variable.Set.mem x locals -> Var (proj_var t x)
     | Var _ -> n
     | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
     | Proj (t', x) -> Var (proj_var t' x)
@@ -122,7 +122,7 @@ let mode_to_nexp (m:mode) : nexp =
   Num (match m with
   | R -> 0
   | W -> 1)
-let mk_var (x:string) = Var (var_make x)
+let mk_var (x:string) = Var (Variable.from_name x)
 let prefix (t:task) = "$" ^ task_to_string t ^ "$"
 let mk_mode (t:task) = mk_var (prefix t ^ "mode")
 let mk_loc (t:task) = mk_var (prefix t ^ "loc")
@@ -174,7 +174,7 @@ let cond_acc_list_to_bexp (provenance:bool) (t:assign_task) (l:cond_access list)
 let h_prog_to_bexp
   (provenance:bool)
   (cache:LocationCache.t)
-  (locals:VarSet.t)
+  (locals:Variable.Set.t)
   (accs:cond_access list) : bexp =
   (* Pick one access *)
   let task_to_bexp (t:task) : bexp =

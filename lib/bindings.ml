@@ -3,14 +3,14 @@ open Exp
 (** Given a variable and a set of known variables, returns
     a fresh variable name. *)
 
-let generate_fresh_name (x:variable) (xs:VarSet.t) : variable =
+let generate_fresh_name (x:Variable.t) (xs:Variable.Set.t) : Variable.t =
   let rec do_fresh_name x n =
-    let new_x = var_set_name x (var_name x ^ string_of_int n) in
-    if VarSet.mem new_x xs
+    let new_x = Variable.set_name (Variable.name x ^ string_of_int n) x in
+    if Variable.Set.mem new_x xs
     then do_fresh_name x (n + 1)
     else new_x
   in
-  if VarSet.mem x xs then do_fresh_name x 1 else x
+  if Variable.Set.mem x xs then do_fresh_name x 1 else x
 
 (** Loop normalization: Makes all loop variables distinct. *)
 (*

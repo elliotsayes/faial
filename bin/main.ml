@@ -168,7 +168,7 @@ let main_t =
             sets @ Proto.kernel_constants k
             |> List.filter (fun (x,_) ->
               (* Make sure we only replace thread-global variables *)
-              VarSet.mem (var_make x) k.kernel_global_variables
+              Variable.Set.mem (Variable.from_name x) k.kernel_global_variables
             )
           in
           let thread_count : int list = Common.map_opt (fun (k, v) ->

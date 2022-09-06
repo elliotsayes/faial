@@ -162,7 +162,7 @@ let make_well_formed (p:Proto.prog) : w_prog Streamutil.stream =
   )
 
 let translate (k: Proto.prog kernel) : w_prog kernel Streamutil.stream =
-  let vars = VarSet.union k.kernel_local_variables k.kernel_global_variables in
+  let vars = Variable.Set.union k.kernel_local_variables k.kernel_global_variables in
   let p = Proto.vars_distinct k.kernel_code vars in
   let open Streamutil in
   make_well_formed p
@@ -170,10 +170,10 @@ let translate (k: Proto.prog kernel) : w_prog kernel Streamutil.stream =
 
 (* ---------------- Pretty printing -------------------- *)
 
-let rec get_locs (p:u_prog) (known:VarSet.t) =
+let rec get_locs (p:u_prog) (known:Variable.Set.t) =
   match p with
   | UAssert _ :: l -> get_locs l known
-  | UAcc (x,a) :: l -> get_locs l (if a.access_mode = Exp.W then VarSet.add x known else known)
+  | UAcc (x,a) :: l -> get_locs l (if a.access_mode = Exp.W then Variable.Set.add x known else known)
   | ULoop (_, l1)::l2
   | UCond (_, l1)::l2
     -> get_locs l1 known |> get_locs l2

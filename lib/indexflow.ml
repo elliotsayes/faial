@@ -18,34 +18,34 @@ module Index = struct
 end
 
 module Typing = struct
-  type t = Index.t Exp.VarMap.t
+  type t = Index.t Variable.Map.t
 
-  let make : t = Exp.VarMap.empty
+  let make : t = Variable.Map.empty
 
   let add : t -> t -> t =
-    Exp.VarMap.union (fun k v1 v2 ->
+    Variable.Map.union (fun k v1 v2 ->
       Some (Index.add v1 v2)
     )
 
-  let get (x: Exp.variable) (env:t) : Index.t =
-    match Exp.VarMap.find_opt x env with
+  let get (x: Variable.t) (env:t) : Index.t =
+    match Variable.Map.find_opt x env with
     | Some x -> x
     | None ->
-      prerr_endline ("WARNING: Key error: Typing.get " ^ Exp.var_name x);
+      prerr_endline ("WARNING: Key error: Typing.get " ^ Variable.name x);
       Index.Independent
 
-  let get_opt : Exp.variable -> t -> Index.t option = Exp.VarMap.find_opt
+  let get_opt : Variable.t -> t -> Index.t option = Variable.Map.find_opt
 
-  let put : Exp.variable -> Index.t -> t -> t = Exp.VarMap.add
+  let put : Variable.t -> Index.t -> t -> t = Variable.Map.add
 
-  let add_i (x: Exp.variable) : t -> t =
+  let add_i (x: Variable.t) : t -> t =
     put x Index.Independent
 
-  let add_d (x: Exp.variable) : t -> t =
+  let add_d (x: Variable.t) : t -> t =
     put x Index.Dependent
 
-  let update (key: Exp.variable) (v:Index.t option) : t -> t =
-    Exp.VarMap.update key (fun _ -> v)
+  let update (key: Variable.t) (v:Index.t option) : t -> t =
+    Variable.Map.update key (fun _ -> v)
 
 
 end

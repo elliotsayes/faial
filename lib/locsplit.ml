@@ -8,7 +8,7 @@ type l2_kernel = {
   (* The shared locations that can be accessed in the kernel. *)
   l_kernel_array: string;
   (* The internal variables are used in the code of the kernel.  *)
-  l_kernel_local_variables: VarSet.t;
+  l_kernel_local_variables: Variable.Set.t;
   (* Global ranges *)
   l_kernel_ranges: range list;
   (* The code of a kernel performs the actual memory accesses. *)
@@ -42,12 +42,12 @@ let is_has =
 
 (* Given an input phase, returns a phase with only accesses x.
    Changes the accesses to not contain the location info. *)
-let filter_by_location (x:variable) (i: u_inst) : u_inst option =
+let filter_by_location (x:Variable.t) (i: u_inst) : u_inst option =
   (* Filter programs *)
   let rec filter_i (i:u_inst) : u_inst possibility =
     match i with
     | UAssert b -> Might (UAssert b)
-    | UAcc (y, _) -> if var_equal x y then Has i else Nothing
+    | UAcc (y, _) -> if Variable.equal x y then Has i else Nothing
     | UCond (b, p) -> begin match filter_p p with
         | Some p -> Has (UCond (b, p))
         | None -> Nothing
@@ -72,7 +72,7 @@ let translate (stream:u_kernel Streamutil.stream) : l2_kernel Streamutil.stream 
   stream
   |> map (fun k ->
     (* For every kernel *)
-    VarSet.elements k.u_kernel_arrays
+    Variable.Set.elements k.u_kernel_arrays
     |> from_list
     |> map_opt (fun x ->
       (* For every location *)
@@ -80,7 +80,7 @@ let translate (stream:u_kernel Streamutil.stream) : l2_kernel Streamutil.stream 
       | Some p ->
         (* Filter out code that does not touch location x *)
         Some {
-          l_kernel_array = var_name x;
+          l_kernel_array = Variable.name x;
           l_kernel_name = k.u_kernel_name;
           l_kernel_ranges = k.u_kernel_ranges;
           l_kernel_local_variables = k.u_kernel_local_variables;

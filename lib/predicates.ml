@@ -23,13 +23,13 @@ type t = {
 let pred_to_codegen (pred:t) : bexp codegen =
   {
     codegen_arg = "x";
-    codegen_body = pred.pred_body (Var (var_make "x"));
+    codegen_body = pred.pred_body (Var (Variable.from_name "x"));
   }
 
 let step_to_codegen (s:step_handler) : nexp codegen =
   {
     codegen_arg = "x";
-    codegen_body = s.step_handler_body (Var (var_make "x"));
+    codegen_body = s.step_handler_body (Var (Variable.from_name "x"));
   }
 
 

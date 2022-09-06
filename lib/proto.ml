@@ -17,26 +17,26 @@ type 'a kernel = {
   (* The kernel name *)
   kernel_name : string;
   (* The internal variables are used in the code of the kernel.  *)
-  kernel_global_variables: VarSet.t;
+  kernel_global_variables: Variable.Set.t;
   (* The internal variables are used in the code of the kernel.  *)
-  kernel_local_variables: VarSet.t;
+  kernel_local_variables: Variable.Set.t;
   (* The modifiers of each array *)
-  kernel_arrays: array_t VarMap.t;
+  kernel_arrays: array_t Variable.Map.t;
   (* A thread-local pre-condition that is true on all phases. *)
   kernel_pre: bexp;
   (* The code of a kernel performs the actual memory accesses. *)
   kernel_code: 'a;
 }
 
-let kernel_shared_arrays (k:'a kernel) : VarSet.t =
+let kernel_shared_arrays (k:'a kernel) : Variable.Set.t =
   k.kernel_arrays
-  |> VarMap.filter (fun _ v -> v.array_hierarchy = SharedMemory)
-  |> var_map_to_set
+  |> Variable.Map.filter (fun _ v -> v.array_hierarchy = SharedMemory)
+  |> Variable.MapSetUtil.map_to_set
 
-let kernel_global_arrays (k:'a kernel) : VarSet.t =
+let kernel_global_arrays (k:'a kernel) : Variable.Set.t =
   k.kernel_arrays
-  |> VarMap.filter (fun _ v -> v.array_hierarchy = GlobalMemory)
-  |> var_map_to_set
+  |> Variable.Map.filter (fun _ v -> v.array_hierarchy = GlobalMemory)
+  |> Variable.MapSetUtil.map_to_set
 
 let kernel_constants (k:prog kernel) =
   let rec constants (b: bexp) (kvs:(string*int) list) : (string*int) list =
@@ -44,7 +44,7 @@ let kernel_constants (k:prog kernel) =
     | Bool _ -> kvs
     | NRel (NEq, Var x, Num n)
     | NRel (NEq, Num n, Var x) ->
-      (var_name x, n) :: kvs
+      (Variable.name x, n) :: kvs
     | BRel (BAnd, b1, b2) ->
       constants b1 kvs |> constants b2
     | BNot _
@@ -126,26 +126,26 @@ let p_opt (p:prog) : prog =
 let clear_kernel (k:prog kernel) : prog kernel =
   {
     kernel_name = k.kernel_name;
-    kernel_arrays = VarMap.empty;
+    kernel_arrays = Variable.Map.empty;
     kernel_pre = Bool true;
     kernel_code = [];
-    kernel_global_variables = VarSet.empty;
-    kernel_local_variables = VarSet.empty;
+    kernel_global_variables = Variable.Set.empty;
+    kernel_local_variables = Variable.Set.empty;
   }
 
 let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =
   if Common.list_is_empty kvs then k else
   begin
     let kvs = List.map (fun (x,n) -> x, Num n) kvs in
-    let keys = List.split kvs |> fst |> List.map var_make |> VarSet.of_list in
+    let keys = List.split kvs |> fst |> List.map Variable.from_name |> Variable.Set.of_list in
     let kvs = Subst.SubstAssoc.make kvs in
     {
       kernel_name = k.kernel_name;
       kernel_arrays = k.kernel_arrays;
       kernel_pre = PSubstAssoc.M.b_subst kvs k.kernel_pre |> Constfold.b_opt;
       kernel_code = PSubstAssoc.p_subst kvs k.kernel_code |> p_opt;
-      kernel_global_variables = VarSet.diff k.kernel_global_variables keys;
-      kernel_local_variables = VarSet.diff k.kernel_local_variables keys;
+      kernel_global_variables = Variable.Set.diff k.kernel_global_variables keys;
+      kernel_local_variables = Variable.Set.diff k.kernel_local_variables keys;
     }
   end
 
@@ -155,9 +155,9 @@ let p_cond (b:bexp) (p:prog) : prog =
   | _, [] | Bool false, _ -> []
   | _, _ -> [Cond(b, p)] 
 
-let vars_distinct (p:prog)  (known:VarSet.t) : prog =
+let vars_distinct (p:prog)  (known:Variable.Set.t) : prog =
   let open Bindings in
-  let rec uniq_i (i:inst) (xs:VarSet.t) : inst * VarSet.t =
+  let rec uniq_i (i:inst) (xs:Variable.Set.t) : inst * Variable.Set.t =
     match i with
     | Acc _
     | Sync
@@ -167,18 +167,18 @@ let vars_distinct (p:prog)  (known:VarSet.t) : prog =
       (Cond (b, p), xs)
     | Loop (r, p) ->
       let x = r.range_var in
-      if VarSet.mem x xs then (
-        let new_x : variable = generate_fresh_name x xs in
-        let new_xs = VarSet.add new_x xs in
+      if Variable.Set.mem x xs then (
+        let new_x : Variable.t = generate_fresh_name x xs in
+        let new_xs = Variable.Set.add new_x xs in
         let s = Subst.SubstPair.make (x, Var new_x) in
         let new_p = PSubstPair.p_subst s p in
         let (p, new_xs) = uniq_p new_p new_xs in
         Loop ({ r with range_var = new_x }, p), new_xs
       ) else (
-        let (p, new_xs) = uniq_p p (VarSet.add x xs) in
+        let (p, new_xs) = uniq_p p (Variable.Set.add x xs) in
         Loop (r, p), new_xs
       )
-  and uniq_p (p:prog) (xs:VarSet.t) : prog * VarSet.t =
+  and uniq_p (p:prog) (xs:Variable.Set.t) : prog * Variable.Set.t =
     match p with
     | [] -> ([], xs)
     | i::p ->

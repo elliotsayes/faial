@@ -1,68 +1,5 @@
 let (@) = Common.append_tr
 
-type variable =
-  | LocVariable of Location.t * string
-  | Variable of string
-
-let var_make (name:string) : variable = Variable name
-
-let var_set_name (v:variable) (name:string) =
-  match v with
-  | LocVariable(l, _) -> LocVariable(l, name)
-  | Variable _ -> Variable name
-
-let var_of_loc name pair =
-  LocVariable (Location.of_lex_position_pair pair, name)
-
-let var_name (x:variable) : string =
-  match x with
-  | LocVariable (_, x) -> x
-  | Variable x -> x
-
-let var_loc_opt (x:variable) : Location.t option =
-  match x with
-  | LocVariable (l, _) -> Some l
-  | Variable _ -> None
-
-let var_set_loc (l:Location.t) (x:variable) : variable =
-  LocVariable (l, var_name x)
-
-let var_loc (x:variable) : Location.t =
-  var_loc_opt x |> Option.value ~default:Location.empty
-
-let var_equal (x:variable) (y:variable) =
-  String.equal (var_name x) (var_name y)
-
-let var_repr (x:variable) : string =
-  match x with
-  | Variable x -> "Variable{name=\""^ x ^"\"}"
-  | LocVariable (l, x) ->
-    "LocVariable{name=\"" ^ x ^ "\", loc="^ Location.location_repr l ^ "}"
-
-module VarOT = struct
-  type t = variable
-  let compare = fun x y -> Stdlib.compare (var_name x) (var_name y)
-end
-
-module VarSet = Set.Make(VarOT)
-module VarMap = Map.Make(VarOT)
-module VarMapUtil = Common.MapUtil(VarMap)
-
-let var_set_to_map (s:VarSet.t) (f:variable -> 'a option) : 'a VarMap.t =
-  VarSet.fold (fun k m ->
-    match f k with
-    | Some v -> VarMap.add k v m
-    | None -> m
-  ) s VarMap.empty
-
-let var_map_to_set (m:'a VarMap.t) : VarSet.t =
-  VarMap.bindings m |> List.map fst |> VarSet.of_list
-
-let list_to_var_map (l:(variable * 'a) list) : 'a VarMap.t =
-  List.fold_left (fun m (k,v) ->
-    VarMap.add k v m
-  ) VarMap.empty l
-
 let tid = "$tid"
 let idx = "idx"
 
@@ -104,10 +41,10 @@ type brel =
   | BAnd
 
 type nexp =
-  | Var of variable
+  | Var of Variable.t
   | Num of int
   | Bin of nbin * nexp * nexp
-  | Proj of task * variable
+  | Proj of task * Variable.t
   | NCall of string * nexp
   | NIf of bexp * nexp * nexp
 
@@ -147,7 +84,7 @@ let eval_brel o : bool -> bool -> bool =
 
 let rec n_eval (n: nexp) : int =
   match n with
-  | Var x -> failwith ("n_eval: variable " ^ (var_name x))
+  | Var x -> failwith ("n_eval: variable " ^ (Variable.name x))
   | Num n -> n
   | Bin (o, n1, n2) -> eval_nbin o (n_eval n1) (n_eval n2)
   | Proj _ -> failwith ("n_eval: proj")
@@ -295,7 +232,7 @@ type direction =
   | Decrease
 
 type range = {
-  range_var: variable;
+  range_var: Variable.t;
   range_dir: direction;
   range_lower_bound: nexp;
   range_upper_bound: nexp;
@@ -305,7 +242,7 @@ type range = {
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
 
-let mk_range (x:variable) (ub:nexp) =
+let mk_range (x:Variable.t) (ub:nexp) =
   {
     range_var = x;
     range_lower_bound = Num 0;
@@ -356,9 +293,9 @@ type mode =
 type access = {access_index: nexp list; access_mode: mode}
 
 (* Access expression *)
-type acc_expr = variable * access
+type acc_expr = Variable.t * access
 
-let distinct (idx:variable list) : bexp =
+let distinct (idx:Variable.t list) : bexp =
   b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)
 
 
@@ -380,7 +317,7 @@ let mk_array (h:hierarchy_t) : array_t = {
   array_type = [];
 }
 
-let mk_array_map (h:hierarchy_t) (vs:variable list) : array_t VarMap.t =
+let mk_array_map (h:hierarchy_t) (vs:Variable.t list) : array_t Variable.Map.t =
   vs
   |> List.map (fun x -> (x, mk_array h))
-  |> list_to_var_map
+  |> Variable.MapUtil.from_list

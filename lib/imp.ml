@@ -11,7 +11,7 @@ type locality = Global | Local
 
 type access_expr = {access_index: nexp list; access_mode: mode}
 
-type alias_expr = {alias_source: variable; alias_target: variable; alias_offset: nexp}
+type alias_expr = {alias_source: Variable.t; alias_target: Variable.t; alias_offset: nexp}
 
 type stmt =
 | Sync
@@ -19,7 +19,7 @@ type stmt =
 | Acc of acc_expr
 | Block of (stmt list)
 | LocationAlias of alias_expr
-| Decl of (variable * locality * nexp option) list
+| Decl of (Variable.t * locality * nexp option) list
 | If of (bexp * stmt * stmt)
 | For of (range * stmt)
 
@@ -33,7 +33,7 @@ module Post = struct
   | Acc of acc_expr
   | If of (bexp * inst list * inst list)
   | For of (range * inst list)
-  | Decl of (variable * locality * nexp option * inst list)
+  | Decl of (Variable.t * locality * nexp option * inst list)
 
   type prog = inst list
 
@@ -48,7 +48,7 @@ module Post = struct
       | Decl (x, l, n, p) ->
         let entry =
           (match l with | Global -> "global" | Local ->  "local") ^ " " ^
-          var_name x ^
+          Variable.name x ^
           (match n with | Some n -> " = " ^ n_to_s n | None -> "")
         in
         [
@@ -78,7 +78,7 @@ module Post = struct
   let rec loc_subst_i (alias:alias_expr) (i:inst) : inst =
     match i with
     | Acc (x, a) ->
-      if var_equal x alias.alias_target
+      if Variable.equal x alias.alias_target
       then (
         match a.access_index with
         | [n] ->
@@ -137,10 +137,10 @@ module Post = struct
   let subst_i = ReplacePair.subst_i
   let subst_p = ReplacePair.subst_p
 
-  let filter_locs (locs:array_t VarMap.t) : prog -> prog =
+  let filter_locs (locs:array_t Variable.Map.t) : prog -> prog =
     let rec filter_i (i:inst) : inst =
       match i with
-      | Acc (x, _) -> if VarMap.mem x locs then i else Skip
+      | Acc (x, _) -> if Variable.Map.mem x locs then i else Skip
       | Skip -> Skip
       | Sync -> Sync
       | If (b, p1, p2) -> If (b, filter_p p1, filter_p p2)
@@ -151,8 +151,8 @@ module Post = struct
     in
       filter_p
 
-  let get_decls (globals:VarSet.t) (p:prog) : VarSet.t * VarSet.t =
-    let rec get_decls_i (p:inst) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
+  let get_decls (globals:Variable.Set.t) (p:prog) : Variable.Set.t * Variable.Set.t =
+    let rec get_decls_i (p:inst) (locals,globals:Variable.Set.t * Variable.Set.t) : Variable.Set.t * Variable.Set.t =
       match p with
       | Acc _
       | Skip
@@ -160,17 +160,17 @@ module Post = struct
       | If (_, p1, p2) -> get_decls_p p1 (locals, globals) |> get_decls_p p2
       | Decl (x, h, _, p) ->
         let locals, globals = match h with
-        | Local -> VarSet.add x locals, globals
-        | Global -> locals, VarSet.add x globals
+        | Local -> Variable.Set.add x locals, globals
+        | Global -> locals, Variable.Set.add x globals
         in
         get_decls_p p (locals, globals)
       | For (_, p) -> get_decls_p p (locals,globals)
-    and get_decls_p (p:prog) (locals,globals:VarSet.t * VarSet.t) : VarSet.t * VarSet.t =
+    and get_decls_p (p:prog) (locals,globals:Variable.Set.t * Variable.Set.t) : Variable.Set.t * Variable.Set.t =
       List.fold_right get_decls_i p (locals,globals)
     in
-    get_decls_p p (VarSet.empty, globals)
+    get_decls_p p (Variable.Set.empty, globals)
 
-  let inline_decls (known:VarSet.t) : prog -> prog =
+  let inline_decls (known:Variable.Set.t) : prog -> prog =
     let n_subst (st:SubstAssoc.t) (n:nexp): nexp =
       if SubstAssoc.is_empty st
       then n
@@ -190,16 +190,16 @@ module Post = struct
       then r
       else ReplaceAssoc.r_subst st r
     in
-    let rec inline_i (known:VarSet.t) (st:SubstAssoc.t) (i:inst) : prog =
-      let add_var (x:variable) : variable * VarSet.t * SubstAssoc.t =
+    let rec inline_i (known:Variable.Set.t) (st:SubstAssoc.t) (i:inst) : prog =
+      let add_var (x:Variable.t) : Variable.t * Variable.Set.t * SubstAssoc.t =
         let x, st =
-          if VarSet.mem x known
+          if Variable.Set.mem x known
           then (
             let new_x = Bindings.generate_fresh_name x known in 
             (new_x, SubstAssoc.put st x (Var new_x)) 
           ) else (x, st)
         in
-        let known = VarSet.add x known in
+        let known = Variable.Set.add x known in
         (x, known, st)
       in
       match i with
@@ -220,7 +220,7 @@ module Post = struct
         let r = r_subst st r in
         let (x, known, st) = add_var r.range_var in
         [For ({r with range_var = x}, inline_p known st p)]
-    and inline_p (known:VarSet.t) (st:SubstAssoc.t): prog -> prog =
+    and inline_p (known:Variable.Set.t) (st:SubstAssoc.t): prog -> prog =
       List.concat_map (inline_i known st)
     in
     inline_p known (SubstAssoc.make [])
@@ -330,9 +330,9 @@ type p_kernel = {
   (* A kernel precondition of every phase. *)
   p_kernel_pre: bexp;
   (* The shared locations that can be accessed in the kernel. *)
-  p_kernel_arrays: array_t VarMap.t;
+  p_kernel_arrays: array_t Variable.Map.t;
   (* The internal variables are used in the code of the kernel.  *)
-  p_kernel_params: VarSet.t;
+  p_kernel_params: Variable.Set.t;
   (* The code of a kernel performs the actual memory accesses. *)
   p_kernel_code: stmt;
 }
@@ -348,15 +348,15 @@ let stmt_to_s: stmt -> PPrint.t list =
     | Block l -> [Line "{"; Block (List.map stmt_to_s l |> List.flatten); Line "}"]
     | LocationAlias l ->
       [Line ("alias " ^
-        var_name l.alias_target ^ " = " ^
-        var_name l.alias_source ^ " + " ^
+        Variable.name l.alias_target ^ " = " ^
+        Variable.name l.alias_source ^ " + " ^
         n_to_s l.alias_offset ^ ";"
       )]
     | Decl [] -> []
     | Decl l ->
       let entry (x, l, n) =
         (match l with | Global -> "global" | Local ->  "local") ^ " " ^
-        var_name x ^
+        Variable.name x ^
         (match n with | Some n -> " = " ^ n_to_s n | None -> "")
       in
       let entries = Common.join "," (List.map entry l) in

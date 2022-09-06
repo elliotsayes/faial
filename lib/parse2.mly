@@ -38,7 +38,7 @@
 %%
 main : p = kernel EOF { p };
 
-%inline ident: x = ID { var_of_loc x $loc(x) }
+%inline ident: x = ID { Variable.make ~name:x ~location:(Location.from_lexing_pair $loc(x)) }
 
 num:
   | ONE { 1 }
@@ -170,8 +170,8 @@ kernel:
         kernel_name = "main";
         kernel_arrays = l1 |> mk_array_map SharedMemory;
         kernel_pre = pre;
-        kernel_local_variables = ls |> VarSet.of_list;
-        kernel_global_variables = gs |> VarSet.of_list;
+        kernel_local_variables = ls |> Variable.Set.of_list;
+        kernel_global_variables = gs |> Variable.Set.of_list;
         kernel_code = p;
       }
     }
@@ -186,8 +186,8 @@ kernel:
         kernel_name = "main";
         kernel_pre = pre;
         kernel_arrays = l1 |> mk_array_map SharedMemory;
-        kernel_local_variables = ls |> VarSet.of_list;
-        kernel_global_variables = gs |> VarSet.of_list;
+        kernel_local_variables = ls |> Variable.Set.of_list;
+        kernel_global_variables = gs |> Variable.Set.of_list;
         kernel_code = p;
       }
     }

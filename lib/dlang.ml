@@ -31,7 +31,7 @@ type d_exp =
   | UnaryOperator of { opcode: string; child: d_exp; ty: d_type}
   | VarDecl of d_var
   | EnumConstantDecl of d_var
-  | UnresolvedLookupExpr of {name: variable; tys: d_type list}
+  | UnresolvedLookupExpr of {name: Variable.t; tys: d_type list}
 and d_binary = {opcode: string; lhs: d_exp; rhs: d_exp; ty: d_type}
 
 type d_init =
@@ -41,7 +41,7 @@ type d_init =
 
 module Decl = struct
   type t = {
-    name: variable;
+    name: Variable.t;
     ty: d_type;
     init: d_init option;
     attrs: string list
@@ -65,9 +65,9 @@ type d_for_init =
   | ForDecl of d_decl list
   | ForExp of d_exp
 
-type d_subscript = {name: variable; index: d_exp list; ty: d_type; location: Location.t}
+type d_subscript = {name: Variable.t; index: d_exp list; ty: d_type; location: Location.t}
 type d_write = {target: d_subscript; source: d_exp}
-type d_read = {target: variable; source: d_subscript}
+type d_read = {target: Variable.t; source: d_subscript}
 
 type d_stmt =
   | WriteAccessStmt of d_write
@@ -175,7 +175,7 @@ let exp_name =
   | VarDecl _ -> "VarDecl"
   | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
 
-let get_variable : d_exp -> variable option =
+let get_variable : d_exp -> Variable.t option =
   function
   | CXXMethodDecl {name=n}
   | FunctionDecl {name=n}
@@ -213,8 +213,8 @@ let for_to_exp (f:d_for) : d_exp list =
   |> Common.append_rev1 l2
   |> Common.append_rev1 l3
 
-let for_loop_vars (f:d_for) : variable list =
-  let rec exp_var (e:d_exp) : variable list =
+let for_loop_vars (f:d_for) : Variable.t list =
+  let rec exp_var (e:d_exp) : Variable.t list =
     match e with
     | BinaryOperator {lhs=l; opcode=","; rhs=r} ->
       exp_var l |> Common.append_rev1 (exp_var r)
@@ -293,16 +293,16 @@ module AccessState = struct
 
   let make_empty = []
 
-  let add_var (f:variable -> d_stmt list) (st:t) : (t * variable) =
+  let add_var (f:Variable.t -> d_stmt list) (st:t) : (t * Variable.t) =
     let count = !counter in
     counter := count + 1;
     let name = "_unknown_" ^ string_of_int count in
-    let x = var_make name in
+    let x = Variable.from_name name in
     (f x @ st, x)
 
   let add_stmt (s: d_stmt) (st:t) : t = s :: st
 
-  let add_exp (source:d_exp) (ty:d_type) (st:t) : t * variable =
+  let add_exp (source:d_exp) (ty:d_type) (st:t) : t * Variable.t =
     add_var (fun x ->
       [
         DeclStmt [{name=x; ty=ty; init=Some (IExp source); attrs=[]}]
@@ -310,7 +310,7 @@ module AccessState = struct
     ) st
 
 
-  let add_write (a:d_subscript) (source:d_exp) (st:t) : (t * variable) =
+  let add_write (a:d_subscript) (source:d_exp) (st:t) : (t * Variable.t) =
     let wr x = WriteAccessStmt {target=a; source=VarDecl {name=x; ty=a.ty}} in
     match source with
     | VarDecl {name=x; _} ->
@@ -323,7 +323,7 @@ module AccessState = struct
         ]
       ) st
 
-  let add_read (a:d_subscript) (st:t) : (t * variable) =
+  let add_read (a:d_subscript) (st:t) : (t * Variable.t) =
     add_var (fun x ->
       [
         ReadAccessStmt {target=x; source=a};
@@ -336,7 +336,7 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
   | CXXOperatorCallExpr {
       func=CXXMethodDecl{name=v; _};
       args=[ArraySubscriptExpr a; src]
-    } when var_name v = "operator="
+    } when Variable.name v = "operator="
     -> rewrite_write a src
 
   | SizeOfExpr ty ->
@@ -584,10 +584,10 @@ let exp_to_s ?(modifier:bool=false) ?(provenance:bool=false) ?(types:bool=false)
     then "(" ^ o ^ "." ^ Cast.type_to_str j ^ ")"
     else o
   in
-  let var_name: variable -> string =
+  let var_name: Variable.t -> string =
     if provenance
-    then var_repr
-    else var_name
+    then Variable.repr
+    else Variable.name
   in
   let rec exp_to_s: d_exp -> string =
     let par (e: d_exp) : string =
@@ -660,10 +660,10 @@ let decl_to_s (d: d_decl): string =
     let attrs = Common.join " " d.attrs |> String.trim in
     attrs ^ " "
   in
-  attr ^ Cast.type_to_str d.ty ^ " " ^ var_name d.name ^ i
+  attr ^ Cast.type_to_str d.ty ^ " " ^ Variable.name d.name ^ i
 
 let subscript_to_s (s:d_subscript) : string =
-  var_name s.name ^ "[" ^ list_to_s exp_to_s s.index ^ "]"
+  Variable.name s.name ^ "[" ^ list_to_s exp_to_s s.index ^ "]"
 
 let for_init_to_s (f:d_for_init) : string =
   match f with
@@ -692,7 +692,7 @@ let stmt_to_s: d_stmt -> PPrint.t list =
     let block (s:d_stmt) : PPrint.t list = ret (stmt_to_s s) in 
     function
     | WriteAccessStmt w -> [Line ("rw " ^ subscript_to_s w.target ^ " = " ^ exp_to_s w.source)]
-    | ReadAccessStmt r -> [Line ("ro " ^ var_name r.target ^ " = " ^ subscript_to_s r.source)]
+    | ReadAccessStmt r -> [Line ("ro " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
     | ReturnStmt -> [Line "return"]
     | GotoStmt -> [Line "goto"]
     | ContinueStmt -> [Line "continue"]
@@ -746,7 +746,7 @@ let summarize_stmt: d_stmt -> string =
       subscript_to_s w.target ^
       " = " ^
       exp_to_s w.source ^ ";"
-    | ReadAccessStmt r -> "ro " ^ var_name r.target ^ " = " ^ subscript_to_s r.source ^ ";"
+    | ReadAccessStmt r -> "ro " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source ^ ";"
     | ReturnStmt -> "return;"
     | GotoStmt -> "goto;"
     | BreakStmt -> "break;"

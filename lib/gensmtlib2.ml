@@ -99,7 +99,7 @@ struct
   let open Serialize in
     List [
       symbol "declare-fun";
-      symbol (var_name v);
+      symbol (Variable.name v);
       List [];
       ty;
     ]
@@ -136,7 +136,7 @@ struct
       (* Functions: *)
       map ser_step_handler p.proof_funcs;
       (* Variable declarations: *)
-      map var_make p.proof_decls |> map define_uint32 |> flatten;
+      map Variable.from_name p.proof_decls |> map define_uint32 |> flatten;
       (* Goal of the proof: *)
       [ b_assert p.proof_goal ];
     ]) |> prove

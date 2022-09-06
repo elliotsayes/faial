@@ -1,4 +1,4 @@
-type variable = Exp.variable
+type variable = Variable.t
 
 type increment =
   | Plus
@@ -74,7 +74,7 @@ let rec parse_inc (i:Dlang.d_exp option) : (variable * increment unop) option =
 				Dlang.get_variable l',
 				parse_inc_op o
 			with
-			| Some l, Some l', Some o when Exp.var_equal l l' ->
+			| Some l, Some l', Some o when Variable.equal l l' ->
 				Some (l, {op=o; arg=r})
 			| _ -> None
 		end
@@ -119,7 +119,7 @@ let inc_to_s : increment -> string = function
 
 let for_range_to_s (l:d_for_range) : string =
 	"(" ^
-		Exp.var_name l.name ^
+		Variable.name l.name ^
 		"= " ^ Dlang.exp_to_s l.init ^
 		"; " ^ unop_to_s cmp_to_s l.cond ^
 		"; " ^ unop_to_s inc_to_s l.inc ^

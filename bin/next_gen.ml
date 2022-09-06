@@ -1,6 +1,6 @@
 module StringMap = Common.StringMap
-module VarSet = Exp.VarSet
-module VarMap = Exp.VarMap
+module VarSet = Variable.Set
+module VarMap = Variable.Map
 module Environ = Z3_solver.Environ
 module Witness = Z3_solver.Witness
 module Vec3 = Z3_solver.Vec3
@@ -247,7 +247,7 @@ let main (fname: string) (timeout:int) : unit =
       Proto.kernel_constants p
       |> List.filter (fun (x,_) ->
         (* Make sure we only replace thread-global variables *)
-        VarSet.mem (Exp.var_make x) p.kernel_global_variables
+        VarSet.mem (Variable.from_name x) p.kernel_global_variables
       )
     in
     let key_vals = match gv with

@@ -38,7 +38,7 @@ let with_msg (msg:string) (f:'a -> 'b d_result) (c:'a): 'b d_result =
 let with_exp (msg:string) (e: Dlang.d_exp) : (Dlang.d_exp -> 'a d_result) -> Dlang.d_exp -> 'a d_result =
   with_msg (msg ^ ": " ^ Dlang.exp_to_s e)
 
-let parse_var: Dlang.d_exp -> variable d_result =
+let parse_var: Dlang.d_exp -> Variable.t d_result =
   function
   | NonTypeTemplateParmDecl { name = v ; _ }
   | ParmVarDecl { name = v ; _ }
@@ -54,7 +54,7 @@ let is_variable : Dlang.d_exp -> bool =
     -> true
   | _ -> false
 
-type d_access = {location: variable; mode: mode; index: Dlang.d_exp list }
+type d_access = {location: Variable.t; mode: mode; index: Dlang.d_exp list }
 
 type d_location_alias = {
   source: Dlang.d_exp;
@@ -74,10 +74,10 @@ let cuda_vars = cuda_local_vars @ cuda_global_vars
 let cuda_dims = ["x"; "y"; "z"]
 
 type i_nexp =
-  | Var of variable
+  | Var of Variable.t
   | Num of int
   | Bin of nbin * i_exp * i_exp
-  | Proj of task * variable
+  | Proj of task * Variable.t
   | NCall of string * i_exp
   | NIf of i_exp * i_exp * i_exp
 
@@ -129,8 +129,8 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
   match e with
   (* ---------------- CUDA SPECIFIC ----------- *)
   | MemberExpr {base=VarDecl{name=base}; name=dim} 
-    when List.mem (var_name base) cuda_vars && List.mem dim cuda_dims->
-    let x = var_name base ^ "." ^ dim |> var_make in
+    when List.mem (Variable.name base) cuda_vars && List.mem dim cuda_dims->
+    let x = Variable.name base ^ "." ^ dim |> Variable.from_name in
     ret_n (Var x)
 
   (* ------------------ nexp ------------------------ *)
@@ -157,14 +157,14 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
     let* n1 = parse_e "then_expr" o.then_expr in
     let* n2 = parse_e "else_expr" o.else_expr in
     ret_n (NIf (b, n1, n2))
-  | CallExpr {func = FunctionDecl {name = f}; args = [n]} when var_name f = "__is_pow2" ->
+  | CallExpr {func = FunctionDecl {name = f}; args = [n]} when Variable.name f = "__is_pow2" ->
     let* n = parse_e "arg" n in
     ret_b (Pred ("pow2", n))
-  | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]} when var_name n = "min" ->
+  | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]} when Variable.name n = "min" ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
     ret_n (NIf (BExp (NRel (NLt, n1, n2)), n1, n2))
-  | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]} when var_name n = "max" ->
+  | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]} when Variable.name n = "max" ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
     ret_n (NIf (BExp (NRel (NGt, n1, n2)), n1, n2))
@@ -217,17 +217,17 @@ module Unknown = struct
 
   let make : t = 0
 
-  let get_var (st:t) = var_make ("__unk" ^ string_of_int st)
+  let get_var (st:t) = Variable.from_name ("__unk" ^ string_of_int st)
 
-  let create (st:t) : t * variable =
+  let create (st:t) : t * Variable.t =
     (st + 1, get_var st)
 
-  let get (st:t) : VarSet.t =
-    let rec add (c:int) : VarSet.t =
-      if c <= 0 then VarSet.empty
+  let get (st:t) : Variable.Set.t =
+    let rec add (c:int) : Variable.Set.t =
+      if c <= 0 then Variable.Set.empty
       else
         let c = c - 1 in
-        VarSet.add (get_var c) (add c)
+        Variable.Set.add (get_var c) (add c)
     in
     add st
 
@@ -283,15 +283,15 @@ module Unknown = struct
       let (u, x) = create u in
       (u, NRel (NNeq, Var x, Num 0))
 
-  let convert (handler:t -> 'a -> t * 'b) (n:'a) : VarSet.t * 'b =
+  let convert (handler:t -> 'a -> t * 'b) (n:'a) : Variable.Set.t * 'b =
     let (u, n) = handler make n in
     (get u, n)
 
   (* Convert a d_nexp into an nexp and get the set of unknowns *)
-  let to_nexp: i_exp -> VarSet.t * nexp = convert handle_n
+  let to_nexp: i_exp -> Variable.Set.t * nexp = convert handle_n
 
   (* Convert a d_bexp into an bexp and get the set of unknowns *)
-  let to_bexp: i_exp -> VarSet.t * bexp = convert handle_b
+  let to_bexp: i_exp -> Variable.Set.t * bexp = convert handle_b
 
   let rec mmap (f:t -> 'a -> t * 'b) (st:t) : 'a list -> (t * 'b list) =
     function
@@ -301,7 +301,7 @@ module Unknown = struct
       let (st, l) = mmap f st l in
       (st, x :: l) 
 
-  let to_nexp_list: i_exp list -> VarSet.t * nexp list =
+  let to_nexp_list: i_exp list -> Variable.Set.t * nexp list =
     convert (mmap handle_n)
 
   (* Convert a d_nexp into an nexp only if there are no unknowns *)
@@ -318,29 +318,29 @@ module Unknown = struct
     then Some b
     else None
 
-  let as_decls (l:Imp.locality) (xs:VarSet.t) : (variable * Imp.locality * nexp option) list =
-    VarSet.elements xs |> List.map (fun x -> (x, l, None))
+  let as_decls (l:Imp.locality) (xs:Variable.Set.t) : (Variable.t * Imp.locality * nexp option) list =
+    Variable.Set.elements xs |> List.map (fun x -> (x, l, None))
 
-  let decl_unknown (l:Imp.locality) (vars:VarSet.t) : Imp.stmt list =
-    if VarSet.is_empty vars then []
+  let decl_unknown (l:Imp.locality) (vars:Variable.Set.t) : Imp.stmt list =
+    if Variable.Set.is_empty vars then []
     else
       [Decl (as_decls l vars)]
 
-  let ret_u (l:Imp.locality) (vars:VarSet.t) (s:Imp.stmt) : Imp.stmt list d_result = 
+  let ret_u (l:Imp.locality) (vars:Variable.Set.t) (s:Imp.stmt) : Imp.stmt list d_result =
     Ok (decl_unknown l vars @ [s])
 
-  let ret_f ?(extra_vars=VarSet.empty) (f:'a -> VarSet.t * 'b) (handler:'b -> Imp.stmt) (n:'a) : Imp.stmt list d_result =
+  let ret_f ?(extra_vars=Variable.Set.empty) (f:'a -> Variable.Set.t * 'b) (handler:'b -> Imp.stmt) (n:'a) : Imp.stmt list d_result =
     let vars, n = f n in
-    let vars = VarSet.union extra_vars vars in
+    let vars = Variable.Set.union extra_vars vars in
     ret_u Imp.Local vars (handler n)
 
-  let ret_n ?(extra_vars=VarSet.empty): (nexp -> Imp.stmt) -> i_exp -> Imp.stmt list d_result =
+  let ret_n ?(extra_vars=Variable.Set.empty): (nexp -> Imp.stmt) -> i_exp -> Imp.stmt list d_result =
     ret_f ~extra_vars to_nexp
 
-  let ret_ns ?(extra_vars=VarSet.empty): (nexp list -> Imp.stmt) -> i_exp list -> Imp.stmt list d_result =
+  let ret_ns ?(extra_vars=Variable.Set.empty): (nexp list -> Imp.stmt) -> i_exp list -> Imp.stmt list d_result =
     ret_f ~extra_vars to_nexp_list
 
-  let ret_b ?(extra_vars=VarSet.empty): (bexp -> Imp.stmt) -> i_exp -> Imp.stmt list d_result =
+  let ret_b ?(extra_vars=Variable.Set.empty): (bexp -> Imp.stmt) -> i_exp -> Imp.stmt list d_result =
     ret_f ~extra_vars to_bexp
 
 
@@ -352,7 +352,7 @@ end
 let cast_map f = Rjson.map_all f (fun idx s e ->
   StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
 
-let parse_decl (d:Dlang.d_decl) : (variable * Imp.locality * nexp option) list d_result =
+let parse_decl (d:Dlang.d_decl) : (Variable.t * Imp.locality * nexp option) list d_result =
   let parse_e m b = with_msg (m ^ ": " ^ Dlang.decl_to_s d) parse_exp b in
   let* ty = match Cast.parse_type d.ty with
   | Ok ty -> Ok ty
@@ -360,16 +360,16 @@ let parse_decl (d:Dlang.d_decl) : (variable * Imp.locality * nexp option) list d
   in
   if Ctype.is_int ty
   then (
-    let* ((vars, n):(VarSet.t * (nexp option))) = match d.init with
+    let* ((vars, n):(Variable.Set.t * (nexp option))) = match d.init with
     | Some (IExp n) ->
       let* n = parse_e "init" n in
       let (vars, n) = Unknown.to_nexp n in
       Ok (vars, Some n)
-    | _ -> Ok (VarSet.empty, None)
+    | _ -> Ok (Variable.Set.empty, None)
     in
     Ok ((d.name, Imp.Local, n) :: Unknown.as_decls Imp.Local vars )
   ) else (
-    prerr_endline ("WARNING: parse_decl: skipping non-int local variable '" ^ var_name d.name ^ "' type: " ^ Rjson.pp_js d.ty);
+    prerr_endline ("WARNING: parse_decl: skipping non-int local variable '" ^ Variable.name d.name ^ "' type: " ^ Rjson.pp_js d.ty);
     Ok []
   )
 
@@ -412,7 +412,7 @@ type 'a unop =
   {op: 'a; arg: nexp}
 
 type for_range = {
-  name: variable;
+  name: Variable.t;
   init: nexp;
   cond: Loops.comparator unop;
   inc: Loops.increment unop;
@@ -510,7 +510,7 @@ let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
     range_step = Default (Num 1);
     range_dir = Increase;
   } in
-  let vars = VarSet.of_list [lb; ub] in
+  let vars = Variable.Set.of_list [lb; ub] in
   let l = get_locality (Block b) in
   Unknown.ret_u l vars (For (r, Block b))
 
@@ -532,23 +532,23 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
   match c with
 
   | SExp (CallExpr {func=FunctionDecl{name=n}; args=[]})
-    when var_name n = "__syncthreads" ->
+    when Variable.name n = "__syncthreads" ->
     ret Imp.Sync
 
   | SExp (CallExpr {func = FunctionDecl {name = n; _}; args = [b]})
-    when var_name n = "__requires" ->
+    when Variable.name n = "__requires" ->
     ret_assert b
 
   | WriteAccessStmt w ->
-    let x = w.target.name |> var_set_loc w.target.location in
+    let x = w.target.name |> Variable.set_location w.target.location in
     let* idx = with_msg "write.idx" (cast_map parse_exp) w.target.index in
     idx |> ret_ns (fun idx -> Imp.Acc (x, {access_index=idx; access_mode=W}))
 
   | ReadAccessStmt r ->
-    let x = r.source.name |> var_set_loc r.source.location in
+    let x = r.source.name |> Variable.set_location r.source.location in
     let* idx = with_msg "read.idx" (cast_map parse_exp) r.source.index in
     idx
-    |> ret_ns ~extra_vars:(VarSet.of_list [r.target]) (fun idx ->
+    |> ret_ns ~extra_vars:(Variable.Set.of_list [r.target]) (fun idx ->
       let open Imp in
       Acc (x, {access_index=idx; access_mode=R})
     )
@@ -621,7 +621,7 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
   | DefaultStmt s ->
     with_msg "default.body" parse_stmt s
 
-type param = (variable, variable * array_t) Either.t
+type param = (Variable.t, Variable.t * array_t) Either.t
 
 let from_j_error (e:Rjson.j_error) : d_error =
   RootCause (Rjson.error_to_string e)
@@ -642,17 +642,17 @@ let parse_param (p:Cast.c_param) : param option d_result =
     Ok (Some (Either.Right (p.name, mk_array h ty)))
   ) else Ok None
 
-let parse_params (ps:Cast.c_param list) : (VarSet.t * array_t VarMap.t) d_result =
+let parse_params (ps:Cast.c_param list) : (Variable.Set.t * array_t Variable.Map.t) d_result =
   let* params = Rjson.map_all parse_param
     (fun i a e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
-  Ok (VarSet.of_list globals, list_to_var_map arrays)
+  Ok (Variable.Set.of_list globals, Variable.MapUtil.from_list arrays)
 
 let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
   let open Exp in
   let open Imp in
-  let mk_dims h (name:string) : (variable * locality * nexp option) list =
-    List.map (fun x -> (var_make (name ^ "." ^ x), h, None) ) cuda_dims
+  let mk_dims h (name:string) : (Variable.t * locality * nexp option) list =
+    List.map (fun x -> (Variable.from_name (name ^ "." ^ x), h, None) ) cuda_dims
   in
   let all_vars =
     List.concat_map (mk_dims Global) cuda_global_vars
@@ -660,14 +660,14 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
     List.concat_map (mk_dims Local) cuda_local_vars
   in
   let mk_var (name:string) (suffix:string) (x:string) : nexp =
-    Var (var_make (name ^ suffix ^ "." ^ x))
+    Var (Variable.from_name (name ^ suffix ^ "." ^ x))
   in
   let vars_ge_0 : bexp list =
     cuda_dims
     |> List.concat_map (fun (x:string) ->
       cuda_vars
       |> List.map (fun (name:string) ->
-        n_ge (Var (var_make (name ^ "." ^ x))) (Num 0)
+        n_ge (Var (Variable.from_name (name ^ "." ^ x))) (Num 0)
       )
     )
   in
@@ -676,12 +676,12 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
       n_lt (mk_var name1 "Idx" x) (mk_var name2 "Dim" x)
     ) cuda_dims
   in
-  let local_vars : variable list =
+  let local_vars : Variable.t list =
     cuda_dims
     |> List.concat_map (fun (x:string) ->
       cuda_local_vars
       |> List.map (fun (name:string) ->
-          var_make (name ^ "." ^ x)
+          Variable.from_name (name ^ "." ^ x)
       )
     )
   in 
@@ -706,9 +706,9 @@ let mk_array (h:hierarchy_t) (ty:Ctype.t) : array_t =
     array_type = Ctype.get_array_type ty;
   }
 
-let parse_shared (s:Dlang.d_stmt) : (variable * array_t) list =
+let parse_shared (s:Dlang.d_stmt) : (Variable.t * array_t) list =
   let open Dlang in
-  let rec find_shared (arrays:(variable * array_t) list) (s:d_stmt) : (variable * array_t) list =
+  let rec find_shared (arrays:(Variable.t * array_t) list) (s:d_stmt) : (Variable.t * array_t) list =
     match s with
     | DeclStmt l ->
       Common.map_opt (fun (d:Decl.t) ->
@@ -740,28 +740,28 @@ let parse_shared (s:Dlang.d_stmt) : (variable * array_t) list =
   find_shared [] s
 
 let parse_kernel
-  (shared_params:(variable * array_t) list)
-  (globals:variable list)
-  (assigns:(variable * nexp) list)
+  (shared_params:(Variable.t * array_t) list)
+  (globals:Variable.t list)
+  (assigns:(Variable.t * nexp) list)
   (k:Dlang.d_kernel)
 : Imp.p_kernel d_result =
   let* code = parse_stmt k.code in
   let* (params, arrays) = parse_params k.params in
   let params =
     globals
-    |> VarSet.of_list
-    |> VarSet.union params
+    |> Variable.Set.of_list
+    |> Variable.Set.union params
   in 
   let shared = parse_shared k.code
     |> Common.append_rev1 shared_params
-    |> Exp.list_to_var_map in
-  let rec add_type_params (params:VarSet.t) : Cast.c_type_param list -> VarSet.t =
+    |> Variable.MapUtil.from_list in
+  let rec add_type_params (params:Variable.Set.t) : Cast.c_type_param list -> Variable.Set.t =
     function
     | [] -> params
     | PTemplateTypeParmDecl _ :: l -> add_type_params params l
     | PNonTypeTemplateParmDecl x :: l ->
       let params = match Cast.parse_type x.ty with
-      | Ok ty when Ctype.is_int ty -> VarSet.add x.name params
+      | Ok ty when Ctype.is_int ty -> Variable.Set.add x.name params
       | _ -> params
       in
       add_type_params params l
@@ -775,16 +775,16 @@ let parse_kernel
       cuda_preamble (Block (assigns :: code))
     );
     p_kernel_params = add_type_params params k.type_params;
-    p_kernel_arrays = VarMap.union 
+    p_kernel_arrays = Variable.Map.union
       (fun k l r -> Some r)
       arrays shared;
   }
 
 let parse_program (p:Dlang.d_program) : Imp.p_kernel list d_result =
   let rec parse_p
-    (arrays:(variable * array_t) list)
-    (globals:variable list)
-    (assigns:(variable * nexp) list)
+    (arrays:(Variable.t * array_t) list)
+    (globals:Variable.t list)
+    (assigns:(Variable.t * nexp) list)
     (p:Dlang.d_program)
   : Imp.p_kernel list d_result =
     match p with

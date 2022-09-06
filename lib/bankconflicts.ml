@@ -5,8 +5,8 @@ open Common
 
 (* ----------------- constants -------------------- *)
 
-let tid_vars : variable list =
-  List.map var_make
+let tid_vars : Variable.t list =
+  List.map Variable.from_name
   ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"]
 
 let num_banks : int = 32
@@ -37,7 +37,7 @@ module S1 = Make(Subst.SubstPair)
 
 let acc_t_subst = S1.acc_t_subst
 
-let rec acc_t_to_s (v : variable) : 'a acc_t -> string = function
+let rec acc_t_to_s (v : Variable.t) : 'a acc_t -> string = function
   | Range (r, acc) ->
       (Serialize.PPrint.r_to_s r) ^ ": " ^ (acc_t_to_s v acc)
   | Cond (b, acc) ->
@@ -51,10 +51,10 @@ let rec get_acc (acc: 'a acc_t) =
   | Cond (_, acc) -> get_acc acc
   | Acc a -> a
 
-let proto_to_acc (x:variable) (f: access -> 'a) (p: prog) : 'a acc_t list = 
+let proto_to_acc (x:Variable.t) (f: access -> 'a) (p: prog) : 'a acc_t list =
   let rec on_i (i:inst) : 'a acc_t list =
     match i with
-    | Acc (y, e) -> if var_equal x y then [Acc (f e)] else []
+    | Acc (y, e) -> if Variable.equal x y then [Acc (f e)] else []
     | Sync -> []
     | Cond (b, is) -> on_p is |> List.map (fun i -> (Cond (b, i)))
     | Loop (r, is) -> on_p is |> List.map (fun i -> (Range (r, i)))
@@ -201,10 +201,10 @@ let proto_to_poly x v p : (poly_t list) acc_t list =
    if there are bank-conflicts!  Returns None if we CANNOT analyze. *)
 let handle_bank_conflicts (n:nexp) : poly_t option =
   let handle_coefficient (n:nexp) : bool =
-    let fns = Freenames.free_names_nexp n VarSet.empty in
-    VarSet.disjoint (VarSet.of_list tid_vars) fns
+    let fns = Freenames.free_names_nexp n Variable.Set.empty in
+    Variable.Set.disjoint (Variable.Set.of_list tid_vars) fns
   in
-  let handle_poly (x: variable) : poly_t option =
+  let handle_poly (x: Variable.t) : poly_t option =
     let p = n_to_poly x n in
     match p with
     | One n ->
@@ -313,13 +313,13 @@ let nexp_sum : nexp list -> nexp =
   List.fold_left n_plus (Num 0)
 
 (* shared_cost returns the cost of all accesses to a shared memory array *)
-let shared_cost (k : prog kernel) (v : variable) : nexp =
+let shared_cost (k : prog kernel) (v : Variable.t) : nexp =
   let accs : 'a acc_t list = proto_to_acc v Fun.id k.kernel_code in
   nexp_sum (List.map acc_t_cost accs)
 
 (* k_cost returns the cost of a kernel *)
 let k_cost (k : prog kernel) : nexp =
-  let vs : variable list = VarSet.elements (kernel_shared_arrays k) in
+  let vs : Variable.t list = Variable.Set.elements (kernel_shared_arrays k) in
   nexp_sum (List.map (shared_cost k) vs)
 
 (* p_k_cost returns the cost of all kernels in the program source *)

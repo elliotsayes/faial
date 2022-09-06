@@ -58,7 +58,7 @@ let first (x:t) = x.first
 
 let last (x:t) = x.last
 
-let location_repr (l:t) : string =
+let repr (l:t) : string =
   "{first=" ^ Position.repr l.first ^ ", " ^
    "last=" ^ Position.repr l.last ^ "}"
 
@@ -67,7 +67,7 @@ let lt (l1:t) (l2:t) : bool =
 
 let empty : t = {first = Position.empty; last = Position.empty}
 
-let of_lex_position_pair ((p_start:Lexing.position), (p_end:Lexing.position)) : t =
+let from_lexing_pair ((p_start:Lexing.position), (p_end:Lexing.position)) : t =
   let open Lexing in
   {
     first = p_start |> Position.from_lexing;
@@ -76,7 +76,7 @@ let of_lex_position_pair ((p_start:Lexing.position), (p_end:Lexing.position)) : 
 
 let of_lexbuf lb =
   let open Lexing in
-  of_lex_position_pair (lb.lex_start_p, lb.lex_curr_p)
+  from_lexing_pair (lb.lex_start_p, lb.lex_curr_p)
 
 
 (** Prints the start of the file location:
@@ -110,18 +110,18 @@ let get_line filename offset =
   | [l] -> l
   | _ -> failwith "Unexpected output"
 
-let location_line_count loc =
+let line_count loc =
   loc.last.line - loc.first.line
 
-let location_start_offset loc = loc.first.line - 1
+let start_offset loc = loc.first.line - 1
 
 (** Returns a list of the lines that comprise the location. *)
 
-let location_lines (loc:t) =
+let lines (loc:t) =
   line_range
     loc.first.filename
-    (location_start_offset loc)
-    (location_line_count loc)
+    (start_offset loc)
+    (line_count loc)
 
 (** Returns the first line of location *)
 
@@ -132,7 +132,7 @@ type range = {
 
 
 let location_title (loc:t) =
-  let err_text = get_line loc.first.filename (location_start_offset loc) in
+  let err_text = get_line loc.first.filename (start_offset loc) in
   let start_line, start_off = Position.to_pair loc.first in
   let start_idx = start_off - 1 in
   let end_line, end_off = Position.to_pair loc.last in

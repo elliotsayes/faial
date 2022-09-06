@@ -7,7 +7,7 @@ type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
 type c_type = json
-type c_var = {name: variable; ty: c_type}
+type c_var = {name: Variable.t; ty: c_type}
 type c_exp =
   | SizeOfExpr of c_type
   | CXXNewExpr of {arg: c_exp; ty: c_type}
@@ -31,7 +31,7 @@ type c_exp =
   | UnaryOperator of {opcode: string; child: c_exp; ty: c_type}
   | VarDecl of c_var
   | EnumConstantDecl of c_var
-  | UnresolvedLookupExpr of {name: variable; tys: c_type list}
+  | UnresolvedLookupExpr of {name: Variable.t; tys: c_type list}
 and c_binary = {opcode: string; lhs: c_exp; rhs: c_exp; ty: c_type}
 and c_array_subscript = {lhs: c_exp; rhs: c_exp; ty: c_type; location: Location.t}
 
@@ -64,12 +64,12 @@ let c_attr_device = c_attr "device"
 
 module Decl = struct
   type t = {
-    name: variable;
+    name: Variable.t;
     ty: c_type;
     init: c_init option;
     attrs: string list
   }
-  let name (x:t) : variable = x.name
+  let name (x:t) : Variable.t = x.name
   let ty (x:t) : c_type = x.ty
   let init (x:t) : c_init option = x.init
   let attrs (x:t) : string list = x.attrs  
@@ -131,7 +131,7 @@ module VisitExp = struct
     | UnaryOperator of {opcode: string; child: 'a; ty: c_type}
     | VarDecl of c_var
     | EnumConstantDecl of c_var
-    | UnresolvedLookup of {name: variable; tys: c_type list}
+    | UnresolvedLookup of {name: Variable.t; tys: c_type list}
 
   let rec fold (f: 'a t -> 'a) : c_exp -> 'a =
     function
@@ -313,11 +313,11 @@ module VisitStmt = struct
 
 end
 
-type c_param = {name: variable; is_used: bool; is_shared: bool; ty: c_type}
+type c_param = {name: Variable.t; is_used: bool; is_shared: bool; ty: c_type}
 
 type c_type_param =
-  | PTemplateTypeParmDecl of variable
-  | PNonTypeTemplateParmDecl of {name: variable; ty: c_type} 
+  | PTemplateTypeParmDecl of Variable.t
+  | PNonTypeTemplateParmDecl of {name: Variable.t; ty: c_type}
 
 module KernelAttr = struct
   type t =
@@ -449,15 +449,15 @@ let parse_location (j:json) : Location.t j_result =
   let e = with_field "end" parse_position o |> unwrap_or s in
   Ok (Location.make ~first:s ~last:e)
 
-let parse_variable (j:json) : variable j_result =
+let parse_variable (j:json) : Variable.t j_result =
   let open Rjson in
   let* o = cast_object j in
   let* name = with_field "name" cast_string o in
   match List.assoc_opt "range" o with
   | Some range ->
     let* l = parse_location range in
-    Ok (LocVariable (l, name))
-  | None -> Ok (Variable name)
+    Ok (Variable.make ~location:l ~name)
+  | None -> Ok (Variable.from_name name)
   
 
 let compound (ty:c_type) (lhs:c_exp) (opcode:string) (rhs:c_exp) : c_exp =
@@ -660,11 +660,11 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* ty = get_field "type" o in
     Ok (
       match func, args with
-      | CXXMethodDecl {name=n}, [lhs; rhs] when var_name n = "operator=" ->
+      | CXXMethodDecl {name=n}, [lhs; rhs] when Variable.name n = "operator=" ->
         BinaryOperator {lhs=lhs; opcode="="; rhs=rhs; ty=exp_type lhs}
       | (UnresolvedLookupExpr {name=n}, [lhs; rhs])
       | (FunctionDecl {name=n}, [lhs; rhs]) ->
-        (match var_name n with
+        (match Variable.name n with
           | "operator-=" -> compound ty lhs "-" rhs  
           | "operator+=" -> compound ty lhs "+" rhs  
           | "operator*=" -> compound ty lhs "*" rhs
@@ -1097,34 +1097,34 @@ let rewrite_shared_arrays: c_program -> c_program =
   (* Rewrites expressions: when it finds a variable that has been defined as
      a shared variable, we replace that by an array subscript:
      x becomes x[0] *)
-  let rw_exp (vars:VarSet.t) (e:c_exp) : c_exp =
-    if VarSet.is_empty vars then e else
+  let rw_exp (vars:Variable.Set.t) (e:c_exp) : c_exp =
+    if Variable.Set.is_empty vars then e else
     e |> VisitExp.map (fun e ->
       match e with
       | VarDecl x ->
-        if VarSet.mem x.name vars
+        if Variable.Set.mem x.name vars
         then ArraySubscriptExpr {
           lhs=VarDecl x;
           rhs=IntegerLiteral 0;
           ty=x.ty;
-          location=var_loc x.name
+          location=Variable.location x.name
         }
         else e
       | _ -> e)
   in
   (* When rewriting a variable declaration, we must return as the side-effect
      the shadowing of the available variables when it makes sense *) 
-  let rw_decl (vars:VarSet.t) (d:Decl.t) : VarSet.t * Decl.t =
+  let rw_decl (vars:Variable.Set.t) (d:Decl.t) : Variable.Set.t * Decl.t =
     let vars =
       if Decl.is_shared d && not (Decl.is_array d) then
-        VarSet.add d.name vars
+        Variable.Set.add d.name vars
       else
-        VarSet.remove d.name vars
+        Variable.Set.remove d.name vars
     in
     (vars, Decl.map_expr (rw_exp vars) d)
   in
   (* This is just a monadic map *)
-  let rec rw_list: 'a. (VarSet.t -> 'a -> VarSet.t * 'a) -> VarSet.t -> 'a list -> VarSet.t * 'a list =
+  let rec rw_list: 'a. (Variable.Set.t -> 'a -> Variable.Set.t * 'a) -> Variable.Set.t -> 'a list -> Variable.Set.t * 'a list =
     fun f vars l ->
         match l with
         | [] -> (vars, [])
@@ -1134,8 +1134,8 @@ let rewrite_shared_arrays: c_program -> c_program =
           (vars, x::l)
   in
   (* We now rewrite statements *)
-  let rw_stmt (vars:VarSet.t) (s:c_stmt) : c_stmt =
-    let rec rw_s (vars:VarSet.t) (s: c_stmt) : VarSet.t * c_stmt =
+  let rw_stmt (vars:Variable.Set.t) (s:c_stmt) : c_stmt =
+    let rec rw_s (vars:Variable.Set.t) (s: c_stmt) : Variable.Set.t * c_stmt =
       let ret (s: c_stmt) : c_stmt = rw_s vars s |> snd in
       let rw_e: c_exp -> c_exp = rw_exp vars in
       match s with
@@ -1181,18 +1181,18 @@ let rewrite_shared_arrays: c_program -> c_program =
     in
     rw_s vars s |> snd
   in
-  let rec rw_p (vars:VarSet.t): c_program -> c_program =
+  let rec rw_p (vars:Variable.Set.t): c_program -> c_program =
     function
     | Declaration d :: p ->
       let vars = if Decl.is_shared d && not (Decl.is_array d)
-        then VarSet.add d.name vars
+        then Variable.Set.add d.name vars
         else vars
       in
       Declaration d :: rw_p vars p
     | Kernel k :: p -> Kernel { k with code = rw_stmt vars k.code } :: rw_p vars p
     | [] -> []
   in
-  rw_p VarSet.empty
+  rw_p Variable.Set.empty
 
 let parse_program ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : c_program j_result =
   let open Rjson in
@@ -1222,10 +1222,10 @@ let exp_to_s ?(modifier:bool=false) ?(provenance:bool=false) ?(types:bool=false)
     then "(" ^ o ^ "." ^ type_to_str j ^ ")"
     else o
   in
-  let var_name: variable -> string =
+  let var_name: Variable.t -> string =
     if provenance
-    then var_repr
-    else var_name
+    then Variable.repr
+    else Variable.name
   in
   let rec exp_to_s: c_exp -> string =
     let par (e: c_exp) : string =
@@ -1299,7 +1299,7 @@ let decl_to_s (d: c_decl): string =
     let attrs = Common.join " " d.attrs |> String.trim in
     attrs ^ " "
   in
-  attr ^ type_to_str d.ty ^ " " ^ var_name d.name ^ i
+  attr ^ type_to_str d.ty ^ " " ^ Variable.name d.name ^ i
 
 
 let for_init_to_s (f:c_for_init) : string =
@@ -1378,14 +1378,14 @@ let stmt_to_s ?(modifier:bool=false) ?(provenance:bool=false) : c_stmt -> PPrint
 let param_to_s (p:c_param) : string =
   let used = if p.is_used then "" else " unsed" in
   let shared = if p.is_shared then "shared " else "" in
-  used ^ shared ^ var_name p.name
+  used ^ shared ^ Variable.name p.name
 
 let type_param_to_s (p:c_type_param) : string =
   let name = match p with
   | PTemplateTypeParmDecl x -> x
   | PNonTypeTemplateParmDecl x -> x.name
   in
-  var_name name
+  Variable.name name
 
 let kernel_to_s ?(modifier:bool=false) ?(provenance:bool=false) (k:c_kernel) : PPrint.t list =
   let tps = if k.type_params <> [] then "[" ^

@@ -86,9 +86,9 @@ module StdNexp : NEXP_SERIALIZER = struct
   let rec n_ser (a:nexp) : Smtlib.sexp =
     let open Smtlib in
     match a with
-    | Proj (t, x) -> binop "proj" (t_ser t) (symbol (var_name x))
+    | Proj (t, x) -> binop "proj" (t_ser t) (symbol (Variable.name x))
     | Num n -> Atom (Int n)
-    | Var x -> Atom (Symbol (var_name x))
+    | Var x -> Atom (Symbol (Variable.name x))
     | Bin (b, a1, a2) ->
       binop (nbin_to_string b) (n_ser a1) (n_ser a2)
     | NIf (b, n1, n2) -> call "if" [b_ser b; n_ser n1; n_ser n2]
@@ -130,13 +130,13 @@ module BvNexp : NEXP_SERIALIZER = struct
   let rec n_ser (a:nexp) : Smtlib.sexp =
     let open Smtlib in
     match a with
-    | Proj (t, x) -> binop "proj" (t_ser t) (symbol (var_name x))
+    | Proj (t, x) -> binop "proj" (t_ser t) (symbol (Variable.name x))
     | Num n -> List [
         symbol "_";
         symbol ("bv" ^ (string_of_int n));
         symbol "32";
       ]
-    | Var x -> symbol (var_name x)
+    | Var x -> symbol (Variable.name x)
     | Bin (b, a1, a2) ->
       binop (nbin_to_string b) (n_ser a1) (n_ser a2)
     | NIf (b, n1, n2) -> call "if" [b_ser b; n_ser n1; n_ser n2]
@@ -168,7 +168,7 @@ let s_ser s =
 
 let r_ser r =
   call "range" [
-    symbol (var_name r.range_var);
+    symbol (Variable.name r.range_var);
     n_ser r.range_lower_bound;
     n_ser r.range_upper_bound;
     s_ser r.range_step;
@@ -179,18 +179,18 @@ let a_ser a =
   call (m_ser a.access_mode) [idx]
 
 let expr_acc_ser (x, a) : Smtlib.sexp =
-  call "loc" [symbol (var_name x); a_ser a]
+  call "loc" [symbol (Variable.name x); a_ser a]
 
 let acc_sym_ser (x, a, t) : Smtlib.sexp =
-  call "loc" [symbol (var_name x); a_ser a; t_ser t]
+  call "loc" [symbol (Variable.name x); a_ser a; t_ser t]
 
 let bexp_list pre = List.map b_ser pre
 
 let bexp_list_ser name pre = bexp_list pre |> call name
 
-let var_set_ser name (s:VarSet.t) =
-  VarSet.elements s
-    |> List.map var_name
+let var_set_ser name (s:Variable.Set.t) =
+  Variable.Set.elements s
+    |> List.map Variable.name
     |> atoms
     |> call name
 
@@ -229,7 +229,7 @@ module PPrint = struct
 
   let print_doc = pp_doc Format.std_formatter
 
-  let ident: variable -> string = var_name
+  let ident: Variable.t -> string = Variable.name
 
   let nrel_to_string (r:nrel) : string =
     match r with
@@ -335,8 +335,8 @@ module PPrint = struct
   let acc_expr_to_s a : t list =
     [Line (acc_to_s a ^ ";")]
 
-  let var_set_to_s (vs:VarSet.t) : string =
-    VarSet.elements vs
+  let var_set_to_s (vs:Variable.Set.t) : string =
+    Variable.Set.elements vs
     |> List.map ident
     |> Common.join ", "
 
@@ -354,9 +354,9 @@ module PPrint = struct
     in
     h ^ " " ^ ty ^ "[" ^ size ^ "]"
 
-  let array_map_to_s (vs:array_t VarMap.t) : string =
-    VarMap.bindings vs
-    |> List.map (fun (k,v) -> var_name k ^ ": " ^ array_to_s v)
+  let array_map_to_s (vs:array_t Variable.Map.t) : string =
+    Variable.Map.bindings vs
+    |> List.map (fun (k,v) -> Variable.name k ^ ": " ^ array_to_s v)
     |> Common.join ", "
 
 end
