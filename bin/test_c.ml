@@ -1,10 +1,10 @@
 module StringMap = Common.StringMap
 module StringMapUtil = Common.StringMapUtil
-module VarSet = Exp.VarSet
-module VarMap = Exp.VarMap
+module VarSet = Variable.Set
+module VarMap = Variable.Map
 
 (* ------------------------------------------------------------------------ *)
-let (get_variable: Dlang.d_exp -> Exp.variable option) = function
+let (get_variable: Dlang.d_exp -> Variable.t option) = function
     Dlang.ParmVarDecl d_var -> Some d_var.name
   | Dlang.VarDecl d_var -> Some d_var.name
   | _ -> None
@@ -15,7 +15,7 @@ let warn_call_use_array (arrays:VarSet.t StringMap.t) (p:Dlang.d_program) : unit
     |> VarSet.of_list
     |> VarSet.inter arrays
     |> VarSet.elements
-    |> List.map Exp.var_name
+    |> List.map Variable.name
     |> List.iter (fun name -> "WARN: Function call with array: " ^ (Dlang.exp_to_s func) ^ " " ^ name |> Stdlib.prerr_endline) in
   p |> List.filter_map (function
         | Dlang.Kernel kernel -> StringMap.find_opt kernel.name arrays
