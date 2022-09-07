@@ -1,6 +1,6 @@
 module StringMap = Common.StringMap
-module VarSet = Exp.VarSet
-module VarMap = Exp.VarMap
+module VarSet = Variable.Set
+module VarMap = Variable.Map
 type json = Yojson.Basic.t
 
 let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kernel list) =
@@ -85,7 +85,7 @@ module Calls = struct
        in the position of the function *)
     |> Seq.concat_map (fun c ->
       match c.func with
-      | FunctionDecl x -> Seq.return (Exp.var_name x.name)
+      | FunctionDecl x -> Seq.return (Variable.name x.name)
       | _ -> Seq.empty
     )
     (* Count how many times each name is used *)
@@ -106,7 +106,7 @@ end
 let var_set_to_json (vars:VarSet.t) : json =
   let vars = vars
   |> VarSet.elements
-  |> List.map (fun x -> `String (Exp.var_name x))
+  |> List.map (fun x -> `String (Variable.name x))
   in
   `List vars
 
@@ -355,7 +355,7 @@ module MutatedVar = struct
           let env2 =
             l
             |> List.map (fun x -> Decl.(x.name, scope))
-            |> Exp.VarMapUtil.from_list in
+            |> Variable.MapUtil.from_list in
           let env = VarMap.union (fun k e1 e2 ->
             Some (max e1 e2)
           ) env2 env
