@@ -12,7 +12,7 @@ let assert_post (expected:Post.prog) (given:Post.prog) =
   assert_equal expected given ~msg
 
 
-let var x = Var (var_make x)
+let var x = Var (Variable.from_name x)
 
 let tests = "test_predicates" >::: [
   "imp_to_post_1" >:: (fun _ ->
@@ -20,11 +20,11 @@ let tests = "test_predicates" >::: [
         local id = 32 + id;
         rw s_Q[id];
       *)
-    let id = var_make "id" in
-    let sq = var_make "s_Q" in
+    let id = Variable.from_name "id" in
+    let sq = Variable.from_name "s_Q" in
     let mk_acc e : Exp.access = {access_index = [Var e]; access_mode = W} in
     let wr = Acc (sq, mk_acc id) in
-    let inc (x:variable) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
+    let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
       inc id;
       wr;
@@ -52,15 +52,15 @@ let tests = "test_predicates" >::: [
         local id = 32 + id in
         rw s_Q[id]
       *)
-    let id = var_make "id" in
-    let sq = var_make "s_Q" in
+    let id = Variable.from_name "id" in
+    let sq = Variable.from_name "s_Q" in
     let p : Post.prog = [
       let open Post in
       Decl (id, Local, Some (n_plus (Num 32) (Var id)),[ (* local id = 32 + id; *)
         Acc (sq, {access_index=[Var id]; access_mode = W}) (* rw s_Q[id]; *)
       ])
     ] in
-    let p : Post.prog = Post.inline_decls VarSet.empty p in
+    let p : Post.prog = Post.inline_decls Variable.Set.empty p in
     match p with
     | [Post.Acc (_, {access_index=[e]; access_mode = W}) (* rw s_Q[32 + id]; *)
       ] ->
@@ -76,12 +76,12 @@ let tests = "test_predicates" >::: [
         local id = 32 + id;
         rw s_Q[id];
       *)
-    let id = var_make "id" in
-    let tid = var_make "threadIdx.x" in
-    let sq = var_make "s_Q" in
+    let id = Variable.from_name "id" in
+    let tid = Variable.from_name "threadIdx.x" in
+    let sq = Variable.from_name "s_Q" in
     let mk_acc e : Exp.access = {access_index = [Var e]; access_mode = W} in
     let wr = Acc (sq, mk_acc id) in
-    let inc (x:variable) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
+    let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
       Decl[(tid, Local, None)];
       Decl [(id, Local, Some (Var tid))];
@@ -126,10 +126,10 @@ let tests = "test_predicates" >::: [
         local id = 32 + id;
         rw s_Q[id];
       *)
-    let id = var_make "id" in
-    let tid = var_make "threadIdx.x" in
-    let wr = Acc (var_make "s_Q", {access_index = [Var id]; access_mode = W}) in
-    let inc (x:variable) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
+    let id = Variable.from_name "id" in
+    let tid = Variable.from_name "threadIdx.x" in
+    let wr = Acc (Variable.from_name "s_Q", {access_index = [Var id]; access_mode = W}) in
+    let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
       Decl[(tid, Local, None)];
       Decl [(id, Local, Some (Var tid))];
@@ -140,7 +140,7 @@ let tests = "test_predicates" >::: [
     (* Translate: *)
     let p : Proto.prog = p
       |> imp_to_post
-      |> Post.inline_decls VarSet.empty
+      |> Post.inline_decls Variable.Set.empty
       |> post_to_proto
     in
     (* Test: *)
@@ -174,16 +174,16 @@ let tests = "test_predicates" >::: [
         local id = 32 + id;
         rw s_Q[id];
       *)
-    let n = var_make "n" in
-    let m = var_make "m" in
-    let k = var_make "k" in
-    let id = var_make "id" in
-    let wr = Acc (var_make "s_Q", {access_index = [Var id]; access_mode = W}) in
-    let inc (x:variable) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
+    let n = Variable.from_name "n" in
+    let m = Variable.from_name "m" in
+    let k = Variable.from_name "k" in
+    let id = Variable.from_name "id" in
+    let wr = Acc (Variable.from_name "s_Q", {access_index = [Var id]; access_mode = W}) in
+    let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
-      Decl[(var_make "threadIdx.x", Local, None)];
-      Decl[(n, Local, Some (Var (var_make "threadIdx.x")))];
-      Decl[(k, Local, Some (Var (var_make "blockIdx.x")))];
+      Decl[(Variable.from_name "threadIdx.x", Local, None)];
+      Decl[(n, Local, Some (Var (Variable.from_name "threadIdx.x")))];
+      Decl[(k, Local, Some (Var (Variable.from_name "blockIdx.x")))];
       Decl[(m, Local, Some (
         n_plus (Var n) (n_mult (Num 96) (Var k))
       ))];
@@ -198,7 +198,7 @@ let tests = "test_predicates" >::: [
     (* Translate: *)
     let p : Proto.prog = p
       |> imp_to_post
-      |> Post.inline_decls VarSet.empty
+      |> Post.inline_decls Variable.Set.empty
       |> post_to_proto
     in
     (* Test: *)
@@ -209,7 +209,7 @@ let tests = "test_predicates" >::: [
           Acc (_, {access_index=[e1]; _});
           Acc (_, {access_index=[e2]; _});
           Acc (_, {access_index=[e3]; _})] ->
-        let tid = Var (var_make "threadIdx.x") in
+        let tid = Var (Variable.from_name "threadIdx.x") in
         let inc e = n_plus (Num 32) e in
         assert_nexp tid e1;
         assert_nexp (inc tid) e2;
@@ -221,9 +221,9 @@ let tests = "test_predicates" >::: [
 
   );
   "example3" >:: (fun _ ->
-    let x = var_make "x" in
-    let a = var_make "a" in
-    let b = var_make "b" in 
+    let x = Variable.from_name "x" in
+    let a = Variable.from_name "a" in
+    let b = Variable.from_name "b" in
     let p = Block [
       Decl [
         x, Local, None;
@@ -233,7 +233,7 @@ let tests = "test_predicates" >::: [
         x, Local, None;
         b, Local, Some (Var x);
       ];
-      Acc (var_make "A", {access_index = [Var a; Var b]; access_mode = W})
+      Acc (Variable.from_name "A", {access_index = [Var a; Var b]; access_mode = W})
     ] in
     let p1 =
       let open Post in
@@ -241,7 +241,7 @@ let tests = "test_predicates" >::: [
         [Decl (a, Local, Some (Var x),
           [Decl (x, Local, None,
             [Decl (b, Local, Some (Var x),
-              [Acc (var_make "A", {access_index = [Var a; Var b]; access_mode = W})]
+              [Acc (Variable.from_name "A", {access_index = [Var a; Var b]; access_mode = W})]
             )]
           )]
         )]
@@ -254,33 +254,33 @@ let tests = "test_predicates" >::: [
         [Decl (a, Local, Some (Var x),
           [Decl (x, Local, None,
             [Decl (b, Local, Some (Var x),
-              [Acc (var_make "A", {access_index = [Var a; Var b]; access_mode = W})]
+              [Acc (Variable.from_name "A", {access_index = [Var a; Var b]; access_mode = W})]
             )]
           )]
         )]
       )]
     in
-    let x1 = var_make "x1" in
+    let x1 = Variable.from_name "x1" in
     let p3 = 
       let open Post in
       [Decl (x, Local, None,
         [Decl (x1, Local, None,
-          [Acc (var_make "A", {access_index = [Var x; Var x1]; access_mode = W})]
+          [Acc (Variable.from_name "A", {access_index = [Var x; Var x1]; access_mode = W})]
         )]
       )]
     in
-    assert_post p3 (Post.inline_decls VarSet.empty p2);
+    assert_post p3 (Post.inline_decls Variable.Set.empty p2);
     (* Translate: *)
     let p : Proto.prog = p
       |> imp_to_post
-      |> Post.inline_decls VarSet.empty
+      |> Post.inline_decls Variable.Set.empty
       |> post_to_proto
     in
     let open Proto in
     match p with
     | [Acc (_, {access_index=[x1; x2]})] ->
-      assert_nexp (Var (var_make "x")) x1;
-      assert_nexp (Var (var_make "x1")) x2;
+      assert_nexp (Var (Variable.from_name "x")) x1;
+      assert_nexp (Var (Variable.from_name "x1")) x2;
     | _ -> assert false
   )
 ]

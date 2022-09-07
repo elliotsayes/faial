@@ -3,11 +3,11 @@ open Wellformed
 open Locsplit
 open Exp
 
-let x = (var_make "x")
-let y = (var_make "y")
+let x = (Variable.from_name "x")
+let y = (Variable.from_name "y")
 let b = Bool true
 let r = {
-  range_var = var_make "z";
+  range_var = Variable.from_name "z";
   range_lower_bound = Num 1;
   range_upper_bound = Num 2;
   range_step = Default (Num 1);

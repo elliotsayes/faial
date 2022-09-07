@@ -33,7 +33,7 @@ let first (l:'a list) : 'a =
 let mk_range (r:vrange) : Exp.range =
   let open Exp in
   {
-    range_var = var_make "x";
+    range_var = Variable.from_name "x";
     range_lower_bound = Num r.vr_lower_bound;
     range_upper_bound = Num r.vr_upper_bound;
     range_step = Default (Num r.vr_step);
