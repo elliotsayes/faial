@@ -416,25 +416,29 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
   | CXXBoolLiteralExpr b -> state_pure (CXXBoolLiteralExpr b)
 
 and rewrite_subscript (c:Cast.c_array_subscript) : (AccessState.t, d_subscript) state =
-  let rec rewrite_subscript (c:Cast.c_array_subscript) (indices:d_exp list) : (AccessState.t, d_subscript) state =
+  let rec rewrite_subscript (c:Cast.c_array_subscript) (indices:d_exp list) (loc:Location.t option) : (AccessState.t, d_subscript) state =
     fun st ->
     let (st, idx) = rewrite_exp c.rhs st in
+    let loc = Some (match loc with
+    | Some loc -> Location.add loc c.location
+    | None -> c.location)
+    in
     let indices = idx :: indices in
     match c.lhs with
     | ArraySubscriptExpr a ->
-      rewrite_subscript a indices st
+      rewrite_subscript a indices loc st
 
     | VarDecl {name=n; ty=ty}
     | ParmVarDecl {name=n; ty=ty} ->
-      state_pure {name=n; index=indices; ty=ty; location=c.location} st
+      state_pure {name=n; index=indices; ty=ty; location=Option.get loc} st
 
     | e ->
       let ty = Cast.exp_type e in
       let (st, e) = rewrite_exp e st in
       let (st, x) = AccessState.add_exp e ty st in
-      state_pure {name=x; index=indices; ty=ty; location=c.location} st
+      state_pure {name=x; index=indices; ty=ty; location=Option.get loc} st
   in
-  rewrite_subscript c []
+  rewrite_subscript c [] None
 and rewrite_write (a:Cast.c_array_subscript) (src:Cast.c_exp) : (AccessState.t, d_exp) state =
   fun st ->
     let (st, src') = rewrite_exp src st in

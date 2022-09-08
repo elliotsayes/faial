@@ -24,7 +24,13 @@ module Position = struct
 
   let to_pair (pos:t) = pos.line, pos.column
 
+  let compare (p1:t) (p2:t) : int =
+    compare (to_pair p1) (to_pair p2)
+
   (** Prints a position *)
+
+  let add_to ?(columns=0) ?(lines=0) (x:t) : t =
+    { x with column = x.column + columns; line = x.line + lines; }
 
   let bprint (b:Buffer.t) (pos:t): unit =
     let fname = if pos.filename = ""
@@ -52,15 +58,35 @@ type t = {
   last : Position.t;
 }
 
-let make ~first ~last : t = {first = first; last = last}
+let count_columns (x:t) : int =
+  x.last.column - x.first.column
+
+let make ~first ~last : t =
+  {first = first; last = last}
 
 let first (x:t) = x.first
 
 let last (x:t) = x.last
 
+let add_to_last ?(columns=0) ?(lines=0) (x:t) : t =
+  { x with last = Position.add_to ~columns ~lines x.last }
+
 let repr (l:t) : string =
   "{first=" ^ Position.repr l.first ^ ", " ^
    "last=" ^ Position.repr l.last ^ "}"
+
+let add (lhs:t) (rhs:t) : t =
+  (* We place all the positions in a list,
+     we sort the list, and
+     we take the first and last. *)
+  let positions =
+    [lhs.first; lhs.last; rhs.first; rhs.last]
+    |> List.sort Position.compare
+  in
+  {
+    first = List.nth positions 0;
+    last = List.nth positions 3;
+  }
 
 let lt (l1:t) (l2:t) : bool =
   Position.lt l1.first l2.last || (l1.first = l2.first && Position.lt l1.last l2.last)
@@ -77,14 +103,6 @@ let from_lexing_pair ((p_start:Lexing.position), (p_end:Lexing.position)) : t =
 let of_lexbuf lb =
   let open Lexing in
   from_lexing_pair (lb.lex_start_p, lb.lex_curr_p)
-
-
-(** Prints the start of the file location:
-    filename:start-line:start-col *)
-(*
-let location_bprint_start (b:Buffer.t) (loc:t) : unit =
-  Position.(bprint b loc.start)
-*)
 
 let line_range filename offset count =
   (* Skip the first n-lines *)
@@ -129,7 +147,6 @@ type range = {
   range_offset: int;
   range_count: int;
 }
-
 
 let location_title (loc:t) =
   let err_text = get_line loc.first.filename (start_offset loc) in

@@ -456,6 +456,10 @@ let parse_variable (j:json) : Variable.t j_result =
   match List.assoc_opt "range" o with
   | Some range ->
     let* l = parse_location range in
+    let l = if Location.count_columns l = 0
+      then Location.add_to_last ~columns:(String.length name) l
+      else l
+    in
     Ok (Variable.make ~location:l ~name)
   | None -> Ok (Variable.from_name name)
   
@@ -646,13 +650,13 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* lhs, rhs = with_field "inner"
       (cast_list_2 parse_exp parse_exp) o
     in
-    let* loc = with_field "inner" (fun j ->
-      let* l = cast_list j in
-      let* o = with_index 1 cast_object l in
-      with_field "range" parse_location o
-    ) o
-    in
-    Ok (ArraySubscriptExpr {ty=ty; lhs=lhs; rhs=rhs; location=loc})
+    let* loc = with_field "range" parse_location o in
+    Ok (ArraySubscriptExpr {
+      ty=ty;
+      lhs=lhs;
+      rhs=rhs;
+      location=Location.add_to_last ~columns:1 loc
+    })
 
   | "CXXMemberCallExpr"
   | "CXXOperatorCallExpr" ->
