@@ -159,16 +159,18 @@ end
 module IntGen = CodeGen (ArithmeticOps)
 module BvGen = CodeGen (BitVectorOps)
 
-let add ?(add_block_dim=false) (b_to_expr : Z3.context -> bexp -> Expr.expr) (s:Solver.solver) (ctx:Z3.context) (p:Symbexp.proof) : unit =
-	
-	let mk_var (name:string) : Expr.expr =
-		n_ge (Var (Variable.from_name name)) (Num 0)
-		|> b_to_expr ctx
-	in
-	List.map mk_var p.proof_decls |> Solver.add s;
-	let assign x n =
-		n_eq (Var (Variable.from_name x)) (Num n)
-		|> b_to_expr ctx
+let add
+  ?(add_block_dim=false)
+  (b_to_expr : Z3.context -> bexp -> Expr.expr)
+  (s:Solver.solver)
+  (ctx:Z3.context)
+  (p:Symbexp.proof)
+:
+  unit
+=
+  let assign x n =
+    n_eq (Var (Variable.from_name x)) (Num n)
+    |> b_to_expr ctx
 	in
   (if add_block_dim then [
     assign "blockDim.y" 1;
@@ -176,11 +178,11 @@ let add ?(add_block_dim=false) (b_to_expr : Z3.context -> bexp -> Expr.expr) (s:
   ]
   else [])
   @
- 	[
+  [
     b_to_expr ctx (Predicates.inline p.proof_goal)
-	]
-	|> Solver.add s
-	
+  ]
+  |> Solver.add s
+
 module Environ = struct
 	type t = (string * string) list
 
