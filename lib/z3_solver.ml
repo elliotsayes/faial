@@ -82,8 +82,8 @@ module BitVectorOps : NUMERIC_OPS = struct
 	let mk_mod = BitVector.mk_smod
 	let mk_le = BitVector.mk_sle
 	let mk_ge = BitVector.mk_sge
-	let mk_gt = BitVector.mk_slt
-	let mk_lt = BitVector.mk_sgt
+	let mk_gt = BitVector.mk_sgt
+	let mk_lt = BitVector.mk_slt
 	let parse_num x =
 		(* Input is: #x0000004000000000 *)
 		let offset n x = String.sub x n (String.length x - n) in
