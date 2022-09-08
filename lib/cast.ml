@@ -646,7 +646,12 @@ let rec parse_exp (j:json) : c_exp j_result =
     let* lhs, rhs = with_field "inner"
       (cast_list_2 parse_exp parse_exp) o
     in
-    let* loc = with_field "range" parse_location o in
+    let* loc = with_field "inner" (fun j ->
+      let* l = cast_list j in
+      let* o = with_index 1 cast_object l in
+      with_field "range" parse_location o
+    ) o
+    in
     Ok (ArraySubscriptExpr {ty=ty; lhs=lhs; rhs=rhs; location=loc})
 
   | "CXXMemberCallExpr"
