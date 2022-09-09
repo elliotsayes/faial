@@ -148,7 +148,7 @@ type range = {
   range_count: int;
 }
 
-let location_title (loc:t) =
+let location_title (loc:t) : string * range =
   let err_text = get_line loc.first.filename (start_offset loc) in
   let start_line, start_off = Position.to_pair loc.first in
   let start_idx = start_off - 1 in
@@ -166,23 +166,30 @@ let make_bold =
    ANSITerminal.sprintf [ANSITerminal.Bold; ANSITerminal.Foreground ANSITerminal.Red] "%s"
 
 let location_bprint_title (outx:Buffer.t) (loc:t) : unit =
-  let underline offset count : string =
-    let count = if count = 0 then 1 else count in
-    (String.make offset ' ') ^ (String.make count '^' |> make_bold)
-  in
+  (* Print out the line until you reach the highlighted text: *)
   let txt, hl = location_title loc in
   let lineno = loc.first.line in
   let left = String.sub txt 0 hl.range_offset in
   Printf.bprintf outx "%d | %s" lineno left;
+
+  (* Print out the highlighted text *)
   let mid = String.sub txt hl.range_offset hl.range_count in
+  Printf.bprintf outx "%s" (make_bold mid);
+
+  (* Print out the rest of the string *)
+  let idx = hl.range_offset + hl.range_count in
+  let right = String.sub txt idx (String.length txt - idx) in
+  Printf.bprintf outx "%s\n" right;
+
+  (* Underline the highlighted text *)
   let spaces =
     let count = Printf.sprintf "%d | " lineno |> String.length in
     String.make count ' '
   in
-  Printf.bprintf outx "%s" (make_bold mid);
-  let idx = hl.range_offset + hl.range_count in
-  let right = String.sub txt idx (String.length txt - idx) in
-  Printf.bprintf outx "%s\n" right;
+  let underline offset count : string =
+    let count = if count = 0 then 1 else count in
+    (String.make offset ' ') ^ (String.make count '^' |> make_bold)
+  in
   Printf.bprintf outx "%s%s\n" spaces (underline hl.range_offset hl.range_count)
 
 let print_location (l:t) : unit =
