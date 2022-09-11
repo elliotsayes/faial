@@ -430,11 +430,9 @@ let rec parse_position : json -> Location.Position.t j_result =
     match (
       let* line = with_field "line" cast_int o in
       let* col = with_field "col" cast_int o in
-      let* filename = with_field_or "file" cast_string "" o in
       Ok Location.Position.{
         line = line;
         column = col;
-        filename = filename
       }
     ) with
     | Ok p -> Ok p
@@ -445,9 +443,13 @@ let parse_location (j:json) : Location.t j_result =
   let open Rjson in
   let open Location in
   let* o = cast_object j in
-  let* s = with_field "begin" parse_position o in
-  let e = with_field "end" parse_position o |> unwrap_or s in
-  Ok (Location.make ~first:s ~last:e)
+  let* filename = with_field "begin" (fun j ->
+    let* o = cast_object j in
+    with_field_or "file" cast_string "" o
+  ) o in
+  let* first = with_field "begin" parse_position o in
+  let last = with_field "end" parse_position o |> unwrap_or first in
+  Ok (Location.make ~filename ~first ~last)
 
 let parse_variable (j:json) : Variable.t j_result =
   let open Rjson in

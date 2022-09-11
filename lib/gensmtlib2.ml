@@ -160,7 +160,7 @@ let location_to_sexp (l:Location.t) : Smtlib.sexp =
     Buffer.add_string b (string_of_int p.column)
   in
   let b = Buffer.create 100 in
-  Buffer.add_string b l.first.filename;
+  Buffer.add_string b l.filename;
   Buffer.add_char b ':';
   add_pos b l.first;
   Buffer.add_char b ':';

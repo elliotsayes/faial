@@ -2,27 +2,23 @@
 module Position = struct
   (** The position is a 2D indexing in the screen buffer. It is 1-based. *)
   type t = {
-    filename: string;
     line: int;
     column: int;
   }
 
-  let empty : t = {filename = ""; line = 1; column=1}
+  let start : t = {line = 1; column=1}
 
-  let to_tuple (p:t) : (string * int * int) = (p.filename, p.line, p.column)
+  let to_pair (pos:t) : int * int = pos.line, pos.column
 
-  let lt (p1:t) (p2:t) : bool = to_tuple p1 < to_tuple p2
+  let lt (p1:t) (p2:t) : bool = to_pair p1 < to_pair p2
 
   (* Return the line number and position of a position *)
   let from_lexing (pos:Lexing.position) : t =
     let open Lexing in
     {
-      filename = pos.pos_fname;
       line = pos.pos_lnum;
       column = pos.pos_cnum - pos.pos_bol + 1
     }
-
-  let to_pair (pos:t) = pos.line, pos.column
 
   let compare (p1:t) (p2:t) : int =
     compare (to_pair p1) (to_pair p2)
@@ -30,14 +26,10 @@ module Position = struct
   (** Prints a position *)
 
   let add_to ?(columns=0) ?(lines=0) (x:t) : t =
-    { x with column = x.column + columns; line = x.line + lines; }
+    { column = x.column + columns; line = x.line + lines; }
 
   let bprint (b:Buffer.t) (pos:t): unit =
-    let fname = if pos.filename = ""
-      then ""
-      else pos.filename ^ ":"
-    in
-    Printf.bprintf b "%s%d:%d" fname pos.line pos.column
+    Printf.bprintf b "%d:%d" pos.line pos.column
 
   let to_string (pos:t) : string =
     let b = Buffer.create 256 in
@@ -45,8 +37,7 @@ module Position = struct
     Buffer.contents b
 
   let repr (pos:t) : string =
-    "{filename=\"" ^ pos.filename ^ "\", " ^
-    "line=" ^ string_of_int pos.line ^ ", " ^
+    "{line=" ^ string_of_int pos.line ^ ", " ^
     "column=" ^ string_of_int pos.column ^"}"
 
 end
@@ -54,6 +45,7 @@ end
 (** Represents a source code location. *)
 
 type t = {
+  filename: string;
   first : Position.t;
   last : Position.t;
 }
@@ -61,19 +53,22 @@ type t = {
 let count_columns (x:t) : int =
   x.last.column - x.first.column
 
-let make ~first ~last : t =
-  {first = first; last = last}
+let make ~filename ~first ~last : t =
+  {filename = filename; first = first; last = last}
 
-let first (x:t) = x.first
+let filename (x:t): string = x.filename
 
-let last (x:t) = x.last
+let first (x:t) : Position.t  = x.first
+
+let last (x:t) : Position.t = x.last
 
 let add_to_last ?(columns=0) ?(lines=0) (x:t) : t =
   { x with last = Position.add_to ~columns ~lines x.last }
 
 let repr (l:t) : string =
-  "{first=" ^ Position.repr l.first ^ ", " ^
-   "last=" ^ Position.repr l.last ^ "}"
+  "{filename=\"" ^ l.filename ^ "\", " ^
+  "first=" ^ Position.repr l.first ^ ", " ^
+  "last=" ^ Position.repr l.last ^ "}"
 
 let add (lhs:t) (rhs:t) : t =
   (* We place all the positions in a list,
@@ -84,18 +79,20 @@ let add (lhs:t) (rhs:t) : t =
     |> List.sort Position.compare
   in
   {
+    filename = lhs.filename;
     first = List.nth positions 0;
     last = List.nth positions 3;
   }
 
 let lt (l1:t) (l2:t) : bool =
-  Position.lt l1.first l2.last || (l1.first = l2.first && Position.lt l1.last l2.last)
+  Position.lt l1.first l2.first || (l1.first = l2.first && Position.lt l1.last l2.last)
 
-let empty : t = {first = Position.empty; last = Position.empty}
+let empty : t = {filename = ""; first = Position.start; last = Position.start}
 
 let from_lexing_pair ((p_start:Lexing.position), (p_end:Lexing.position)) : t =
   let open Lexing in
   {
+    filename = p_start.pos_fname;
     first = p_start |> Position.from_lexing;
     last = p_end |> Position.from_lexing;
   }
@@ -137,7 +134,7 @@ let start_offset loc = loc.first.line - 1
 
 let lines (loc:t) =
   line_range
-    loc.first.filename
+    loc.filename
     (start_offset loc)
     (line_count loc)
 
@@ -149,7 +146,7 @@ type range = {
 }
 
 let location_title (loc:t) : string * range =
-  let err_text = get_line loc.first.filename (start_offset loc) in
+  let err_text = get_line loc.filename (start_offset loc) in
   let start_line, start_off = Position.to_pair loc.first in
   let start_idx = start_off - 1 in
   let end_line, end_off = Position.to_pair loc.last in
