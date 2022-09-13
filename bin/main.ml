@@ -22,11 +22,10 @@ let v2_parse fname input : prog kernel =
   Scan.set_filename filebuf fname;
   try Parse2.main Scan.read filebuf with
   | Parse2.Error ->
-    let sloc = Location.of_lexbuf filebuf in
+    let sloc = Location.from_lexbuf filebuf in
     let b = Buffer.create 1024 in
-    Printf.bprintf b "%a: syntax error\n" (fun b x -> Location.(Position.bprint b x.first)) sloc;
     (try
-      Printf.bprintf b "\n%a" Location.location_bprint_title sloc
+      Printf.bprintf b "\n%a" Tui.LocationUI.bprint sloc
     with
       Sys_error _ -> ());
     Buffer.output_buffer stderr b;
@@ -154,7 +153,7 @@ let main_t =
         let type_check_failed =
           not skip_typecheck
           && Typecheck.typecheck_kernel k
-          |> Location.bprint_errs b
+          |> Tui.bprint_errors b
         in
         Buffer.output_buffer stderr b;
         if type_check_failed then
@@ -212,7 +211,7 @@ let main_t =
     with
       | Phasesplit.PhasesplitException errs ->
           let b = Buffer.create 1024 in
-          let _ = Location.bprint_errs b errs in
+          let _ = Tui.bprint_errors b errs in
           Buffer.output_buffer stderr b;
           exit (if expect_typing_fail then 0 else -1)
       | e ->

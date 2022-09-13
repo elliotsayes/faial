@@ -3,9 +3,22 @@
 ; Otherwise dune thinks there's a circular dependency
 (library
   (name kernel)
-  (modules common location variable exp proto smtlib  serialize subst constfold predicates bindings)
+  (modules
+    common
+    location
+    variable
+    exp
+    proto
+    smtlib
+    serialize
+    subst
+    constfold
+    predicates
+    bindings
+    slice
+  )
   (wrapped false)
-  (libraries yojson ANSITerminal)
+  (libraries yojson)
 )
 
 (menhir (modules parse2))
@@ -15,6 +28,7 @@
   (name faial)
   (wrapped false)
   (modules
+    tui
     cast
     ctype
     dlang

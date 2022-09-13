@@ -422,18 +422,19 @@ let exp_name =
   | VarDecl _ -> "VarDecl"
   | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
 
-let rec parse_position : json -> Location.Position.t j_result =
-  let open Location in
+let rec parse_position ?(filename="") : json -> Location.t j_result =
   let open Rjson in
   fun (j:json) ->
     let* o = cast_object j in
     match (
       let* line = with_field "line" cast_int o in
-      let* col = with_field "col" cast_int o in
-      Ok Location.Position.{
-        line = line;
-        column = col;
-      }
+      let* column = with_field "col" cast_int o in
+      let* filename:string = with_field_or "file" cast_string filename o in
+      Ok (Location.make
+        ~line
+        ~column
+        ~filename
+        ~length:0)
     ) with
     | Ok p -> Ok p
     | Error e -> with_field "expansionLoc" parse_position o
@@ -443,13 +444,9 @@ let parse_location (j:json) : Location.t j_result =
   let open Rjson in
   let open Location in
   let* o = cast_object j in
-  let* filename = with_field "begin" (fun j ->
-    let* o = cast_object j in
-    with_field_or "file" cast_string "" o
-  ) o in
   let* first = with_field "begin" parse_position o in
-  let last = with_field "end" parse_position o |> unwrap_or first in
-  Ok (Location.make ~filename ~first ~last)
+  let last = with_field "end" (parse_position ~filename:first.filename) o |> unwrap_or first in
+  Ok (Location.from_pair first.filename (first, last))
 
 let parse_variable (j:json) : Variable.t j_result =
   let open Rjson in
@@ -458,8 +455,8 @@ let parse_variable (j:json) : Variable.t j_result =
   match List.assoc_opt "range" o with
   | Some range ->
     let* l = parse_location range in
-    let l = if Location.count_columns l = 0
-      then Location.add_to_last ~columns:(String.length name) l
+    let l = if Location.length l = 0
+      then Location.set_length (String.length name) l
       else l
     in
     Ok (Variable.make ~location:l ~name)
@@ -657,7 +654,7 @@ let rec parse_exp (j:json) : c_exp j_result =
       ty=ty;
       lhs=lhs;
       rhs=rhs;
-      location=Location.add_to_last ~columns:1 loc
+      location=Location.set_length (Location.length loc + 1) loc
     })
 
   | "CXXMemberCallExpr"

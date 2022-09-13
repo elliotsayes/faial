@@ -239,3 +239,29 @@ let unwrap_or (default:'a): ('a, 'e) Result.t -> 'a =
   function
   | Ok v -> v
   | Error _ -> default
+
+(* Read a range of lines: offset has base 0 *)
+let get_lines ~offset ~count (filename:string) : string list =
+  (* Skip the first n-lines *)
+  let rec skip_n ic count =
+    if count <= 0 then ()
+    else begin
+      let _ = input_line ic in
+      skip_n ic (count - 1)
+    end
+  in
+  (* Return the first n-lines *)
+  let yield_n ic count =
+    List.init count (fun _ -> input_line ic)
+  in
+  let ic = open_in filename in
+  skip_n ic offset;
+  let lines = yield_n ic count in
+  close_in ic;
+  lines
+
+(* Read a single line *)
+let get_line offset filename =
+  match get_lines filename ~offset ~count:1 with
+  | [l] -> l
+  | _ -> failwith "Unexpected output"

@@ -1,207 +1,90 @@
-
-module Position = struct
-  (** The position is a 2D indexing in the screen buffer. It is 1-based. *)
-  type t = {
-    line: int;
-    column: int;
-  }
-
-  let start : t = {line = 1; column=1}
-
-  let to_pair (pos:t) : int * int = pos.line, pos.column
-
-  let lt (p1:t) (p2:t) : bool = to_pair p1 < to_pair p2
-
-  (* Return the line number and position of a position *)
-  let from_lexing (pos:Lexing.position) : t =
-    let open Lexing in
-    {
-      line = pos.pos_lnum;
-      column = pos.pos_cnum - pos.pos_bol + 1
-    }
-
-  let compare (p1:t) (p2:t) : int =
-    compare (to_pair p1) (to_pair p2)
-
-  (** Prints a position *)
-
-  let add_to ?(columns=0) ?(lines=0) (x:t) : t =
-    { column = x.column + columns; line = x.line + lines; }
-
-  let bprint (b:Buffer.t) (pos:t): unit =
-    Printf.bprintf b "%d:%d" pos.line pos.column
-
-  let to_string (pos:t) : string =
-    let b = Buffer.create 256 in
-    bprint b pos;
-    Buffer.contents b
-
-  let repr (pos:t) : string =
-    "{line=" ^ string_of_int pos.line ^ ", " ^
-    "column=" ^ string_of_int pos.column ^"}"
-
-end
-
 (** Represents a source code location. *)
 
 type t = {
   filename: string;
-  first : Position.t;
-  last : Position.t;
+  line: int;
+  column: int;
+  length: int;
 }
 
-let count_columns (x:t) : int =
-  x.last.column - x.first.column
+let make ~filename ~line ~column ~length : t =
+  {filename = filename; line=line; column=column; length = length}
 
-let make ~filename ~first ~last : t =
-  {filename = filename; first = first; last = last}
-
-let filename (x:t): string = x.filename
-
-let first (x:t) : Position.t  = x.first
-
-let last (x:t) : Position.t = x.last
-
-let add_to_last ?(columns=0) ?(lines=0) (x:t) : t =
-  { x with last = Position.add_to ~columns ~lines x.last }
-
-let repr (l:t) : string =
-  "{filename=\"" ^ l.filename ^ "\", " ^
-  "first=" ^ Position.repr l.first ^ ", " ^
-  "last=" ^ Position.repr l.last ^ "}"
-
-let add (lhs:t) (rhs:t) : t =
-  (* We place all the positions in a list,
-     we sort the list, and
-     we take the first and last. *)
-  let positions =
-    [lhs.first; lhs.last; rhs.first; rhs.last]
-    |> List.sort Position.compare
-  in
-  {
-    filename = lhs.filename;
-    first = List.nth positions 0;
-    last = List.nth positions 3;
-  }
-
-let lt (l1:t) (l2:t) : bool =
-  Position.lt l1.first l2.first || (l1.first = l2.first && Position.lt l1.last l2.last)
-
-let empty : t = {filename = ""; first = Position.start; last = Position.start}
-
-let from_lexing_pair ((p_start:Lexing.position), (p_end:Lexing.position)) : t =
+let from_position (pos:Lexing.position) : t =
   let open Lexing in
   {
-    filename = p_start.pos_fname;
-    first = p_start |> Position.from_lexing;
-    last = p_end |> Position.from_lexing;
+    filename = pos.pos_fname;
+    line = pos.pos_lnum;
+    column = pos.pos_cnum - pos.pos_bol + 1;
+    length = 0;
   }
 
-let of_lexbuf lb =
+let from_pair (filename:string) ((p1,p2):t * t) : t =
+  let (column, length) =
+    if p1.filename = p2.filename && p1.line = p2.line then (
+      let first = min p1.column p2.column in
+      let last = max p1.column p2.column in
+      (first, last - first)
+    ) else
+      (p1.column, 0)
+  in
+  make
+    ~filename:p1.filename
+    ~line:p1.line
+    ~column
+    ~length
+
+let filename (x:t): string = x.filename
+let length (x:t) : int = x.length
+let set_length (len:int) (x:t) : t =
+  { x with length = len }
+let line (x:t) : int = x.line
+let column (x:t) : int = x.column
+
+let repr (l:t) : string =
+  "{filename=\"" ^ filename l ^ "\", " ^
+  "line=" ^ (line l |> string_of_int) ^ ", " ^
+  "col=" ^ (column l |> string_of_int) ^ ", " ^
+  "len=" ^ (length l |> string_of_int) ^ "}"
+
+
+let add (lhs:t) (rhs:t) : t =
+  if lhs.filename <> rhs.filename || lhs.line <> rhs.line then
+    lhs
+  else
+    let column = min lhs.column rhs.column in
+    let length = max (lhs.column + lhs.length) (rhs.column + rhs.length) - column in
+    {
+      lhs with column; length
+    }
+
+let to_tuple (l1:t) : int * int * int = (line l1, column l1, length l1)
+
+let lt (l1:t) (l2:t) : bool =
+  l1.filename = l2.filename && to_tuple l1 < to_tuple l2
+
+let empty : t = make ~filename:"" ~line:1 ~column:1 ~length:0
+
+let from_lexing_pair ((p_start:Lexing.position), (p_end:Lexing.position)) : t =
+  from_pair p_start.pos_fname (from_position p_start, from_position p_end)
+
+let from_lexbuf (lb:Lexing.lexbuf) : t =
   let open Lexing in
   from_lexing_pair (lb.lex_start_p, lb.lex_curr_p)
 
-let line_range filename offset count =
-  (* Skip the first n-lines *)
-  let rec skip_n ic count =
-    if count <= 0 then ()
-    else begin
-      let _ = input_line ic in
-      skip_n ic (count - 1)
-    end
-  in
-  (* Return the first n-lines *)
-  let yield_n ic count =
-    List.init count (fun _ -> input_line ic)
-  in
-  let ic = open_in filename in
-  skip_n ic offset;
-  let lines = yield_n ic count in
-  close_in ic;
-  lines
+let line_offset (x:t) : int = x.line - 1
 
-let get_line filename offset =
-  match line_range filename offset 1 with
-  | [l] -> l
-  | _ -> failwith "Unexpected output"
-
-let line_count loc =
-  loc.last.line - loc.first.line
-
-let start_offset loc = loc.first.line - 1
+let column_offset (x:t) : int = x.column - 1
 
 (** Returns a list of the lines that comprise the location. *)
-
-let lines (loc:t) =
-  line_range
+let get_line (loc:t) : string =
+  Common.get_line
+    (line_offset loc)
     loc.filename
-    (start_offset loc)
-    (line_count loc)
 
-(** Returns the first line of location *)
-
-type range = {
-  range_offset: int;
-  range_count: int;
-}
-
-let location_title (loc:t) : string * range =
-  let err_text = get_line loc.filename (start_offset loc) in
-  let start_line, start_off = Position.to_pair loc.first in
-  let start_idx = start_off - 1 in
-  let end_line, end_off = Position.to_pair loc.last in
-  let count =
-    if start_line != end_line
-    then String.length err_text
-    else end_off - start_off
-  in
-  err_text, { range_offset = start_idx; range_count = count }
-
-(** Prints the location; highlights the locations *)
-
-let make_bold =
-   ANSITerminal.sprintf [ANSITerminal.Bold; ANSITerminal.Foreground ANSITerminal.Red] "%s"
-
-let location_bprint_title (outx:Buffer.t) (loc:t) : unit =
-  (* Print out the line until you reach the highlighted text: *)
-  let txt, hl = location_title loc in
-  let lineno = loc.first.line in
-  let left = String.sub txt 0 hl.range_offset in
-  Printf.bprintf outx "%d | %s" lineno left;
-
-  (* Print out the highlighted text *)
-  let mid = String.sub txt hl.range_offset hl.range_count in
-  Printf.bprintf outx "%s" (make_bold mid);
-
-  (* Print out the rest of the string *)
-  let idx = hl.range_offset + hl.range_count in
-  let right = String.sub txt idx (String.length txt - idx) in
-  Printf.bprintf outx "%s\n" right;
-
-  (* Underline the highlighted text *)
-  let spaces =
-    let count = Printf.sprintf "%d | " lineno |> String.length in
-    String.make count ' '
-  in
-  let underline offset count : string =
-    let count = if count = 0 then 1 else count in
-    (String.make offset ' ') ^ (String.make count '^' |> make_bold)
-  in
-  Printf.bprintf outx "%s%s\n" spaces (underline hl.range_offset hl.range_count)
-
-let print_location (l:t) : unit =
-  let out = Buffer.create 1024 in
-  location_bprint_title out l;
-  Buffer.output_buffer stdout out
-
-let bprint_errs b (errs:(string * t option) list) : bool =
-  let print_err (msg,loc:string * t option) =
-    match loc with
-    | Some loc -> Printf.bprintf b "%a: %s" (fun b x -> Position.bprint b x.first) loc msg;
-      (try
-          (Printf.bprintf b "\n\n%a" location_bprint_title loc)
-        with Sys_error _ -> ())
-    | None -> Printf.bprintf b "%s" msg
-  in
-  List.iter print_err errs;
-  List.length errs > 0
+let split (loc:t) (line:string) : string * string * string =
+  let left = column_offset loc in
+  let mid = left + loc.length in
+  (Slice.from ~start:0 ~finish:left |> Slice.string line,
+   Slice.from ~start:left ~finish:mid |> Slice.string line,
+   Slice.from_start mid |> Slice.string line)
