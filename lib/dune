@@ -5,6 +5,8 @@
   (name kernel)
   (modules
     common
+    index
+    interval
     location
     variable
     exp

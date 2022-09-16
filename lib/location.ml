@@ -2,89 +2,75 @@
 
 type t = {
   filename: string;
-  line: int;
-  column: int;
-  length: int;
+  line: Index.t;
+  interval: Interval.t;
 }
 
-let make ~filename ~line ~column ~length : t =
-  {filename = filename; line=line; column=column; length = length}
+let make ~filename ~interval ~line : t =
+  {filename; interval; line}
 
-let from_position (pos:Lexing.position) : t =
-  let open Lexing in
-  {
-    filename = pos.pos_fname;
-    line = pos.pos_lnum;
-    column = pos.pos_cnum - pos.pos_bol + 1;
-    length = 0;
-  }
+let empty : t =
+  {filename=""; line=Index.zero; interval=Interval.zero}
 
-let from_pair (filename:string) ((p1,p2):t * t) : t =
-  let (column, length) =
-    if p1.filename = p2.filename && p1.line = p2.line then (
-      let first = min p1.column p2.column in
-      let last = max p1.column p2.column in
-      (first, last - first)
-    ) else
-      (p1.column, 0)
-  in
-  make
-    ~filename:p1.filename
-    ~line:p1.line
-    ~column
-    ~length
-
+let line (x:t) : Index.t = x.line
 let filename (x:t): string = x.filename
-let length (x:t) : int = x.length
+let interval (x:t) : Interval.t = x.interval
+
+let length (x:t) : int =
+  x.interval |> Interval.length
+
 let set_length (len:int) (x:t) : t =
-  { x with length = len }
-let line (x:t) : int = x.line
-let column (x:t) : int = x.column
+  { x with interval = Interval.set_length len x.interval }
 
 let repr (l:t) : string =
   "{filename=\"" ^ filename l ^ "\", " ^
-  "line=" ^ (line l |> string_of_int) ^ ", " ^
-  "col=" ^ (column l |> string_of_int) ^ ", " ^
-  "len=" ^ (length l |> string_of_int) ^ "}"
+  "line=" ^ (Index.repr l.line) ^ ", " ^
+  "interval=" ^ (Interval.repr l.interval) ^ "}"
 
+let to_string (l:t) : string =
+  Printf.sprintf "%s:%d:%d"
+    l.filename
+    (l.line |> Index.to_base1)
+    (l.interval |> Interval.start |> Index.to_base1)
 
-let add (lhs:t) (rhs:t) : t =
-  if lhs.filename <> rhs.filename || lhs.line <> rhs.line then
-    lhs
+let from_position (pos:Lexing.position) : t =
+  let open Lexing in
+  let interval = Interval.from_range
+    ~start:(Index.from_base1 (pos.pos_cnum - pos.pos_bol + 1))
+    ~length:0
+  in
+  {
+    filename = pos.pos_fname;
+    line = Index.from_base1 pos.pos_lnum;
+    interval = interval;
+  }
+
+let intersect (lhs:t) (rhs:t) : bool =
+  lhs.filename = rhs.filename && lhs.line = rhs.line
+
+let add_or (f:t -> t -> t) (lhs:t) (rhs:t) : t =
+  if intersect lhs rhs then
+    { lhs with interval = Interval.(lhs.interval + rhs.interval) }
   else
-    let column = min lhs.column rhs.column in
-    let length = max (lhs.column + lhs.length) (rhs.column + rhs.length) - column in
-    {
-      lhs with column; length
-    }
+    f lhs rhs
 
-let to_tuple (l1:t) : int * int * int = (line l1, column l1, length l1)
+let add_or_reset_lhs: t -> t -> t =
+  add_or (fun lhs _ -> { lhs with interval = Interval.set_length 0 lhs.interval })
 
-let lt (l1:t) (l2:t) : bool =
-  l1.filename = l2.filename && to_tuple l1 < to_tuple l2
+let add_or_lhs: t -> t -> t =
+  add_or (fun lhs _ -> lhs )
 
-let empty : t = make ~filename:"" ~line:1 ~column:1 ~length:0
 
 let from_lexing_pair ((p_start:Lexing.position), (p_end:Lexing.position)) : t =
-  from_pair p_start.pos_fname (from_position p_start, from_position p_end)
+  add_or_reset_lhs (from_position p_start) (from_position p_end)
 
 let from_lexbuf (lb:Lexing.lexbuf) : t =
   let open Lexing in
   from_lexing_pair (lb.lex_start_p, lb.lex_curr_p)
 
-let line_offset (x:t) : int = x.line - 1
-
-let column_offset (x:t) : int = x.column - 1
-
 (** Returns a list of the lines that comprise the location. *)
-let get_line (loc:t) : string =
+let read_line (loc:t) : string =
+  print_endline (loc |> repr);
   Common.get_line
-    (line_offset loc)
+    (loc.line |> Index.to_base0)
     loc.filename
-
-let split (loc:t) (line:string) : string * string * string =
-  let left = column_offset loc in
-  let mid = left + loc.length in
-  (Slice.from ~start:0 ~finish:left |> Slice.string line,
-   Slice.from ~start:left ~finish:mid |> Slice.string line,
-   Slice.from_start mid |> Slice.string line)

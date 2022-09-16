@@ -428,13 +428,14 @@ let rec parse_position ?(filename="") : json -> Location.t j_result =
     let* o = cast_object j in
     match (
       let* line = with_field "line" cast_int o in
-      let* column = with_field "col" cast_int o in
+      let line = Index.from_base1 line in
+      let* col = with_field "col" cast_int o in
+      let interval = Index.from_base1 col |> Interval.from_start in
       let* filename:string = with_field_or "file" cast_string filename o in
       Ok (Location.make
-        ~line
-        ~column
-        ~filename
-        ~length:0)
+          ~filename
+          ~line
+          ~interval)
     ) with
     | Ok p -> Ok p
     | Error e -> with_field "expansionLoc" parse_position o
@@ -446,7 +447,7 @@ let parse_location (j:json) : Location.t j_result =
   let* o = cast_object j in
   let* first = with_field "begin" parse_position o in
   let last = with_field "end" (parse_position ~filename:first.filename) o |> unwrap_or first in
-  Ok (Location.from_pair first.filename (first, last))
+  Ok (Location.add_or_reset_lhs first last)
 
 let parse_variable (j:json) : Variable.t j_result =
   let open Rjson in
@@ -455,7 +456,8 @@ let parse_variable (j:json) : Variable.t j_result =
   match List.assoc_opt "range" o with
   | Some range ->
     let* l = parse_location range in
-    let l = if Location.length l = 0
+    let l =
+      if Location.length l = 0
       then Location.set_length (String.length name) l
       else l
     in

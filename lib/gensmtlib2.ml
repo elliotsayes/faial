@@ -155,16 +155,17 @@ let int_serialize_proofs : Symbexp.proof list -> Smtlib.sexp list = Std2.seriali
 let location_to_sexp (l:Location.t) : Smtlib.sexp =
   let open Location in
   let add_pos (b:Buffer.t) ~line ~column =
-    Buffer.add_string b (string_of_int line);
+    Buffer.add_string b (Index.to_base1 line |> string_of_int);
     Buffer.add_char b ':';
-    Buffer.add_string b (string_of_int column)
+    Buffer.add_string b (Index.to_base1 column |> string_of_int)
   in
   let b = Buffer.create 100 in
   Buffer.add_string b l.filename;
   Buffer.add_char b ':';
-  add_pos b ~line:l.line ~column:l.column;
+  let i = Location.interval l in
+  add_pos b ~line:l.line ~column:(Interval.start i);
   Buffer.add_char b ':';
-  add_pos b ~line:l.line ~column:(l.column + l.length);
+  add_pos b ~line:l.line ~column:(Interval.finish i);
   let b = Buffer.contents b in
   let open Smtlib in
   let b = atom_to_string (String b) in

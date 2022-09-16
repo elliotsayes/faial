@@ -420,7 +420,7 @@ and rewrite_subscript (c:Cast.c_array_subscript) : (AccessState.t, d_subscript) 
     fun st ->
     let (st, idx) = rewrite_exp c.rhs st in
     let loc = Some (match loc with
-    | Some loc -> Location.add loc c.location
+    | Some loc -> Location.add_or_lhs loc c.location
     | None -> c.location)
     in
     let indices = idx :: indices in
