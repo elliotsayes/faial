@@ -289,9 +289,12 @@ let main (fname: string) (timeout:int) : unit =
           | [x1; x2] when x2 < x1 -> [x2; x1]
           | _ -> l
         in
-        locs |> List.iter (fun x ->
-          Tui.LocationUI.print x
+        (match locs with
+        | [x] -> Tui.LocationUI.print x
+        | [x1; x2] -> Tui.LocationUI.print2 x1 x2
+        | _ -> failwith "??"
         );
+        print_endline "";
         T.print_string [T.Bold] ("Globals\n");
         box_globals w |> print_box;
         T.print_string [T.Bold] ("\n\nLocals\n");
