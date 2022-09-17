@@ -29,44 +29,39 @@ module Make (S:SUBST) = struct
       cont (Some s)
 
   let rec n_subst (s:S.t) (n:nexp) : nexp =
-    let rec subst n =
-      match n with
-      | Var x ->
-        begin
-          match S.find s x with
-          | Some v -> v
-          | None -> n
-        end
-      | Num _ -> n
-      | Proj (t, x) ->
-        begin
-          match S.find s x with
-          | Some (Var y) -> Proj (t, y)
-          | Some _ ->
-            let exp = PPrint.n_to_s n in
-            let repl = S.to_string s in
-            failwith (
-              "Error: cannot replace thread-local variable " ^ Variable.name x ^
-              " by constant\n" ^
-              "substitution(expression=" ^ exp ^ ", replacement=" ^ repl ^ ")"
-            )
-          | None -> Proj (t, x)
-        end
-      | Bin (o, n1, n2) -> n_bin o (subst n1) (subst n2)
-      | NIf (b, n1, n2) -> n_if (b_subst s b) (subst n1) (subst n2)
-      | NCall (x, a) -> NCall (x, n_subst s a)
-    in
-    subst n
+    match n with
+    | Var x ->
+      begin
+        match S.find s x with
+        | Some v -> v
+        | None -> n
+      end
+    | Num _ -> n
+    | Proj (t, x) ->
+      begin
+        match S.find s x with
+        | Some (Var y) -> Proj (t, y)
+        | Some _ ->
+          let exp = PPrint.n_to_s n in
+          let repl = S.to_string s in
+          failwith (
+            "Error: cannot replace thread-local variable " ^ Variable.name x ^
+            " by constant\n" ^
+            "substitution(expression=" ^ exp ^ ", replacement=" ^ repl ^ ")"
+          )
+        | None -> Proj (t, x)
+      end
+    | Bin (o, n1, n2) -> n_bin o (n_subst s n1) (n_subst s n2)
+    | NIf (b, n1, n2) -> n_if (b_subst s b) (n_subst s n1) (n_subst s n2)
+    | NCall (x, a) -> NCall (x, n_subst s a)
 
   and b_subst (s:S.t) (b:bexp) : bexp =
-    let rec subst: bexp -> bexp = function
-      | Pred (n, v) -> Pred (n, n_subst s v)
-      | Bool _ -> b
-      | NRel (o, n1, n2) -> n_rel o (n_subst s n1) (n_subst s n2)
-      | BRel (o, b1, b2) -> b_rel o (subst b1) (subst b2)
-      | BNot b -> b_not (subst b)
-    in
-    subst b
+    match b with
+    | Pred (n, v) -> Pred (n, n_subst s v)
+    | Bool _ -> b
+    | NRel (o, n1, n2) -> n_rel o (n_subst s n1) (n_subst s n2)
+    | BRel (o, b1, b2) -> b_rel o (b_subst s b1) (b_subst s b2)
+    | BNot b -> b_not (b_subst s b)
 
   let a_subst (s:S.t) (a:access) : access =
     { a with
