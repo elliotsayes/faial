@@ -1,5 +1,6 @@
 module StackTrace = Common.StackTrace
 module KernelAttr = Cast.KernelAttr
+module StringSet = Common.StringSet
 
 let (@) = Common.append_tr
 
@@ -63,13 +64,19 @@ type d_location_alias = {
 }
 
 let cuda_global_vars = [
-  "blockIdx"; "blockDim";
-  "gridDim";
+  ("blockIdx", 0);
+  ("blockDim", 1);
+  ("gridDim", 1);
 ]
 
-let cuda_local_vars = ["threadIdx"]
+let cuda_local_vars = [("threadIdx", 0)]
 
-let cuda_vars = cuda_local_vars @ cuda_global_vars
+let all_cuda_vars = cuda_local_vars @ cuda_global_vars
+
+let cuda_base_vars : StringSet.t =
+  all_cuda_vars
+  |> List.map fst
+  |> StringSet.of_list
 
 let cuda_dims = ["x"; "y"; "z"]
 
@@ -129,7 +136,7 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
   match e with
   (* ---------------- CUDA SPECIFIC ----------- *)
   | MemberExpr {base=VarDecl{name=base}; name=dim} 
-    when List.mem (Variable.name base) cuda_vars && List.mem dim cuda_dims->
+    when StringSet.mem (Variable.name base) cuda_base_vars && List.mem dim cuda_dims->
     let x = Variable.name base ^ "." ^ dim |> Variable.from_name in
     ret_n (Var x)
 
@@ -655,19 +662,19 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
     List.map (fun x -> (Variable.from_name (name ^ "." ^ x), h, None) ) cuda_dims
   in
   let all_vars =
-    List.concat_map (mk_dims Global) cuda_global_vars
+    List.concat_map (mk_dims Global) (List.map fst cuda_global_vars)
     @
-    List.concat_map (mk_dims Local) cuda_local_vars
+    List.concat_map (mk_dims Local) (List.map fst cuda_local_vars)
   in
   let mk_var (name:string) (suffix:string) (x:string) : nexp =
     Var (Variable.from_name (name ^ suffix ^ "." ^ x))
   in
-  let vars_ge_0 : bexp list =
+  let all_vars_constraints : bexp list =
     cuda_dims
     |> List.concat_map (fun (x:string) ->
-      cuda_vars
-      |> List.map (fun (name:string) ->
-        n_ge (Var (Variable.from_name (name ^ "." ^ x))) (Num 0)
+      all_cuda_vars
+      |> List.map (fun (name, lower_bound) ->
+        n_ge (Var (Variable.from_name (name ^ "." ^ x))) (Num lower_bound)
       )
     )
   in
@@ -680,6 +687,7 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
     cuda_dims
     |> List.concat_map (fun (x:string) ->
       cuda_local_vars
+      |> List.map fst
       |> List.map (fun (name:string) ->
           Variable.from_name (name ^ "." ^ x)
       )
@@ -689,7 +697,7 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
   Block [
     Decl all_vars;
     Assert (
-      vars_ge_0
+      all_vars_constraints
       @
       (Exp.distinct local_vars ::
         List.concat_map idx_lt_dim [("thread", "block"); ("block", "grid")]
