@@ -70,7 +70,6 @@ let from_lexbuf (lb:Lexing.lexbuf) : t =
 
 (** Returns a list of the lines that comprise the location. *)
 let read_line (loc:t) : string =
-  print_endline (loc |> repr);
   Common.get_line
     (loc.line |> Index.to_base0)
     loc.filename
