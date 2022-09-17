@@ -232,7 +232,7 @@ let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
 
 
-let main (fname: string) (timeout:int) : unit =
+let main (fname: string) (timeout:int) (show_proofs:bool) : unit =
   let gv = GvParser.parse fname in
   (match gv with
     | Some x -> prerr_endline ("WARNING: parsed GV args: " ^ GvParser.to_string x);
@@ -269,7 +269,13 @@ let main (fname: string) (timeout:int) : unit =
     let p = Symbexp.translate true p in
     let open Z3_solver in
     let open Solution in
-    let errors = solve ~grid_dim ~block_dim ~timeout:timeout p
+    let errors =
+      p
+      |> solve
+          ~grid_dim
+          ~block_dim
+          ~timeout:timeout
+          ~show_proofs
       |> Streamutil.map_opt (
         function
         | Drf -> None
@@ -300,6 +306,7 @@ let main (fname: string) (timeout:int) : unit =
         T.print_string [T.Bold] ("\n\nLocals\n");
         box_locals w |> print_box;
         print_endline "";
+        T.print_string [T.Underlined] ("(proof #" ^ string_of_int w.proof_id ^ ")\n");
       );
     in
     match Common.either_split errors with
@@ -330,7 +337,11 @@ let get_timeout =
   let doc = "Sets a timeout in millisecs. Default: $(docv)" in
   Arg.(value & opt int 1000 & info ["t"; "timeout"] ~docv:"MILISECS" ~doc)
 
-let main_t = Term.(const main $ get_fname $ get_timeout)
+let show_proofs =
+  let doc = "Show the Z3 proofs being generated." in
+  Arg.(value & flag & info ["show-proofs"] ~doc)
+
+let main_t = Term.(const main $ get_fname $ get_timeout $ show_proofs)
 
 let info =
   let doc = "Print the C-AST" in

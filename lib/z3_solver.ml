@@ -279,14 +279,15 @@ module Task = struct
 end
 
 module Witness = struct
-	type t = {
-		indices : string list;
-		tasks : Task.t * Task.t;
-		block_idx: Vec3.t;
-		block_dim: Vec3.t;
-		grid_dim: Vec3.t;
-		globals: Environ.t;
-	}
+  type t = {
+    proof_id: int;
+    indices : string list;
+    tasks : Task.t * Task.t;
+    block_idx: Vec3.t;
+    block_dim: Vec3.t;
+    grid_dim: Vec3.t;
+    globals: Environ.t;
+  }
 
 	let to_json (x:t) : json =
 		let open Yojson.Basic in
@@ -380,7 +381,7 @@ module Witness = struct
 		let (t1_mode, t2_mode) = parse_mode kvs in
 		(env, (parse_indices kvs, t1_mode, t2_mode)) 
 
-	let parse (cache:Symbexp.LocationCache.t) (parse_num:string -> string) ~block_dim ~grid_dim (m:Model.model) : t =
+	let parse (cache:Symbexp.LocationCache.t) (parse_num:string -> string) ~proof_id ~block_dim ~grid_dim (m:Model.model) : t =
 		let env = Environ.parse parse_num m in
     let parse_loc (tid:string) =
       env
@@ -443,6 +444,7 @@ module Witness = struct
 		}
 		in
 		{
+      proof_id = proof_id;
 			block_idx = block_idx;
 			block_dim = block_dim;
 			grid_dim = grid_dim;
@@ -468,7 +470,15 @@ module Solution = struct
 
 		https://github.com/icra-team/icra/blob/ee3fd360ee75490277dd3fd05d92e1548db983e4/duet/pa/paSmt.ml
 	 *)
-	let solve ?(timeout=1000) ~block_dim ~grid_dim ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : t Streamutil.stream =
+	let solve
+    ?(timeout=1000)
+    ?(show_proofs=false)
+    ~block_dim
+    ~grid_dim
+    ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream))
+  :
+    t Streamutil.stream
+  =
 		let b_to_expr = ref IntGen.b_to_expr in
 		let parse_num = ref IntGen.parse_num in
 		Streamutil.map (fun p ->
@@ -493,13 +503,20 @@ module Solution = struct
 						parse_num := BvGen.parse_num;
 						solve !b_to_expr
 			in
+			(if show_proofs then (
+        let open ANSITerminal in
+        print_string [Bold; Foreground Magenta] ("┌─────────────── proof #" ^ string_of_int p.proof_id ^ " ───────────────────────────────────────┐\n");
+        print_string [] (Solver.to_string s);
+        print_string [Bold; Foreground Magenta] "└────────────────────────────────────────────────────────────────┘\n";
+      ) else ());
       let block_dim = block_dim |> Ojson.unwrap_or Vec3.default in
       let grid_dim = grid_dim |> Ojson.unwrap_or Vec3.default in
 			let r = match Solver.check s [] with
-			| UNSATISFIABLE -> Drf
+			| UNSATISFIABLE ->
+        Drf
 			| SATISFIABLE ->
 				(match Solver.get_model s with
-				| Some m -> Racy (Witness.parse cache !parse_num ~block_dim ~grid_dim m)
+				| Some m -> Racy (Witness.parse cache !parse_num ~block_dim ~grid_dim ~proof_id:p.proof_id m)
 				| None -> failwith "INVALID")
 			| UNKNOWN -> Unknown
 			in

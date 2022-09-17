@@ -6,6 +6,7 @@ open Subst
 open Flatacc
 
 type proof = {
+  proof_id: int;
   proof_kernel: string;
   proof_array: string;
   proof_preds: Predicates.t list;
@@ -19,7 +20,7 @@ type h_prog = {
   prog_accesses: cond_access list;
 }
 
-let mk_proof ~kernel:(k:string) ~array:(a:string) (goal:bexp) : proof =
+let mk_proof ~kernel:(k:string) ~array:(a:string) proof_id (goal:bexp) : proof =
   let open Proto in
   let open Common in
   let decls =
@@ -28,6 +29,7 @@ let mk_proof ~kernel:(k:string) ~array:(a:string) (goal:bexp) : proof =
     |> List.map Variable.name
   in
   {
+    proof_id = proof_id;
     proof_preds = Predicates.get_predicates goal;
     proof_funcs = Predicates.get_functions goal;
     proof_decls = decls;
@@ -175,14 +177,17 @@ let h_prog_to_bexp
   (provenance:bool)
   (cache:LocationCache.t)
   (locals:Variable.Set.t)
-  (accs:cond_access list) : bexp =
+  (accs:cond_access list)
+:
+  bexp
+=
   (* Pick one access *)
   let task_to_bexp (t:task) : bexp =
     let gen = mk_task_gen cache t in
     let accs = proj_accesses locals t accs in
     cond_acc_list_to_bexp provenance gen accs
   in
-  (* Make sure all indexeses match *)
+  (* Make sure all indices match *)
   (* $T1$index$0 = $T2$index$0 ... *)
   let gen_eq_index (n:int) : bexp =
     range (n - 1)
@@ -208,16 +213,16 @@ let h_prog_to_bexp
     get_dim accs |> gen_eq_index
   ]
 
-let f_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (k:f_kernel) : proof =
+let f_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (proof_id:int) (k:f_kernel) : proof =
   h_prog_to_bexp provenance cache k.f_kernel_local_variables k.f_kernel_accesses
   |> b_and k.f_kernel_pre
   |> Constfold.b_opt (* Optimize the output expression *)
-  |> mk_proof ~kernel:k.f_kernel_name ~array:k.f_kernel_array
+  |> mk_proof proof_id ~kernel:k.f_kernel_name ~array:k.f_kernel_array
 
 let translate (provenance:bool) (stream:f_kernel Streamutil.stream) : (LocationCache.t * proof Streamutil.stream) =
   let open Streamutil in
   let c = LocationCache.create 100 in
-  c, map (f_kernel_to_proof provenance c) stream
+  c, mapi (f_kernel_to_proof provenance c) stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 
