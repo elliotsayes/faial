@@ -10,6 +10,10 @@ let from_range ~start ~length : t = {start=start; length=length}
 let from_coordinates ~start ~finish : t =
   { start=start; length=Index.distance finish start }
 
+(* Translate the interval by a certain amoint. *)
+let translate (amount:int) (x:t) : t =
+  { x with start = Index.add x.start amount }
+
 let start (x:t) : Index.t = x.start
 
 let finish (x:t) : Index.t = Index.add x.start x.length
