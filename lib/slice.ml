@@ -3,14 +3,25 @@
   "sd"
 *)
 type t = {start:int; finish:int option}
+
 let empty = {start=0; finish=None}
+
 let from_start start : t = {start=start; finish=None}
+
 let from_finish finish : t = {start=0; finish=Some finish}
+
 (* Specify start offset and finish offset *)
 let from ~start ~finish : t = {start=start; finish=Some finish}
+
 let make ~start ~finish : t = {start=start; finish=finish}
-type interval = {index:int; length:int}
-let to_interval (total_len:int) (s:t) : interval =
+
+let from_interval (i:Interval.t) : t =
+  {
+    start = Interval.start i |> Index.to_base0;
+    finish = Some (Interval.finish i |> Index.to_base0);
+  }
+
+let to_interval (total_len:int) (s:t) : Interval.t =
   (* start: *)
   let start = s.start in
   let start = if start < 0 then (total_len + start) else start in
@@ -27,8 +38,22 @@ let to_interval (total_len:int) (s:t) : interval =
   let finish = max finish 0 in
   (* Convert the offset finish to a length *)
   let length = max (finish - start) 0 in
-  {index=start; length=length}
+  Interval.from_range ~start:(Index.from_base0 start) ~length
 
-let string (x:string) (s:t) : string =
-  let o = to_interval  (String.length x) s in
-  String.sub x o.index o.length
+let substring ?(max_len=None) (data:string) (x:t) : string =
+  let max_len = match max_len with
+  | Some max_len -> max_len
+  | None -> String.length data
+  in
+  to_interval max_len x |> Interval.substring data
+
+let split (line:string) (x:t) : string * string * string =
+  let max_len = String.length line in
+  let i = to_interval max_len x in
+  let left = Interval.start i |> Index.to_base0 in
+  let right = Interval.finish i |> Index.to_base0 in
+  let sub = substring ~max_len:(Some max_len) line in
+  (from ~start:0 ~finish:left |> sub,
+  from ~start:left ~finish:right |> sub,
+  from_start right |> sub)
+

@@ -36,9 +36,6 @@ let (+) (lhs:t) (rhs:t) : t =
     ~start:(Index.min lhs.start rhs.start)
     ~finish:(Index.max (finish lhs) (finish rhs))
 
-let split (x:t) (line:string) : string * string * string =
-  let left = start x |> Index.to_base0 in
-  let right = finish x |> Index.to_base0 in
-  (Slice.from ~start:0 ~finish:left |> Slice.string line,
-  Slice.from ~start:left ~finish:right |> Slice.string line,
-  Slice.from_start right |> Slice.string line)
+(* Return a substring using an interval *)
+let substring (x:string) (s:t) : string =
+  String.sub x (Index.to_base0 s.start) s.length

@@ -73,3 +73,9 @@ let read_line (loc:t) : string =
   Common.get_line
     (loc.line |> Index.to_base0)
     loc.filename
+
+let split (loc:t) : string * string * string =
+  loc
+  |> interval
+  |> Slice.from_interval
+  |> Slice.split (read_line loc)
