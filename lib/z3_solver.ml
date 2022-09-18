@@ -172,6 +172,15 @@ let add
     n_eq (Var (Variable.from_name x)) (Num n)
     |> b_to_expr ctx
 	in
+	let vars : Expr.expr list =
+    p.proof_decls
+    |> List.map (fun (x:string) ->
+      n_le (Var (Variable.from_name x)) (Num 2147483647)
+      |> b_to_expr ctx
+    )
+	in
+	vars
+	@
   (if add_block_dim then [
     assign "blockDim.y" 1;
     assign "blockDim.z" 1;
