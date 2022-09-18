@@ -43,6 +43,20 @@ module LocationUI = struct
     |> print_endline
 end
 
+let print_frame ~title ~body : unit =
+  let max_len = 80 in
+  let open ANSITerminal in
+  let title_len = String.length title in
+  let part_len = (max_len - title_len - 2) / 2 in
+  let h_dash (count:int) : string =
+    Common.repeat "─" count
+  in
+  let part = h_dash part_len in
+  let space = if (title_len mod 2) = 1 then " " else "" in
+  print_string [Bold; Foreground Magenta] ("╭" ^ part ^ " " ^ title ^ " " ^ space ^ part ^ "╮\n");
+  print_string [] body;
+  print_string [Bold; Foreground Magenta] ("╰" ^ h_dash max_len ^ "╯\n")
+
 let bprint_errors b (errs:(string * Location.t option) list) : bool =
   let print_err (msg,loc:string * Location.t option) =
     match loc with

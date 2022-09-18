@@ -495,7 +495,7 @@ module Solution = struct
 					s
 				in
 				try
-					solve !b_to_expr
+          solve !b_to_expr
 				with
 					Not_implemented x ->
 						prerr_endline ("WARNING: arithmetic solver cannot handle operator '" ^ x ^ "', trying bit-vector arithmetic instead.");
@@ -505,9 +505,7 @@ module Solution = struct
 			in
 			(if show_proofs then (
         let open ANSITerminal in
-        print_string [Bold; Foreground Magenta] ("┌─────────────── proof #" ^ string_of_int p.proof_id ^ " ───────────────────────────────────────┐\n");
-        print_string [] (Solver.to_string s);
-        print_string [Bold; Foreground Magenta] "└────────────────────────────────────────────────────────────────┘\n";
+        Tui.print_frame ~title:("proof #" ^ string_of_int p.proof_id) ~body:(Solver.to_string s)
       ) else ());
       let block_dim = block_dim |> Ojson.unwrap_or Vec3.default in
       let grid_dim = grid_dim |> Ojson.unwrap_or Vec3.default in
