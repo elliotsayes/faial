@@ -480,7 +480,7 @@ module Solution = struct
 		https://github.com/icra-team/icra/blob/ee3fd360ee75490277dd3fd05d92e1548db983e4/duet/pa/paSmt.ml
 	 *)
 	let solve
-    ?(timeout=1000)
+    ?(timeout=None)
     ?(show_proofs=false)
     ~block_dim
     ~grid_dim
@@ -488,14 +488,19 @@ module Solution = struct
   :
     t Streamutil.stream
   =
-		let b_to_expr = ref IntGen.b_to_expr in
-		let parse_num = ref IntGen.parse_num in
-		Streamutil.map (fun p ->
-			let ctx = Z3.mk_context [
-				("model", "true");
-				("proof", "false");
-				("timeout", string_of_int timeout);
-			] in
+    let b_to_expr = ref IntGen.b_to_expr in
+    let parse_num = ref IntGen.parse_num in
+    Streamutil.map (fun p ->
+      let options = [
+      ("model", "true");
+        ("proof", "false");
+      ] @
+      begin match timeout with
+        | Some timeout -> ["timeout", string_of_int timeout]
+        | None -> []
+      end
+      in
+      let ctx = Z3.mk_context options in
 			let s =
 				(* Create a solver and try to solve, might fail with Not_Implemented *)
 				let solve b_to_expr =
@@ -514,13 +519,14 @@ module Solution = struct
 			in
 			(if show_proofs then (
         let open ANSITerminal in
-        Tui.print_frame ~title:("proof #" ^ string_of_int p.proof_id) ~body:(Solver.to_string s)
+        let title = "proof #" ^ string_of_int p.proof_id in
+        let body = Solver.to_string s ^ "(check-sat)\n(get-model)\n" in
+        Tui.print_frame ~title ~body
       ) else ());
       let block_dim = block_dim |> Ojson.unwrap_or Vec3.default in
       let grid_dim = grid_dim |> Ojson.unwrap_or Vec3.default in
 			let r = match Solver.check s [] with
-			| UNSATISFIABLE ->
-        Drf
+			| UNSATISFIABLE -> Drf
 			| SATISFIABLE ->
 				(match Solver.get_model s with
 				| Some m -> Racy (Witness.parse cache !parse_num ~block_dim ~grid_dim ~proof_id:p.proof_id m)

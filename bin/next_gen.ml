@@ -232,7 +232,7 @@ let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
 
 
-let main (fname: string) (timeout:int) (show_proofs:bool) : unit =
+let main (fname: string) (timeout:int option) (show_proofs:bool) : unit =
   let gv = GvParser.parse fname in
   (match gv with
     | Some x -> prerr_endline ("WARNING: parsed GV args: " ^ GvParser.to_string x);
@@ -335,7 +335,7 @@ let get_fname =
 
 let get_timeout =
   let doc = "Sets a timeout in millisecs. Default: $(docv)" in
-  Arg.(value & opt int 1000 & info ["t"; "timeout"] ~docv:"MILISECS" ~doc)
+  Arg.(value & opt (some int) None & info ["t"; "timeout"] ~docv:"MILISECS" ~doc)
 
 let show_proofs =
   let doc = "Show the Z3 proofs being generated." in
