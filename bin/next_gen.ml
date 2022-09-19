@@ -1,3 +1,8 @@
+open Stage0
+open Stage1
+open Inference
+open Drf
+
 module StringMap = Common.StringMap
 module VarSet = Variable.Set
 module VarMap = Variable.Map
@@ -127,7 +132,6 @@ end
 
 
 let parse_imp (j:Yojson.Basic.t) : Imp.p_kernel list =
-  let open Indexflow in
   let open Cast in
   let open D_to_imp in
   match Cast.parse_program j with

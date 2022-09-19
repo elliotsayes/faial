@@ -1,38 +1,41 @@
+(menhir (modules parse2))
+(ocamllex scan)
+
 (executable
  (public_name faial-bin)
  (name main)
- (modules main)
- (libraries faial cmdliner))
+ (modules main parse2 scan)
+ (libraries stage0 stage1 drf inference cmdliner))
 
 (executable
  (public_name test-c)
  (name test_c)
  (modes byte exe)
  (modules test_c)
- (libraries faial))
+ (libraries stage0 stage1 inference))
 
 (executable
  (name data_dep)
  (modes exe)
- (modules data_dep)
- (libraries faial cmdliner))
+ (modules data_dep indexflow)
+ (libraries inference stage0 stage1 cmdliner))
 
 (executable
  (public_name c-ast)
  (name c_ast)
  (modes exe)
  (modules c_ast)
- (libraries faial cmdliner))
+ (libraries inference stage0 cmdliner))
 
 (executable
  (public_name next-gen)
  (name next_gen)
  (modes exe)
- (modules next_gen)
- (libraries lib_solve cmdliner printbox printbox-text))
+ (modules next_gen z3_solver)
+ (libraries cmdliner printbox printbox-text stage0 stage1 drf inference))
 
 (executable
  (public_name pico)
  (name pico)
- (modules pico)
- (libraries pico cmdliner))
+ (modules pico bankconflicts z3expr)
+ (libraries inference cmdliner z3))

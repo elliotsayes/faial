@@ -1,3 +1,7 @@
+open Stage0
+open Stage1
+open Inference
+
 module StringMap = Common.StringMap
 module VarSet = Variable.Set
 module VarMap = Variable.Map

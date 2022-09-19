@@ -1,3 +1,5 @@
+open Stage0
+
 open OUnit2
 open Common
 
@@ -99,7 +101,8 @@ let tests = "tests" >::: [
         ~msg:(Printf.sprintf "\"%s\"[%d:%s]" given start f)
         ~printer:(fun x -> "'" ^ x ^ "'")
         expected
-        (Slice.make ~start ~finish |> Slice.string given)
+        (Slice.make ~start ~finish
+          |> Slice.substring given)
     )
   );
 ]

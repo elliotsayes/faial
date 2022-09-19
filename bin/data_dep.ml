@@ -1,3 +1,5 @@
+open Stage0
+open Inference
 
 let analyze (j:Yojson.Basic.t) : unit =
   let open Indexflow in

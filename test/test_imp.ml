@@ -1,3 +1,6 @@
+open Inference
+open Stage1
+
 open OUnit2
 open Exp
 open Imp

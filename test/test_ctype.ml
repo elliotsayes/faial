@@ -1,3 +1,6 @@
+open Stage0
+open Inference
+
 open OUnit2
 open Ctype
 

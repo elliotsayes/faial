@@ -1,3 +1,7 @@
+open Stage0
+open Stage1
+open Inference
+
 module StringMap = Common.StringMap
 module StringMapUtil = Common.StringMapUtil
 module VarSet = Variable.Set
@@ -46,7 +50,6 @@ let make_array_map (ks:Imp.p_kernel list) : VarSet.t StringMap.t =
   |> StringMapUtil.from_list
 
 let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kernel list) =
-  let open Indexflow in
   let open Cast in
   let open D_to_imp in
   match Cast.parse_program j with

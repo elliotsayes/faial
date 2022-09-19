@@ -1,3 +1,6 @@
+open Stage1
+open Drf
+
 open OUnit2
 open Wellformed
 open Locsplit

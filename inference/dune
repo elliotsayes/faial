@@ -1,0 +1,3 @@
+(library
+  (name inference)
+  (libraries stage0 stage1))

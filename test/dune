@@ -8,6 +8,6 @@
    test_streamutil
    test_ctype
  )
- (libraries faial oUnit)
+ (libraries stage0 stage1 drf inference oUnit)
 )
 

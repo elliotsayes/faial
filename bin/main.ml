@@ -1,3 +1,8 @@
+open Stage0
+open Stage1
+open Inference
+open Drf
+
 open Exp
 open Proto
 open Common

@@ -1,3 +1,6 @@
+open Stage0
+open Stage1
+
 open OUnit2
 open Predicates
 
