@@ -55,8 +55,8 @@ module Decl = struct
       | Ok ty ->
         Some {
           array_hierarchy = SharedMemory;
-          array_size = Ctype.get_array_length ty;
-          array_type = Ctype.get_array_type ty;
+          array_size = C_type.get_array_length ty;
+          array_type = C_type.get_array_type ty;
         }
       | Error _ -> None
     else None
@@ -237,19 +237,19 @@ let for_loop_vars (f:d_for) : Variable.t list =
 
 let rec exp_type (e:d_exp) : d_type =
   match e with
-  | SizeOfExpr c -> Ctype.j_int_type
+  | SizeOfExpr c -> C_type.j_int_type
   | CXXNewExpr c -> c.ty
   | CXXDeleteExpr c -> c.ty
   | RecoveryExpr ty -> ty
-  | CharacterLiteral _ -> Ctype.j_char_type
+  | CharacterLiteral _ -> C_type.j_char_type
   | BinaryOperator a -> a.ty
   | ConditionalOperator c -> exp_type c.then_expr
-  | CXXBoolLiteralExpr _ -> Ctype.j_bool_type
+  | CXXBoolLiteralExpr _ -> C_type.j_bool_type
   | CXXMethodDecl a -> a.ty
   | CXXConstructExpr c -> c.ty
-  | FloatingLiteral _ -> Ctype.j_float_type
+  | FloatingLiteral _ -> C_type.j_float_type
   | FunctionDecl a -> a.ty
-  | IntegerLiteral _ -> Ctype.j_int_type
+  | IntegerLiteral _ -> C_type.j_int_type
   | NonTypeTemplateParmDecl a -> a.ty
   | ParmVarDecl a -> a.ty
   | UnaryOperator a -> a.ty
@@ -258,7 +258,7 @@ let rec exp_type (e:d_exp) : d_type =
   | CXXOperatorCallExpr a -> a.ty
   | MemberExpr a -> a.ty
   | EnumConstantDecl a -> a.ty
-  | UnresolvedLookupExpr a -> Ctype.mk_j_type "?"
+  | UnresolvedLookupExpr a -> C_type.mk_j_type "?"
 (* ------------------------------------------------------------------------ *)
 
 type ('s, 'a) state = 's -> 's * 'a

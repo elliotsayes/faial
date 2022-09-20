@@ -282,7 +282,7 @@ module MutatedVar = struct
     ->
       let is_int =
         match parse_type ty with
-        | Ok ty -> Ctype.is_int ty
+        | Ok ty -> C_type.is_int ty
         | Error _ -> false
       in
       let w = if is_int then VarSet.add x writes else writes in

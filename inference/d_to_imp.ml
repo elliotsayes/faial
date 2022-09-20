@@ -151,8 +151,8 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
   | SizeOfExpr ty ->
     (match C_lang.parse_type ty with
     | Ok ty ->
-      let size = Ctype.sizeof ty |> Ojson.unwrap_or 4 in
-      prerr_endline ("WARNING: sizeof(" ^ Ctype.to_string ty ^ ") = " ^ string_of_int size);
+      let size = C_type.sizeof ty |> Ojson.unwrap_or 4 in
+      prerr_endline ("WARNING: sizeof(" ^ C_type.to_string ty ^ ") = " ^ string_of_int size);
       ret_n (Num size)
     | Error _ ->
       prerr_endline ("WARNING: could not parse type: sizeof(" ^ C_lang.type_to_str ty ^ ") = ?");
@@ -368,7 +368,7 @@ let parse_decl (d:Dlang.d_decl) : (Variable.t * Imp.locality * nexp option) list
   | Ok ty -> Ok ty
   | Error _ -> root_cause ("parse_decl: error parsing type: " ^ Rjson.pp_js d.ty)
   in
-  if Ctype.is_int ty
+  if C_type.is_int ty
   then (
     let* ((vars, n):(Variable.Set.t * (nexp option))) = match d.init with
     | Some (IExp n) ->
@@ -385,7 +385,7 @@ let parse_decl (d:Dlang.d_decl) : (Variable.t * Imp.locality * nexp option) list
 
 let is_pointer (j:Yojson.Basic.t) =
   match C_lang.parse_type j with
-  | Ok t -> Ctype.is_pointer t
+  | Ok t -> C_type.is_pointer t
   | Error _ -> false
 
 let rec parse_load_expr (target:Dlang.d_exp) (exp:Dlang.d_exp)
@@ -637,17 +637,17 @@ let from_j_error (e:Rjson.j_error) : d_error =
   RootCause (Rjson.error_to_string e)
 
 let parse_param (p:C_lang.c_param) : param option d_result =
-  let mk_array (h:hierarchy_t) (ty:Ctype.t) : array_t =
+  let mk_array (h:hierarchy_t) (ty:C_type.t) : array_t =
     {
       array_hierarchy = h;
-      array_size = Ctype.get_array_length ty;
-      array_type = Ctype.get_array_type ty;
+      array_size = C_type.get_array_length ty;
+      array_type = C_type.get_array_type ty;
     }
   in
   let* ty = C_lang.parse_type p.ty |> Result.map_error from_j_error in
-  if Ctype.is_int ty then
+  if C_type.is_int ty then
     Ok (Some (Either.Left p.name))
-  else if Ctype.is_array ty then (
+  else if C_type.is_array ty then (
     let h = if p.is_shared then Exp.SharedMemory else Exp.GlobalMemory in
     Ok (Some (Either.Right (p.name, mk_array h ty)))
   ) else Ok None
@@ -710,11 +710,11 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
     tail
   ]
 
-let mk_array (h:hierarchy_t) (ty:Ctype.t) : array_t =
+let mk_array (h:hierarchy_t) (ty:C_type.t) : array_t =
   {
     array_hierarchy = h;
-    array_size = Ctype.get_array_length ty;
-    array_type = Ctype.get_array_type ty;
+    array_size = C_type.get_array_length ty;
+    array_type = C_type.get_array_type ty;
   }
 
 let parse_shared (s:Dlang.d_stmt) : (Variable.t * array_t) list =
@@ -772,7 +772,7 @@ let parse_kernel
     | PTemplateTypeParmDecl _ :: l -> add_type_params params l
     | PNonTypeTemplateParmDecl x :: l ->
       let params = match C_lang.parse_type x.ty with
-      | Ok ty when Ctype.is_int ty -> Variable.Set.add x.name params
+      | Ok ty when C_type.is_int ty -> Variable.Set.add x.name params
       | _ -> params
       in
       add_type_params params l
@@ -805,7 +805,7 @@ let parse_program (p:Dlang.d_program) : Imp.p_kernel list d_result =
           | Ok ty ->
             if List.mem C_lang.c_attr_shared v.attrs then
               (v.name, mk_array SharedMemory ty)::arrays, globals, assigns
-            else if Ctype.is_int ty then
+            else if C_type.is_int ty then
               let g = match v.init with
               | Some (IExp n) ->
                 (match parse_exp n with
