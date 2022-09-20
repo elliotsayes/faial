@@ -261,9 +261,10 @@ let main_t =
 
 let info =
   let doc = "Verifies a GPU contract" in
-  Term.info "faial-bin" ~doc ~exits:Term.default_exits
+  Cmd.info "faial-bin" ~doc
 
 
-
-let _ =
-  Term.exit @@ Term.eval (main_t, info)
+let () =
+  Cmd.v info main_t
+  |> Cmd.eval
+  |> exit

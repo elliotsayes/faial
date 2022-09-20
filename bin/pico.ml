@@ -30,6 +30,9 @@ let pico_t = Term.(const pico $ get_fname)
 
 let info =
   let doc = "Static performance analysis for GPU programs" in
-  Term.info "pico" ~version:"%%VERSION%%" ~doc ~exits:Term.default_exits
+  Cmd.info "pico" ~version:"%%VERSION%%" ~doc
 
-let () = Term.exit @@ Term.eval (pico_t, info)
+let () =
+  Cmd.v info pico_t
+  |> Cmd.eval
+  |> exit

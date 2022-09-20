@@ -349,7 +349,10 @@ let main_t = Term.(const main $ get_fname $ get_timeout $ show_proofs)
 
 let info =
   let doc = "Print the C-AST" in
-  Term.info "next-gen" ~version:"%%VERSION%%" ~doc ~exits:Term.default_exits
+  Cmd.info "next-gen" ~version:"%%VERSION%%" ~doc
 
-let () = Term.exit @@ Term.eval (main_t, info)
+let () =
+  Cmd.v info main_t
+  |> Cmd.eval
+  |> exit
 

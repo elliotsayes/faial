@@ -602,7 +602,10 @@ let main_t = Term.(const main $ get_fname $ silent)
 
 let info =
   let doc = "Print the C-AST" in
-  Term.info "c-ast" ~version:"%%VERSION%%" ~doc ~exits:Term.default_exits
+  Cmd.info "c-ast" ~version:"%%VERSION%%" ~doc
 
-let () = Term.exit @@ Term.eval (main_t, info)
+let () =
+  Cmd.v info main_t
+  |> Cmd.eval
+  |> exit
 

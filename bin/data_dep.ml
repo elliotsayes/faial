@@ -33,7 +33,11 @@ let main_t = Term.(const main $ get_fname)
 
 let info =
   let doc = "Data-dependency analysis for GPU programs" in
-  Term.info "data-dep" ~version:"%%VERSION%%" ~doc ~exits:Term.default_exits
+  Cmd.info "data-dep" ~version:"%%VERSION%%" ~doc
 
-let () = Term.exit @@ Term.eval (main_t, info)
+
+let () =
+  Cmd.v info main_t
+  |> Cmd.eval
+  |> exit
 
