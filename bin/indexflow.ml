@@ -238,7 +238,7 @@ let types_kernel (k:d_kernel) : Stmt.t =
   (* Initialize the environment: each parameter is independent *)
   let env =
     k.params
-    |> List.map (fun (p:Cast.c_param) -> p.name)
+    |> List.map (fun (p:C_lang.c_param) -> p.name)
     |> List.fold_left (fun env x -> Typing.add_i x env) Typing.make
   in
   types_stmt env k.code |> snd

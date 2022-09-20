@@ -55,16 +55,16 @@ let safe_run f =
 type command = WLang | ALang | PLang | CLang | HLang | BLang | Sat | Typecheck | Parse
 
 let parse_from_ctj ic : Imp.p_kernel list =
-  let open Cast in
+  let open C_lang in
   let open D_to_imp in
   let j = Yojson.Basic.from_channel ic in
-  match Cast.parse_program j with
+  match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = Dlang.rewrite_program k1 in
       (match D_to_imp.parse_program k2 with
       | Ok k3 -> k3
       | Error e ->
-        Cast.print_program k1;
+        C_lang.print_program k1;
         print_endline "------";
         Dlang.print_program k2;
         print_endline "-------";

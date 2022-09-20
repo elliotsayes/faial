@@ -3,9 +3,9 @@ open Inference
 
 let analyze (j:Yojson.Basic.t) : unit =
   let open Indexflow in
-  let open Cast in
+  let open C_lang in
   let open D_to_imp in
-  match Cast.parse_program j with
+  match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = Dlang.rewrite_program k1 in
        Indexflow.types_program k2

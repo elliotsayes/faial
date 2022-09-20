@@ -2,7 +2,7 @@ open Stage0
 open Stage1
 
 module StackTrace = Common.StackTrace
-module KernelAttr = Cast.KernelAttr
+module KernelAttr = C_lang.KernelAttr
 module StringSet = Common.StringSet
 
 let (@) = Common.append_tr
@@ -149,13 +149,13 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
   | VarDecl { name = v }
     -> ret_n (Var v)
   | SizeOfExpr ty ->
-    (match Cast.parse_type ty with
+    (match C_lang.parse_type ty with
     | Ok ty ->
       let size = Ctype.sizeof ty |> Ojson.unwrap_or 4 in
       prerr_endline ("WARNING: sizeof(" ^ Ctype.to_string ty ^ ") = " ^ string_of_int size);
       ret_n (Num size)
     | Error _ ->
-      prerr_endline ("WARNING: could not parse type: sizeof(" ^ Cast.type_to_str ty ^ ") = ?");
+      prerr_endline ("WARNING: could not parse type: sizeof(" ^ C_lang.type_to_str ty ^ ") = ?");
       Ok Unknown)
   | IntegerLiteral n
   | CharacterLiteral n -> ret_n (Num n)
@@ -364,7 +364,7 @@ let cast_map f = Rjson.map_all f (fun idx s e ->
 
 let parse_decl (d:Dlang.d_decl) : (Variable.t * Imp.locality * nexp option) list d_result =
   let parse_e m b = with_msg (m ^ ": " ^ Dlang.decl_to_s d) parse_exp b in
-  let* ty = match Cast.parse_type d.ty with
+  let* ty = match C_lang.parse_type d.ty with
   | Ok ty -> Ok ty
   | Error _ -> root_cause ("parse_decl: error parsing type: " ^ Rjson.pp_js d.ty)
   in
@@ -384,7 +384,7 @@ let parse_decl (d:Dlang.d_decl) : (Variable.t * Imp.locality * nexp option) list
   )
 
 let is_pointer (j:Yojson.Basic.t) =
-  match Cast.parse_type j with
+  match C_lang.parse_type j with
   | Ok t -> Ctype.is_pointer t
   | Error _ -> false
 
@@ -636,7 +636,7 @@ type param = (Variable.t, Variable.t * array_t) Either.t
 let from_j_error (e:Rjson.j_error) : d_error =
   RootCause (Rjson.error_to_string e)
 
-let parse_param (p:Cast.c_param) : param option d_result =
+let parse_param (p:C_lang.c_param) : param option d_result =
   let mk_array (h:hierarchy_t) (ty:Ctype.t) : array_t =
     {
       array_hierarchy = h;
@@ -644,7 +644,7 @@ let parse_param (p:Cast.c_param) : param option d_result =
       array_type = Ctype.get_array_type ty;
     }
   in
-  let* ty = Cast.parse_type p.ty |> Result.map_error from_j_error in
+  let* ty = C_lang.parse_type p.ty |> Result.map_error from_j_error in
   if Ctype.is_int ty then
     Ok (Some (Either.Left p.name))
   else if Ctype.is_array ty then (
@@ -652,7 +652,7 @@ let parse_param (p:Cast.c_param) : param option d_result =
     Ok (Some (Either.Right (p.name, mk_array h ty)))
   ) else Ok None
 
-let parse_params (ps:Cast.c_param list) : (Variable.Set.t * array_t Variable.Map.t) d_result =
+let parse_params (ps:C_lang.c_param list) : (Variable.Set.t * array_t Variable.Map.t) d_result =
   let* params = Rjson.map_all parse_param
     (fun i a e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
@@ -766,12 +766,12 @@ let parse_kernel
   let shared = parse_shared k.code
     |> Common.append_rev1 shared_params
     |> Variable.MapUtil.from_list in
-  let rec add_type_params (params:Variable.Set.t) : Cast.c_type_param list -> Variable.Set.t =
+  let rec add_type_params (params:Variable.Set.t) : C_lang.c_type_param list -> Variable.Set.t =
     function
     | [] -> params
     | PTemplateTypeParmDecl _ :: l -> add_type_params params l
     | PNonTypeTemplateParmDecl x :: l ->
-      let params = match Cast.parse_type x.ty with
+      let params = match C_lang.parse_type x.ty with
       | Ok ty when Ctype.is_int ty -> Variable.Set.add x.name params
       | _ -> params
       in
@@ -801,9 +801,9 @@ let parse_program (p:Dlang.d_program) : Imp.p_kernel list d_result =
     match p with
     | Declaration v :: l ->
       let (arrays, globals, assigns) =
-          match Cast.parse_type v.ty with
+          match C_lang.parse_type v.ty with
           | Ok ty ->
-            if List.mem Cast.c_attr_shared v.attrs then
+            if List.mem C_lang.c_attr_shared v.attrs then
               (v.name, mk_array SharedMemory ty)::arrays, globals, assigns
             else if Ctype.is_int ty then
               let g = match v.init with

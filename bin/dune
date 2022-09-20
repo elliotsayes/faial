@@ -8,13 +8,6 @@
  (libraries stage0 stage1 drf inference cmdliner))
 
 (executable
- (public_name test-c)
- (name test_c)
- (modes byte exe)
- (modules test_c)
- (libraries stage0 stage1 inference))
-
-(executable
  (name data_dep)
  (modes exe)
  (modules data_dep indexflow)

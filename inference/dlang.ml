@@ -2,7 +2,7 @@ open Stage0
 open Stage1
 
 module StackTrace = Common.StackTrace
-module KernelAttr = Cast.KernelAttr
+module KernelAttr = C_lang.KernelAttr
 open Exp
 open Serialize
 type json = Yojson.Basic.t
@@ -10,7 +10,7 @@ type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
 type d_type = json
-type d_var = Cast.c_var
+type d_var = C_lang.c_var
 
 type d_exp =
   | SizeOfExpr of d_type
@@ -50,8 +50,8 @@ module Decl = struct
     attrs: string list
   }
   let get_shared (d:t) : Exp.array_t option =
-    if List.mem Cast.c_attr_shared d.attrs
-    then match Cast.parse_type d.ty with
+    if List.mem C_lang.c_attr_shared d.attrs
+    then match C_lang.parse_type d.ty with
       | Ok ty ->
         Some {
           array_hierarchy = SharedMemory;
@@ -95,8 +95,8 @@ and d_for = {init: d_for_init option; cond: d_exp option; inc: d_exp option; bod
 type d_kernel = {
   name: string;
   code: d_stmt;
-  type_params: Cast.c_type_param list;
-  params: Cast.c_param list;
+  type_params: C_lang.c_type_param list;
+  params: C_lang.c_param list;
   attribute: KernelAttr.t;
 }
 
@@ -334,7 +334,7 @@ module AccessState = struct
     ) st
 end
 
-let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
+let rec rewrite_exp (c:C_lang.c_exp) : (AccessState.t, d_exp) state =
   match c with
   | CXXOperatorCallExpr {
       func=CXXMethodDecl{name=v; _};
@@ -418,8 +418,8 @@ let rec rewrite_exp (c:Cast.c_exp) : (AccessState.t, d_exp) state =
   | CharacterLiteral c -> state_pure (CharacterLiteral c)
   | CXXBoolLiteralExpr b -> state_pure (CXXBoolLiteralExpr b)
 
-and rewrite_subscript (c:Cast.c_array_subscript) : (AccessState.t, d_subscript) state =
-  let rec rewrite_subscript (c:Cast.c_array_subscript) (indices:d_exp list) (loc:Location.t option) : (AccessState.t, d_subscript) state =
+and rewrite_subscript (c:C_lang.c_array_subscript) : (AccessState.t, d_subscript) state =
+  let rec rewrite_subscript (c:C_lang.c_array_subscript) (indices:d_exp list) (loc:Location.t option) : (AccessState.t, d_subscript) state =
     fun st ->
     let (st, idx) = rewrite_exp c.rhs st in
     let loc = Some (match loc with
@@ -436,19 +436,19 @@ and rewrite_subscript (c:Cast.c_array_subscript) : (AccessState.t, d_subscript) 
       state_pure {name=n; index=indices; ty=ty; location=Option.get loc} st
 
     | e ->
-      let ty = Cast.exp_type e in
+      let ty = C_lang.exp_type e in
       let (st, e) = rewrite_exp e st in
       let (st, x) = AccessState.add_exp e ty st in
       state_pure {name=x; index=indices; ty=ty; location=Option.get loc} st
   in
   rewrite_subscript c [] None
-and rewrite_write (a:Cast.c_array_subscript) (src:Cast.c_exp) : (AccessState.t, d_exp) state =
+and rewrite_write (a:C_lang.c_array_subscript) (src:C_lang.c_exp) : (AccessState.t, d_exp) state =
   fun st ->
     let (st, src') = rewrite_exp src st in
     let (st, a) = rewrite_subscript a st in
     let (st, x) = AccessState.add_write a src' st in
-  state_pure (VarDecl {name=x; ty=Cast.exp_type src}) st
-and rewrite_read (a:Cast.c_array_subscript): (AccessState.t, d_exp) state =
+  state_pure (VarDecl {name=x; ty=C_lang.exp_type src}) st
+and rewrite_read (a:C_lang.c_array_subscript): (AccessState.t, d_exp) state =
   fun st ->
     let (st, a) = rewrite_subscript a st in
     let (st, x) = AccessState.add_read a st in
@@ -462,16 +462,16 @@ let map_opt (f:'a -> ('s * 'b)) (o:'a option) : ('s * 'b option) =
   | None -> ([], None)
 
 
-let rewrite_exp (e:Cast.c_exp) : (d_stmt list * d_exp) =
+let rewrite_exp (e:C_lang.c_exp) : (d_stmt list * d_exp) =
   let (st, e) = rewrite_exp e AccessState.make_empty in
   (st |> List.rev, e)
 
-let rewrite_exp_list (es:Cast.c_exp list) : (d_stmt list * d_exp list) =
+let rewrite_exp_list (es:C_lang.c_exp list) : (d_stmt list * d_exp list) =
   let (ss, es) = List.map rewrite_exp es |> List.split in
   (List.concat ss, es)
 
-let rewrite_decl (d:Cast.c_decl) : (d_stmt list * d_decl) =
-  let rewrite_init (c:Cast.c_init) : (d_stmt list * d_init) =
+let rewrite_decl (d:C_lang.c_decl) : (d_stmt list * d_decl) =
+  let rewrite_init (c:C_lang.c_init) : (d_stmt list * d_init) =
     match c with
     | InitListExpr {ty=ty; args=args} ->
       let (pre, args) = rewrite_exp_list args in
@@ -483,7 +483,7 @@ let rewrite_decl (d:Cast.c_decl) : (d_stmt list * d_decl) =
   let (pre, o) = map_opt rewrite_init d.init in
   (pre, {name=d.name; ty=d.ty; init=o; attrs=d.attrs})
 
-let rewrite_for_init (f:Cast.c_for_init) : (d_stmt list * d_for_init) =
+let rewrite_for_init (f:C_lang.c_for_init) : (d_stmt list * d_for_init) =
   match f with
   | ForDecl d ->
     let (pre, d) = List.map rewrite_decl d |> List.split in
@@ -492,13 +492,13 @@ let rewrite_for_init (f:Cast.c_for_init) : (d_stmt list * d_for_init) =
     let (s, e) = rewrite_exp e in
     (s, ForExp e)
 
-let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt list =
+let rec rewrite_stmt (s:C_lang.c_stmt) : d_stmt list =
   let decl (pre:d_stmt list) (s:d_stmt) =
     match pre with
     | [] -> [s]
     | _ -> [CompoundStmt (pre @ [s])]
   in
-  let rewrite_s (s:Cast.c_stmt) : d_stmt =
+  let rewrite_s (s:C_lang.c_stmt) : d_stmt =
     match rewrite_stmt s with
     | [s] -> s
     | l -> CompoundStmt l
@@ -550,8 +550,8 @@ let rec rewrite_stmt (s:Cast.c_stmt) : d_stmt list =
     let (pre, e) = rewrite_exp e in
     decl pre (SExp e)
 
-let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
-  let rewrite_s (s:Cast.c_stmt) : d_stmt =
+let rewrite_kernel (k:C_lang.c_kernel) : d_kernel =
+  let rewrite_s (s:C_lang.c_stmt) : d_stmt =
     match rewrite_stmt s with
     | [s] -> s
     | l -> CompoundStmt l
@@ -564,14 +564,14 @@ let rewrite_kernel (k:Cast.c_kernel) : d_kernel =
     attribute = k.attribute;
   }
 
-let rewrite_def (d:Cast.c_def) : d_def =
+let rewrite_def (d:C_lang.c_def) : d_def =
   match d with
   | Kernel k -> Kernel (rewrite_kernel k)
   | Declaration d ->
     let (pre, d) = rewrite_decl d in
     Declaration d
 
-let rewrite_program: Cast.c_program -> d_program =
+let rewrite_program: C_lang.c_program -> d_program =
   List.map rewrite_def
 
 (* ------------------------------------------------------------------------ *)
@@ -588,7 +588,7 @@ let exp_to_s ?(modifier:bool=false) ?(provenance:bool=false) ?(types:bool=false)
   in
   let opcode (o:string) (j:Yojson.Basic.t) : string =
     if types
-    then "(" ^ o ^ "." ^ Cast.type_to_str j ^ ")"
+    then "(" ^ o ^ "." ^ C_lang.type_to_str j ^ ")"
     else o
   in
   let var_name: Variable.t -> string =
@@ -625,8 +625,8 @@ let exp_to_s ?(modifier:bool=false) ?(provenance:bool=false) ?(types:bool=false)
         ->  exp_to_s e
     in
     function
-    | SizeOfExpr ty -> "sizeof(" ^ Cast.type_to_str ty ^ ")"
-    | CXXNewExpr c -> "new " ^ Cast.type_to_str c.ty ^ "(" ^ exp_to_s c.arg ^ ")"
+    | SizeOfExpr ty -> "sizeof(" ^ C_lang.type_to_str ty ^ ")"
+    | CXXNewExpr c -> "new " ^ C_lang.type_to_str c.ty ^ "(" ^ exp_to_s c.arg ^ ")"
     | CXXDeleteExpr c -> "del " ^ par c.arg
     | RecoveryExpr _ -> "?"
     | FloatingLiteral f -> string_of_float f
@@ -638,7 +638,7 @@ let exp_to_s ?(modifier:bool=false) ?(provenance:bool=false) ?(types:bool=false)
       par b.lhs ^ " " ^ opcode b.opcode b.ty ^ " " ^ par b.rhs
     | MemberExpr m -> par m.base  ^ "." ^ m.name
     | CXXBoolLiteralExpr b -> if b then "true" else "false";
-    | CXXConstructExpr c -> attr "ctor" ^ Cast.type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")" 
+    | CXXConstructExpr c -> attr "ctor" ^ C_lang.type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")"
     | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
     | CXXMethodDecl v -> attr "meth" ^ var_name v.name
     | CallExpr c -> par c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
@@ -667,7 +667,7 @@ let decl_to_s (d: d_decl): string =
     let attrs = Common.join " " d.attrs |> String.trim in
     attrs ^ " "
   in
-  attr ^ Cast.type_to_str d.ty ^ " " ^ Variable.name d.name ^ i
+  attr ^ C_lang.type_to_str d.ty ^ " " ^ Variable.name d.name ^ i
 
 let subscript_to_s (s:d_subscript) : string =
   Variable.name s.name ^ "[" ^ list_to_s exp_to_s s.index ^ "]"
@@ -781,13 +781,13 @@ let summarize_stmt: d_stmt -> string =
   stmt_to_s
 
 let kernel_to_s (k:d_kernel) : PPrint.t list =
-  let tps = let open Cast in if k.type_params <> [] then "[" ^
+  let tps = let open C_lang in if k.type_params <> [] then "[" ^
       list_to_s type_param_to_s k.type_params ^
     "]" else ""
   in
   let open PPrint in
   [
-    let open Cast in
+    let open C_lang in
     Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^ " " ^ tps ^
     "(" ^ list_to_s param_to_s k.params ^ ")");
   ]
