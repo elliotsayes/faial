@@ -2,17 +2,17 @@ DUNE = dune
 
 GITLAB_CACHE = /tmp/gitlab-cache
 
-BIN = _build/default/bin
+BUILD = _build/default
+BIN = $(BUILD)/bin
 TEST = _build/test
-
-all: main
+all: main c-ast pico ng data-dep
 
 clean:
 	$(DUNE) clean
 
 c-ast:
-	$(DUNE) build bin/c_ast.exe
-	cp -f $(BIN)/c_ast.exe c-ast
+	$(DUNE) build inference/c_ast.exe
+	cp -f $(BUILD)/inference/c_ast.exe c-ast
 
 data-dep:
 	$(DUNE) build bin/data_dep.exe
@@ -21,11 +21,13 @@ data-dep:
 build-test:
 	$(DUNE) build test
 
+ng:
+	$(DUNE) build bin/next_gen.exe
+	cp -f $(BIN)/next_gen.exe next-gen
+
 main:
 	$(DUNE) build bin/main.exe
-	$(DUNE) build bin/next_gen.exe
 	cp -f $(BIN)/main.exe faial-bin
-	cp -f $(BIN)/next_gen.exe next-gen
 
 pico:
 	$(DUNE) build bin/pico.exe
