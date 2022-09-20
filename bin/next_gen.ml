@@ -136,13 +136,13 @@ let parse_imp (j:Yojson.Basic.t) : Imp.p_kernel list =
   let open D_to_imp in
   match C_lang.parse_program j with
   | Ok k1 ->
-    let k2 = Dlang.rewrite_program k1 in
+    let k2 = D_lang.rewrite_program k1 in
       (match D_to_imp.parse_program k2 with
       | Ok k3 -> k3
       | Error e ->
         C_lang.print_program k1;
         print_endline "------";
-        Dlang.print_program k2;
+        D_lang.print_program k2;
         print_endline "-------";
         D_to_imp.print_error e;
         exit(-1)

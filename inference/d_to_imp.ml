@@ -39,18 +39,18 @@ let with_msg (msg:string) (f:'a -> 'b d_result) (c:'a): 'b d_result =
   | Ok o -> Ok o
   | Error err -> Error (Because (msg, err))
 
-let with_exp (msg:string) (e: Dlang.d_exp) : (Dlang.d_exp -> 'a d_result) -> Dlang.d_exp -> 'a d_result =
-  with_msg (msg ^ ": " ^ Dlang.exp_to_s e)
+let with_exp (msg:string) (e: D_lang.d_exp) : (D_lang.d_exp -> 'a d_result) -> D_lang.d_exp -> 'a d_result =
+  with_msg (msg ^ ": " ^ D_lang.exp_to_s e)
 
-let parse_var: Dlang.d_exp -> Variable.t d_result =
+let parse_var: D_lang.d_exp -> Variable.t d_result =
   function
   | NonTypeTemplateParmDecl { name = v ; _ }
   | ParmVarDecl { name = v ; _ }
   | VarDecl { name = v ; _ }
   | FunctionDecl { name = v; _ } -> Ok v
-  | e -> root_cause ("parse_var: unexpected expression: " ^ Dlang.exp_to_s e)
+  | e -> root_cause ("parse_var: unexpected expression: " ^ D_lang.exp_to_s e)
 
-let is_variable : Dlang.d_exp -> bool =
+let is_variable : D_lang.d_exp -> bool =
   function
   | NonTypeTemplateParmDecl _
   | ParmVarDecl _
@@ -58,12 +58,12 @@ let is_variable : Dlang.d_exp -> bool =
     -> true
   | _ -> false
 
-type d_access = {location: Variable.t; mode: mode; index: Dlang.d_exp list }
+type d_access = {location: Variable.t; mode: mode; index: D_lang.d_exp list }
 
 type d_location_alias = {
-  source: Dlang.d_exp;
-  target: Dlang.d_exp;
-  offset: Dlang.d_exp
+  source: D_lang.d_exp;
+  target: D_lang.d_exp;
+  offset: D_lang.d_exp
 }
 
 let cuda_global_vars = [
@@ -130,7 +130,7 @@ let parse_bin (op:string) (l:i_exp) (r:i_exp) : i_exp =
     prerr_endline ("WARNING: parse_bin: rewriting to unknown binary operator: " ^ op);
     Unknown
 
-let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
+let rec parse_exp (e: D_lang.d_exp) : i_exp d_result =
   let parse_e m e = with_exp m e parse_exp e in
   let ret_n (n:i_nexp) : i_exp d_result = Ok (NExp n) in
   let ret_b (b:i_bexp) : i_exp d_result = Ok (BExp b) in
@@ -203,11 +203,11 @@ let rec parse_exp (e: Dlang.d_exp) : i_exp d_result =
   | CallExpr _ 
   | UnaryOperator _
   | CXXOperatorCallExpr _ ->
-    prerr_endline ("WARNING: parse_exp: rewriting to unknown: " ^ Dlang.exp_to_s e);
+    prerr_endline ("WARNING: parse_exp: rewriting to unknown: " ^ D_lang.exp_to_s e);
     Ok Unknown
 
   | _ ->
-    root_cause ("WARNING: parse_nexp: unsupported expression " ^ Dlang.exp_name e ^ " : " ^ Dlang.exp_to_s e)
+    root_cause ("WARNING: parse_nexp: unsupported expression " ^ D_lang.exp_name e ^ " : " ^ D_lang.exp_to_s e)
 
 
 
@@ -362,8 +362,8 @@ end
 let cast_map f = Rjson.map_all f (fun idx s e ->
   StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
 
-let parse_decl (d:Dlang.d_decl) : (Variable.t * Imp.locality * nexp option) list d_result =
-  let parse_e m b = with_msg (m ^ ": " ^ Dlang.decl_to_s d) parse_exp b in
+let parse_decl (d:D_lang.d_decl) : (Variable.t * Imp.locality * nexp option) list d_result =
+  let parse_e m b = with_msg (m ^ ": " ^ D_lang.decl_to_s d) parse_exp b in
   let* ty = match C_lang.parse_type d.ty with
   | Ok ty -> Ok ty
   | Error _ -> root_cause ("parse_decl: error parsing type: " ^ Rjson.pp_js d.ty)
@@ -388,8 +388,8 @@ let is_pointer (j:Yojson.Basic.t) =
   | Ok t -> C_type.is_pointer t
   | Error _ -> false
 
-let rec parse_load_expr (target:Dlang.d_exp) (exp:Dlang.d_exp)
-  : (d_location_alias, Dlang.d_exp) Either.t =
+let rec parse_load_expr (target:D_lang.d_exp) (exp:D_lang.d_exp)
+  : (d_location_alias, D_lang.d_exp) Either.t =
   let open Imp in
   let open Either in
   match exp with
@@ -434,7 +434,7 @@ let parse_unop (u:'a Loops.unop) : 'a unop option d_result =
     | Some arg -> Some {op=u.op; arg=arg}
     | None -> None)
 
-let infer_range (r:Dlang.d_for) : Exp.range option d_result =
+let infer_range (r:D_lang.d_for) : Exp.range option d_result =
   let parse_for_range (r:Loops.d_for_range) : for_range option d_result =
     let* init = parse_exp r.init in
     let* cond = parse_unop r.cond in
@@ -528,14 +528,14 @@ let ret (s:Imp.stmt) : Imp.stmt list d_result = Ok [s]
 
 let ret_skip : Imp.stmt list d_result = Ok []
 
-let ret_assert (b:Dlang.d_exp) : Imp.stmt list d_result =
+let ret_assert (b:D_lang.d_exp) : Imp.stmt list d_result =
   let* b = with_msg "cond" parse_exp b in
   match Unknown.try_to_bexp b with
   | Some b -> ret (Imp.Assert b)
   | None -> ret_skip
 
-let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
-  let with_msg (m:string) f b = with_msg_ex (fun a -> "parse_stmt: " ^ m ^ ": " ^ Dlang.summarize_stmt c) f b in
+let rec parse_stmt (c:D_lang.d_stmt) : Imp.stmt list d_result =
+  let with_msg (m:string) f b = with_msg_ex (fun a -> "parse_stmt: " ^ m ^ ": " ^ D_lang.summarize_stmt c) f b in
   let ret_n = Unknown.ret_n in
   let ret_b = Unknown.ret_b in
   let ret_ns = Unknown.ret_ns in
@@ -565,7 +565,7 @@ let rec parse_stmt (c:Dlang.d_stmt) : Imp.stmt list d_result =
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 
   | IfStmt {cond=b;then_stmt=ReturnStmt;else_stmt=CompoundStmt[]} ->
-    ret_assert (UnaryOperator {opcode="!"; child=b; ty=Dlang.exp_type b})
+    ret_assert (UnaryOperator {opcode="!"; child=b; ty=D_lang.exp_type b})
 
   | IfStmt c ->
     let* b = with_msg "if.cond" parse_exp c.cond in
@@ -717,8 +717,8 @@ let mk_array (h:hierarchy_t) (ty:C_type.t) : array_t =
     array_type = C_type.get_array_type ty;
   }
 
-let parse_shared (s:Dlang.d_stmt) : (Variable.t * array_t) list =
-  let open Dlang in
+let parse_shared (s:D_lang.d_stmt) : (Variable.t * array_t) list =
+  let open D_lang in
   let rec find_shared (arrays:(Variable.t * array_t) list) (s:d_stmt) : (Variable.t * array_t) list =
     match s with
     | DeclStmt l ->
@@ -754,7 +754,7 @@ let parse_kernel
   (shared_params:(Variable.t * array_t) list)
   (globals:Variable.t list)
   (assigns:(Variable.t * nexp) list)
-  (k:Dlang.d_kernel)
+  (k:D_lang.d_kernel)
 : Imp.p_kernel d_result =
   let* code = parse_stmt k.code in
   let* (params, arrays) = parse_params k.params in
@@ -791,12 +791,12 @@ let parse_kernel
       arrays shared;
   }
 
-let parse_program (p:Dlang.d_program) : Imp.p_kernel list d_result =
+let parse_program (p:D_lang.d_program) : Imp.p_kernel list d_result =
   let rec parse_p
     (arrays:(Variable.t * array_t) list)
     (globals:Variable.t list)
     (assigns:(Variable.t * nexp) list)
-    (p:Dlang.d_program)
+    (p:D_lang.d_program)
   : Imp.p_kernel list d_result =
     match p with
     | Declaration v :: l ->

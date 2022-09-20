@@ -2,7 +2,7 @@ open Stage0
 open Stage1
 open Inference
 
-open Dlang
+open D_lang
 
 module Index = struct
   type t =
@@ -55,17 +55,17 @@ module Typing = struct
 end
 
 
-let rec types_exp (env:Typing.t) (e:Dlang.d_exp) : (Typing.t * Index.t) =
-  let ret (l:Dlang.d_exp list) : Typing.t * Index.t =
+let rec types_exp (env:Typing.t) (e:D_lang.d_exp) : (Typing.t * Index.t) =
+  let ret (l:D_lang.d_exp list) : Typing.t * Index.t =
     types_exp_list env l
   in
-  let open Dlang in
+  let open D_lang in
   match e with
   | ParmVarDecl {name=x}
   | VarDecl {name=x} -> (env, Typing.get x env)
 
   | BinaryOperator b ->
-    let x = Dlang.get_variable b.lhs in
+    let x = D_lang.get_variable b.lhs in
     (match x, b.opcode = "=" with
     | Some x, true -> 
       let (env, a) = types_exp env b.rhs in

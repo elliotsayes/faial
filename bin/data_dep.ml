@@ -7,7 +7,7 @@ let analyze (j:Yojson.Basic.t) : unit =
   let open D_to_imp in
   match C_lang.parse_program j with
   | Ok k1 ->
-    let k2 = Dlang.rewrite_program k1 in
+    let k2 = D_lang.rewrite_program k1 in
        Indexflow.types_program k2
        |> List.iter (fun (name, d) ->
         print_endline (name ^ "," ^ Stmt.to_string d)

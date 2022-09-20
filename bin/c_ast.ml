@@ -7,18 +7,18 @@ module VarSet = Variable.Set
 module VarMap = Variable.Map
 type json = Yojson.Basic.t
 
-let analyze (j:Yojson.Basic.t) : C_lang.c_program  * Dlang.d_program * (Imp.p_kernel list) =
+let analyze (j:Yojson.Basic.t) : C_lang.c_program  * D_lang.d_program * (Imp.p_kernel list) =
   let open C_lang in
   let open D_to_imp in
   match C_lang.parse_program j with
   | Ok k1 ->
-    let k2 = Dlang.rewrite_program k1 in
+    let k2 = D_lang.rewrite_program k1 in
       (match D_to_imp.parse_program k2 with
       | Ok k3 -> (k1, k2, k3)
       | Error e ->
         C_lang.print_program k1;
         print_endline "------";
-        Dlang.print_program k2;
+        D_lang.print_program k2;
         print_endline "-------";
         D_to_imp.print_error e;
         exit(-1)
@@ -473,7 +473,7 @@ end
 
 module ForEach = struct
   (* Loop inference *)
-  open Dlang
+  open D_lang
 
   type t =
     | For of d_for
@@ -562,7 +562,7 @@ let main (fname: string) (silent:bool) : unit =
     print_endline "\n==================== STAGE 1: C\n";
     C_lang.print_program ~modifier:false k1;
     print_endline "==================== STAGE 2: C with reads/writes as statements\n";
-    Dlang.print_program k2;
+    D_lang.print_program k2;
     print_endline "==================== STAGE 3: Memory access protocols\n";
     List.iter Imp.print_kernel k3;
     print_endline "==================== STAGE 4: stats\n";
@@ -573,7 +573,7 @@ let main (fname: string) (silent:bool) : unit =
       |> StringMap.bindings
       |> List.map (fun (k,v) -> k, `Int v)
       in
-      let k2 = Dlang.rewrite_kernel k in
+      let k2 = D_lang.rewrite_kernel k in
       Some (`Assoc [
         "name", `String k.name;
         "function count", `Assoc func_count;
