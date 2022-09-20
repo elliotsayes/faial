@@ -19,15 +19,3 @@
  (modes exe)
  (modules next_gen z3_solver)
  (libraries cmdliner printbox printbox-text stage0 stage1 drf inference tui))
-
-(executable
- (name data_dep)
- (modes exe)
- (modules data_dep indexflow)
- (libraries inference stage0 stage1 cmdliner))
-
-(executable
- (public_name pico)
- (name pico)
- (modules pico bankconflicts z3expr)
- (libraries inference cmdliner z3))

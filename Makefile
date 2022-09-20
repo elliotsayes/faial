@@ -11,27 +11,27 @@ clean:
 	$(DUNE) clean
 
 c-ast:
-	$(DUNE) build inference/c_ast.exe
-	cp -f $(BUILD)/inference/c_ast.exe c-ast
+	$(DUNE) build inference/bin/c_ast.exe
+	cp -f $(BUILD)/inference/bin/c_ast.exe c-ast
 
 data-dep:
-	$(DUNE) build bin/data_dep.exe
-	cp -f $(BIN)/data_dep.exe data-dep
+	$(DUNE) build index_dep/data_dep.exe
+	cp -f $(BUILD)/index_dep/data_dep.exe data-dep
 
 build-test:
 	$(DUNE) build test
 
 ng:
-	$(DUNE) build bin/next_gen.exe
-	cp -f $(BIN)/next_gen.exe next-gen
+	$(DUNE) build drf/bin/next_gen.exe
+	cp -f $(BUILD)/drf/bin/next_gen.exe next-gen
 
 main:
-	$(DUNE) build bin/main.exe
-	cp -f $(BIN)/main.exe faial-bin
+	$(DUNE) build drf/bin/main.exe
+	cp -f $(BUILD)/drf/bin/main.exe faial-bin
 
 pico:
-	$(DUNE) build bin/pico.exe
-	cp -f $(BIN)/pico.exe pico
+	$(DUNE) build bank_conflicts/pico.exe
+	cp -f $(BUILD)/bank_conflicts/pico.exe pico
 
 test: build-test
 	$(DUNE) runtest
