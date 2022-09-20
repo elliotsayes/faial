@@ -1,11 +1,24 @@
 (menhir (modules parse2))
 (ocamllex scan)
 
+(library
+  (name tui)
+  (modules tui)
+  (libraries stage0 ANSITerminal)
+  )
+
 (executable
  (public_name faial-bin)
  (name main)
  (modules main parse2 scan)
- (libraries stage0 stage1 drf inference cmdliner))
+ (libraries stage0 stage1 drf inference cmdliner tui))
+
+(executable
+ (public_name next-gen)
+ (name next_gen)
+ (modes exe)
+ (modules next_gen z3_solver)
+ (libraries cmdliner printbox printbox-text stage0 stage1 drf inference tui))
 
 (executable
  (name data_dep)
@@ -19,13 +32,6 @@
  (modes exe)
  (modules c_ast)
  (libraries inference stage0 cmdliner))
-
-(executable
- (public_name next-gen)
- (name next_gen)
- (modes exe)
- (modules next_gen z3_solver)
- (libraries cmdliner printbox printbox-text stage0 stage1 drf inference))
 
 (executable
  (public_name pico)
