@@ -7,16 +7,16 @@ module VarSet = Variable.Set
 module VarMap = Variable.Map
 type json = Yojson.Basic.t
 
-let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kernel list) =
-  let open Cast in
+let analyze (j:Yojson.Basic.t) : C_lang.c_program  * Dlang.d_program * (Imp.p_kernel list) =
+  let open C_lang in
   let open D_to_imp in
-  match Cast.parse_program j with
+  match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = Dlang.rewrite_program k1 in
       (match D_to_imp.parse_program k2 with
       | Ok k3 -> (k1, k2, k3)
       | Error e ->
-        Cast.print_program k1;
+        C_lang.print_program k1;
         print_endline "------";
         Dlang.print_program k2;
         print_endline "-------";
@@ -30,14 +30,14 @@ let analyze (j:Yojson.Basic.t) : Cast.c_program  * Dlang.d_program * (Imp.p_kern
 
 
 module Calls = struct
-  type t = {func: Cast.c_exp; args: Cast.c_exp list}
+  type t = {func: C_lang.c_exp; args: C_lang.c_exp list}
 
   (* Returns all function calls in a statement, as
         a sequence. *)
-  let to_seq (c:Cast.c_stmt) : t Seq.t =
+  let to_seq (c:C_lang.c_stmt) : t Seq.t =
     (** Returns all function calls in an expression, as
         a sequence. *)
-    let rec to_seq (e:Cast.c_exp) : t Seq.t =
+    let rec to_seq (e:C_lang.c_exp) : t Seq.t =
       match e with
       (* Found a function call *)
       | CallExpr {func=f; args=a}
@@ -80,10 +80,10 @@ module Calls = struct
     in
     (* Use an expression iterator, extract function
        calls for each expression therein. *)
-    Cast.VisitStmt.to_expr_seq c
+    C_lang.VisitStmt.to_expr_seq c
     |> Seq.concat_map to_seq
 
-  let count (c:Cast.c_stmt) : int StringMap.t =
+  let count (c:C_lang.c_stmt) : int StringMap.t =
     to_seq c
     (* Only get function calls that have a function name
        in the position of the function *)
@@ -101,7 +101,7 @@ module Calls = struct
     ) StringMap.empty
 
   (* Returns true if it contains thread synchronization *)
-  let has_sync (c:Cast.c_stmt) : bool =
+  let has_sync (c:C_lang.c_stmt) : bool =
     count c |> StringMap.mem "__syncthreads"
 
 end
@@ -116,7 +116,7 @@ let var_set_to_json (vars:VarSet.t) : json =
 
 (* Performs loop analysis. *)
 module Loops = struct
-  open Cast
+  open C_lang
   (* Represents a nesting of loops, ends with data *)
   type t =
     | While of {cond: c_exp; body: t}
@@ -124,8 +124,8 @@ module Loops = struct
     | Do of {cond: c_exp; body: t}
     | Data of c_stmt
 
-  let to_seq (c:Cast.c_stmt) : t Seq.t =
-    let rec to_seq ~in_loop:(in_loop:bool) (c:Cast.c_stmt) : t Seq.t=
+  let to_seq (c:C_lang.c_stmt) : t Seq.t =
+    let rec to_seq ~in_loop:(in_loop:bool) (c:C_lang.c_stmt) : t Seq.t=
       (*
         We want to return _all_ loops that are identified,
         even if the same loop may appar multiple times.
@@ -212,15 +212,15 @@ module Loops = struct
     let open Serialize in
     let opt_exp_to_s: c_exp option -> string =
       function
-      | Some c -> Cast.exp_to_s c
+      | Some c -> C_lang.exp_to_s c
       | None -> ""
     in
     let rec stmt_to_s : t -> PPrint.t list =
       function
-      | Data s -> Cast.stmt_to_s s
+      | Data s -> C_lang.stmt_to_s s
       | For f -> [
           Line ("@for (" ^
-              Cast.opt_for_init_to_s f.init ^ "; " ^
+              C_lang.opt_for_init_to_s f.init ^ "; " ^
               opt_exp_to_s f.cond ^ "; " ^
               opt_exp_to_s f.inc ^ ") {"
           );
@@ -228,7 +228,7 @@ module Loops = struct
           Line ("}");
         ]
       | While {cond=b; body=s} -> [
-          Line ("@while (" ^ Cast.exp_to_s b ^ ") {");
+          Line ("@while (" ^ C_lang.exp_to_s b ^ ") {");
           Block (stmt_to_s s);
           Line "}"
         ]
@@ -257,7 +257,7 @@ module Loops = struct
       -> get s
     | Data a -> a
 
-  let max_sync_depth (s: Cast.c_stmt) : int =
+  let max_sync_depth (s: C_lang.c_stmt) : int =
     let has_sync (s: t) : bool =
       get s |> Calls.has_sync
     in
@@ -265,13 +265,13 @@ module Loops = struct
     |> Seq.filter has_sync
     |> Seq.fold_left (fun d e -> max d (depth e)) 0
 
-  let max_depth (s: Cast.c_stmt) : int =
+  let max_depth (s: C_lang.c_stmt) : int =
     to_seq s 
     |> Seq.fold_left (fun d e -> max d (depth e)) 0
 end
 
 module MutatedVar = struct
-  open Cast
+  open C_lang
   (* Checks if a variable is updated inside a conditional/loop *)
   (* Keeps track of the scope level a variable was defined *)
 
@@ -419,7 +419,7 @@ end
 
 
 module IntVars = struct
-  open Cast
+  open C_lang
   let rec find_vars (s:c_stmt) (vars:VarSet.t) : VarSet.t =
     let add_decls (decls:Decl.t list) : VarSet.t =
       decls
@@ -560,14 +560,14 @@ let main (fname: string) (silent:bool) : unit =
   let (k1, k2, k3) = analyze j in
   if silent then () else ( 
     print_endline "\n==================== STAGE 1: C\n";
-    Cast.print_program ~modifier:false k1;
+    C_lang.print_program ~modifier:false k1;
     print_endline "==================== STAGE 2: C with reads/writes as statements\n";
     Dlang.print_program k2;
     print_endline "==================== STAGE 3: Memory access protocols\n";
     List.iter Imp.print_kernel k3;
     print_endline "==================== STAGE 4: stats\n";
   );
-  let l = k1 |> Common.map_opt Cast.(function
+  let l = k1 |> Common.map_opt C_lang.(function
     | Kernel k ->
       let func_count : (string * json) list = Calls.count k.code
       |> StringMap.bindings
