@@ -27,6 +27,7 @@ let repr (x:t) : string =
   let l = Option.map Location.repr x.location |> Option.value ~default:"null" in
   "{name=\"" ^ x.name ^ "\", location="^ l ^ "}"
 
+
 module OT = struct
   type t' = t
   type t = t'
@@ -38,3 +39,16 @@ module Map = Map.Make(OT)
 module MapUtil = Common.MapUtil(Map)
 module MapSetUtil = Common.MapSetUtil (Set) (Map)
 
+(** Given a variable and a set of known variables, returns
+    a fresh variable name. *)
+
+let fresh (xs:Set.t) (x:t) : t =
+  let rec do_fresh_name x n =
+    let new_x = set_name (x.name ^ string_of_int n) x in
+    if Set.mem new_x xs
+    then do_fresh_name x (n + 1)
+    else new_x
+  in
+  if Set.mem x xs
+  then do_fresh_name x 1
+  else x

@@ -198,7 +198,7 @@ module Post = struct
         let x, st =
           if Variable.Set.mem x known
           then (
-            let new_x = Bindings.generate_fresh_name x known in 
+            let new_x = Variable.fresh known x in
             (new_x, SubstAssoc.put st x (Var new_x)) 
           ) else (x, st)
         in

@@ -158,7 +158,6 @@ let p_cond (b:bexp) (p:prog) : prog =
   | _, _ -> [Cond(b, p)] 
 
 let vars_distinct (p:prog)  (known:Variable.Set.t) : prog =
-  let open Bindings in
   let rec uniq_i (i:inst) (xs:Variable.Set.t) : inst * Variable.Set.t =
     match i with
     | Acc _
@@ -170,7 +169,7 @@ let vars_distinct (p:prog)  (known:Variable.Set.t) : prog =
     | Loop (r, p) ->
       let x = r.range_var in
       if Variable.Set.mem x xs then (
-        let new_x : Variable.t = generate_fresh_name x xs in
+        let new_x : Variable.t = Variable.fresh xs x in
         let new_xs = Variable.Set.add new_x xs in
         let s = Subst.SubstPair.make (x, Var new_x) in
         let new_p = PSubstPair.p_subst s p in
