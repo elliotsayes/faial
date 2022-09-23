@@ -32,7 +32,7 @@ tmp2=$(mktemp /tmp/kernel2.XXXXXX)
 input_file=${params[$arg]}
 
 # Generate the first kernel.
-"${SCRIPT_DIR}/proto-to-cuda" --cuda $input_file >"$tmp1"
+"${SCRIPT_DIR}/proto-to-cuda" $input_file >"$tmp1"
 
 case $? in
 0) ;;
@@ -45,7 +45,7 @@ case $? in
 esac
 
 # Generate the second kernel.
-if ! "${SCRIPT_DIR}/proto-to-cuda" --cuda "$tmp1" >"$tmp2"; then
+if ! "${SCRIPT_DIR}/proto-to-cuda" "$tmp1" >"$tmp2"; then
     echo "$input_file could not be parsed by proto-to-cuda (2)."
     exit 5
 # A kernel reaches a fixed point if both generated kernels have the same code.
@@ -56,7 +56,7 @@ else
     # Tests whether an additional proto-to-cuda run
     # will cause the kernel to reach a fixed point.
     fixpoint() {
-        if ! "${SCRIPT_DIR}/proto-to-cuda" --cuda "$1" >"$2"; then
+        if ! "${SCRIPT_DIR}/proto-to-cuda" "$1" >"$2"; then
             echo "$input_file could not be parsed by proto-to-cuda ($4)."
             echo "Printing previous diff."
             echo "$input_file does not reach a fixed point:"

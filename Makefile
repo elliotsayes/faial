@@ -2,43 +2,45 @@ DUNE = dune
 
 GITLAB_CACHE = /tmp/gitlab-cache
 
-BIN = _build/default/bin
+BUILD = _build/default
+BIN = $(BUILD)/bin
 TEST = _build/test
-
-all: main
+all: main c-ast pico ng data-dep proto-to-cuda
 
 clean:
 	$(DUNE) clean
 	rm -f faial-bin flores pico proto-to-cuda
 
 c-ast:
-	$(DUNE) build bin/c_ast.exe
-	cp -f $(BIN)/c_ast.exe c-ast
+	$(DUNE) build inference/bin/c_ast.exe
+	cp -f $(BUILD)/inference/bin/c_ast.exe c-ast
 
 data-dep:
-	$(DUNE) build bin/data_dep.exe
-	cp -f $(BIN)/data_dep.exe data-dep
+	$(DUNE) build index_dep/data_dep.exe
+	cp -f $(BUILD)/index_dep/data_dep.exe data-dep
 
 build-test:
 	$(DUNE) build test
 
+ng:
+	$(DUNE) build drf/bin/next_gen.exe
+	cp -f $(BUILD)/drf/bin/next_gen.exe next-gen
+
 main:
-	$(DUNE) build bin/main.exe
-	$(DUNE) build bin/next_gen.exe
-	cp -f $(BIN)/main.exe faial-bin
-	cp -f $(BIN)/next_gen.exe next-gen
+	$(DUNE) build drf/bin/main.exe
+	cp -f $(BUILD)/drf/bin/main.exe faial-bin
 
 pico:
-	$(DUNE) build bin/pico.exe
-	cp -f $(BIN)/pico.exe pico
+	$(DUNE) build bank_conflicts/pico.exe
+	cp -f $(BUILD)/bank_conflicts/pico.exe pico
 
 proto-to-cuda:
-	$(DUNE) build bin/prototocuda.exe
-	cp $(BIN)/prototocuda.exe proto-to-cuda
+	$(DUNE) build proto_to_cuda/prototocuda.exe
+	cp -f $(BUILD)/proto_to_cuda/prototocuda.exe proto-to-cuda
 
 flores:
-	$(DUNE) build bin/flores.exe
-	cp $(BIN)/flores.exe flores
+	$(DUNE) build proto_to_cuda/flores.exe
+	cp -f $(BUILD)/proto_to_cuda/flores.exe flores
 
 test: build-test
 	$(DUNE) runtest

@@ -1,0 +1,7 @@
+(executable
+ (public_name c-ast)
+ (name c_ast)
+ (modes exe)
+ (modules c_ast)
+ (libraries inference stage0 cmdliner))
+

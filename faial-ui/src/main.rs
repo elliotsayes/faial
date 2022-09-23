@@ -307,6 +307,7 @@ struct Faial {
     cu_to_json: String,
     includes: Vec<String>,
     z3: String,
+    timeout: u32,
 }
 
 impl Faial {
@@ -382,6 +383,7 @@ impl Faial {
                 } else {
                     args.push("-in".to_string());
                 }
+                args.push(format!("-t:{}", self.timeout));
                 Cmd::unchecked(args)
             },
         }
@@ -575,6 +577,13 @@ impl Faial {
                     .min_values(3)
                     .max_values(3)
                 )
+                .arg(Arg::with_name("timeout")
+                    .help("Sets the timeout value (in milliseconds) when running the solver z3. Default: 500")
+                    .short("T")
+                    .validator(can_parse::<u32>)
+                    .long("timeout")
+                    .takes_value(true)
+                )
                 .arg(Arg::with_name("parse_gv_args")
                     .long("parse-gv-args")
                     .help("Try to parse GPUVerify arguments present in the input file.")
@@ -661,6 +670,7 @@ impl Faial {
             z3: matches.value_of("z3").unwrap_or("z3").to_string(),
             cu_to_json: matches.value_of("cu_to_json").unwrap_or("cu-to-json").to_string(),
             skip_typecheck: true,
+            timeout: parse_opt::<u32>(&matches, "timeout").unwrap_or(500)
         };
         if matches.is_present("parse_gv_args") && opts.input_type == InputType::CUDA {
             let opts = &mut opts;
