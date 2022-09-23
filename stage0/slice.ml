@@ -21,11 +21,18 @@ let from_interval (i:Interval.t) : t =
     finish = Some (Interval.finish i |> Index.to_base0);
   }
 
+let repr : t -> string =
+  function
+  | {start=0; finish=None} -> "[:]"
+  | {start=s; finish=None} -> "[" ^ string_of_int s ^ ":]"
+  | {start=0; finish=Some f} -> "[:" ^ string_of_int f ^ "]"
+  | {start=s; finish=Some f} -> "[" ^ string_of_int s ^ ":" ^ string_of_int f ^ "]"
+
 let to_interval (total_len:int) (s:t) : Interval.t =
   (* start: *)
   let start = s.start in
   let start = if start < 0 then (total_len + start) else start in
-  let start = min start (total_len - 1) in
+  let start = min start total_len in
   let start = max start 0 in
   (* finish: *)
   let finish = s.finish in

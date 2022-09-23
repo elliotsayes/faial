@@ -7,6 +7,7 @@
    test_predicates
    test_streamutil
    test_ctype
+   test_slice
  )
  (libraries stage0 stage1 drf inference oUnit)
 )
