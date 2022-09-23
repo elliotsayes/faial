@@ -11,7 +11,7 @@
  (libraries cgen cmdliner))
 
 (executable
- (public_name flores)
- (name flores)
- (modules flores)
+ (public_name gen_kernels)
+ (name gen_kernels)
+ (modules gen_kernels)
  (libraries cgen))

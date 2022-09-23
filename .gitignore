@@ -2,7 +2,7 @@
 /faial
 /pico
 /proto-to-cuda
-/flores
+/gen_kernels
 /_build
 *.cmi
 *.cmo

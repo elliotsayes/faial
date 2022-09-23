@@ -9,7 +9,7 @@ all: main c-ast pico ng data-dep proto-to-cuda
 
 clean:
 	$(DUNE) clean
-	rm -f faial-bin flores pico proto-to-cuda
+	rm -f faial-bin gen_kernels pico proto-to-cuda
 
 c-ast:
 	$(DUNE) build inference/bin/c_ast.exe
@@ -38,9 +38,9 @@ proto-to-cuda:
 	$(DUNE) build proto_to_cuda/prototocuda.exe
 	cp -f $(BUILD)/proto_to_cuda/prototocuda.exe proto-to-cuda
 
-flores:
-	$(DUNE) build proto_to_cuda/flores.exe
-	cp -f $(BUILD)/proto_to_cuda/flores.exe flores
+gen_kernels:
+	$(DUNE) build proto_to_cuda/gen_kernels.exe
+	cp -f $(BUILD)/proto_to_cuda/gen_kernels.exe gen_kernels
 
 test: build-test
 	$(DUNE) runtest
@@ -60,4 +60,4 @@ gitlab-bin:
 gitlab: gitlab-test gitlab-bin
 
 
-.PHONY: all clean main build-test test ui pico proto-to-cuda flores sys-test gitlab gitlab-bin gitlab-test c-ast data-dep
+.PHONY: all clean main build-test test ui pico proto-to-cuda gen_kernels sys-test gitlab gitlab-bin gitlab-test c-ast data-dep
