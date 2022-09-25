@@ -117,157 +117,130 @@ let var_set_to_json (vars:VarSet.t) : json =
 (* Performs loop analysis. *)
 module Loops = struct
   open C_lang
-  (* Represents a nesting of loops, ends with data *)
-  type t =
-    | While of {cond: Expr.t; body: t}
-    | For of {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: t}
-    | Do of {cond: Expr.t; body: t}
-    | Data of c_stmt
+  (* Represents a nesting of loops within other loops *)
+  type loop =
+    | While of {
+        cond: Expr.t;
+        body: loop list;
+        data: c_stmt;
+      }
+    | For of {
+        init: ForInit.t option;
+        cond: Expr.t option;
+        inc: Expr.t option;
+        body: loop list;
+        data: c_stmt;
+      }
+    | Do of {
+        cond: Expr.t;
+        body: loop list;
+        data: c_stmt;
+      }
 
-  let to_seq (c:C_lang.c_stmt) : t Seq.t =
-    let rec to_seq ~in_loop:(in_loop:bool) (c:C_lang.c_stmt) : t Seq.t=
-      (*
-        We want to return _all_ loops that are identified,
-        even if the same loop may appar multiple times.
+  type t = loop list
 
-        For example, if we have
-
-            for (int x; ...) {
-              for (int z; ...) {
-                 s1
-              }
-              s2
-            }
-
-        We want to return two objects:
-
-            For (int x; ...) {
-              Data (
-                for (int z; ...) {
-                   s1
-                }
-                s2
-              )
-            }
-
-            For (int x; ...) {
-              For (int z; ...) {
-                 s1
-              }
-            }
-
-        The basic idea is therefore to keep track of
-        when we are inside a loop. If we are inside a loop,
-        then just return its loop body with `Seq.return (Data c)`,
-        and then recurse.
-        
-        If we are not inside a loop, just recurse to find a
-        loop somewhere.
-       *)
-      (if in_loop then Seq.return (Data c) else Seq.empty)
-      |> Seq.append (match c with
+  let make : C_lang.c_stmt -> t =
+    let rec to_seq (c:C_lang.c_stmt) : t =
+      match c with
       | WhileStmt w ->
-        to_seq ~in_loop:true w.body
-        |> Seq.map (fun x -> While {cond=w.cond; body=x})
+        [While {cond=w.cond; body=to_seq w.body; data=w.body}]
       | DoStmt w ->
-        to_seq ~in_loop:true w.body
-        |> Seq.map (fun x -> Do {cond=w.cond; body=x})
+        [Do {cond=w.cond; body=to_seq w.body; data=w.body}]
       | ForStmt w ->
-        to_seq ~in_loop:true w.body
-        |> Seq.map (fun x -> For {
-          init=w.init;
+        [For {init=w.init;
           cond=w.cond;
           inc=w.inc;
-          body=x
-        })
+          body=to_seq w.body;
+          data=w.body;
+        }]
       | BreakStmt
       | GotoStmt
       | ReturnStmt
       | ContinueStmt
       | DeclStmt _
       | SExpr _
-      -> Seq.empty
+      -> []
       | IfStmt s ->
-        to_seq ~in_loop:false s.else_stmt
-        |> Seq.append (to_seq ~in_loop:false s.then_stmt)
+        to_seq s.then_stmt @ to_seq s.else_stmt
       | CompoundStmt l ->
-        List.to_seq l
-        |> Seq.concat_map (to_seq ~in_loop:false)
+        List.concat_map to_seq l
       | DefaultStmt s
       | SwitchStmt {body=s}
       | CaseStmt {body=s}
-        -> to_seq ~in_loop:false s
-      )
+        -> to_seq s
     in
-    (* the last step is to filter out Data blocks, as they
-       are loop-less *)
-    let is_loop : t -> bool =
-      function
-      | Data _ -> false
-      | _ -> true
-    in
-    to_seq ~in_loop:false c |> Seq.filter is_loop
+    to_seq
 
   let to_string (s: t) : string =
     let open Serialize in
-    let opt_exp_to_s: Expr.t option -> string =
+    let rec stmt_to_s : loop -> PPrint.t list =
       function
-      | Some c -> C_lang.Expr.to_string c
-      | None -> ""
-    in
-    let rec stmt_to_s : t -> PPrint.t list =
-      function
-      | Data s -> C_lang.stmt_to_s s
       | For f -> [
           Line ("@for (" ^
               C_lang.ForInit.opt_to_string f.init ^ "; " ^
-              opt_exp_to_s f.cond ^ "; " ^
-              opt_exp_to_s f.inc ^ ") {"
+              Expr.opt_to_string f.cond ^ "; " ^
+              Expr.opt_to_string f.inc ^ ") {"
           );
-          Block(stmt_to_s f.body);
+          Block(List.concat_map stmt_to_s f.body);
           Line ("}");
         ]
       | While {cond=b; body=s} -> [
           Line ("@while (" ^ C_lang.Expr.to_string b ^ ") {");
-          Block (stmt_to_s s);
+          Block (List.concat_map stmt_to_s s);
           Line "}"
         ]
     | Do {cond=b; body=s} -> [
         Line "}";
-        Block (stmt_to_s s);
+        Block (List.concat_map stmt_to_s s);
         Line ("@do (" ^ Expr.to_string b ^ ") {");
       ]
     in
-    stmt_to_s s |> PPrint.doc_to_string
+    List.concat_map stmt_to_s s |> PPrint.doc_to_string
 
-  let rec depth: t -> int =
-    function
-    | Data _ -> 0
-    | For {body=s}
-    | While {body=s}
-    | Do {body=s}
-      ->
-      1 + depth s
-
-  let rec get: t -> c_stmt =
-    function
-    | For {body=s}
-    | While {body=s}
-    | Do {body=s}
-      -> get s
-    | Data a -> a
-
-  let max_sync_depth (s: C_lang.c_stmt) : int =
-    let has_sync (s: t) : bool =
-      get s |> Calls.has_sync
+  let max_depth: t -> int =
+    let rec depth1 (x: loop) : int =
+      match x with
+      | For {body=s}
+      | While {body=s}
+      | Do {body=s}
+        -> 1 + depth s
+    and depth (l: t) : int =
+      List.fold_left (fun d e -> max d (depth1 e)) 0 l
     in
-    to_seq s
-    |> Seq.filter has_sync
-    |> Seq.fold_left (fun d e -> max d (depth e)) 0
+    depth
 
-  let max_depth (s: C_lang.c_stmt) : int =
-    to_seq s 
-    |> Seq.fold_left (fun d e -> max d (depth e)) 0
+  let filter (keep:loop -> bool) : t -> t =
+    let rec filter (l:t) : t =
+      l |> Common.map_opt (fun (e:loop) ->
+        if keep e then
+          Some (filter1 e)
+        else None
+      )
+    and filter1 (x:loop) : loop =
+      match x with
+      | While w -> While { w with body = filter w.body }
+      | For f -> For { f with body = filter f.body }
+      | Do d -> Do { d with body = filter d.body }
+    in
+    filter
+
+  let data : loop -> c_stmt =
+    function
+    | For {data=s}
+    | While {data=s}
+    | Do {data=s}
+      -> s
+
+  (* Given set of loops, filters out unsynchronized loops. *)
+  let filter_sync : t -> t =
+    filter (fun l -> data l |> Calls.has_sync )
+
+  let summarize (s:c_stmt) : json =
+    let l = make s in
+    `Assoc [
+        "max loop depth", `Int (l |> max_depth);
+        "max sync-loop depth", `Int (l |> filter_sync |> max_depth);
+    ]
 end
 
 module MutatedVar = struct
@@ -572,8 +545,7 @@ let main (fname: string) (silent:bool) : unit =
       Some (`Assoc [
         "name", `String k.name;
         "function count", `Assoc func_count;
-        "max loop depth", `Int (Loops.max_depth k.code);
-        "max sync-loop depth", `Int (Loops.max_sync_depth k.code);
+        "loops", Loops.summarize k.code;
         "loop inference", ForEach.summarize k2.code;
         "mutated vars", MutatedVar.summarize k.code;
         "var count", IntVars.summarize k.code;
