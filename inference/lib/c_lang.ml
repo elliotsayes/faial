@@ -171,6 +171,124 @@ module Expr = struct
     | Some o -> to_string o
     | None -> ""
 
+
+  module Visit = struct
+    type expr_t = t
+
+    type 'a t =
+      | SizeOf of c_type
+      | CXXNew of {arg: 'a; ty: c_type}
+      | CXXDelete of {arg: 'a; ty: c_type}
+      | Recovery of c_type
+      | CharacterLiteral of int
+      | ArraySubscript of {lhs: 'a; rhs: 'a; ty: c_type; location: Location.t}
+      | BinaryOperator of {opcode: string; lhs: 'a; rhs: 'a; ty: c_type}
+      | Call of {func: 'a; args: 'a list; ty: c_type}
+      | ConditionalOperator of {cond: 'a; then_expr: 'a; else_expr: 'a; ty: c_type}
+      | CXXConstruct of {args: 'a list; ty: c_type}
+      | CXXBoolLiteral of bool
+      | CXXMethodDecl of c_var
+      | CXXOperatorCall of {func: 'a; args: 'a list; ty: c_type}
+      | FloatingLiteral of float
+      | FunctionDecl of c_var
+      | IntegerLiteral of int
+      | NonTypeTemplateParmDecl of c_var
+      | Member of {name: string; base: 'a; ty: c_type}
+      | ParmVarDecl of c_var
+      | UnaryOperator of {opcode: string; child: 'a; ty: c_type}
+      | VarDecl of c_var
+      | EnumConstantDecl of c_var
+      | UnresolvedLookup of {name: Variable.t; tys: c_type list}
+
+    let rec fold (f: 'a t -> 'a) : expr_t -> 'a =
+      function
+      | SizeOfExpr e -> f (SizeOf e)
+      | CXXNewExpr e -> f (CXXNew {arg=fold f e.arg; ty=e.ty})
+      | CXXDeleteExpr e -> f (CXXDelete {arg=fold f e.arg; ty=e.ty})
+      | RecoveryExpr e -> f (Recovery e)
+      | CharacterLiteral e -> f (CharacterLiteral e)
+      | ArraySubscriptExpr e -> f (ArraySubscript {lhs=fold f e.lhs; rhs=fold f e.rhs; ty=e.ty; location=e.location})
+      | BinaryOperator e -> f (BinaryOperator {
+          opcode=e.opcode;
+          lhs=fold f e.lhs;
+          rhs=fold f e.rhs;
+          ty=e.ty
+        })
+      | CallExpr e -> f (Call {func=fold f e.func; args=List.map (fold f) e.args; ty=e.ty})
+      | ConditionalOperator e -> f (ConditionalOperator {
+          cond=fold f e.cond;
+          then_expr=fold f e.then_expr;
+          else_expr=fold f e.else_expr;
+          ty=e.ty
+        })
+      | CXXConstructExpr e -> f (CXXConstruct {args=List.map (fold f) e.args; ty=e.ty})
+      | CXXBoolLiteralExpr e -> f (CXXBoolLiteral e)
+      | CXXMethodDecl e -> f (CXXMethodDecl e)
+      | CXXOperatorCallExpr e -> f (CXXOperatorCall {
+          func=fold f e.func;
+          args=List.map (fold f) e.args;
+          ty=e.ty
+        })
+      | FloatingLiteral e -> f (FloatingLiteral e)
+      | FunctionDecl e -> f (FunctionDecl e)
+      | IntegerLiteral e -> f (IntegerLiteral e)
+      | NonTypeTemplateParmDecl e -> f (NonTypeTemplateParmDecl e)
+      | MemberExpr e -> f (Member {
+          name=e.name;
+          base=fold f e.base;
+          ty=e.ty
+        })
+      | ParmVarDecl e -> f (ParmVarDecl e)
+      | UnaryOperator e -> f (UnaryOperator {
+          opcode=e.opcode;
+          child=fold f e.child;
+          ty=e.ty
+        })
+      | VarDecl e -> f (VarDecl e)
+      | EnumConstantDecl e -> f (EnumConstantDecl e)
+      | UnresolvedLookupExpr e ->
+        f (UnresolvedLookup {name=e.name; tys=e.tys})
+
+    let rec map (f: expr_t -> expr_t) (e: expr_t) : expr_t =
+      let ret : expr_t -> expr_t = map f in
+      match e with
+        | FloatingLiteral _
+        | IntegerLiteral _
+        | ParmVarDecl _
+        | CharacterLiteral _
+        | FunctionDecl _
+        | NonTypeTemplateParmDecl _
+        | CXXMethodDecl _
+        | VarDecl _
+        | EnumConstantDecl _
+        | RecoveryExpr _
+        | SizeOfExpr _
+        | UnresolvedLookupExpr _
+        | CXXBoolLiteralExpr _
+          -> f e
+        | CXXNewExpr {arg=a; ty=ty} ->
+          f (CXXNewExpr {arg=ret a; ty=ty})
+        | CXXDeleteExpr {arg=a; ty=ty} ->
+          f (CXXDeleteExpr {arg=ret a; ty=ty})
+        | ArraySubscriptExpr {lhs=e1; rhs=e2; ty=ty; location=l} ->
+          f (ArraySubscriptExpr {lhs=ret e1; rhs=ret e2; ty=ty; location=l})
+        | BinaryOperator {opcode=o; lhs=e1; rhs=e2; ty=ty} ->
+          f (BinaryOperator {opcode=o; lhs=ret e1; rhs=ret e2; ty=ty})
+        | CallExpr {func=e; args=l; ty=ty} ->
+          f (CallExpr {func=f e; args=List.map ret l; ty=ty})
+        | ConditionalOperator {cond=e1;then_expr=e2;else_expr=e3; ty=ty} ->
+          f (ConditionalOperator {cond=f e1;then_expr=ret e2;else_expr=ret e3; ty=ty})
+        | CXXConstructExpr  {args=l; ty=ty} ->
+          f (CXXConstructExpr {args=List.map ret l; ty=ty})
+        | CXXOperatorCallExpr {func=e; args=l; ty=ty} ->
+          f (CXXOperatorCallExpr {func=ret e; args=List.map ret l; ty=ty})
+        | MemberExpr {name=x; base=e; ty=ty} ->
+          f (MemberExpr {name=x; base=ret e; ty=ty})
+        | UnaryOperator {opcode=o; child=e; ty=ty} ->
+          f (UnaryOperator {opcode=o; child=ret e; ty=ty})
+
+  end
+
 end
 
 module Init = struct
@@ -184,6 +302,10 @@ module Init = struct
       InitListExpr {ty=ty; args=List.map f l}
     | IExpr e -> IExpr (f e)
 
+  let to_expr_seq : t -> Expr.t Seq.t =
+    function
+    | InitListExpr l -> List.to_seq l.args
+    | IExpr e -> Seq.return e
 
   let to_string : t -> string =
     function
@@ -212,6 +334,11 @@ module Decl = struct
   let is_shared (x:t) : bool =
     List.mem c_attr_shared x.attrs
 
+  let to_expr_seq (x:t) : Expr.t Seq.t =
+    match x.init with
+    | Some i -> Init.to_expr_seq i
+    | None -> Seq.empty
+
   let map_expr (f: Expr.t -> Expr.t) (x:t) : t =
     { x with init=x.init |> Option.map (Init.map_expr f) }
 
@@ -237,6 +364,12 @@ module ForInit = struct
   type t =
     | ForDecl of Decl.t list
     | ForExpr of Expr.t
+
+  (* Iterate over the expressions contained in a for-init *)
+  let to_expr_seq : t -> Expr.t Seq.t =
+    function
+    | ForDecl l -> List.to_seq l |> Seq.concat_map Decl.to_expr_seq
+    | ForExpr e -> Seq.return e
 
   (* Returns the binders of a for statement *)
   let loop_vars : t -> Variable.t list =
@@ -281,121 +414,6 @@ type c_stmt =
   | DefaultStmt of c_stmt
   | CaseStmt of {case: Expr.t; body: c_stmt}
   | SExpr of Expr.t
-
-module VisitExpr = struct
-  type 'a t =
-    | SizeOf of c_type
-    | CXXNew of {arg: 'a; ty: c_type}
-    | CXXDelete of {arg: 'a; ty: c_type}
-    | Recovery of c_type
-    | CharacterLiteral of int
-    | ArraySubscript of {lhs: 'a; rhs: 'a; ty: c_type; location: Location.t}
-    | BinaryOperator of {opcode: string; lhs: 'a; rhs: 'a; ty: c_type}
-    | Call of {func: 'a; args: 'a list; ty: c_type}
-    | ConditionalOperator of {cond: 'a; then_expr: 'a; else_expr: 'a; ty: c_type}
-    | CXXConstruct of {args: 'a list; ty: c_type}
-    | CXXBoolLiteral of bool
-    | CXXMethodDecl of c_var
-    | CXXOperatorCall of {func: 'a; args: 'a list; ty: c_type}
-    | FloatingLiteral of float
-    | FunctionDecl of c_var
-    | IntegerLiteral of int
-    | NonTypeTemplateParmDecl of c_var
-    | Member of {name: string; base: 'a; ty: c_type}
-    | ParmVarDecl of c_var
-    | UnaryOperator of {opcode: string; child: 'a; ty: c_type}
-    | VarDecl of c_var
-    | EnumConstantDecl of c_var
-    | UnresolvedLookup of {name: Variable.t; tys: c_type list}
-
-  let rec fold (f: 'a t -> 'a) : Expr.t -> 'a =
-    function
-    | SizeOfExpr e -> f (SizeOf e)
-    | CXXNewExpr e -> f (CXXNew {arg=fold f e.arg; ty=e.ty})
-    | CXXDeleteExpr e -> f (CXXDelete {arg=fold f e.arg; ty=e.ty})
-    | RecoveryExpr e -> f (Recovery e)
-    | CharacterLiteral e -> f (CharacterLiteral e)
-    | ArraySubscriptExpr e -> f (ArraySubscript {lhs=fold f e.lhs; rhs=fold f e.rhs; ty=e.ty; location=e.location})
-    | BinaryOperator e -> f (BinaryOperator {
-        opcode=e.opcode;
-        lhs=fold f e.lhs;
-        rhs=fold f e.rhs;
-        ty=e.ty
-      })
-    | CallExpr e -> f (Call {func=fold f e.func; args=List.map (fold f) e.args; ty=e.ty})
-    | ConditionalOperator e -> f (ConditionalOperator {
-        cond=fold f e.cond;
-        then_expr=fold f e.then_expr;
-        else_expr=fold f e.else_expr;
-        ty=e.ty
-      })
-    | CXXConstructExpr e -> f (CXXConstruct {args=List.map (fold f) e.args; ty=e.ty})
-    | CXXBoolLiteralExpr e -> f (CXXBoolLiteral e)
-    | CXXMethodDecl e -> f (CXXMethodDecl e)
-    | CXXOperatorCallExpr e -> f (CXXOperatorCall {
-        func=fold f e.func;
-        args=List.map (fold f) e.args;
-        ty=e.ty
-      })
-    | FloatingLiteral e -> f (FloatingLiteral e)
-    | FunctionDecl e -> f (FunctionDecl e)
-    | IntegerLiteral e -> f (IntegerLiteral e)
-    | NonTypeTemplateParmDecl e -> f (NonTypeTemplateParmDecl e)
-    | MemberExpr e -> f (Member {
-        name=e.name;
-        base=fold f e.base;
-        ty=e.ty
-      })
-    | ParmVarDecl e -> f (ParmVarDecl e)
-    | UnaryOperator e -> f (UnaryOperator {
-        opcode=e.opcode;
-        child=fold f e.child;
-        ty=e.ty
-      })
-    | VarDecl e -> f (VarDecl e)
-    | EnumConstantDecl e -> f (EnumConstantDecl e)
-    | UnresolvedLookupExpr e ->
-      f (UnresolvedLookup {name=e.name; tys=e.tys})
-
-  let rec map (f: Expr.t -> Expr.t) (e: Expr.t) : Expr.t =
-    let ret : Expr.t -> Expr.t = map f in
-    match e with
-      | FloatingLiteral _
-      | IntegerLiteral _
-      | ParmVarDecl _
-      | CharacterLiteral _
-      | FunctionDecl _
-      | NonTypeTemplateParmDecl _
-      | CXXMethodDecl _ 
-      | VarDecl _
-      | EnumConstantDecl _
-      | RecoveryExpr _
-      | SizeOfExpr _
-      | UnresolvedLookupExpr _
-      | CXXBoolLiteralExpr _
-        -> f e
-      | CXXNewExpr {arg=a; ty=ty} ->
-        f (CXXNewExpr {arg=ret a; ty=ty})
-      | CXXDeleteExpr {arg=a; ty=ty} ->
-        f (CXXDeleteExpr {arg=ret a; ty=ty})
-      | ArraySubscriptExpr {lhs=e1; rhs=e2; ty=ty; location=l} ->
-        f (ArraySubscriptExpr {lhs=ret e1; rhs=ret e2; ty=ty; location=l})
-      | BinaryOperator {opcode=o; lhs=e1; rhs=e2; ty=ty} ->
-        f (BinaryOperator {opcode=o; lhs=ret e1; rhs=ret e2; ty=ty})
-      | CallExpr {func=e; args=l; ty=ty} ->
-        f (CallExpr {func=f e; args=List.map ret l; ty=ty})
-      | ConditionalOperator {cond=e1;then_expr=e2;else_expr=e3; ty=ty} ->
-        f (ConditionalOperator {cond=f e1;then_expr=ret e2;else_expr=ret e3; ty=ty})
-      | CXXConstructExpr  {args=l; ty=ty} ->
-        f (CXXConstructExpr {args=List.map ret l; ty=ty})
-      | CXXOperatorCallExpr {func=e; args=l; ty=ty} ->
-        f (CXXOperatorCallExpr {func=ret e; args=List.map ret l; ty=ty})
-      | MemberExpr {name=x; base=e; ty=ty} ->
-        f (MemberExpr {name=x; base=ret e; ty=ty})
-      | UnaryOperator {opcode=o; child=e; ty=ty} ->
-        f (UnaryOperator {opcode=o; child=ret e; ty=ty})
-
-end
 
 module VisitStmt = struct
   type 'a t =
@@ -450,11 +468,6 @@ module VisitStmt = struct
     | SExpr e -> f (SExpr e)
 
   let to_expr_seq: c_stmt -> Expr.t Seq.t =
-    let init_to_expr : Init.t -> Expr.t Seq.t =
-      function
-      | InitListExpr l -> List.to_seq l.args
-      | IExpr e -> Seq.return e
-    in
     fold (function
       | Break | Goto | Return | Continue -> Seq.empty
       | If {cond=c; then_stmt=s1; else_stmt=s2} ->
@@ -467,7 +480,7 @@ module VisitStmt = struct
         |> Seq.concat_map (fun d ->
           let open Decl in
           Option.to_seq d.init
-          |> Seq.concat_map init_to_expr 
+          |> Seq.concat_map Init.to_expr_seq
         )
       | While {cond=c; body=b}
       | Do {cond=c; body=b}
@@ -476,14 +489,7 @@ module VisitStmt = struct
         -> Seq.cons c b
       | For s ->
         Option.to_seq s.init
-        |> Seq.concat_map (
-          let open ForInit in
-          function
-          | ForDecl l ->
-            List.to_seq l
-            |> Seq.concat_map (fun x -> Option.to_seq (Decl.init x) |> Seq.concat_map init_to_expr) 
-          | ForExpr e -> Seq.return e
-        )
+        |> Seq.concat_map ForInit.to_expr_seq
       | Default s -> s
       | SExpr e -> Seq.return e
     )
@@ -1238,7 +1244,7 @@ let rewrite_shared_arrays: c_program -> c_program =
      x becomes x[0] *)
   let rw_exp (vars:Variable.Set.t) (e:Expr.t) : Expr.t =
     if Variable.Set.is_empty vars then e else
-    e |> VisitExpr.map (fun e ->
+    e |> Expr.Visit.map (fun e ->
       match e with
       | VarDecl x ->
         if Variable.Set.mem x.name vars
