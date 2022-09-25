@@ -30,14 +30,14 @@ let analyze (j:Yojson.Basic.t) : C_lang.c_program  * D_lang.d_program * (Imp.p_k
 
 
 module Calls = struct
-  type t = {func: C_lang.c_exp; args: C_lang.c_exp list}
+  type t = {func: C_lang.Expr.t; args: C_lang.Expr.t list}
 
   (* Returns all function calls in a statement, as
         a sequence. *)
   let to_seq (c:C_lang.c_stmt) : t Seq.t =
     (** Returns all function calls in an expression, as
         a sequence. *)
-    let rec to_seq (e:C_lang.c_exp) : t Seq.t =
+    let rec to_seq (e:C_lang.Expr.t) : t Seq.t =
       match e with
       (* Found a function call *)
       | CallExpr {func=f; args=a}
@@ -119,9 +119,9 @@ module Loops = struct
   open C_lang
   (* Represents a nesting of loops, ends with data *)
   type t =
-    | While of {cond: c_exp; body: t}
-    | For of {init: c_for_init option; cond: c_exp option; inc: c_exp option; body: t}
-    | Do of {cond: c_exp; body: t}
+    | While of {cond: Expr.t; body: t}
+    | For of {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: t}
+    | Do of {cond: Expr.t; body: t}
     | Data of c_stmt
 
   let to_seq (c:C_lang.c_stmt) : t Seq.t =
@@ -185,7 +185,7 @@ module Loops = struct
       | ReturnStmt
       | ContinueStmt
       | DeclStmt _
-      | SExp _ 
+      | SExpr _
       -> Seq.empty
       | IfStmt s ->
         to_seq ~in_loop:false s.else_stmt
@@ -210,9 +210,9 @@ module Loops = struct
 
   let to_string (s: t) : string =
     let open Serialize in
-    let opt_exp_to_s: c_exp option -> string =
+    let opt_exp_to_s: Expr.t option -> string =
       function
-      | Some c -> C_lang.exp_to_s c
+      | Some c -> C_lang.Expr.to_string c
       | None -> ""
     in
     let rec stmt_to_s : t -> PPrint.t list =
@@ -220,7 +220,7 @@ module Loops = struct
       | Data s -> C_lang.stmt_to_s s
       | For f -> [
           Line ("@for (" ^
-              C_lang.opt_for_init_to_s f.init ^ "; " ^
+              C_lang.ForInit.opt_to_string f.init ^ "; " ^
               opt_exp_to_s f.cond ^ "; " ^
               opt_exp_to_s f.inc ^ ") {"
           );
@@ -228,14 +228,14 @@ module Loops = struct
           Line ("}");
         ]
       | While {cond=b; body=s} -> [
-          Line ("@while (" ^ C_lang.exp_to_s b ^ ") {");
+          Line ("@while (" ^ C_lang.Expr.to_string b ^ ") {");
           Block (stmt_to_s s);
           Line "}"
         ]
     | Do {cond=b; body=s} -> [
         Line "}";
         Block (stmt_to_s s);
-        Line ("@do (" ^ exp_to_s b ^ ") {");
+        Line ("@do (" ^ Expr.to_string b ^ ") {");
       ]
     in
     stmt_to_s s |> PPrint.doc_to_string
@@ -275,7 +275,7 @@ module MutatedVar = struct
   (* Checks if a variable is updated inside a conditional/loop *)
   (* Keeps track of the scope level a variable was defined *)
 
-  let rec get_writes (e:c_exp) (writes:VarSet.t) : VarSet.t =
+  let rec get_writes (e:Expr.t) (writes:VarSet.t) : VarSet.t =
     match e with
     | BinaryOperator {lhs=ParmVarDecl{name=x}; opcode="="; rhs=s2; ty=ty}
     | BinaryOperator {lhs=VarDecl{name=x}; opcode="="; rhs=s2; ty=ty}
@@ -331,7 +331,7 @@ module MutatedVar = struct
 
   let typecheck (s: c_stmt) : VarSet.t =
     let rec typecheck (scope:int) (env:int VarMap.t) : c_stmt -> int VarMap.t * VarSet.t =
-      let typecheck_e ?(scope=scope) (e:c_exp) : VarSet.t =
+      let typecheck_e ?(scope=scope) (e:Expr.t) : VarSet.t =
         get_writes e VarSet.empty
         |> VarSet.filter (fun x ->
           match VarMap.find_opt x env with
@@ -339,19 +339,19 @@ module MutatedVar = struct
           | None -> false
         )
       in
-      let typecheck_o ?(scope=scope) (e:c_exp option) : VarSet.t =
+      let typecheck_o ?(scope=scope) (e:Expr.t option) : VarSet.t =
         match e with
         | Some e -> typecheck_e ~scope:scope e
         | None -> VarSet.empty
       in
-      let typecheck_f ?(scope=scope) (e:c_for_init option) : VarSet.t =
+      let typecheck_f ?(scope=scope) (e:ForInit.t option) : VarSet.t =
         match e with
         | Some (ForDecl l) ->
           VisitStmt.to_expr_seq (DeclStmt l)
           |> Seq.fold_left (fun vars e ->
               VarSet.union vars (typecheck_e ~scope e)
           ) VarSet.empty 
-        | Some (ForExp e) -> typecheck_e ~scope:scope e 
+        | Some (ForExpr e) -> typecheck_e ~scope:scope e
         | None -> VarSet.empty
       in
       function
@@ -371,7 +371,7 @@ module MutatedVar = struct
           let (env, vars) = typecheck (scope + 1) env s in
           (env, VarSet.union (typecheck_e e) vars)
 
-        | SExp e ->
+        | SExpr e ->
           (env, typecheck_e e)
 
         | ForStmt w ->
@@ -438,7 +438,7 @@ module IntVars = struct
       in
       add_decls decls
 
-    | SExp _
+    | SExpr _
     | BreakStmt
     | GotoStmt
     | ReturnStmt
@@ -477,24 +477,19 @@ module ForEach = struct
 
   type t =
     | For of d_for
-    | While of {cond: d_exp; body: d_stmt}
-    | Do of {cond: d_exp; body: d_stmt}
+    | While of {cond: Expr.t; body: d_stmt}
+    | Do of {cond: Expr.t; body: d_stmt}
 
   let to_string : t -> string =
-    let opt_exp_to_s: d_exp option -> string =
-      function
-      | Some c -> exp_to_s c
-      | None -> ""
-    in
     function
     | For f -> 
       "for (" ^
-      opt_for_init_to_s f.init ^ "; " ^
-      opt_exp_to_s f.cond ^ "; " ^
-      opt_exp_to_s f.inc ^
+      ForInit.opt_to_string f.init ^ "; " ^
+      Expr.opt_to_string f.cond ^ "; " ^
+      Expr.opt_to_string f.inc ^
       ")"
-    | While {cond=b} -> "while (" ^ exp_to_s b ^ ")"     
-    | Do {cond=b} -> "do (" ^ exp_to_s b ^ ")"
+    | While {cond=b} -> "while (" ^ Expr.to_string b ^ ")"
+    | Do {cond=b} -> "do (" ^ Expr.to_string b ^ ")"
 
   (* Search for all loops available *)
   let rec to_seq: d_stmt -> t Seq.t =
@@ -512,7 +507,7 @@ module ForEach = struct
     | ContinueStmt
     | ReturnStmt
     | DeclStmt _
-    | SExp _
+    | SExpr _
       -> Seq.empty
     | IfStmt {then_stmt=s1; else_stmt=s2}
       -> to_seq s1 |> Seq.append (to_seq s2)

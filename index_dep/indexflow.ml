@@ -55,8 +55,8 @@ module Typing = struct
 end
 
 
-let rec types_exp (env:Typing.t) (e:D_lang.d_exp) : (Typing.t * Index.t) =
-  let ret (l:D_lang.d_exp list) : Typing.t * Index.t =
+let rec types_exp (env:Typing.t) (e:D_lang.Expr.t) : (Typing.t * Index.t) =
+  let ret (l:D_lang.Expr.t list) : Typing.t * Index.t =
     types_exp_list env l
   in
   let open D_lang in
@@ -65,7 +65,7 @@ let rec types_exp (env:Typing.t) (e:D_lang.d_exp) : (Typing.t * Index.t) =
   | VarDecl {name=x} -> (env, Typing.get x env)
 
   | BinaryOperator b ->
-    let x = D_lang.get_variable b.lhs in
+    let x = D_lang.Expr.to_variable b.lhs in
     (match x, b.opcode = "=" with
     | Some x, true -> 
       let (env, a) = types_exp env b.rhs in
@@ -103,7 +103,7 @@ let rec types_exp (env:Typing.t) (e:D_lang.d_exp) : (Typing.t * Index.t) =
   | CXXBoolLiteralExpr _ -> (env, Index.Independent)
 
 
-and types_exp_list (env:Typing.t) (l: d_exp list) : Typing.t * Index.t =
+and types_exp_list (env:Typing.t) (l: D_lang.Expr.t list) : Typing.t * Index.t =
   match l with
   | [] -> (env, Index.Independent)
   | e :: es ->
@@ -152,12 +152,12 @@ module Stmt = struct
 
 end
 
-let types_init (env:Typing.t) (e:d_init) : Typing.t * Index.t =
+let types_init (env:Typing.t) (e:Init.t) : Typing.t * Index.t =
   let open Index in
   match e with
   | CXXConstructExpr _ -> (env, Independent)
   | InitListExpr l -> types_exp_list env l.args
-  | IExp e -> types_exp env e
+  | IExpr e -> types_exp env e
 
 let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
   match s with
@@ -190,7 +190,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
   | ForStmt s ->
     let orig_env = env in
     (* 1. Abort if any variable used in the loop range is dependent *)
-    let (env, ctl) = types_exp_list env (for_to_exp s) in
+    let (env, ctl) = types_exp_list env (D_lang.for_to_expr s) in
     (* 2. Get all loop variables being "declared" *)
     let xs = for_loop_vars s in
     (* 3. Get the old values of each loop variable (if any) *)
@@ -205,7 +205,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
     (* 7. Merge the original with the final one *)
     (env |> Typing.add orig_env, Stmt.add_control ty ctl)
 
-  | SExp _
+  | SExpr _
   | DeclStmt []
   | BreakStmt
   | GotoStmt
