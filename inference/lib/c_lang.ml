@@ -343,10 +343,10 @@ module Decl = struct
   let map_expr (f: Expr.t -> Expr.t) (x:t) : t =
     { x with init=x.init |> Option.map (Init.map_expr f) }
 
-  let is_array (x:t) : bool =
-    match parse_type x.ty with
-    | Ok ty -> C_type.is_array ty
-    | Error _ -> false    
+  let has_type (pred:C_type.t -> bool) (x:t) : bool =
+    parse_type x.ty
+    |> Result.map pred
+    |> Common.unwrap_or false
 
   let to_string (d: t): string =
     let i = match d.init with
@@ -1262,7 +1262,7 @@ let rewrite_shared_arrays: c_program -> c_program =
      the shadowing of the available variables when it makes sense *) 
   let rw_decl (vars:Variable.Set.t) (d:Decl.t) : Variable.Set.t * Decl.t =
     let vars =
-      if Decl.is_shared d && not (Decl.is_array d) then
+      if Decl.is_shared d && not (Decl.has_type C_type.is_array d) then
         Variable.Set.add d.name vars
       else
         Variable.Set.remove d.name vars
@@ -1331,7 +1331,7 @@ let rewrite_shared_arrays: c_program -> c_program =
   let rec rw_p (vars:Variable.Set.t): c_program -> c_program =
     function
     | Declaration d :: p ->
-      let vars = if Decl.is_shared d && not (Decl.is_array d)
+      let vars = if Decl.is_shared d && not (Decl.has_type C_type.is_array d)
         then Variable.Set.add d.name vars
         else vars
       in
