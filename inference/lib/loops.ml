@@ -46,8 +46,8 @@ type d_for_range = {
 
 let parse_init: D_lang.ForInit.t option -> (variable*D_lang.Expr.t) option =
 	function
-	| Some (ForDecl ({name=n; init=Some (IExpr i)}::_)) -> Some (n, i)
-	| Some (ForExpr (BinaryOperator {lhs=l; opcode="="; rhs=i})) ->
+	| Some (Decls ({name=n; init=Some (IExpr i)}::_)) -> Some (n, i)
+	| Some (Expr (BinaryOperator {lhs=l; opcode="="; rhs=i})) ->
 		(match D_lang.Expr.to_variable l with
 		| Some v -> Some (v, i)
 		| _ -> None)

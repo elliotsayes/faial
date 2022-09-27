@@ -248,16 +248,16 @@ type d_decl = Decl.t
 
 module ForInit = struct
   type t =
-    | ForDecl of d_decl list
-    | ForExpr of Expr.t
+    | Decls of d_decl list
+    | Expr of Expr.t
 
   let to_exp (f:t) : Expr.t list =
     match f with
-    | ForDecl l -> List.fold_left
+    | Decls l -> List.fold_left
       (fun l d -> Common.append_rev1 (Decl.to_exp d) l)
       []
       l
-    | ForExpr e -> [e]
+    | Expr e -> [e]
 
   (* Returns the binders of a for statement *)
   let loop_vars : t -> Variable.t list =
@@ -272,13 +272,13 @@ module ForInit = struct
       | _ -> []
     in
     function
-    | ForDecl l -> List.map (fun (d:d_decl) -> d.name) l
-    | ForExpr e -> exp_var e
+    | Decls l -> List.map (fun (d:d_decl) -> d.name) l
+    | Expr e -> exp_var e
 
   let to_string : t -> string =
     function
-    | ForDecl d -> list_to_s Decl.to_string d
-    | ForExpr e -> Expr.to_string e
+    | Decls d -> list_to_s Decl.to_string d
+    | Expr e -> Expr.to_string e
 
 
   let opt_to_string (o:t option) : string =
@@ -570,12 +570,12 @@ let rewrite_decl (d:C_lang.Decl.t) : (d_stmt list * Decl.t) =
 
 let rewrite_for_init (f:C_lang.ForInit.t) : (d_stmt list * ForInit.t) =
   match f with
-  | ForDecl d ->
+  | Decls d ->
     let (pre, d) = List.map rewrite_decl d |> List.split in
-    (List.concat pre, ForDecl d)
-  | ForExpr e ->
+    (List.concat pre, Decls d)
+  | Expr e ->
     let (s, e) = rewrite_exp e in
-    (s, ForExpr e)
+    (s, Expr e)
 
 let rec rewrite_stmt (s:C_lang.c_stmt) : d_stmt list =
   let decl (pre:d_stmt list) (s:d_stmt) =

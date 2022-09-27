@@ -363,14 +363,14 @@ end
 
 module ForInit = struct
   type t =
-    | ForDecl of Decl.t list
-    | ForExpr of Expr.t
+    | Decls of Decl.t list
+    | Expr of Expr.t
 
   (* Iterate over the expressions contained in a for-init *)
   let to_expr_seq : t -> Expr.t Seq.t =
     function
-    | ForDecl l -> List.to_seq l |> Seq.concat_map Decl.to_expr_seq
-    | ForExpr e -> Seq.return e
+    | Decls l -> List.to_seq l |> Seq.concat_map Decl.to_expr_seq
+    | Expr e -> Seq.return e
 
   (* Returns the binders of a for statement *)
   let loop_vars : t -> Variable.t list =
@@ -385,13 +385,13 @@ module ForInit = struct
       | _ -> []
     in
     function
-    | ForDecl l -> List.map (fun (d:Decl.t) -> d.name) l
-    | ForExpr e -> exp_var e
+    | Decls l -> List.map (fun (d:Decl.t) -> d.name) l
+    | Expr e -> exp_var e
 
   let to_string : t -> string =
     function
-    | ForDecl d -> list_to_s Decl.to_string d
-    | ForExpr e -> Expr.to_string e
+    | Decls d -> list_to_s Decl.to_string d
+    | Expr e -> Expr.to_string e
 
   let opt_to_string : t option -> string =
     function
@@ -932,10 +932,10 @@ let parse_for_init (j:json) : ForInit.t j_result =
   match kind with
   | "DeclStmt" ->
     let* ds = with_field "inner" (cast_map parse_decl) o in
-    Ok (ForDecl (Common.flatten_opt ds))
+    Ok (ForInit.Decls (Common.flatten_opt ds))
   | _ ->
     let* e = parse_exp j in
-    Ok (ForExpr e)
+    Ok (ForInit.Expr e)
 
 let rec parse_stmt (j:json) : c_stmt j_result =
   let open Rjson in
@@ -1307,10 +1307,10 @@ let rewrite_shared_arrays: c_program -> c_program =
         let open ForInit in
         let (vars_body, e1) = match e1 with
         | None -> (vars, None)
-        | Some (ForDecl l) ->
+        | Some (ForInit.Decls l) ->
           let (vars, l) = rw_list rw_decl vars l in
-          (vars, Some (ForDecl l))
-        | Some (ForExpr e) -> (vars, Some (ForExpr (rw_e e)))
+          (vars, Some (ForInit.Decls l))
+        | Some (ForInit.Expr e) -> (vars, Some (ForInit.Expr (rw_e e)))
         in
         let e2 = Option.map (rw_exp vars_body) e2 in
         let e3 = Option.map (rw_exp vars_body) e3 in
