@@ -330,7 +330,8 @@ module Decl = struct
   let name (x:t) : Variable.t = x.name
   let ty (x:t) : c_type = x.ty
   let init (x:t) : Init.t option = x.init
-  let attrs (x:t) : string list = x.attrs  
+  let attrs (x:t) : string list = x.attrs
+
   let is_shared (x:t) : bool =
     List.mem c_attr_shared x.attrs
 
