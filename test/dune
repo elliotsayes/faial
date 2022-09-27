@@ -8,6 +8,7 @@
    test_streamutil
    test_ctype
    test_slice
+   test_queries
  )
  (libraries stage0 stage1 drf inference oUnit)
 )
