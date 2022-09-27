@@ -527,13 +527,18 @@ module Declarations = struct
     )
 
   let summarize (s: c_stmt) : json =
-    let n =
+    let all_count =
+      to_seq s
+      |> Seq.length
+    in
+    let int_count =
       to_seq s
       |> Seq.filter (Decl.has_type C_type.is_int)
       |> Seq.length
     in
     `Assoc [
-      "# of decls", `Int n
+      "# of decls", `Int all_count;
+      "# of integer decls", `Int int_count;
     ]
 end
 
