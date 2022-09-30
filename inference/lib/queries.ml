@@ -106,11 +106,88 @@ module Variables = struct
 
 end
 
+module Declarations = struct
+  open C_lang
+  let to_seq (s:Stmt.t) : Decl.t Seq.t =
+    s |> Stmt.Visit.fold (function
+      | For {init=Some (ForInit.Decls l); body=s} ->
+        List.to_seq l
+        |> Seq.append s
+
+      | Decl l -> List.to_seq l
+
+      | Break
+      | Goto
+      | Return
+      | Continue
+      | SExpr _
+        -> Seq.empty
+
+      | Compound l -> List.to_seq l |> Seq.concat
+
+      | If {then_stmt=s1; else_stmt=s2} -> Seq.append s1 s2
+
+      | Do {body=s}
+      | Switch {body=s}
+      | While {body=s}
+      | Default s
+      | Case {body=s}
+      | For {init=Some (ForInit.Expr _); body=s}
+      | For {init=None; body=s}
+        -> s
+    )
+
+  let shared_arrays (s: Stmt.t) : VarSet.t =
+    to_seq s
+    |> Seq.filter Decl.is_shared
+    |> Seq.map Decl.to_c_var
+    |> Variables.to_set
+
+  let summarize (s: Stmt.t) : json =
+    let s = to_seq s in
+    let all_count =
+      s
+      |> Seq.length
+    in
+    let int_count =
+      s
+      |> Seq.filter (Decl.has_type C_type.is_int)
+      |> Seq.length
+    in
+    let shared_arrays =
+      s
+      |> Seq.filter Decl.is_shared
+      |> Seq.map Decl.to_c_var
+      |> Variables.to_set
+      |> var_set_to_json
+    in
+    `Assoc [
+      "local shared arrays", shared_arrays;
+      "# of decls", `Int all_count;
+      "# of integer decls", `Int int_count;
+    ]
+end
 
 module Calls = struct
   open C_lang
 
   type t = {func: Expr.t; args: Expr.t list}
+
+  let function_name (x:t) : Variable.t option =
+    Expr.to_variable x.func
+
+  let expressions (x:t) : Expr.t Seq.t =
+    Seq.return x.func
+    |> Seq.append (List.to_seq x.args)
+
+  let variables (x:t) : c_var Seq.t =
+    expressions x
+    |> Seq.concat_map Variables.from_expr
+
+  let uses_vars (vs:VarSet.t) (x:t) : bool =
+    x
+    |> variables
+    |> Seq.exists (fun (x:c_var) -> VarSet.mem x.name vs)
 
   (* Returns all function calls in a statement, as
         a sequence. *)
@@ -197,12 +274,21 @@ module Calls = struct
     count c |> StringMap.mem "__syncthreads"
 
   let summarize (*global_arrays:VarSet.t*) (s:Stmt.t) : json =
+    let shared = Declarations.shared_arrays s in
+    let uses_shared =
+      to_seq s
+      |> Seq.filter (uses_vars shared)
+      |> Seq.filter_map function_name
+      |> Seq.map (fun x -> `String (Variable.name x))
+      |> List.of_seq
+    in
     let func_count : (string * json) list = count s
     |> StringMap.bindings
     |> List.map (fun (k,v) -> k, `Int v)
     in
     `Assoc [
-      "function count", `Assoc func_count;
+      "using shared arrays", `List uses_shared;
+      "count", `Assoc func_count;
     ]
 
 end
@@ -537,69 +623,6 @@ module MutatedVar = struct
   let summarize (s: Stmt.t) : json =
     typecheck s
     |> var_set_to_json
-end
-
-
-module Declarations = struct
-  open C_lang
-  let to_seq (s:Stmt.t) : Decl.t Seq.t =
-    s |> Stmt.Visit.fold (function
-      | For {init=Some (ForInit.Decls l); body=s} ->
-        List.to_seq l
-        |> Seq.append s
-
-      | Decl l -> List.to_seq l
-
-      | Break
-      | Goto
-      | Return
-      | Continue
-      | SExpr _
-        -> Seq.empty
-
-      | Compound l -> List.to_seq l |> Seq.concat
-
-      | If {then_stmt=s1; else_stmt=s2} -> Seq.append s1 s2
-
-      | Do {body=s}
-      | Switch {body=s}
-      | While {body=s}
-      | Default s
-      | Case {body=s}
-      | For {init=Some (ForInit.Expr _); body=s}
-      | For {init=None; body=s}
-        -> s
-    )
-
-  let shared_arrays (s: Stmt.t) : VarSet.t =
-    to_seq s
-    |> Seq.filter Decl.is_shared
-    |> Seq.map Decl.to_c_var
-    |> Variables.to_set
-
-  let summarize (s: Stmt.t) : json =
-    let s = to_seq s in
-    let all_count =
-      s
-      |> Seq.length
-    in
-    let int_count =
-      s
-      |> Seq.filter (Decl.has_type C_type.is_int)
-      |> Seq.length
-    in
-    let shared_arrays =
-      s
-      |> Seq.filter Decl.is_shared
-      |> Seq.map Decl.to_c_var
-      |> Variables.to_set
-      |> var_set_to_json
-    in
-    `Assoc [
-      "# of local shared arrays", shared_arrays;
-      "# of decls", `Int all_count;
-      "# of integer decls", `Int int_count;
-    ]
 end
 
 module Conditionals = struct
