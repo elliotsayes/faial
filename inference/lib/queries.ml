@@ -190,6 +190,15 @@ module Calls = struct
   let has_sync (c:Stmt.t) : bool =
     count c |> StringMap.mem "__syncthreads"
 
+  let summarize (*global_arrays:VarSet.t*) (s:Stmt.t) : json =
+    let func_count : (string * json) list = count s
+    |> StringMap.bindings
+    |> List.map (fun (k,v) -> k, `Int v)
+    in
+    `Assoc [
+      "function count", `Assoc func_count;
+    ]
+
 end
 
 
@@ -565,18 +574,32 @@ module Declarations = struct
         -> s
     )
 
+  let shared_arrays (s: Stmt.t) : VarSet.t =
+    to_seq s
+    |> Seq.filter Decl.is_shared
+    |> Seq.map Decl.to_c_var
+    |> Variables.to_set
 
   let summarize (s: Stmt.t) : json =
+    let s = to_seq s in
     let all_count =
-      to_seq s
+      s
       |> Seq.length
     in
     let int_count =
-      to_seq s
+      s
       |> Seq.filter (Decl.has_type C_type.is_int)
       |> Seq.length
     in
+    let shared_arrays =
+      s
+      |> Seq.filter Decl.is_shared
+      |> Seq.map Decl.to_c_var
+      |> Variables.to_set
+      |> var_set_to_json
+    in
     `Assoc [
+      "# of local shared arrays", shared_arrays;
       "# of decls", `Int all_count;
       "# of integer decls", `Int int_count;
     ]

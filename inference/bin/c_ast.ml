@@ -44,14 +44,10 @@ let main (fname: string) (silent:bool) : unit =
   );
   let l = k1 |> Common.map_opt C_lang.(function
     | Kernel k ->
-      let func_count : (string * json) list = Calls.count k.code
-      |> StringMap.bindings
-      |> List.map (fun (k,v) -> k, `Int v)
-      in
       let k2 = D_lang.rewrite_kernel k in
       Some (`Assoc [
         "name", `String k.name;
-        "function count", `Assoc func_count;
+        "function calls", Calls.summarize k.code;
         "loops", Loops.summarize k.code;
         "loop inference", ForEach.summarize k2.code;
         "mutated vars", MutatedVar.summarize k.code;
