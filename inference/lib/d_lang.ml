@@ -243,12 +243,9 @@ module Decl = struct
 
 end
 
-type d_decl = Decl.t
-
-
 module ForInit = struct
   type t =
-    | Decls of d_decl list
+    | Decls of Decl.t list
     | Expr of Expr.t
 
   let to_exp (f:t) : Expr.t list =
@@ -272,7 +269,7 @@ module ForInit = struct
       | _ -> []
     in
     function
-    | Decls l -> List.map (fun (d:d_decl) -> d.name) l
+    | Decls l -> List.map (fun (d:Decl.t) -> d.name) l
     | Expr e -> exp_var e
 
   let to_string : t -> string =
@@ -301,7 +298,7 @@ type d_stmt =
   | ContinueStmt
   | IfStmt of {cond: Expr.t; then_stmt: d_stmt; else_stmt: d_stmt}
   | CompoundStmt of d_stmt list
-  | DeclStmt of d_decl list
+  | DeclStmt of Decl.t list
   | WhileStmt of {cond: Expr.t; body: d_stmt}
   | ForStmt of d_for
   | DoStmt of {cond: Expr.t; body: d_stmt}
@@ -311,18 +308,19 @@ type d_stmt =
   | SExpr of Expr.t
 and d_for = {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: d_stmt}
 
-
-type d_kernel = {
-  name: string;
-  code: d_stmt;
-  type_params: C_lang.c_type_param list;
-  params: C_lang.c_param list;
-  attribute: KernelAttr.t;
-}
+module Kernel = struct
+  type t = {
+    name: string;
+    code: d_stmt;
+    type_params: C_lang.c_type_param list;
+    params: C_lang.c_param list;
+    attribute: KernelAttr.t;
+  }
+end
 
 type d_def =
-  | Kernel of d_kernel
-  | Declaration of d_decl
+  | Kernel of Kernel.t
+  | Declaration of Decl.t
 
 type d_program = d_def list
 
@@ -635,7 +633,7 @@ let rec rewrite_stmt (s:C_lang.c_stmt) : d_stmt list =
     let (pre, e) = rewrite_exp e in
     decl pre (SExpr e)
 
-let rewrite_kernel (k:C_lang.c_kernel) : d_kernel =
+let rewrite_kernel (k:C_lang.Kernel.t) : Kernel.t =
   let rewrite_s (s:C_lang.c_stmt) : d_stmt =
     match rewrite_stmt s with
     | [s] -> s
@@ -752,7 +750,7 @@ let summarize_stmt: d_stmt -> string =
   in
   stmt_to_s
 
-let kernel_to_s (k:d_kernel) : PPrint.t list =
+let kernel_to_s (k:Kernel.t) : PPrint.t list =
   let tps = let open C_lang in if k.type_params <> [] then "[" ^
       list_to_s type_param_to_s k.type_params ^
     "]" else ""

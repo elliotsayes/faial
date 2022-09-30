@@ -332,6 +332,9 @@ module Decl = struct
   let init (x:t) : Init.t option = x.init
   let attrs (x:t) : string list = x.attrs
 
+  let to_c_var (x:t) : c_var =
+    { name=x.name ; ty = x.ty }
+
   let is_shared (x:t) : bool =
     List.mem c_attr_shared x.attrs
 
@@ -497,7 +500,12 @@ module VisitStmt = struct
 
 end
 
-type c_param = {name: Variable.t; is_used: bool; is_shared: bool; ty: c_type}
+type c_param = {
+  name: Variable.t;
+  is_used: bool;
+  is_shared: bool;
+  ty: c_type
+}
 
 type c_type_param =
   | PTemplateTypeParmDecl of Variable.t
@@ -533,16 +541,18 @@ module KernelAttr = struct
 
 end
 
-type c_kernel = {
-  name: string;
-  code: c_stmt;
-  type_params: c_type_param list;
-  params: c_param list;
-  attribute: KernelAttr.t;
-}
+module Kernel = struct
+  type t = {
+    name: string;
+    code: c_stmt;
+    type_params: c_type_param list;
+    params: c_param list;
+    attribute: KernelAttr.t;
+  }
+end
 
 type c_def =
-  | Kernel of c_kernel
+  | Kernel of Kernel.t
   | Declaration of Decl.t
 
 type c_program = c_def list
@@ -1091,7 +1101,7 @@ let wrap_error (msg:string) (j:Yojson.Basic.t): 'a j_result -> 'a j_result =
     | Error e -> Rjson.because msg j e
 
 
-let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j_result =
+let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : Kernel.t j_result =
   let open Rjson in
   (
     let* o = cast_object j in
@@ -1118,7 +1128,7 @@ let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : c_kernel j
     let* name: string = with_field "name" cast_string o in
     (* Parameters may be faulty, recover: *)
     let ps = List.map parse_param ps |> List.concat_map Result.to_list in
-    Ok {
+    Ok Kernel.{
       name = name;
       code = body;
       params = ps;
@@ -1419,7 +1429,7 @@ let type_param_to_s (p:c_type_param) : string =
   in
   Variable.name name
 
-let kernel_to_s ?(modifier:bool=false) ?(provenance:bool=false) (k:c_kernel) : PPrint.t list =
+let kernel_to_s ?(modifier:bool=false) ?(provenance:bool=false) (k:Kernel.t) : PPrint.t list =
   let tps = if k.type_params <> [] then "[" ^
       list_to_s type_param_to_s k.type_params ^
     "]" else ""

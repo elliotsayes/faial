@@ -362,7 +362,7 @@ end
 let cast_map f = Rjson.map_all f (fun idx s e ->
   StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
 
-let parse_decl (d:D_lang.d_decl) : (Variable.t * Imp.locality * nexp option) list d_result =
+let parse_decl (d:D_lang.Decl.t) : (Variable.t * Imp.locality * nexp option) list d_result =
   let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
   let* ty = match C_lang.parse_type d.ty with
   | Ok ty -> Ok ty
@@ -754,7 +754,7 @@ let parse_kernel
   (shared_params:(Variable.t * array_t) list)
   (globals:Variable.t list)
   (assigns:(Variable.t * nexp) list)
-  (k:D_lang.d_kernel)
+  (k:D_lang.Kernel.t)
 : Imp.p_kernel d_result =
   let* code = parse_stmt k.code in
   let* (params, arrays) = parse_params k.params in

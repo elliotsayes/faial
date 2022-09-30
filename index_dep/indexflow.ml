@@ -234,7 +234,7 @@ and types_stmt_list (env:Typing.t) (s:d_stmt list) : Typing.t * Stmt.t =
     let (env, ty2) = types_stmt_list env ss in
     (env, Stmt.add ty1 ty2)
 
-let types_kernel (k:d_kernel) : Stmt.t =
+let types_kernel (k:Kernel.t) : Stmt.t =
   (* Initialize the environment: each parameter is independent *)
   let env =
     k.params
