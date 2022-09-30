@@ -56,6 +56,7 @@ let main (fname: string) (silent:bool) : unit =
         "loop inference", ForEach.summarize k2.code;
         "mutated vars", MutatedVar.summarize k.code;
         "declarations", Declarations.summarize k.code;
+        "conditionals", Conditionals.summarize k.code;
       ])
     | Declaration _ -> None
   )

@@ -542,6 +542,46 @@ module Declarations = struct
     ]
 end
 
+module Conditionals = struct
+  open C_lang
+  type t = {cond: Expr.t; then_stmt: c_stmt; else_stmt: c_stmt}
+  let rec to_seq : c_stmt -> t Seq.t =
+    function
+    | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
+      Seq.return {cond=c; then_stmt=s1; else_stmt=s2}
+
+    | DeclStmt _
+    | BreakStmt
+    | GotoStmt
+    | ReturnStmt
+    | ContinueStmt
+    | SExpr _
+      ->
+      Seq.empty
+
+    | CompoundStmt l -> List.to_seq l |> Seq.concat_map to_seq
+
+    | WhileStmt {body=s}
+    | ForStmt {body=s}
+    | DoStmt {body=s}
+    | SwitchStmt {body=s}
+    | DefaultStmt s
+    | CaseStmt {body=s}
+      ->
+      to_seq s
+
+  let summarize (s:c_stmt) : json =
+    let count =
+      to_seq s
+      |> Seq.filter (fun x ->
+        Calls.has_sync x.then_stmt || Calls.has_sync x.else_stmt
+      )
+      |> Seq.length
+    in
+    `Assoc [
+      "# of synchronized ifs", `Int count
+    ]
+end
 
 module ForEach = struct
   (* Loop inference *)
