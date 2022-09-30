@@ -6,8 +6,11 @@ let make ~name ~location : t = {name=name; location=Some location}
 
 let from_name (name:string) : t = {name=name; location=None}
 
-let set_name (name:string) (v:t) =
-  { v with name = name }
+let update_name (f: string -> string) (v:t) : t =
+  { v with name = f v.name }
+
+let set_name (name:string) : t -> t =
+  update_name (fun _ -> name)
 
 let set_location (location:Location.t) (v:t) : t =
   { v with location = Some location}

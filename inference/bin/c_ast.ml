@@ -57,6 +57,7 @@ let main (fname: string) (silent:bool) : unit =
         "mutated vars", MutatedVar.summarize k.code;
         "declarations", Declarations.summarize k.code;
         "conditionals", Conditionals.summarize k.code;
+        "variables", Variables.summarize k.code;
       ])
     | Declaration _ -> None
   )

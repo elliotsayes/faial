@@ -8,6 +8,22 @@ type json = Yojson.Basic.t
 
 module Variables = struct
   open C_lang
+  let flatten_member (e:Expr.t) : Expr.t =
+    let open Expr.Visit in
+    e |> map (
+      function
+      | MemberExpr {base=VarDecl {name=x; ty=ty}; name=f} ->
+        let x = Variable.update_name (fun n -> n ^ "." ^ f) x in
+        ParmVarDecl {name=x; ty=ty}
+      | e' -> e'
+    )
+
+  let is_thread_idx (v:c_var) : bool =
+    let v : string =
+      v.name
+      |> Variable.name
+    in
+    v = "threadIdx.x" || v = "threadIdx.y" || v = "threadIdx.z"
 
   (* Returns all variables present in an expression *)
   let from_expr (e:Expr.t) : c_var Seq.t =
@@ -61,6 +77,27 @@ module Variables = struct
     |> Seq.map (fun (x:c_var) -> x.name)
     |> List.of_seq
     |> VarSet.of_list
+
+  let summarize (s:c_stmt) : json =
+    let vars =
+      s
+      (* Get all sequences *)
+      |> VisitStmt.to_expr_seq
+      (* Convert threadIdx.x to var *)
+      |> Seq.map flatten_member
+      (* Get all variables *)
+      |> Seq.concat_map from_expr
+      (* Keep threadIdx.x *)
+      |> Seq.filter is_thread_idx
+      |> to_set
+      |> VarSet.elements
+      |> List.map Variable.name
+      |> List.map (fun x -> `String x)
+    in
+    `Assoc [
+      "tids", `List vars
+    ]
+
 end
 
 
@@ -579,7 +616,8 @@ module Conditionals = struct
       |> Seq.length
     in
     `Assoc [
-      "# of synchronized ifs", `Int count
+      "# of ifs", `Int (to_seq s |> Seq.length);
+      "# of synchronized ifs", `Int count;
     ]
 end
 
