@@ -434,7 +434,7 @@ let parse_unop (u:'a Loops.unop) : 'a unop option d_result =
     | Some arg -> Some {op=u.op; arg=arg}
     | None -> None)
 
-let infer_range (r:D_lang.d_for) : Exp.range option d_result =
+let infer_range (r:D_lang.Stmt.d_for) : Exp.range option d_result =
   let parse_for_range (r:Loops.d_for_range) : for_range option d_result =
     let* init = parse_exp r.init in
     let* cond = parse_unop r.cond in
@@ -534,8 +534,8 @@ let ret_assert (b:D_lang.Expr.t) : Imp.stmt list d_result =
   | Some b -> ret (Imp.Assert b)
   | None -> ret_skip
 
-let rec parse_stmt (c:D_lang.d_stmt) : Imp.stmt list d_result =
-  let with_msg (m:string) f b = with_msg_ex (fun a -> "parse_stmt: " ^ m ^ ": " ^ D_lang.summarize_stmt c) f b in
+let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
+  let with_msg (m:string) f b = with_msg_ex (fun a -> "parse_stmt: " ^ m ^ ": " ^ D_lang.Stmt.summarize c) f b in
   let ret_n = Unknown.ret_n in
   let ret_b = Unknown.ret_b in
   let ret_ns = Unknown.ret_ns in
@@ -717,9 +717,12 @@ let mk_array (h:hierarchy_t) (ty:C_type.t) : array_t =
     array_type = C_type.get_array_type ty;
   }
 
-let parse_shared (s:D_lang.d_stmt) : (Variable.t * array_t) list =
+let parse_shared (s:D_lang.Stmt.t) : (Variable.t * array_t) list =
   let open D_lang in
-  let rec find_shared (arrays:(Variable.t * array_t) list) (s:d_stmt) : (Variable.t * array_t) list =
+  let rec find_shared
+    (arrays:(Variable.t * array_t) list)
+    (s:Stmt.t)
+  : (Variable.t * array_t) list =
     match s with
     | DeclStmt l ->
       Common.map_opt (fun (d:Decl.t) ->

@@ -159,7 +159,7 @@ let types_init (env:Typing.t) (e:Init.t) : Typing.t * Index.t =
   | InitListExpr l -> types_exp_list env l.args
   | IExpr e -> types_exp env e
 
-let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
+let rec types_stmt (env:Typing.t) (s:D_lang.Stmt.t) : Typing.t * Stmt.t =
   match s with
   | WriteAccessStmt d ->
     (* Abort if any index is dependent *)
@@ -226,7 +226,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
 
 
 
-and types_stmt_list (env:Typing.t) (s:d_stmt list) : Typing.t * Stmt.t =
+and types_stmt_list (env:Typing.t) (s:D_lang.Stmt.t list) : Typing.t * Stmt.t =
   match s with
   | [] -> (env, Stmt.no_access)
   | s :: ss ->

@@ -403,101 +403,171 @@ module ForInit = struct
 
 end
 
-type c_stmt =
-  | BreakStmt
-  | GotoStmt
-  | ReturnStmt
-  | ContinueStmt
-  | IfStmt of {cond: Expr.t; then_stmt: c_stmt; else_stmt: c_stmt}
-  | CompoundStmt of c_stmt list
-  | DeclStmt of Decl.t list
-  | WhileStmt of {cond: Expr.t; body: c_stmt}
-  | ForStmt of {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: c_stmt}
-  | DoStmt of {cond: Expr.t; body: c_stmt}
-  | SwitchStmt of {cond: Expr.t; body: c_stmt}
-  | DefaultStmt of c_stmt
-  | CaseStmt of {case: Expr.t; body: c_stmt}
-  | SExpr of Expr.t
-
-module VisitStmt = struct
-  type 'a t =
-    | Break
-    | Goto
-    | Return
-    | Continue
-    | If of {cond: Expr.t; then_stmt: 'a; else_stmt: 'a}
-    | Compound of 'a list
-    | Decl of Decl.t list
-    | While of {cond: Expr.t; body: 'a}
-    | For of {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: 'a}
-    | Do of {cond: Expr.t; body: 'a}
-    | Switch of {cond: Expr.t; body: 'a}
-    | Default of 'a
-    | Case of {case: Expr.t; body: 'a}
+module Stmt = struct
+  type t =
+    | BreakStmt
+    | GotoStmt
+    | ReturnStmt
+    | ContinueStmt
+    | IfStmt of {cond: Expr.t; then_stmt: t; else_stmt: t}
+    | CompoundStmt of t list
+    | DeclStmt of Decl.t list
+    | WhileStmt of {cond: Expr.t; body: t}
+    | ForStmt of {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: t}
+    | DoStmt of {cond: Expr.t; body: t}
+    | SwitchStmt of {cond: Expr.t; body: t}
+    | DefaultStmt of t
+    | CaseStmt of {case: Expr.t; body: t}
     | SExpr of Expr.t
 
-  let rec fold (f: 'a t -> 'a) : c_stmt -> 'a =
-    function
-    | BreakStmt -> f Break
-    | GotoStmt -> f Goto
-    | ReturnStmt -> f Return
-    | ContinueStmt -> f Continue
-    | IfStmt c -> f (If {
-        cond=c.cond;
-        then_stmt=fold f c.then_stmt;
-        else_stmt=fold f c.else_stmt;
-      })
-    | CompoundStmt l -> f (Compound (List.map (fold f) l))
-    | DeclStmt l -> f (Decl l)
-    | WhileStmt w -> f (While {
-        cond=w.cond;
-        body=fold f w.body;
-      })
-    | ForStmt s -> f (For {
-        init=s.init;
-        cond=s.cond;
-        inc=s.inc;
-        body=fold f s.body;
-      })
-    | DoStmt s -> f (Do {
-        cond=s.cond;
-        body=fold f s.body;
-      })
-    | SwitchStmt s -> f (Switch {
-        cond=s.cond;
-        body=fold f s.body;
-      })
-    | DefaultStmt s -> f (Default (fold f s))
-    | CaseStmt s -> f (Case {case=s.case; body=fold f s.body})
-    | SExpr e -> f (SExpr e)
+  let to_string
+    ?(modifier=false)
+    ?(provenance=false)
+  : t -> PPrint.t list
+  =
+    let ret l : PPrint.t list =
+      let open PPrint in
+      match l with
+      | [] -> [Line ";"]
+      | [Line "{"; Block l; Line "}"]
+      | l -> [Line "{"; Block l; Line "}"]
+    in
+    let rec stmt_to_s : t -> PPrint.t list =
+      let block (s:t) : PPrint.t list = ret (stmt_to_s s) in
+      function
+      | ReturnStmt -> [Line "return"]
+      | GotoStmt -> [Line "goto"]
+      | BreakStmt -> [Line "break"]
+      | ContinueStmt -> [Line "continue"]
+      | ForStmt f ->
+        let open PPrint in
+        [
+          Line ("for (" ^ ForInit.opt_to_string f.init ^ "; " ^ Expr.opt_to_string f.cond ^ "; " ^ Expr.opt_to_string f.inc ^ ")");
+        ]
+        @ block (f.body)
+      | WhileStmt {cond=b; body=s} -> [
+          Line ("while (" ^ Expr.to_string b ^ ") {");
+          Block (stmt_to_s s);
+          Line "}"
+        ]
+      | DoStmt {cond=b; body=s} -> [
+          Line "}";
+          Block (stmt_to_s s);
+          Line ("do (" ^ Expr.to_string b ^ ") {");
+        ]
+      | SwitchStmt {cond=b; body=s} -> [
+          Line ("switch " ^ Expr.to_string b ^ " {");
+          Block (stmt_to_s s);
+          Line ("}");
+        ]
+      | CaseStmt c ->
+        [ Line ("case " ^ Expr.to_string c.case ^ ":"); Block(stmt_to_s c.body) ]
+      | DefaultStmt d ->
+        [ Line ("default:"); Block(stmt_to_s d) ]
+      | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
+        let s1 = stmt_to_s s1 in
+        let s2 = stmt_to_s s2 in
+        let open PPrint in
+        if s1 = [] && s2 = [] then []
+        else
+          [Line ("if (" ^ Expr.to_string b ^ ")")] @
+          ret s1 @
+          (if s2 = [] then [] else [ Line "else"; ] @ ret s2)
+      | CompoundStmt [] -> []
+      | CompoundStmt l ->
+        let l = List.concat_map stmt_to_s l in
+        if l = [] then [] else ret l
+      | DeclStmt [] -> []
+      | DeclStmt [d] -> [Line ("decl " ^ Decl.to_string d)]
+      | DeclStmt d ->
+        let open PPrint in
+        [Line "decl {"; Block (List.map (fun e -> Line (Decl.to_string e)) d); Line "}"]
+      | SExpr e -> [Line (Expr.to_string e)]
+    in
+    stmt_to_s
 
-  let to_expr_seq: c_stmt -> Expr.t Seq.t =
-    fold (function
-      | Break | Goto | Return | Continue -> Seq.empty
-      | If {cond=c; then_stmt=s1; else_stmt=s2} ->
-        Seq.return c
-        |> Seq.append s1
-        |> Seq.append s2
-      | Compound l -> List.to_seq l |> Seq.concat
-      | Decl d ->
-        List.to_seq d
-        |> Seq.concat_map (fun d ->
-          let open Decl in
-          Option.to_seq d.init
-          |> Seq.concat_map Init.to_expr_seq
-        )
-      | While {cond=c; body=b}
-      | Do {cond=c; body=b}
-      | Switch {cond=c; body=b}
-      | Case {case=c; body=b}
-        -> Seq.cons c b
-      | For s ->
-        Option.to_seq s.init
-        |> Seq.concat_map ForInit.to_expr_seq
-      | Default s -> s
-      | SExpr e -> Seq.return e
-    )
+  module Visit = struct
+    type c_stmt = t
 
+    type 'a t =
+      | Break
+      | Goto
+      | Return
+      | Continue
+      | If of {cond: Expr.t; then_stmt: 'a; else_stmt: 'a}
+      | Compound of 'a list
+      | Decl of Decl.t list
+      | While of {cond: Expr.t; body: 'a}
+      | For of {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: 'a}
+      | Do of {cond: Expr.t; body: 'a}
+      | Switch of {cond: Expr.t; body: 'a}
+      | Default of 'a
+      | Case of {case: Expr.t; body: 'a}
+      | SExpr of Expr.t
+
+    let rec fold (f: 'a t -> 'a) : c_stmt -> 'a =
+      function
+      | BreakStmt -> f Break
+      | GotoStmt -> f Goto
+      | ReturnStmt -> f Return
+      | ContinueStmt -> f Continue
+      | IfStmt c -> f (If {
+          cond=c.cond;
+          then_stmt=fold f c.then_stmt;
+          else_stmt=fold f c.else_stmt;
+        })
+      | CompoundStmt l -> f (Compound (List.map (fold f) l))
+      | DeclStmt l -> f (Decl l)
+      | WhileStmt w -> f (While {
+          cond=w.cond;
+          body=fold f w.body;
+        })
+      | ForStmt s -> f (For {
+          init=s.init;
+          cond=s.cond;
+          inc=s.inc;
+          body=fold f s.body;
+        })
+      | DoStmt s -> f (Do {
+          cond=s.cond;
+          body=fold f s.body;
+        })
+      | SwitchStmt s -> f (Switch {
+          cond=s.cond;
+          body=fold f s.body;
+        })
+      | DefaultStmt s -> f (Default (fold f s))
+      | CaseStmt s -> f (Case {case=s.case; body=fold f s.body})
+      | SExpr e -> f (SExpr e)
+
+    let to_expr_seq: c_stmt -> Expr.t Seq.t =
+      fold (function
+        | Break | Goto | Return | Continue -> Seq.empty
+        | If {cond=c; then_stmt=s1; else_stmt=s2} ->
+          Seq.return c
+          |> Seq.append s1
+          |> Seq.append s2
+        | Compound l -> List.to_seq l |> Seq.concat
+        | Decl d ->
+          List.to_seq d
+          |> Seq.concat_map (fun d ->
+            let open Decl in
+            Option.to_seq d.init
+            |> Seq.concat_map Init.to_expr_seq
+          )
+        | While {cond=c; body=b}
+        | Do {cond=c; body=b}
+        | Switch {cond=c; body=b}
+        | Case {case=c; body=b}
+          -> Seq.cons c b
+        | For s ->
+          Option.to_seq s.init
+          |> Seq.concat_map ForInit.to_expr_seq
+        | Default s -> s
+        | SExpr e -> Seq.return e
+      )
+
+  end
 end
 
 type c_param = {
@@ -544,7 +614,7 @@ end
 module Kernel = struct
   type t = {
     name: string;
-    code: c_stmt;
+    code: Stmt.t;
     type_params: c_type_param list;
     params: c_param list;
     attribute: KernelAttr.t;
@@ -947,10 +1017,11 @@ let parse_for_init (j:json) : ForInit.t j_result =
     let* e = parse_exp j in
     Ok (ForInit.Expr e)
 
-let rec parse_stmt (j:json) : c_stmt j_result =
+let rec parse_stmt (j:json) : Stmt.t j_result =
   let open Rjson in
   let* o = cast_object j in
   let open Expr in
+  let open Stmt in
   match get_kind o |> Result.to_option with
   | Some "IfStmt" ->
     let* (cond, then_stmt, else_stmt) = with_field "inner" (fun j ->
@@ -1007,7 +1078,7 @@ let rec parse_stmt (j:json) : c_stmt j_result =
     in
     Ok (SwitchStmt {cond=c; body=b})
   | Some "CompoundStmt" ->
-    let* children : c_stmt list = with_field_or "inner" (fun (i:json) ->
+    let* children : Stmt.t list = with_field_or "inner" (fun (i:json) ->
       match i with
       | `Assoc _ -> let* o = parse_stmt i in Ok [o]
       | _ -> parse_stmt_list i
@@ -1120,7 +1191,7 @@ let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : Kernel.t j
     (* we can safely convert the option with Option.get because parse_kernel
        is only invoked when we are able to parse *)
     let m: KernelAttr.t = List.find_map KernelAttr.parse attrs |> Option.get in
-    let* body: c_stmt list = parse_stmt_list (Yojson.Basic.(`List body)) in
+    let* body: Stmt.t list = parse_stmt_list (Yojson.Basic.(`List body)) in
     let body = match body with
       | [s] -> s
       | _ -> CompoundStmt body
@@ -1290,9 +1361,9 @@ let rewrite_shared_arrays: c_program -> c_program =
           (vars, x::l)
   in
   (* We now rewrite statements *)
-  let rw_stmt (vars:Variable.Set.t) (s:c_stmt) : c_stmt =
-    let rec rw_s (vars:Variable.Set.t) (s: c_stmt) : Variable.Set.t * c_stmt =
-      let ret (s: c_stmt) : c_stmt = rw_s vars s |> snd in
+  let rw_stmt (vars:Variable.Set.t) (s:Stmt.t) : Stmt.t =
+    let rec rw_s (vars:Variable.Set.t) (s: Stmt.t) : Variable.Set.t * Stmt.t =
+      let ret (s: Stmt.t) : Stmt.t = rw_s vars s |> snd in
       let rw_e: Expr.t -> Expr.t = rw_exp vars in
       match s with
       | BreakStmt
@@ -1360,63 +1431,6 @@ let parse_program ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : c_progra
 
 (* ------------------------------------------------------------------------ *)
 
-let stmt_to_s ?(modifier:bool=false) ?(provenance:bool=false) : c_stmt -> PPrint.t list =
-  let open PPrint in
-  let rec stmt_to_s : c_stmt -> PPrint.t list =
-    let ret l : PPrint.t list =
-      match l with
-      | [] -> [Line ";"]
-      | [Line "{"; Block l; Line "}"]
-      | l -> [Line "{"; Block l; Line "}"]
-    in 
-    let block (s:c_stmt) : PPrint.t list = ret (stmt_to_s s) in 
-    function
-    | ReturnStmt -> [Line "return"]
-    | GotoStmt -> [Line "goto"]
-    | BreakStmt -> [Line "break"]
-    | ContinueStmt -> [Line "continue"]
-    | ForStmt f -> [
-        Line ("for (" ^ ForInit.opt_to_string f.init ^ "; " ^ Expr.opt_to_string f.cond ^ "; " ^ Expr.opt_to_string f.inc ^ ")");
-      ]
-      @ block (f.body)
-    | WhileStmt {cond=b; body=s} -> [
-        Line ("while (" ^ Expr.to_string b ^ ") {");
-        Block (stmt_to_s s);
-        Line "}"
-      ]
-    | DoStmt {cond=b; body=s} -> [
-        Line "}";
-        Block (stmt_to_s s);
-        Line ("do (" ^ Expr.to_string b ^ ") {");
-      ]
-    | SwitchStmt {cond=b; body=s} -> [
-        Line ("switch " ^ Expr.to_string b ^ " {");
-        Block (stmt_to_s s);
-        Line ("}");
-      ]
-    | CaseStmt c ->
-      [ Line ("case " ^ Expr.to_string c.case ^ ":"); Block(stmt_to_s c.body) ]
-    | DefaultStmt d ->
-      [ Line ("default:"); Block(stmt_to_s d) ]
-    | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
-      let s1 = stmt_to_s s1 in
-      let s2 = stmt_to_s s2 in
-      if s1 = [] && s2 = [] then []
-      else
-        [Line ("if (" ^ Expr.to_string b ^ ")")] @
-        ret s1 @
-        (if s2 = [] then [] else [ Line "else"; ] @ ret s2)
-    | CompoundStmt [] -> []
-    | CompoundStmt l ->
-      let l = List.concat_map stmt_to_s l in
-      if l = [] then [] else ret l
-    | DeclStmt [] -> []
-    | DeclStmt [d] -> [Line ("decl " ^ Decl.to_string d)]
-    | DeclStmt d -> [Line "decl {"; Block (List.map (fun e -> Line (Decl.to_string e)) d); Line "}"]
-    | SExpr e -> [Line (Expr.to_string e)]
-  in
-  stmt_to_s
-
 let param_to_s (p:c_param) : string =
   let used = if p.is_used then "" else " unsed" in
   let shared = if p.is_shared then "shared " else "" in
@@ -1440,7 +1454,7 @@ let kernel_to_s ?(modifier:bool=false) ?(provenance:bool=false) (k:Kernel.t) : P
       " " ^ tps ^ "(" ^ list_to_s param_to_s k.params ^ ")");
   ]
   @
-  stmt_to_s ~modifier ~provenance k.code
+  Stmt.to_string ~modifier ~provenance k.code
 
 let def_to_s ?(modifier:bool=false) ?(provenance:bool=false) (d:c_def) : PPrint.t list =
   let open PPrint in

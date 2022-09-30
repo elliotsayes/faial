@@ -78,11 +78,11 @@ module Variables = struct
     |> List.of_seq
     |> VarSet.of_list
 
-  let summarize (s:c_stmt) : json =
+  let summarize (s:Stmt.t) : json =
     let vars =
       s
       (* Get all sequences *)
-      |> VisitStmt.to_expr_seq
+      |> Stmt.Visit.to_expr_seq
       (* Convert threadIdx.x to var *)
       |> Seq.map flatten_member
       (* Get all variables *)
@@ -102,14 +102,16 @@ end
 
 
 module Calls = struct
-  type t = {func: C_lang.Expr.t; args: C_lang.Expr.t list}
+  open C_lang
+
+  type t = {func: Expr.t; args: Expr.t list}
 
   (* Returns all function calls in a statement, as
         a sequence. *)
-  let to_seq (c:C_lang.c_stmt) : t Seq.t =
+  let to_seq (c:Stmt.t) : t Seq.t =
     (** Returns all function calls in an expression, as
         a sequence. *)
-    let rec to_seq (e:C_lang.Expr.t) : t Seq.t =
+    let rec to_seq (e:Expr.t) : t Seq.t =
       match e with
       (* Found a function call *)
       | CallExpr {func=f; args=a}
@@ -152,22 +154,22 @@ module Calls = struct
     in
     (* Use an expression iterator, extract function
        calls for each expression therein. *)
-    C_lang.VisitStmt.to_expr_seq c
+    Stmt.Visit.to_expr_seq c
     |> Seq.concat_map to_seq
 
-  let calls_using_array (c: C_lang.c_stmt) : t Seq.t =
+  let calls_using_array (c: Stmt.t) : t Seq.t =
     to_seq c
     |> Seq.filter (fun c ->
       c.args
       |> List.exists (fun e ->
-        C_lang.Expr.to_type e
-        |> C_lang.parse_type
+        Expr.to_type e
+        |> parse_type
         |> Result.map C_type.is_array
         |> Rjson.unwrap_or false
       )
     )
 
-  let count (c:C_lang.c_stmt) : int StringMap.t =
+  let count (c:Stmt.t) : int StringMap.t =
     to_seq c
     (* Only get function calls that have a function name
        in the position of the function *)
@@ -185,7 +187,7 @@ module Calls = struct
     ) StringMap.empty
 
   (* Returns true if it contains thread synchronization *)
-  let has_sync (c:C_lang.c_stmt) : bool =
+  let has_sync (c:Stmt.t) : bool =
     count c |> StringMap.mem "__syncthreads"
 
 end
@@ -207,25 +209,25 @@ module Loops = struct
     | While of {
         cond: Expr.t;
         body: loop list;
-        data: c_stmt;
+        data: Stmt.t;
       }
     | For of {
         init: ForInit.t option;
         cond: Expr.t option;
         inc: Expr.t option;
         body: loop list;
-        data: c_stmt;
+        data: Stmt.t;
       }
     | Do of {
         cond: Expr.t;
         body: loop list;
-        data: c_stmt;
+        data: Stmt.t;
       }
 
   type t = loop list
 
-  let make : C_lang.c_stmt -> t =
-    let rec to_seq (c:C_lang.c_stmt) : t =
+  let make : Stmt.t -> t =
+    let rec to_seq (c:Stmt.t) : t =
       match c with
       | WhileStmt w ->
         [While {cond=w.cond; body=to_seq w.body; data=w.body}]
@@ -309,7 +311,7 @@ module Loops = struct
     in
     filter
 
-  let data : loop -> c_stmt =
+  let data : loop -> Stmt.t =
     function
     | For {data=s}
     | While {data=s}
@@ -375,7 +377,7 @@ module Loops = struct
     in
     filter VarSet.empty
 
-  let summarize (s:c_stmt) : json =
+  let summarize (s:Stmt.t) : json =
     let l = make s in
     `Assoc [
         "# of loops using loop variables in bounds", `Int (l |> filter_using_loop_vars |> List.length);
@@ -443,8 +445,8 @@ module MutatedVar = struct
     | CXXConstructExpr {args=l} ->
        List.fold_left (fun writes e -> get_writes e writes) writes l
 
-  let typecheck (s: c_stmt) : VarSet.t =
-    let rec typecheck (scope:int) (env:int VarMap.t) : c_stmt -> int VarMap.t * VarSet.t =
+  let typecheck (s: Stmt.t) : VarSet.t =
+    let rec typecheck (scope:int) (env:int VarMap.t) : Stmt.t -> int VarMap.t * VarSet.t =
       let typecheck_e ?(scope=scope) (e:Expr.t) : VarSet.t =
         get_writes e VarSet.empty
         |> VarSet.filter (fun x ->
@@ -461,7 +463,7 @@ module MutatedVar = struct
       let typecheck_f ?(scope=scope) (e:ForInit.t option) : VarSet.t =
         match e with
         | Some (Decls l) ->
-          VisitStmt.to_expr_seq (DeclStmt l)
+          Stmt.Visit.to_expr_seq (DeclStmt l)
           |> Seq.fold_left (fun vars e ->
               VarSet.union vars (typecheck_e ~scope e)
           ) VarSet.empty
@@ -526,7 +528,7 @@ module MutatedVar = struct
     in
     typecheck 0 VarMap.empty s |> snd
 
-  let summarize (s: c_stmt) : json =
+  let summarize (s: Stmt.t) : json =
     typecheck s
     |> var_set_to_json
 end
@@ -534,8 +536,8 @@ end
 
 module Declarations = struct
   open C_lang
-  let to_seq (s:c_stmt) : Decl.t Seq.t =
-    s |> VisitStmt.fold (function
+  let to_seq (s:Stmt.t) : Decl.t Seq.t =
+    s |> Stmt.Visit.fold (function
       | For {init=Some (ForInit.Decls l); body=s} ->
         List.to_seq l
         |> Seq.append s
@@ -563,7 +565,8 @@ module Declarations = struct
         -> s
     )
 
-  let summarize (s: c_stmt) : json =
+
+  let summarize (s: Stmt.t) : json =
     let all_count =
       to_seq s
       |> Seq.length
@@ -581,8 +584,8 @@ end
 
 module Conditionals = struct
   open C_lang
-  type t = {cond: Expr.t; then_stmt: c_stmt; else_stmt: c_stmt}
-  let rec to_seq : c_stmt -> t Seq.t =
+  type t = {cond: Expr.t; then_stmt: Stmt.t; else_stmt: Stmt.t}
+  let rec to_seq : Stmt.t -> t Seq.t =
     function
     | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
       Seq.return {cond=c; then_stmt=s1; else_stmt=s2}
@@ -607,7 +610,7 @@ module Conditionals = struct
       ->
       to_seq s
 
-  let summarize (s:c_stmt) : json =
+  let summarize (s:Stmt.t) : json =
     let count =
       to_seq s
       |> Seq.filter (fun x ->
@@ -626,9 +629,9 @@ module ForEach = struct
   open D_lang
 
   type t =
-    | For of d_for
-    | While of {cond: Expr.t; body: d_stmt}
-    | Do of {cond: Expr.t; body: d_stmt}
+    | For of Stmt.d_for
+    | While of {cond: Expr.t; body: Stmt.t}
+    | Do of {cond: Expr.t; body: Stmt.t}
 
   let to_string : t -> string =
     function
@@ -642,7 +645,7 @@ module ForEach = struct
     | Do {cond=b} -> "do (" ^ Expr.to_string b ^ ")"
 
   (* Search for all loops available *)
-  let rec to_seq: d_stmt -> t Seq.t =
+  let rec to_seq: Stmt.t -> t Seq.t =
     function
     | ForStmt d ->
       Seq.return (For d)
@@ -669,7 +672,7 @@ module ForEach = struct
       List.to_seq l
       |> Seq.concat_map to_seq
 
-  let infer (s: d_stmt) : (t * Exp.range option) Seq.t =
+  let infer (s: Stmt.t) : (t * Exp.range option) Seq.t =
     to_seq s
     |> Seq.map (function
       | For r ->
@@ -681,7 +684,7 @@ module ForEach = struct
       | l -> (l, None)
     )
 
-  let summarize (s:d_stmt) : json =
+  let summarize (s:Stmt.t) : json =
     let elems = infer s |> List.of_seq in
     let count = List.length elems in
     let found =

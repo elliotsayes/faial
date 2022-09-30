@@ -83,7 +83,7 @@ let rec parse_inc (i:D_lang.Expr.t option) : (variable * increment unop) option 
 	| _ -> None
 
 
-let parse_for (loop: D_lang.d_for) : d_for_range option =
+let parse_for (loop: D_lang.Stmt.d_for) : d_for_range option =
 	let (let*) = Option.bind in
 	let* (x1, init) = parse_init loop.init in
 	let* (x2, cond) = parse_cond loop.cond in

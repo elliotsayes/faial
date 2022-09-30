@@ -10,7 +10,7 @@ let analyze (j:Yojson.Basic.t) : unit =
     let k2 = D_lang.rewrite_program k1 in
        Indexflow.types_program k2
        |> List.iter (fun (name, d) ->
-        print_endline (name ^ "," ^ Stmt.to_string d)
+        print_endline (name ^ "," ^ Indexflow.Stmt.to_string d)
       )
 
   | Error e ->
