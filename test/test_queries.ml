@@ -57,7 +57,7 @@ let tests = "tests" >::: [
         ~printer:to_string
         expected (make given)
     in
-    let g_for ?(body=[]) idx = ForStmt {
+    let g_for ?(body=[]) idx = Stmt.ForStmt {
       init=None;
       cond=Some (IntegerLiteral idx);
       inc=None;
