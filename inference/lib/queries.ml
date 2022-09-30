@@ -6,6 +6,14 @@ module VarSet = Variable.Set
 module VarMap = Variable.Map
 type json = Yojson.Basic.t
 
+(* Serializes a set of variables as a list of strings *)
+let var_set_to_json (vars:VarSet.t) : json =
+  let vars = vars
+  |> VarSet.elements
+  |> List.map (fun x -> `String (Variable.name x))
+  in
+  `List vars
+
 module Variables = struct
   open C_lang
   let flatten_member (e:Expr.t) : Expr.t =
@@ -79,7 +87,7 @@ module Variables = struct
     |> VarSet.of_list
 
   let summarize (s:Stmt.t) : json =
-    let vars =
+    let tids =
       s
       (* Get all sequences *)
       |> Stmt.Visit.to_expr_seq
@@ -90,12 +98,10 @@ module Variables = struct
       (* Keep threadIdx.x *)
       |> Seq.filter is_thread_idx
       |> to_set
-      |> VarSet.elements
-      |> List.map Variable.name
-      |> List.map (fun x -> `String x)
+      |> var_set_to_json
     in
     `Assoc [
-      "tids", `List vars
+      "tids", tids
     ]
 
 end
@@ -200,15 +206,6 @@ module Calls = struct
     ]
 
 end
-
-
-(* Serializes a set of variables as a list of strings *)
-let var_set_to_json (vars:VarSet.t) : json =
-  let vars = vars
-  |> VarSet.elements
-  |> List.map (fun x -> `String (Variable.name x))
-  in
-  `List vars
 
 (* Performs loop analysis. *)
 module Loops = struct
