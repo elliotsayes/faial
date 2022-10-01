@@ -5,10 +5,8 @@ let (@) = Common.append_tr
 
 open Exp
 open Proto
-open Common
 open Serialize
 open Subst
-open Streamutil
 open Wellformed
 
 type a_inst =
@@ -71,7 +69,6 @@ let align (w:w_prog) : a_prog =
       i :: seq c1 q, c2
     | [] -> failwith "Unexpected empty synchronized code!"
   in
-  let open Streamutil in
   match p_align w with
     (p, c) -> ASync c :: p
 
@@ -107,7 +104,6 @@ let print_kernel (k : a_prog kernel) : unit =
   Proto.print_kernel a_prog_to_s k
 
 let print_kernels (ks : a_prog kernel Streamutil.stream) : unit =
-  let open Serialize in
   print_endline "; a-lang";
   let count = ref 0 in
   Streamutil.iter (fun k ->

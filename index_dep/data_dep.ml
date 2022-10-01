@@ -2,9 +2,6 @@ open Stage0
 open Inference
 
 let analyze (j:Yojson.Basic.t) : unit =
-  let open Indexflow in
-  let open C_lang in
-  let open D_to_imp in
   match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = D_lang.rewrite_program k1 in

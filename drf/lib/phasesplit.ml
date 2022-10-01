@@ -5,7 +5,6 @@ open Exp
 open Proto
 open Common
 open Serialize
-open Subst
 open Streamutil
 open Wellformed
 open Phasealign

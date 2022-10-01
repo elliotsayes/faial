@@ -59,7 +59,6 @@ let rec types_exp (env:Typing.t) (e:D_lang.Expr.t) : (Typing.t * Index.t) =
   let ret (l:D_lang.Expr.t list) : Typing.t * Index.t =
     types_exp_list env l
   in
-  let open D_lang in
   match e with
   | ParmVarDecl {name=x}
   | VarDecl {name=x} -> (env, Typing.get x env)

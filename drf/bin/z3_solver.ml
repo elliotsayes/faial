@@ -200,7 +200,6 @@ module Environ = struct
 	type t = (string * string) list
 
 	let to_json (env:t) : json =
-		let open Yojson.Basic in
 		`Assoc (
 			List.map (fun (k, v) -> (k, `String v)) env
 		)
@@ -239,7 +238,6 @@ module Vec3 = struct
     ]
 
     let to_json (v:t) : json =
-		let open Yojson.Basic in
 		`Assoc [
 			"x", `String v.x;
 			"y", `String v.y;
@@ -273,7 +271,6 @@ module Task = struct
 		{thread_idx=tid; locals=locals; mode=mode; location=location}
 
 	let to_json (x:t) : json =
-		let open Yojson.Basic in
 		`Assoc [
 			"threadIdx", Vec3.to_json x.thread_idx;
 			"locals", Environ.to_json x.locals;
@@ -303,7 +300,6 @@ module Witness = struct
   }
 
 	let to_json (x:t) : json =
-		let open Yojson.Basic in
 		let (t1, t2) = x.tasks in
 		`Assoc [
 			"task1", Task.to_json t1;
@@ -522,7 +518,6 @@ module Solution = struct
 						solve !b_to_expr
 			in
 			(if show_proofs then (
-        let open ANSITerminal in
         let title = "proof #" ^ string_of_int p.proof_id in
         let body = Solver.to_string s ^ "(check-sat)\n(get-model)\n" in
         Tui.print_frame ~title ~body

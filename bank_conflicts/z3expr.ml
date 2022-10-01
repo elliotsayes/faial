@@ -1,4 +1,3 @@
-open Stage0
 open Stage1
 
 open Exp

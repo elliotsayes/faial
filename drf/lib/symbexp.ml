@@ -5,7 +5,6 @@ let (@) = Common.append_tr
 
 open Common
 open Exp
-open Subst
 open Flatacc
 
 type proof = {
@@ -24,8 +23,6 @@ type h_prog = {
 }
 
 let mk_proof ~kernel:(k:string) ~array:(a:string) proof_id (goal:bexp) : proof =
-  let open Proto in
-  let open Common in
   let decls =
     Freenames.free_names_bexp goal Variable.Set.empty
     |> Variable.Set.elements
@@ -249,7 +246,6 @@ let proof_to_s (p:proof) : Serialize.PPrint.t list =
 
 
 let print_kernels ((_, ks) : LocationCache.t * proof Streamutil.stream) : unit =
-  let open Serialize in
   print_endline "; symbexp";
   let count = ref 0 in
   Streamutil.iter (fun (p:proof) ->

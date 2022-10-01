@@ -112,7 +112,6 @@ let is_int (c:t) : bool =
 (* ------------------------------------- *)
 
 let mk_j_type name =
-  let open Yojson in
   `Assoc[
     "qualType", `String name
   ]

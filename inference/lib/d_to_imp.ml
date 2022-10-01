@@ -390,7 +390,6 @@ let is_pointer (j:Yojson.Basic.t) =
 
 let rec parse_load_expr (target:D_lang.Expr.t) (exp:D_lang.Expr.t)
   : (d_location_alias, D_lang.Expr.t) Either.t =
-  let open Imp in
   let open Either in
   match exp with
   | VarDecl {ty=ty; _}
@@ -614,12 +613,10 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
 
   | DoStmt {body=body} ->
     let* body = with_msg "do.body" parse_stmt body in
-    let open Imp in
     ret_loop body
 
   | WhileStmt {body=body} ->
     let* body = with_msg "while.body" parse_stmt body in
-    let open Imp in
     ret_loop body
 
   | SwitchStmt s ->

@@ -3,7 +3,6 @@ open Stage0
 open Stage1
 
 open Exp
-open Common
 
 module type BASE_GEN = sig
   val preamble : Smtlib.sexp list
@@ -47,7 +46,6 @@ module BvGen : BASE_GEN =
 
 let decl_string name value =
   let open Smtlib in
-  let open Predicates in
   let open Serialize in
   [
     List [

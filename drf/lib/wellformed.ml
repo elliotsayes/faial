@@ -167,7 +167,6 @@ let make_well_formed (p:Proto.prog) : w_prog Streamutil.stream =
 let translate (k: Proto.prog kernel) : w_prog kernel Streamutil.stream =
   let vars = Variable.Set.union k.kernel_local_variables k.kernel_global_variables in
   let p = Proto.vars_distinct k.kernel_code vars in
-  let open Streamutil in
   make_well_formed p
   |> Streamutil.map (fun p -> { k with kernel_code = p})
 
@@ -231,7 +230,6 @@ let print_kernel (k : w_prog kernel) : unit =
   Proto.print_kernel w_prog_to_s k
 
 let print_kernels (ks : w_prog kernel Streamutil.stream) : unit =
-  let open Serialize in
   print_endline "; w-lang";
   let count = ref 0 in
   Streamutil.iter (fun k ->

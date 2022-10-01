@@ -23,7 +23,6 @@ type f_kernel = {
 }
 
 let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
-  let open Phasealign in
   let is_assert (i:u_inst) =
     match i with
     | UAssert _ -> true

@@ -1,9 +1,7 @@
 open Stage0
 open Stage1
 
-open Exp
 open Proto
-open Common
 
 type type_error =
 | DuplicateLocs of Variable.t list

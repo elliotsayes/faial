@@ -132,8 +132,6 @@ end
 
 
 let parse_imp (j:Yojson.Basic.t) : Imp.p_kernel list =
-  let open C_lang in
-  let open D_to_imp in
   match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = D_lang.rewrite_program k1 in

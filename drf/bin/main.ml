@@ -3,7 +3,6 @@ open Stage1
 open Inference
 open Drf
 
-open Exp
 open Proto
 open Common
 open Cmdliner
@@ -27,8 +26,6 @@ let v2_parse fname input : prog kernel =
 type command = WLang | ALang | PLang | CLang | HLang | BLang | Sat | Typecheck | Parse
 
 let parse_from_ctj ic : Imp.p_kernel list =
-  let open C_lang in
-  let open D_to_imp in
   let j = Yojson.Basic.from_channel ic in
   match C_lang.parse_program j with
   | Ok k1 ->

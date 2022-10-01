@@ -1,6 +1,4 @@
-open Stage0
 open Exp
-open Common
 
 let rec fold_nexp f e a =
   match e with

@@ -593,7 +593,6 @@ module Stmt = struct
         | Decl d ->
           List.to_seq d
           |> Seq.concat_map (fun d ->
-            let open Decl in
             Decl.init d
             |> Option.to_seq
             |> Seq.concat_map Init.to_expr_seq
@@ -1072,7 +1071,6 @@ let parse_for_init (j:json) : ForInit.t j_result =
   let open Rjson in
   let* o = cast_object j in
   let* kind = get_kind o in
-  let open ForInit in
   match kind with
   | "DeclStmt" ->
     let* ds = with_field "inner" (cast_map parse_decl) o in
@@ -1261,7 +1259,7 @@ let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : Kernel.t j
     (* we can safely convert the option with Option.get because parse_kernel
        is only invoked when we are able to parse *)
     let m: KernelAttr.t = List.find_map KernelAttr.parse attrs |> Option.get in
-    let* body: Stmt.t list = parse_stmt_list (Yojson.Basic.(`List body)) in
+    let* body: Stmt.t list = parse_stmt_list (`List body) in
     let body = match body with
       | [s] -> s
       | _ -> CompoundStmt body
@@ -1454,7 +1452,6 @@ let rewrite_shared_arrays: c_program -> c_program =
         (vars, WhileStmt {cond=rw_e e; body=ret s})
       | ForStmt {init=e1; cond=e2; inc=e3; body=s} ->
         (* The init may create a scope *)
-        let open ForInit in
         let (vars_body, e1) = match e1 with
         | None -> (vars, None)
         | Some (ForInit.Decls l) ->
