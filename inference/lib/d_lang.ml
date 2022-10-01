@@ -385,7 +385,7 @@ module Stmt = struct
     stmt_to_s
 
   let summarize: t -> string =
-    let rec stmt_to_s : t -> string =
+    let stmt_to_s : t -> string =
       function
       | WriteAccessStmt w ->
         "rw " ^

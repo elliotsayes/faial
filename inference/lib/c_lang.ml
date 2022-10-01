@@ -1000,7 +1000,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
   | _ ->
     root_cause "ERROR: parse_exp" j
 
-let rec parse_init (j:json) : Init.t j_result =
+let parse_init (j:json) : Init.t j_result =
   let open Rjson in
   let* o = cast_object j in
   let* kind = get_kind o in
