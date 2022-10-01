@@ -10,11 +10,6 @@ type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
 type c_type = json
-type c_var = {name: Variable.t; ty: c_type}
-
-let list_to_s (f:'a -> string) (l:'a list) : string =
-  List.map f l |> Common.join ", "
-
 
 let parse_type (j:Yojson.Basic.t) : C_type.t j_result =
   let open Rjson in
@@ -26,6 +21,27 @@ let type_to_str (j:Yojson.Basic.t) : string =
   match parse_type j with
   | Ok ty -> C_type.to_string ty
   | Error _ -> "?"
+
+module TyVariable = struct
+  type t = {name: Variable.t; ty: c_type}
+
+  let make ~name ~ty : t = {name; ty}
+
+  let name (x:t) : Variable.t = x.name
+
+  let ty (x:t) : c_type = x.ty
+
+  let to_string (x:t) : string =
+    type_to_str x.ty ^ " " ^ Variable.name x.name
+
+  let has_type (pred:C_type.t -> bool) (x:t) : bool =
+    parse_type x.ty
+    |> Result.map pred
+    |> Common.unwrap_or false
+end
+
+let list_to_s (f:'a -> string) (l:'a list) : string =
+  List.map f l |> Common.join ", "
 
 module Expr = struct
   type t =
@@ -40,17 +56,17 @@ module Expr = struct
     | ConditionalOperator of {cond: t; then_expr: t; else_expr: t; ty: c_type}
     | CXXConstructExpr of {args: t list; ty: c_type}
     | CXXBoolLiteralExpr of bool
-    | CXXMethodDecl of c_var
+    | CXXMethodDecl of TyVariable.t
+    | FunctionDecl of TyVariable.t
+    | NonTypeTemplateParmDecl of TyVariable.t
+    | ParmVarDecl of TyVariable.t
+    | VarDecl of TyVariable.t
+    | EnumConstantDecl of TyVariable.t
     | CXXOperatorCallExpr of {func: t; args: t list; ty: c_type}
     | FloatingLiteral of float
-    | FunctionDecl of c_var
     | IntegerLiteral of int
-    | NonTypeTemplateParmDecl of c_var
     | MemberExpr of {name: string; base: t; ty: c_type}
-    | ParmVarDecl of c_var
     | UnaryOperator of {opcode: string; child: t; ty: c_type}
-    | VarDecl of c_var
-    | EnumConstantDecl of c_var
     | UnresolvedLookupExpr of {name: Variable.t; tys: c_type list}
   and c_binary = {opcode: string; lhs: t; rhs: t; ty: c_type}
   and c_array_subscript = {lhs: t; rhs: t; ty: c_type; location: Location.t}
@@ -187,17 +203,17 @@ module Expr = struct
       | ConditionalOperator of {cond: 'a; then_expr: 'a; else_expr: 'a; ty: c_type}
       | CXXConstruct of {args: 'a list; ty: c_type}
       | CXXBoolLiteral of bool
-      | CXXMethodDecl of c_var
+      | CXXMethodDecl of TyVariable.t
       | CXXOperatorCall of {func: 'a; args: 'a list; ty: c_type}
       | FloatingLiteral of float
-      | FunctionDecl of c_var
+      | FunctionDecl of TyVariable.t
       | IntegerLiteral of int
-      | NonTypeTemplateParmDecl of c_var
+      | NonTypeTemplateParmDecl of TyVariable.t
       | Member of {name: string; base: 'a; ty: c_type}
-      | ParmVarDecl of c_var
+      | ParmVarDecl of TyVariable.t
       | UnaryOperator of {opcode: string; child: 'a; ty: c_type}
-      | VarDecl of c_var
-      | EnumConstantDecl of c_var
+      | VarDecl of TyVariable.t
+      | EnumConstantDecl of TyVariable.t
       | UnresolvedLookup of {name: Variable.t; tys: c_type list}
 
     let rec fold (f: 'a t -> 'a) : expr_t -> 'a =
@@ -322,18 +338,28 @@ let c_attr_device = c_attr "device"
 
 module Decl = struct
   type t = {
-    name: Variable.t;
-    ty: c_type;
+    ty_var: TyVariable.t;
     init: Init.t option;
     attrs: string list
   }
-  let name (x:t) : Variable.t = x.name
-  let ty (x:t) : c_type = x.ty
+
+  let make ~ty_var ~init ~attrs : t =
+    {ty_var; init; attrs}
+
+  let from_undef ?(attrs=[]) (ty_var:TyVariable.t) : t =
+    {ty_var; init=None; attrs}
+
+  let from_init ?(attrs=[]) (ty_var:TyVariable.t) (init:Init.t) : t =
+    {ty_var; init=Some init; attrs}
+
+  let from_expr ?(attrs=[]) (ty_var:TyVariable.t) (expr:Expr.t) : t =
+    from_init ~attrs ty_var (IExpr expr)
+
   let init (x:t) : Init.t option = x.init
+
   let attrs (x:t) : string list = x.attrs
 
-  let to_c_var (x:t) : c_var =
-    { name=x.name ; ty = x.ty }
+  let ty_var (x:t) : TyVariable.t = x.ty_var
 
   let is_shared (x:t) : bool =
     List.mem c_attr_shared x.attrs
@@ -346,11 +372,6 @@ module Decl = struct
   let map_expr (f: Expr.t -> Expr.t) (x:t) : t =
     { x with init=x.init |> Option.map (Init.map_expr f) }
 
-  let has_type (pred:C_type.t -> bool) (x:t) : bool =
-    parse_type x.ty
-    |> Result.map pred
-    |> Common.unwrap_or false
-
   let to_string (d: t): string =
     let i = match d.init with
       | Some e -> " = " ^ Init.to_string e
@@ -360,7 +381,7 @@ module Decl = struct
       let attrs = Common.join " " d.attrs |> String.trim in
       attrs ^ " "
     in
-    attr ^ type_to_str d.ty ^ " " ^ Variable.name d.name ^ i
+    attr ^ TyVariable.to_string d.ty_var ^ i
 
 end
 
@@ -388,7 +409,13 @@ module ForInit = struct
       | _ -> []
     in
     function
-    | Decls l -> List.map (fun (d:Decl.t) -> d.name) l
+    | Decls l ->
+      l
+      |> List.map (fun x ->
+        x
+        |> Decl.ty_var
+        |> TyVariable.name
+      )
     | Expr e -> exp_var e
 
   let to_string : t -> string =
@@ -570,12 +597,30 @@ module Stmt = struct
   end
 end
 
-type c_param = {
-  name: Variable.t;
-  is_used: bool;
-  is_shared: bool;
-  ty: c_type
-}
+module Param = struct
+  type t = {
+    ty_var : TyVariable.t;
+    is_used: bool;
+    is_shared: bool;
+  }
+
+  let make ~ty_var ~is_used ~is_shared : t =
+    {ty_var; is_used; is_shared}
+
+  let ty_var (x:t) : TyVariable.t = x.ty_var
+
+  let to_global_array (x:t) : TyVariable.t option =
+    if TyVariable.has_type C_type.is_array x.ty_var
+    then Some x.ty_var
+    else None
+
+
+  let to_string (p:t) : string =
+    let used = if p.is_used then "" else " unsed" in
+    let shared = if p.is_shared then "shared " else "" in
+    used ^ shared ^ TyVariable.to_string p.ty_var
+
+end
 
 type c_type_param =
   | PTemplateTypeParmDecl of Variable.t
@@ -616,9 +661,13 @@ module Kernel = struct
     name: string;
     code: Stmt.t;
     type_params: c_type_param list;
-    params: c_param list;
+    params: Param.t list;
     attribute: KernelAttr.t;
   }
+
+  let global_arrays (x:t) : TyVariable.t list =
+    List.filter_map Param.to_global_array x.params
+
 end
 
 type c_def =
@@ -972,7 +1021,7 @@ let parse_decl (j:json) : Decl.t option j_result =
   let* o = cast_object j in
   if is_invalid o then Ok None
   else (
-    let* v = parse_variable j in
+    let* name = parse_variable j in
     let* ty = get_field "type" o in
     let* kind = get_kind o in
     let inner = List.assoc_opt "inner" o |> Ojson.unwrap_or (`List []) in
@@ -1001,7 +1050,8 @@ let parse_decl (j:json) : Decl.t option j_result =
       let open StackTrace in
       Error (Because (("Field 'init'", j), RootCause (msg, `List inner)))
     in
-    Ok (Some {Decl.name=v; Decl.ty=ty; Decl.init=init; Decl.attrs=attrs})
+    let ty_var = TyVariable.make ~name ~ty in
+    Ok (Some (Decl.make ~ty_var ~init ~attrs))
   )
 
 let parse_for_init (j:json) : ForInit.t j_result =
@@ -1147,15 +1197,21 @@ and parse_stmt_list = fun inner ->
   >>= map_all parse_stmt
     (fun idx s e -> StackTrace.Because (("error parsing statement #" ^ string_of_int (idx + 1), s), e))
 
-let parse_param (j:json) : c_param j_result =
+let parse_param (j:json) : Param.t j_result =
   let open Rjson in
   let* o = cast_object j in
-  let* v = parse_variable j in
+  let* name = parse_variable j in
   let* ty = get_field "type" o in
   let* is_refed = with_field_or "isReferenced" cast_bool false o in
   let* is_used =  with_field_or "isUsed" cast_bool false o in
   let* is_shared = with_field_or "shared" cast_bool false o in
-  Ok {name=v; is_used=(is_refed || is_used); is_shared=is_shared; ty=ty}
+
+  let ty_var : TyVariable.t = TyVariable.make ~ty ~name in
+  Ok (Param.make
+    ~is_used:(is_refed || is_used)
+    ~ty_var:ty_var
+    ~is_shared
+  )
 
 let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
   let open Rjson in
@@ -1343,10 +1399,11 @@ let rewrite_shared_arrays: c_program -> c_program =
      the shadowing of the available variables when it makes sense *) 
   let rw_decl (vars:Variable.Set.t) (d:Decl.t) : Variable.Set.t * Decl.t =
     let vars =
-      if Decl.is_shared d && not (Decl.has_type C_type.is_array d) then
-        Variable.Set.add d.name vars
+      let name = d |> Decl.ty_var |> TyVariable.name in
+      if Decl.is_shared d && not (Decl.ty_var d |> TyVariable.has_type C_type.is_array) then
+        Variable.Set.add name vars
       else
-        Variable.Set.remove d.name vars
+        Variable.Set.remove name vars
     in
     (vars, Decl.map_expr (rw_exp vars) d)
   in
@@ -1412,8 +1469,9 @@ let rewrite_shared_arrays: c_program -> c_program =
   let rec rw_p (vars:Variable.Set.t): c_program -> c_program =
     function
     | Declaration d :: p ->
-      let vars = if Decl.is_shared d && not (Decl.has_type C_type.is_array d)
-        then Variable.Set.add d.name vars
+      let ty_var = d |> Decl.ty_var in
+      let vars = if Decl.is_shared d && not (ty_var |> TyVariable.has_type C_type.is_array)
+        then Variable.Set.add (TyVariable.name ty_var) vars
         else vars
       in
       Declaration d :: rw_p vars p
@@ -1431,11 +1489,6 @@ let parse_program ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : c_progra
 
 (* ------------------------------------------------------------------------ *)
 
-let param_to_s (p:c_param) : string =
-  let used = if p.is_used then "" else " unsed" in
-  let shared = if p.is_shared then "shared " else "" in
-  used ^ shared ^ Variable.name p.name
-
 let type_param_to_s (p:c_type_param) : string =
   let name = match p with
   | PTemplateTypeParmDecl x -> x
@@ -1451,7 +1504,7 @@ let kernel_to_s ?(modifier:bool=false) ?(provenance:bool=false) (k:Kernel.t) : P
   let open PPrint in
   [
     Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^
-      " " ^ tps ^ "(" ^ list_to_s param_to_s k.params ^ ")");
+      " " ^ tps ^ "(" ^ list_to_s Param.to_string k.params ^ ")");
   ]
   @
   Stmt.to_string ~modifier ~provenance k.code

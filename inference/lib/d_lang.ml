@@ -3,6 +3,7 @@ open Stage1
 
 module StackTrace = Common.StackTrace
 module KernelAttr = C_lang.KernelAttr
+module TyVariable = C_lang.TyVariable
 
 open Serialize
 type json = Yojson.Basic.t
@@ -11,7 +12,6 @@ type 'a j_result = 'a Rjson.j_result
 
 type array_t = Stage1.Exp.array_t
 type d_type = json
-type d_var = C_lang.c_var
 
 let list_to_s (f:'a -> string) (l:'a list) : string =
   List.map f l |> Common.join ", "
@@ -28,17 +28,17 @@ module Expr = struct
     | ConditionalOperator of {cond: t; then_expr: t; else_expr: t; ty: d_type}
     | CXXConstructExpr of {args: t list; ty: d_type}
     | CXXBoolLiteralExpr of bool
-    | CXXMethodDecl of d_var
+    | CXXMethodDecl of TyVariable.t
     | CXXOperatorCallExpr of {func: t; args: t list; ty: d_type}
     | FloatingLiteral of float
-    | FunctionDecl of d_var
+    | FunctionDecl of TyVariable.t
     | IntegerLiteral of int
-    | NonTypeTemplateParmDecl of d_var
+    | NonTypeTemplateParmDecl of TyVariable.t
     | MemberExpr of {name: string; base: t; ty: d_type}
-    | ParmVarDecl of d_var
+    | ParmVarDecl of TyVariable.t
     | UnaryOperator of { opcode: string; child: t; ty: d_type}
-    | VarDecl of d_var
-    | EnumConstantDecl of d_var
+    | VarDecl of TyVariable.t
+    | EnumConstantDecl of TyVariable.t
     | UnresolvedLookupExpr of {name: Variable.t; tys: d_type list}
   and d_binary = {opcode: string; lhs: t; rhs: t; ty: d_type}
 
@@ -206,15 +206,28 @@ end
 
 module Decl = struct
   type t = {
-    name: Variable.t;
-    ty: d_type;
+    ty_var: TyVariable.t;
     init: Init.t option;
     attrs: string list
   }
 
+  let make ~ty_var ~init ~attrs : t =
+    {ty_var; init; attrs}
+
+  let from_undef ?(attrs=[]) (ty_var:TyVariable.t) : t =
+    {ty_var; init=None; attrs}
+
+  let from_init ?(attrs=[]) (ty_var:TyVariable.t) (init:Init.t) : t =
+    {ty_var; init=Some init; attrs}
+
+  let from_expr ?(attrs=[]) (ty_var:TyVariable.t) (expr:Expr.t) : t =
+    from_init ~attrs ty_var (IExpr expr)
+
   let get_shared (d:t) : array_t option =
     if List.mem C_lang.c_attr_shared d.attrs
-    then match C_lang.parse_type d.ty with
+    then
+      let ty = d.ty_var |> TyVariable.ty in
+      match C_lang.parse_type ty with
       | Ok ty ->
         Some {
           array_hierarchy = SharedMemory;
@@ -239,7 +252,7 @@ module Decl = struct
       let attrs = Common.join " " d.attrs |> String.trim in
       attrs ^ " "
     in
-    attr ^ C_lang.type_to_str d.ty ^ " " ^ Variable.name d.name ^ i
+    attr ^ TyVariable.to_string d.ty_var ^ i
 
 end
 
@@ -269,7 +282,7 @@ module ForInit = struct
       | _ -> []
     in
     function
-    | Decls l -> List.map (fun (d:Decl.t) -> d.name) l
+    | Decls l -> List.map (fun (d:Decl.t) -> d.ty_var |> TyVariable.name) l
     | Expr e -> exp_var e
 
   let to_string : t -> string =
@@ -425,7 +438,7 @@ module Kernel = struct
     name: string;
     code: Stmt.t;
     type_params: C_lang.c_type_param list;
-    params: C_lang.c_param list;
+    params: C_lang.Param.t list;
     attribute: KernelAttr.t;
   }
 end
@@ -485,10 +498,11 @@ module AccessState = struct
 
   let add_stmt (s: Stmt.t) (st:t) : t = s :: st
 
-  let add_expr (source:Expr.t) (ty:d_type) (st:t) : t * Variable.t =
-    add_var (fun x ->
+  let add_expr (expr:Expr.t) (ty:d_type) (st:t) : t * Variable.t =
+    add_var (fun name ->
       [
-        DeclStmt [{name=x; ty=ty; init=Some (IExpr source); attrs=[]}]
+        let ty_var = TyVariable.make ~ty ~name in
+        DeclStmt [Decl.from_expr ty_var expr]
       ]
     ) st
 
@@ -505,7 +519,8 @@ module AccessState = struct
       add_var (fun x ->
         [
           wr x;
-          DeclStmt [{name=x; ty=a.ty; init=Some (IExpr source); attrs=[]}];
+          let ty_var = TyVariable.make ~name:x ~ty:a.ty in
+          DeclStmt [Decl.from_expr ty_var source];
         ]
       ) st
 
@@ -665,7 +680,7 @@ let rewrite_decl (d:C_lang.Decl.t) : (Stmt.t list * Decl.t) =
       (pre, IExpr e)
   in
   let (pre, o) = map_opt rewrite_init d.init in
-  (pre, {name=d.name; ty=d.ty; init=o; attrs=d.attrs})
+  (pre, {ty_var=d.ty_var; init=o; attrs=d.attrs})
 
 let rewrite_for_init (f:C_lang.ForInit.t) : (Stmt.t list * ForInit.t) =
   match f with
@@ -769,7 +784,7 @@ let kernel_to_s (k:Kernel.t) : PPrint.t list =
   [
     let open C_lang in
     Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^ " " ^ tps ^
-    "(" ^ list_to_s param_to_s k.params ^ ")");
+    "(" ^ list_to_s Param.to_string k.params ^ ")");
   ]
   @
   Stmt.to_string k.code

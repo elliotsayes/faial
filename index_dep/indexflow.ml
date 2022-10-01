@@ -172,7 +172,7 @@ let rec types_stmt (env:Typing.t) (s:D_lang.Stmt.t) : Typing.t * Stmt.t =
     (Typing.put s.target Index.Dependent env, Stmt.has_access ty)
 
   | DeclStmt (d::is) ->
-    let x = d.name in
+    let x = d.ty_var.name in
     let (env, ty) = match d.init with
       | Some i -> types_init env i
       | None -> (env, Index.Independent)
@@ -238,7 +238,7 @@ let types_kernel (k:Kernel.t) : Stmt.t =
   (* Initialize the environment: each parameter is independent *)
   let env =
     k.params
-    |> List.map (fun (p:C_lang.c_param) -> p.name)
+    |> List.map (fun (p:C_lang.Param.t) -> p.ty_var.name)
     |> List.fold_left (fun env x -> Typing.add_i x env) Typing.make
   in
   types_stmt env k.code |> snd

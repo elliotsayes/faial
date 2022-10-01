@@ -364,9 +364,9 @@ let cast_map f = Rjson.map_all f (fun idx s e ->
 
 let parse_decl (d:D_lang.Decl.t) : (Variable.t * Imp.locality * nexp option) list d_result =
   let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
-  let* ty = match C_lang.parse_type d.ty with
+  let* ty = match C_lang.parse_type d.ty_var.ty with
   | Ok ty -> Ok ty
-  | Error _ -> root_cause ("parse_decl: error parsing type: " ^ Rjson.pp_js d.ty)
+  | Error _ -> root_cause ("parse_decl: error parsing type: " ^ Rjson.pp_js d.ty_var.ty)
   in
   if C_type.is_int ty
   then (
@@ -377,9 +377,9 @@ let parse_decl (d:D_lang.Decl.t) : (Variable.t * Imp.locality * nexp option) lis
       Ok (vars, Some n)
     | _ -> Ok (Variable.Set.empty, None)
     in
-    Ok ((d.name, Imp.Local, n) :: Unknown.as_decls Imp.Local vars )
+    Ok ((d.ty_var.name, Imp.Local, n) :: Unknown.as_decls Imp.Local vars )
   ) else (
-    prerr_endline ("WARNING: parse_decl: skipping non-int local variable '" ^ Variable.name d.name ^ "' type: " ^ Rjson.pp_js d.ty);
+    prerr_endline ("WARNING: parse_decl: skipping non-int local variable '" ^ Variable.name d.ty_var.name ^ "' type: " ^ Rjson.pp_js d.ty_var.ty);
     Ok []
   )
 
@@ -636,7 +636,7 @@ type param = (Variable.t, Variable.t * array_t) Either.t
 let from_j_error (e:Rjson.j_error) : d_error =
   RootCause (Rjson.error_to_string e)
 
-let parse_param (p:C_lang.c_param) : param option d_result =
+let parse_param (p:C_lang.Param.t) : param option d_result =
   let mk_array (h:hierarchy_t) (ty:C_type.t) : array_t =
     {
       array_hierarchy = h;
@@ -644,15 +644,15 @@ let parse_param (p:C_lang.c_param) : param option d_result =
       array_type = C_type.get_array_type ty;
     }
   in
-  let* ty = C_lang.parse_type p.ty |> Result.map_error from_j_error in
+  let* ty = C_lang.parse_type p.ty_var.ty |> Result.map_error from_j_error in
   if C_type.is_int ty then
-    Ok (Some (Either.Left p.name))
+    Ok (Some (Either.Left p.ty_var.name))
   else if C_type.is_array ty then (
     let h = if p.is_shared then Exp.SharedMemory else Exp.GlobalMemory in
-    Ok (Some (Either.Right (p.name, mk_array h ty)))
+    Ok (Some (Either.Right (p.ty_var.name, mk_array h ty)))
   ) else Ok None
 
-let parse_params (ps:C_lang.c_param list) : (Variable.Set.t * array_t Variable.Map.t) d_result =
+let parse_params (ps:C_lang.Param.t list) : (Variable.Set.t * array_t Variable.Map.t) d_result =
   let* params = Rjson.map_all parse_param
     (fun i a e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
@@ -727,7 +727,7 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * array_t) list =
     | DeclStmt l ->
       Common.map_opt (fun (d:Decl.t) ->
         Decl.get_shared d
-        |> Option.map (fun a -> (d.name, a))
+        |> Option.map (fun a -> (d.ty_var.name, a))
       ) l
       |> Common.append_tr arrays
     | WriteAccessStmt _
@@ -804,10 +804,10 @@ let parse_program (p:D_lang.d_program) : Imp.p_kernel list d_result =
     match p with
     | Declaration v :: l ->
       let (arrays, globals, assigns) =
-          match C_lang.parse_type v.ty with
+          match C_lang.parse_type v.ty_var.ty with
           | Ok ty ->
             if List.mem C_lang.c_attr_shared v.attrs then
-              (v.name, mk_array SharedMemory ty)::arrays, globals, assigns
+              (v.ty_var.name, mk_array SharedMemory ty)::arrays, globals, assigns
             else if C_type.is_int ty then
               let g = match v.init with
               | Some (IExpr n) ->
@@ -817,8 +817,8 @@ let parse_program (p:D_lang.d_program) : Imp.p_kernel list d_result =
               | _ -> None
               in
               match g with
-              | Some g -> arrays, globals, (v.name, g) :: assigns
-              | None -> arrays, v.name :: globals, assigns
+              | Some g -> arrays, globals, (v.ty_var.name, g) :: assigns
+              | None -> arrays, v.ty_var.name :: globals, assigns
             else
               arrays, globals, assigns
           | Error _ -> arrays, globals, assigns
