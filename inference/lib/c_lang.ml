@@ -1295,7 +1295,7 @@ let is_kernel (j:Yojson.Basic.t) : bool =
       in
       (* Try to parse attrs *)
       let attrs = attrs
-        |> Common.map_opt (fun j ->
+        |> List.filter_map (fun j ->
           parse_attr j >>= (fun a -> Ok (Some a))
           |> unwrap_or None
         )

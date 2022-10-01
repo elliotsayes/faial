@@ -85,9 +85,6 @@ let flatten_opt : 'a option list -> 'a list =
 let either_split (l: ('a, 'b) Either.t list) : 'a list * 'b list =
   List.partition_map (fun a -> a) l
 
-let map_opt (f:'a -> 'b option) : 'a list -> 'b list  =
-  List.concat_map (fun x -> f x |> Option.to_list)
-
 let contains ~needle:(needle:string) (s:string) : bool =
   let n_len = String.length needle in
   let s_len = String.length s in

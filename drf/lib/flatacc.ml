@@ -45,7 +45,7 @@ let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
   in
   let rm_asserts (p:u_prog) : u_prog =
     let rm_asserts_0 (p:u_prog) : u_prog =
-      let asserts = Common.map_opt (fun i ->
+      let asserts = List.filter_map (fun i ->
         match i with
         | UAssert b -> Some b
         | _ -> None

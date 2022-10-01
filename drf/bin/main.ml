@@ -175,7 +175,7 @@ let main_t =
               Variable.Set.mem (Variable.from_name x) k.kernel_global_variables
             )
           in
-          let thread_count : int list = Common.map_opt (fun (k, v) ->
+          let thread_count : int list = List.filter_map (fun (k, v) ->
             if List.mem k ["blockDim.x"; "blockDim.y"; "blockDim.z"] then
               Some v
             else

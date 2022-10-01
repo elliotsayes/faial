@@ -249,4 +249,4 @@ let types_def : d_def -> (string * Stmt.t) option =
   | Kernel k -> Some (k.name, types_kernel k)
 
 let types_program : d_program -> (string * Stmt.t) list =
-  Common.map_opt types_def
+  List.filter_map types_def

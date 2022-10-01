@@ -176,7 +176,7 @@ let dim_to_s (v: Vec3.t) : string =
 let idx_to_s ~idx ~dim =
   let pos_fields =
     Vec3.to_assoc dim
-    |> Common.map_opt (fun (k, v) -> if v = "1" then None else Some k)
+    |> List.filter_map (fun (k, v) -> if v = "1" then None else Some k)
   in
   idx
   |> Vec3.to_assoc

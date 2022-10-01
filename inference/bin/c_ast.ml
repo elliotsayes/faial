@@ -42,8 +42,9 @@ let main (fname: string) (silent:bool) : unit =
     List.iter Imp.print_kernel k3;
     print_endline "==================== STAGE 4: stats\n";
   );
-  let l = k1 |> Common.map_opt C_lang.(function
-    | Kernel k ->
+  let l = k1 |> List.filter_map (function
+    | C_lang.Kernel k ->
+      let open C_lang in
       let k2 = D_lang.rewrite_kernel k in
       Some (`Assoc [
         "name", `String k.name;
@@ -55,7 +56,7 @@ let main (fname: string) (silent:bool) : unit =
         "conditionals", Conditionals.summarize k.code;
         "variables", Variables.summarize k.code;
       ])
-    | Declaration _ -> None
+    | C_lang.Declaration _ -> None
   )
   in
   print_endline (Yojson.Basic.pretty_to_string (`List l));

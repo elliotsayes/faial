@@ -125,7 +125,7 @@ let all_predicates_db : (string, t) Hashtbl.t =
 
 let all_step_handlers_db : (string, step_handler) Hashtbl.t =
   all_predicates
-  |> Common.map_opt (fun x ->
+  |> List.filter_map (fun x ->
   match x.pred_step with
   | Some s -> Some (s.step_handler_name, s)
   | None -> None)

@@ -402,7 +402,7 @@ module Loops = struct
 
   let filter (keep:loop -> bool) : t -> t =
     let rec filter (l:t) : t =
-      l |> Common.map_opt (fun (e:loop) ->
+      l |> List.filter_map (fun (e:loop) ->
         if keep e then
           Some (filter1 e)
         else None
@@ -477,7 +477,7 @@ module Loops = struct
         else
           Some (While {w with body=b})
       and filter (bound:VarSet.t) (s: t) : t =
-        Common.map_opt (filter1 bound) s
+        List.filter_map (filter1 bound) s
     in
     filter VarSet.empty
 
@@ -747,7 +747,7 @@ module ForEach = struct
       |> List.filter (fun (_, o) -> Option.is_some o)
       |> List.length
     in
-    let missing = elems |> Common.map_opt (function
+    let missing = elems |> List.filter_map (function
       | (x, None) -> Some (`String (to_string x))
       | (x, Some _) -> None
     ) in

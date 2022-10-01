@@ -725,7 +725,7 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * array_t) list =
   : (Variable.t * array_t) list =
     match s with
     | DeclStmt l ->
-      Common.map_opt (fun (d:Decl.t) ->
+      List.filter_map (fun (d:Decl.t) ->
         Decl.get_shared d
         |> Option.map (fun a -> (d.ty_var.name, a))
       ) l
