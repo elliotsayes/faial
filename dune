@@ -1,4 +1,5 @@
 (env
   (dev
-    (flags (:standard -w -a@1..2 -w @8 -w @26  ))))
+    (flags (:standard -w -a@1..3 -w -a@5..8
+    -w -a@10..29 ))))
 

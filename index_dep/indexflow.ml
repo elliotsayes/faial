@@ -27,7 +27,7 @@ module Typing = struct
   let make : t = Variable.Map.empty
 
   let add : t -> t -> t =
-    Variable.Map.union (fun k v1 v2 ->
+    Variable.Map.union (fun _ v1 v2 ->
       Some (Index.add v1 v2)
     )
 

@@ -583,7 +583,7 @@ module MutatedVar = struct
             l
             |> List.map (fun x -> (Decl.var x, scope))
             |> Variable.MapUtil.from_list in
-          let env = VarMap.union (fun k e1 e2 ->
+          let env = VarMap.union (fun _ e1 e2 ->
             Some (max e1 e2)
           ) env2 env
           in
@@ -752,7 +752,7 @@ module ForEach = struct
     in
     let missing = elems |> List.filter_map (function
       | (x, None) -> Some (`String (to_string x))
-      | (x, Some _) -> None
+      | (_, Some _) -> None
     ) in
     `Assoc [
       "total", `Int count;

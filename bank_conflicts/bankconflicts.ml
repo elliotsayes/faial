@@ -308,7 +308,7 @@ let rec acc_t_cost (acc : 'a acc_t) : nexp =
         acc_t_cost acc
         (* TODO: support more pred_name steps *)
     end
-  | Cond (b, acc) -> acc_t_cost acc
+  | Cond (_, acc) -> acc_t_cost acc
   | Acc a -> Num (access_cost a)
 
 (* nexp_sum folds a nexp list into a nexp summation *)

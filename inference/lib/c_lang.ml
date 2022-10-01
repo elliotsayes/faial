@@ -94,7 +94,7 @@ module Expr = struct
     | CXXOperatorCallExpr a -> a.ty
     | MemberExpr a -> a.ty
     | EnumConstantDecl a -> a.ty
-    | UnresolvedLookupExpr a -> C_type.mk_j_type "?"
+    | UnresolvedLookupExpr _ -> C_type.mk_j_type "?"
     | RecoveryExpr ty -> ty
 
   (* Try to convert into a variable *)
@@ -337,7 +337,6 @@ let c_attr_global = c_attr "global"
 let c_attr_device = c_attr "device"
 
 module Decl : sig
-  (* Public interface *)
   type t
   (* Constructor *)
   val make :
@@ -349,7 +348,7 @@ module Decl : sig
   val ty_var : t -> TyVariable.t
   val attrs: t -> string list
   val init : t -> Init.t option
-  (* Iterator *)
+  (* Expression iterator *)
   val to_expr_seq : t -> Expr.t Seq.t
   (* Update contained expressions *)
   val map_expr : (Expr.t -> Expr.t) -> t -> t
@@ -430,7 +429,7 @@ module ForInit = struct
       match e with
       | BinaryOperator {lhs=l; opcode=","; rhs=r} ->
         exp_var l |> Common.append_rev1 (exp_var r)
-      | BinaryOperator {lhs=l; opcode="="; rhs=r} ->
+      | BinaryOperator {lhs=l; opcode="="; rhs=_} ->
         (match Expr.to_variable l with
         | Some x -> [x]
         | None -> [])
@@ -475,10 +474,7 @@ module Stmt = struct
     | CaseStmt of {case: Expr.t; body: t}
     | SExpr of Expr.t
 
-  let to_string
-    ?(modifier=false)
-    ?(provenance=false)
-  : t -> PPrint.t list
+  let to_string : t -> PPrint.t list
   =
     let ret l : PPrint.t list =
       let open PPrint in
@@ -729,7 +725,7 @@ let rec parse_position ?(filename="") : json -> Location.t j_result =
           ~interval)
     ) with
     | Ok p -> Ok p
-    | Error e -> with_field "expansionLoc" parse_position o
+    | Error _ -> with_field "expansionLoc" parse_position o
     
 
 let parse_location (j:json) : Location.t j_result =
@@ -1034,7 +1030,6 @@ let rec parse_init (j:json) : Init.t j_result =
 let parse_attr (j:Yojson.Basic.t) : string j_result =
   let open Rjson in
   let* o = cast_object j in
-  let* k = get_kind o in
   with_field "value" cast_string o
 
 let is_valid_j : json -> bool =
@@ -1052,7 +1047,6 @@ let parse_decl (j:json) : Decl.t option j_result =
   else (
     let* name = parse_variable j in
     let* ty = get_field "type" o in
-    let* kind = get_kind o in
     let inner = List.assoc_opt "inner" o |> Ojson.unwrap_or (`List []) in
     let* inner = cast_list inner in
     let inner = List.filter is_valid_j inner in
@@ -1302,7 +1296,6 @@ let has_array_type (j:Yojson.Basic.t) : bool =
       | Some (`Bool true) -> true
       | _ -> false
     in
-    let* k = get_kind o in
     let* ty = get_field "type" o in
     let* ty = parse_type ty in
     Ok (is_used && C_type.is_array ty)
@@ -1316,7 +1309,6 @@ let is_kernel (j:Yojson.Basic.t) : bool =
     let* o = cast_object j in
     let* k = get_kind o in
     if k = "FunctionDecl" then (
-      let* name: string = with_field "name" cast_string o in
       let* inner = with_field "inner" cast_list o in
       let attrs, inner =
         inner
@@ -1329,7 +1321,7 @@ let is_kernel (j:Yojson.Basic.t) : bool =
           |> unwrap_or None
         )
       in
-      let params, inner =
+      let params, _ =
         inner
         |> List.partition (j_filter_kind (fun k -> k = "ParmVarDecl"))
       in
@@ -1525,7 +1517,7 @@ let type_param_to_s (p:c_type_param) : string =
   in
   Variable.name name
 
-let kernel_to_s ?(modifier:bool=false) ?(provenance:bool=false) (k:Kernel.t) : PPrint.t list =
+let kernel_to_s (k:Kernel.t) : PPrint.t list =
   let tps = if k.type_params <> [] then "[" ^
       list_to_s type_param_to_s k.type_params ^
     "]" else ""
@@ -1536,17 +1528,17 @@ let kernel_to_s ?(modifier:bool=false) ?(provenance:bool=false) (k:Kernel.t) : P
       " " ^ tps ^ "(" ^ list_to_s Param.to_string k.params ^ ")");
   ]
   @
-  Stmt.to_string ~modifier ~provenance k.code
+  Stmt.to_string k.code
 
-let def_to_s ?(modifier:bool=false) ?(provenance:bool=false) (d:c_def) : PPrint.t list =
+let def_to_s (d:c_def) : PPrint.t list =
   let open PPrint in
   match d with
   | Declaration d -> [Line (Decl.to_string d ^ ";")]
-  | Kernel k -> kernel_to_s ~modifier ~provenance k
+  | Kernel k -> kernel_to_s k
 
-let program_to_s ?(modifier:bool=false) ?(provenance:bool=false) (p:c_program) : PPrint.t list =
-  List.concat_map (fun k -> def_to_s ~modifier ~provenance k @ [Line ""]) p
+let program_to_s (p:c_program) : PPrint.t list =
+  List.concat_map (fun k -> def_to_s k @ [Line ""]) p
 
-let print_program ?(modifier:bool=false) ?(provenance:bool=false) (p:c_program) : unit =
-  PPrint.print_doc (program_to_s ~modifier ~provenance p)
+let print_program (p:c_program) : unit =
+  PPrint.print_doc (program_to_s p)
 

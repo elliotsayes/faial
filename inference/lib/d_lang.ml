@@ -79,7 +79,7 @@ module Expr = struct
 
   let rec to_type :  t -> d_type =
     function
-    | SizeOfExpr c -> C_type.j_int_type
+    | SizeOfExpr _ -> C_type.j_int_type
     | CXXNewExpr c -> c.ty
     | CXXDeleteExpr c -> c.ty
     | RecoveryExpr ty -> ty
@@ -100,7 +100,7 @@ module Expr = struct
     | CXXOperatorCallExpr a -> a.ty
     | MemberExpr a -> a.ty
     | EnumConstantDecl a -> a.ty
-    | UnresolvedLookupExpr a -> C_type.mk_j_type "?"
+    | UnresolvedLookupExpr _ -> C_type.mk_j_type "?"
 
 
   let to_string ?(modifier:bool=false) ?(provenance:bool=false) ?(types:bool=false) : t -> string =
@@ -198,7 +198,7 @@ module Init = struct
 
   let to_string : t -> string =
     function
-    | CXXConstructExpr c -> "ctor"
+    | CXXConstructExpr _ -> "ctor"
     | InitListExpr i -> list_to_s Expr.to_string i.args
     | IExpr i -> Expr.to_string i
 
@@ -275,7 +275,7 @@ module ForInit = struct
       match e with
       | BinaryOperator {lhs=l; opcode=","; rhs=r} ->
         exp_var l |> Common.append_rev1 (exp_var r)
-      | BinaryOperator {lhs=l; opcode="="; rhs=r} ->
+      | BinaryOperator {lhs=l; opcode="="; rhs=_} ->
         (match Expr.to_variable l with
         | Some x -> [x]
         | None -> [])
@@ -403,12 +403,12 @@ module Stmt = struct
           Expr.opt_to_string f.cond ^ "; " ^
           Expr.opt_to_string f.inc ^
           ") {...}"
-      | WhileStmt {cond=b; body=s} -> "while (" ^ Expr.to_string b ^ ") {...}"
-      | DoStmt {cond=b; body=s} -> "{...} do (" ^ Expr.to_string b ^ ")";
-      | SwitchStmt {cond=b; body=s} -> "switch (" ^ Expr.to_string b ^ ") {...}";
+      | WhileStmt {cond=b} -> "while (" ^ Expr.to_string b ^ ") {...}"
+      | DoStmt {cond=b} -> "{...} do (" ^ Expr.to_string b ^ ")";
+      | SwitchStmt {cond=b} -> "switch (" ^ Expr.to_string b ^ ") {...}";
       | CaseStmt c -> "case " ^ Expr.to_string c.case ^ ": {...}"
-      | DefaultStmt d -> "default: {...}"
-      | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
+      | DefaultStmt _ -> "default: {...}"
+      | IfStmt {cond=b} ->
         "if (" ^ Expr.to_string b ^ ") {...} else {...}"
       | CompoundStmt l ->
         let c = List.length l |> string_of_int in
@@ -767,7 +767,7 @@ let rewrite_def (d:C_lang.c_def) : d_def =
   match d with
   | Kernel k -> Kernel (rewrite_kernel k)
   | Declaration d ->
-    let (pre, d) = rewrite_decl d in
+    let (_, d) = rewrite_decl d in
     Declaration d
 
 let rewrite_program: C_lang.c_program -> d_program =

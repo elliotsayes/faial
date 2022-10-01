@@ -126,7 +126,7 @@ let parse_bin (op:string) (l:i_exp) (r:i_exp) : i_exp =
   | "^" -> NExp (Bin (BitXOr, l, r))
   | "|" -> NExp (Bin (BitOr, l, r))
   | "&" -> NExp (Bin (BitAnd, l, r))
-  | x ->
+  | _ ->
     prerr_endline ("WARNING: parse_bin: rewriting to unknown binary operator: " ^ op);
     Unknown
 
@@ -359,7 +359,7 @@ end
 
 (* -------------------------------------------------------------- *)
 
-let cast_map f = Rjson.map_all f (fun idx s e ->
+let cast_map f = Rjson.map_all f (fun idx _ e ->
   StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
 
 let parse_decl (d:D_lang.Decl.t) : (Variable.t * Imp.locality * nexp option) list d_result =
@@ -396,7 +396,7 @@ let rec parse_load_expr (target:D_lang.Expr.t) (exp:D_lang.Expr.t)
   | VarDecl {ty=ty; _}
   | ParmVarDecl {ty=ty; _} when is_pointer ty ->
     Left {source=exp; target=target; offset=IntegerLiteral 0}
-  | BinaryOperator ({lhs=l; rhs=r; _} as b) ->
+  | BinaryOperator ({lhs=l} as b) ->
     (match parse_load_expr target l with
     | Left l -> Left {l with offset =BinaryOperator {b with lhs=l.offset}}
     | Right _ -> Right exp)
@@ -512,7 +512,7 @@ let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
   let u = Unknown.make in
   let (u, x) = Unknown.create u in
   let (u, lb) = Unknown.create u in
-  let (u, ub) = Unknown.create u in
+  let (_, ub) = Unknown.create u in
   let r = {
     range_var = x;
     range_lower_bound = Var lb;
@@ -535,7 +535,7 @@ let ret_assert (b:D_lang.Expr.t) : Imp.stmt list d_result =
   | None -> ret_skip
 
 let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
-  let with_msg (m:string) f b = with_msg_ex (fun a -> "parse_stmt: " ^ m ^ ": " ^ D_lang.Stmt.summarize c) f b in
+  let with_msg (m:string) f b = with_msg_ex (fun _ -> "parse_stmt: " ^ m ^ ": " ^ D_lang.Stmt.summarize c) f b in
   let ret_n = Unknown.ret_n in
   let ret_b = Unknown.ret_b in
   let ret_ns = Unknown.ret_ns in
@@ -582,8 +582,8 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     let* l = cast_map parse_decl l |> Result.map List.concat in
     ret (Imp.Decl l)
 
-  | SExpr ((BinaryOperator {opcode="="; lhs=VarDecl {name=v; ty=ty} as lhs; rhs=rhs}))
-  | SExpr ((BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; ty=ty} as lhs; rhs=rhs}))
+  | SExpr ((BinaryOperator {opcode="="; lhs=VarDecl {ty=ty} as lhs; rhs=rhs}))
+  | SExpr ((BinaryOperator {opcode="="; lhs=ParmVarDecl {ty=ty} as lhs; rhs=rhs}))
     when is_pointer ty
     ->
     (match parse_load_expr lhs rhs with
@@ -591,8 +591,8 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
       parse_location_alias a
     | Right _ -> Ok [])
 
-  | SExpr (BinaryOperator {opcode="="; lhs=VarDecl {name=v; ty=ty}; rhs=rhs})
-  | SExpr (BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; ty=ty}; rhs=rhs})
+  | SExpr (BinaryOperator {opcode="="; lhs=VarDecl {name=v}; rhs=rhs})
+  | SExpr (BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v}; rhs=rhs})
     ->
     let* rhs = with_msg "assign.rhs" parse_exp rhs in
     let open Imp in
@@ -612,12 +612,12 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     | Some r -> ret (For (r, Block b))
     | None -> ret_loop b)
 
-  | DoStmt {cond=cond; body=body} ->
+  | DoStmt {body=body} ->
     let* body = with_msg "do.body" parse_stmt body in
     let open Imp in
     ret_loop body
 
-  | WhileStmt {cond=cond; body=body} ->
+  | WhileStmt {body=body} ->
     let* body = with_msg "while.body" parse_stmt body in
     let open Imp in
     ret_loop body
@@ -654,7 +654,7 @@ let parse_param (p:C_lang.Param.t) : param option d_result =
 
 let parse_params (ps:C_lang.Param.t list) : (Variable.Set.t * array_t Variable.Map.t) d_result =
   let* params = Rjson.map_all parse_param
-    (fun i a e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
+    (fun i _ e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
   Ok (Variable.Set.of_list globals, Variable.MapUtil.from_list arrays)
 
@@ -790,7 +790,7 @@ let parse_kernel
     );
     p_kernel_params = add_type_params params k.type_params;
     p_kernel_arrays = Variable.Map.union
-      (fun k l r -> Some r)
+      (fun _ _ r -> Some r)
       arrays shared;
   }
 

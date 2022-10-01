@@ -38,7 +38,7 @@ let main
   let (k1, k2, k3) = analyze j in
   if silent then () else ( 
     print_endline "\n==================== STAGE 1: C\n";
-    C_lang.print_program ~modifier:false k1;
+    C_lang.print_program k1;
     print_endline "==================== STAGE 2: C with reads/writes as statements\n";
     D_lang.print_program k2;
     print_endline "==================== STAGE 3: Memory access protocols\n";
