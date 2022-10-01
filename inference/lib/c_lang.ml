@@ -359,10 +359,15 @@ module Decl = struct
 
   let attrs (x:t) : string list = x.attrs
 
+  let var (x:t) : Variable.t = x.ty_var.name
+
   let ty_var (x:t) : TyVariable.t = x.ty_var
 
   let is_shared (x:t) : bool =
     List.mem c_attr_shared x.attrs
+
+  let is_array (x:t) : bool =
+    x.ty_var |> TyVariable.has_type C_type.is_array
 
   let to_expr_seq (x:t) : Expr.t Seq.t =
     match x.init with

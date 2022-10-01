@@ -274,7 +274,8 @@ module Calls = struct
   let has_sync (c:Stmt.t) : bool =
     count c |> StringMap.mem "__syncthreads"
 
-  let summarize (k:Kernel.t) : json =
+  let summarize (arrays:Decl.t list) (k:Kernel.t) : json =
+    let (shared, globals) = List.partition Decl.is_shared arrays in
     let uses_arr arrs =
       to_seq k.code
       |> Seq.filter (uses_vars arrs)
@@ -284,12 +285,14 @@ module Calls = struct
     in
     let uses_shared =
       Declarations.shared_arrays k.code
+      |> VarSet.union (shared |> List.map Decl.var |> VarSet.of_list)
       |> uses_arr
     in
     let uses_global =
       Kernel.global_arrays k
       |> List.to_seq
       |> Variables.to_set
+      |> VarSet.union (globals |> List.map Decl.var |> VarSet.of_list)
       |> uses_arr
     in
     let func_count : (string * json) list =

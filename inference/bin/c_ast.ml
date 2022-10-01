@@ -2,7 +2,7 @@ open Stage0
 open Stage1
 open Inference
 open Queries
-
+module Decl = C_lang.Decl
 module StringMap = Common.StringMap
 module VarSet = Variable.Set
 module VarMap = Variable.Map
@@ -30,7 +30,10 @@ let analyze (j:Yojson.Basic.t) : C_lang.c_program  * D_lang.d_program * (Imp.p_k
     exit(-1)
 
 
-let main (fname: string) (silent:bool) : unit =
+let main
+  (fname: string)
+  (silent:bool)
+: unit =
   let j = Cu_to_json.cu_to_json ~ignore_fail:true fname in
   let (k1, k2, k3) = analyze j in
   if silent then () else ( 
@@ -42,22 +45,30 @@ let main (fname: string) (silent:bool) : unit =
     List.iter Imp.print_kernel k3;
     print_endline "==================== STAGE 4: stats\n";
   );
-  let l = k1 |> List.filter_map (function
-    | C_lang.Kernel k ->
-      let open C_lang in
+  let l = List.fold_left (fun ((decls:Decl.t list), js) ->
+    let open C_lang in
+    function
+    | Kernel k ->
       let k2 = D_lang.rewrite_kernel k in
-      Some (`Assoc [
+      (decls, `Assoc [
         "name", `String k.name;
-        "function calls", Calls.summarize k;
+        "function calls", Calls.summarize decls k;
         "loops", Loops.summarize k.code;
         "loop inference", ForEach.summarize k2.code;
         "mutated vars", MutatedVar.summarize k.code;
         "declarations", Declarations.summarize k.code;
         "conditionals", Conditionals.summarize k.code;
         "variables", Variables.summarize k.code;
-      ])
-    | C_lang.Declaration _ -> None
-  )
+      ] :: js)
+    | Declaration d ->
+      let decls =
+        if Decl.is_array d then
+          d::decls
+        else
+          decls
+      in
+      (decls, js)
+  ) ([], []) k1 |> snd
   in
   print_endline (Yojson.Basic.pretty_to_string (`List l));
 
