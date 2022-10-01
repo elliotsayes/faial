@@ -3,10 +3,6 @@ open Stage1
 open Inference
 open Queries
 module Decl = C_lang.Decl
-module StringMap = Common.StringMap
-module VarSet = Variable.Set
-module VarMap = Variable.Map
-
 let analyze (j:Yojson.Basic.t) : C_lang.c_program  * D_lang.d_program * (Imp.p_kernel list) =
   match C_lang.parse_program j with
   | Ok k1 ->

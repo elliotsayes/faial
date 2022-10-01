@@ -3,9 +3,7 @@ open Stage1
 open Inference
 open Drf
 
-module StringMap = Common.StringMap
 module VarSet = Variable.Set
-module VarMap = Variable.Map
 module Environ = Z3_solver.Environ
 module Witness = Z3_solver.Witness
 module Vec3 = Z3_solver.Vec3

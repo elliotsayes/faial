@@ -193,7 +193,7 @@ module Calls = struct
   (* Returns all function calls in a statement, as
         a sequence. *)
   let to_seq (c:Stmt.t) : t Seq.t =
-    (** Returns all function calls in an expression, as
+    (* Returns all function calls in an expression, as
         a sequence. *)
     let rec to_seq (e:Expr.t) : t Seq.t =
       match e with

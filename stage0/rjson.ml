@@ -61,10 +61,10 @@ let error_to_string (e:j_error) : string =
 type 'a j_result = ('a, j_error) Result.t
 
 let root_cause (msg:string) (j:Yojson.Basic.t) : 'a j_result =
-  Result.Error (RootCause (msg, j))
+  Result.Error (StackTrace.RootCause (msg, j))
 
 let because (msg:string) (j:Yojson.Basic.t) (e:j_error) : 'a j_result =
-  Result.Error (Because ((msg, j), e))
+  Result.Error (StackTrace.Because ((msg, j), e))
 
 let type_mismatch ty j =
   root_cause ("type mismatch: expecting " ^ ty ^ ", but got " ^ type_name j) j

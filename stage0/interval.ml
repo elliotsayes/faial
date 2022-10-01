@@ -31,7 +31,7 @@ let repr (x:t) : string =
     (Index.repr x.start)
     x.length
 
-let (+) (lhs:t) (rhs:t) : t =
+let union (lhs:t) (rhs:t) : t =
   from_coordinates
     ~start:(Index.min lhs.start rhs.start)
     ~finish:(Index.max (finish lhs) (finish rhs))
