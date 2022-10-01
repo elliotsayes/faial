@@ -163,10 +163,6 @@ let struct_to_s (l:(string * string) list) : string =
   |> List.map (fun (key, elem) -> (key ^ " = " ^ elem))
   |> Common.join " | "
 
-let vec_to_s (v: Vec3.t) : string =
-  ["x", v.x; "y", v.y; "z", v.z]
-  |> struct_to_s
-
 let dim_to_s (v: Vec3.t) : string =
   ["x", v.x; "y", v.y; "z", v.z]
   |> List.filter (fun (_, v) -> v <> "1")

@@ -368,15 +368,6 @@ end = struct
   let make ~ty_var ~init ~attrs : t =
     {ty_var; init; attrs}
 
-  let from_undef ?(attrs=[]) (ty_var:TyVariable.t) : t =
-    {ty_var; init=None; attrs}
-
-  let from_init ?(attrs=[]) (ty_var:TyVariable.t) (init:Init.t) : t =
-    {ty_var; init=Some init; attrs}
-
-  let from_expr ?(attrs=[]) (ty_var:TyVariable.t) (expr:Expr.t) : t =
-    from_init ~attrs ty_var (IExpr expr)
-
   let init (x:t) : Init.t option = x.init
 
   let attrs (x:t) : string list = x.attrs

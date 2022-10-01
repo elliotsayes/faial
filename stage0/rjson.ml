@@ -9,7 +9,6 @@ let (let*) = Result.bind
 (* Monadic pipe *)
 let (>>=) = Result.bind
 
-let wrap = Common.wrap
 let unwrap_or = Common.unwrap_or
 
 let unless (first:('a, 'e) Result.t) (second:('a, 'e) Result.t) : ('a, 'e) Result.t =

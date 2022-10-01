@@ -8,18 +8,6 @@ open Proto
 open Common
 open Cmdliner
 
-(** Prints the nth-line of a file (starts at base 0) *)
-let nth_line filename n =
-  let ic = open_in filename in
-  let rec iter i =
-    let line = input_line ic in
-    if i = n then begin
-      close_in ic;
-      (line)
-    end else iter (succ i)
-  in
-  iter 0
-
 (** Human-readable parser: *)
 let v2_parse fname input : prog kernel =
 
@@ -33,22 +21,6 @@ let v2_parse fname input : prog kernel =
       Printf.bprintf b "\n%a" Tui.LocationUI.bprint sloc
     with
       Sys_error _ -> ());
-    Buffer.output_buffer stderr b;
-    exit (-1)
-
-(** Machine-readable parser: *)
-let safe_run f =
-  try
-    f ()
-  with
-  | Yojson.Json_error("Blank input data") ->
-    (* If the input is blank, just ignore the input and err with -1 *)
-    exit (-1)
-  | Yojson.Json_error(e) -> begin
-      Printf.eprintf "Error parsing JSON: %s" e;
-      exit (-1)
-    end
-  | Common.ParseError b ->
     Buffer.output_buffer stderr b;
     exit (-1)
 
