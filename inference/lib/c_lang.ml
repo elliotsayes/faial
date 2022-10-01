@@ -339,20 +339,26 @@ let c_attr_device = c_attr "device"
 module Decl : sig
   (* Public interface *)
   type t
-  val to_expr_seq : t -> Expr.t Seq.t
-  val ty_var : t -> TyVariable.t
-  val attrs: t -> string list
-  val var: t -> Variable.t
-  val to_string : t -> string
-  val init : t -> Init.t option
-  val is_array : t -> bool
+  (* Constructor *)
   val make :
     ty_var:TyVariable.t ->
     init:Init.t option ->
     attrs:string list ->
     t
-  val is_shared : t -> bool
+  (* Accessors *)
+  val ty_var : t -> TyVariable.t
+  val attrs: t -> string list
+  val init : t -> Init.t option
+  (* Iterator *)
+  val to_expr_seq : t -> Expr.t Seq.t
+  (* Update contained expressions *)
   val map_expr : (Expr.t -> Expr.t) -> t -> t
+  (* Show its contents *)
+  val to_string : t -> string
+  (* Convinience *)
+  val is_shared : t -> bool
+  val is_array : t -> bool
+  val var: t -> Variable.t
 end = struct
   type t = {
     ty_var: TyVariable.t;
