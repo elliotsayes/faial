@@ -26,7 +26,7 @@ module Variables = struct
       | e' -> e'
     )
 
-  let is_thread_idx (v:c_var) : bool =
+  let is_thread_idx (v:TyVariable.t) : bool =
     let v : string =
       v.name
       |> Variable.name
@@ -34,7 +34,7 @@ module Variables = struct
     v = "threadIdx.x" || v = "threadIdx.y" || v = "threadIdx.z"
 
   (* Returns all variables present in an expression *)
-  let from_expr (e:Expr.t) : c_var Seq.t =
+  let from_expr (e:Expr.t) : TyVariable.t Seq.t =
     let open Expr.Visit in
     e |> fold (function
       | ParmVarDecl v
@@ -80,9 +80,9 @@ module Variables = struct
     )
 
   (* Given a sequence of c_var, generate a set of variables *)
-  let to_set (s:c_var Seq.t) : VarSet.t =
+  let to_set (s:TyVariable.t Seq.t) : VarSet.t =
     s
-    |> Seq.map (fun (x:c_var) -> x.name)
+    |> Seq.map (fun (x:TyVariable.t) -> x.name)
     |> List.of_seq
     |> VarSet.of_list
 
@@ -140,7 +140,7 @@ module Declarations = struct
   let shared_arrays (s: Stmt.t) : VarSet.t =
     to_seq s
     |> Seq.filter Decl.is_shared
-    |> Seq.map Decl.to_c_var
+    |> Seq.map Decl.ty_var
     |> Variables.to_set
 
   let summarize (s: Stmt.t) : json =
@@ -151,13 +151,14 @@ module Declarations = struct
     in
     let int_count =
       s
-      |> Seq.filter (Decl.has_type C_type.is_int)
+      |> Seq.map Decl.ty_var
+      |> Seq.filter (TyVariable.has_type C_type.is_int)
       |> Seq.length
     in
     let shared_arrays =
       s
       |> Seq.filter Decl.is_shared
-      |> Seq.map Decl.to_c_var
+      |> Seq.map Decl.ty_var
       |> Variables.to_set
       |> var_set_to_json
     in
@@ -180,14 +181,14 @@ module Calls = struct
     Seq.return x.func
     |> Seq.append (List.to_seq x.args)
 
-  let variables (x:t) : c_var Seq.t =
+  let variables (x:t) : TyVariable.t Seq.t =
     expressions x
     |> Seq.concat_map Variables.from_expr
 
   let uses_vars (vs:VarSet.t) (x:t) : bool =
     x
     |> variables
-    |> Seq.exists (fun (x:c_var) -> VarSet.mem x.name vs)
+    |> Seq.exists (fun (x:TyVariable.t) -> VarSet.mem x.name vs)
 
   (* Returns all function calls in a statement, as
         a sequence. *)
@@ -273,21 +274,32 @@ module Calls = struct
   let has_sync (c:Stmt.t) : bool =
     count c |> StringMap.mem "__syncthreads"
 
-  let summarize (*global_arrays:VarSet.t*) (s:Stmt.t) : json =
-    let shared = Declarations.shared_arrays s in
-    let uses_shared =
-      to_seq s
-      |> Seq.filter (uses_vars shared)
+  let summarize (k:Kernel.t) : json =
+    let uses_arr arrs =
+      to_seq k.code
+      |> Seq.filter (uses_vars arrs)
       |> Seq.filter_map function_name
       |> Seq.map (fun x -> `String (Variable.name x))
       |> List.of_seq
     in
-    let func_count : (string * json) list = count s
-    |> StringMap.bindings
-    |> List.map (fun (k,v) -> k, `Int v)
+    let uses_shared =
+      Declarations.shared_arrays k.code
+      |> uses_arr
+    in
+    let uses_global =
+      Kernel.global_arrays k
+      |> List.to_seq
+      |> Variables.to_set
+      |> uses_arr
+    in
+    let func_count : (string * json) list =
+      count k.code
+      |> StringMap.bindings
+      |> List.map (fun (k,v) -> k, `Int v)
     in
     `Assoc [
       "using shared arrays", `List uses_shared;
+      "using global arrays", `List uses_global;
       "count", `Assoc func_count;
     ]
 
@@ -429,7 +441,7 @@ module Loops = struct
         let uses_bound (e:Expr.t) : bool =
           (* Range over all variables used in e *)
           Variables.from_expr e
-          |> Seq.exists (fun (x:c_var) ->
+          |> Seq.exists (fun (x:TyVariable.t) ->
             VarSet.mem x.name bound
           )
         in
@@ -566,7 +578,7 @@ module MutatedVar = struct
         | DeclStmt l ->
           let env2 =
             l
-            |> List.map (fun x -> Decl.(x.name, scope))
+            |> List.map (fun x -> Decl.(x.ty_var.name, scope))
             |> Variable.MapUtil.from_list in
           let env = VarMap.union (fun k e1 e2 ->
             Some (max e1 e2)

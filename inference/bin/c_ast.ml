@@ -47,7 +47,7 @@ let main (fname: string) (silent:bool) : unit =
       let k2 = D_lang.rewrite_kernel k in
       Some (`Assoc [
         "name", `String k.name;
-        "function calls", Calls.summarize k.code;
+        "function calls", Calls.summarize k;
         "loops", Loops.summarize k.code;
         "loop inference", ForEach.summarize k2.code;
         "mutated vars", MutatedVar.summarize k.code;
