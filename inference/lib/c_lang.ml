@@ -336,7 +336,24 @@ let c_attr_shared = c_attr "shared"
 let c_attr_global = c_attr "global"
 let c_attr_device = c_attr "device"
 
-module Decl = struct
+module Decl : sig
+  (* Public interface *)
+  type t
+  val to_expr_seq : t -> Expr.t Seq.t
+  val ty_var : t -> TyVariable.t
+  val attrs: t -> string list
+  val var: t -> Variable.t
+  val to_string : t -> string
+  val init : t -> Init.t option
+  val is_array : t -> bool
+  val make :
+    ty_var:TyVariable.t ->
+    init:Init.t option ->
+    attrs:string list ->
+    t
+  val is_shared : t -> bool
+  val map_expr : (Expr.t -> Expr.t) -> t -> t
+end = struct
   type t = {
     ty_var: TyVariable.t;
     init: Init.t option;
@@ -584,7 +601,8 @@ module Stmt = struct
           List.to_seq d
           |> Seq.concat_map (fun d ->
             let open Decl in
-            Option.to_seq d.init
+            Decl.init d
+            |> Option.to_seq
             |> Seq.concat_map Init.to_expr_seq
           )
         | While {cond=c; body=b}

@@ -679,8 +679,8 @@ let rewrite_decl (d:C_lang.Decl.t) : (Stmt.t list * Decl.t) =
       let (pre, e) = rewrite_exp e in
       (pre, IExpr e)
   in
-  let (pre, o) = map_opt rewrite_init d.init in
-  (pre, {ty_var=d.ty_var; init=o; attrs=d.attrs})
+  let (pre, o) = d |> C_lang.Decl.init |> map_opt rewrite_init in
+  (pre, {ty_var=C_lang.Decl.ty_var d; init=o; attrs=C_lang.Decl.attrs d})
 
 let rewrite_for_init (f:C_lang.ForInit.t) : (Stmt.t list * ForInit.t) =
   match f with

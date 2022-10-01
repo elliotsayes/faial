@@ -581,7 +581,7 @@ module MutatedVar = struct
         | DeclStmt l ->
           let env2 =
             l
-            |> List.map (fun x -> Decl.(x.ty_var.name, scope))
+            |> List.map (fun x -> (Decl.var x, scope))
             |> Variable.MapUtil.from_list in
           let env = VarMap.union (fun k e1 e2 ->
             Some (max e1 e2)
