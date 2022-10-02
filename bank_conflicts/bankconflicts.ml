@@ -59,8 +59,8 @@ let proto_to_acc (x:Variable.t) (f: access -> 'a) (p: prog) : 'a acc_t list =
     match i with
     | Acc (y, e) -> if Variable.equal x y then [Acc (f e)] else []
     | Sync -> []
-    | Cond (b, is) -> on_p is |> List.map (fun i -> (Cond (b, i)))
-    | Loop (r, is) -> on_p is |> List.map (fun i -> (Range (r, i)))
+    | Cond (b, is) -> on_p is |> List.map (fun i : 'a acc_t -> (Cond (b, i)))
+    | Loop (r, is) -> on_p is |> List.map (fun i : 'a acc_t -> (Range (r, i)))
 
   and on_p (l:prog) : 'a acc_t list =
     List.concat_map on_i l

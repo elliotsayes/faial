@@ -236,7 +236,7 @@ let tests = "test_predicates" >::: [
     ] in
     let p1 =
       let open Post in
-      [Decl (x, Local, None,
+      [Post.Decl (x, Local, None,
         [Decl (a, Local, Some (Var x),
           [Decl (x, Local, None,
             [Decl (b, Local, Some (Var x),
@@ -249,7 +249,7 @@ let tests = "test_predicates" >::: [
     assert (imp_to_post p = p1);
     let p2 =
       let open Post in
-      [Decl (x, Local, None,
+      [Post.Decl (x, Local, None,
         [Decl (a, Local, Some (Var x),
           [Decl (x, Local, None,
             [Decl (b, Local, Some (Var x),
@@ -262,7 +262,7 @@ let tests = "test_predicates" >::: [
     let x1 = Variable.from_name "x1" in
     let p3 = 
       let open Post in
-      [Decl (x, Local, None,
+      [Post.Decl (x, Local, None,
         [Decl (x1, Local, None,
           [Acc (Variable.from_name "A", {access_index = [Var x; Var x1]; access_mode = W})]
         )]
