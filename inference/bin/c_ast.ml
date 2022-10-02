@@ -1,5 +1,4 @@
 open Stage0
-open Stage1
 open Inference
 open Queries
 module Decl = C_lang.Decl

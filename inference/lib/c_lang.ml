@@ -100,12 +100,12 @@ module Expr = struct
   (* Try to convert into a variable *)
   let to_variable : t -> Variable.t option =
     function
-    | CXXMethodDecl {name=n}
-    | FunctionDecl {name=n}
-    | NonTypeTemplateParmDecl {name=n}
-    | ParmVarDecl {name=n}
-    | VarDecl {name=n}
-    | UnresolvedLookupExpr {name=n} -> Some n
+    | CXXMethodDecl {name=n; _}
+    | FunctionDecl {name=n; _}
+    | NonTypeTemplateParmDecl {name=n; _}
+    | ParmVarDecl {name=n; _}
+    | VarDecl {name=n; _}
+    | UnresolvedLookupExpr {name=n; _} -> Some n
     | _ -> None
 
   let to_string ?(modifier:bool=false) ?(provenance:bool=false) ?(types:bool=false) : t -> string =
@@ -418,9 +418,9 @@ module ForInit = struct
   let loop_vars : t -> Variable.t list =
     let rec exp_var (e:Expr.t) : Variable.t list =
       match e with
-      | BinaryOperator {lhs=l; opcode=","; rhs=r} ->
+      | BinaryOperator {lhs=l; opcode=","; rhs=r; _} ->
         exp_var l |> Common.append_rev1 (exp_var r)
-      | BinaryOperator {lhs=l; opcode="="; rhs=_} ->
+      | BinaryOperator {lhs=l; opcode="="; _} ->
         (match Expr.to_variable l with
         | Some x -> [x]
         | None -> [])
@@ -948,10 +948,10 @@ let rec parse_exp (j:json) : Expr.t j_result =
     let* ty = get_field "type" o in
     Ok (
       match func, args with
-      | CXXMethodDecl {name=n}, [lhs; rhs] when Variable.name n = "operator=" ->
+      | CXXMethodDecl {name=n; _}, [lhs; rhs] when Variable.name n = "operator=" ->
         BinaryOperator {lhs=lhs; opcode="="; rhs=rhs; ty=to_type lhs}
-      | (UnresolvedLookupExpr {name=n}, [lhs; rhs])
-      | (FunctionDecl {name=n}, [lhs; rhs]) ->
+      | (UnresolvedLookupExpr {name=n; _}, [lhs; rhs])
+      | (FunctionDecl {name=n; _}, [lhs; rhs]) ->
         (match Variable.name n with
           | "operator-=" -> compound ty lhs "-" rhs  
           | "operator+=" -> compound ty lhs "+" rhs  

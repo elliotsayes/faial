@@ -138,15 +138,15 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
 
   match e with
   (* ---------------- CUDA SPECIFIC ----------- *)
-  | MemberExpr {base=VarDecl{name=base}; name=dim} 
+  | MemberExpr {base=VarDecl{name=base; _}; name=dim; _}
     when StringSet.mem (Variable.name base) cuda_base_vars && List.mem dim cuda_dims->
     let x = Variable.name base ^ "." ^ dim |> Variable.from_name in
     ret_n (Var x)
 
   (* ------------------ nexp ------------------------ *)
-  | NonTypeTemplateParmDecl { name = v }
-  | ParmVarDecl { name = v }
-  | VarDecl { name = v }
+  | NonTypeTemplateParmDecl { name = v; _ }
+  | ParmVarDecl { name = v; _ }
+  | VarDecl { name = v; _ }
     -> ret_n (Var v)
   | SizeOfExpr ty ->
     (match C_lang.parse_type ty with
@@ -167,24 +167,24 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
     let* n1 = parse_e "then_expr" o.then_expr in
     let* n2 = parse_e "else_expr" o.else_expr in
     ret_n (NIf (b, n1, n2))
-  | CallExpr {func = FunctionDecl {name = f}; args = [n]} when Variable.name f = "__is_pow2" ->
+  | CallExpr {func = FunctionDecl {name = f; _}; args = [n]; _} when Variable.name f = "__is_pow2" ->
     let* n = parse_e "arg" n in
     ret_b (Pred ("pow2", n))
-  | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]} when Variable.name n = "min" ->
+  | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]; _} when Variable.name n = "min" ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
     ret_n (NIf (BExp (NRel (NLt, n1, n2)), n1, n2))
-  | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]} when Variable.name n = "max" ->
+  | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]; _} when Variable.name n = "max" ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
     ret_n (NIf (BExp (NRel (NGt, n1, n2)), n1, n2))
-  | BinaryOperator {lhs=l; opcode="&"; rhs=IntegerLiteral 1} ->
+  | BinaryOperator {lhs=l; opcode="&"; rhs=IntegerLiteral 1; _} ->
     let* n = parse_exp l in
     ret_b (NRel (NEq, NExp (Bin (Mod, n, NExp (Num 2))), NExp (Num 0)))
 
-  | BinaryOperator {opcode="&"; lhs=n1; rhs=BinaryOperator {opcode="-"; lhs=n2; rhs=IntegerLiteral 1}; ty=ty} ->
+  | BinaryOperator {opcode="&"; lhs=n1; rhs=BinaryOperator {opcode="-"; lhs=n2; rhs=IntegerLiteral 1; _}; ty=ty} ->
     parse_exp (BinaryOperator {opcode="%"; lhs=n1; rhs=n2; ty=ty})
-  | BinaryOperator {opcode=o; lhs=n1; rhs=n2} ->
+  | BinaryOperator {opcode=o; lhs=n1; rhs=n2; _} ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
     Ok (parse_bin o n1 n2)
@@ -395,7 +395,7 @@ let rec parse_load_expr (target:D_lang.Expr.t) (exp:D_lang.Expr.t)
   | VarDecl {ty=ty; _}
   | ParmVarDecl {ty=ty; _} when is_pointer ty ->
     Left {source=exp; target=target; offset=IntegerLiteral 0}
-  | BinaryOperator ({lhs=l} as b) ->
+  | BinaryOperator ({lhs=l; _} as b) ->
     (match parse_load_expr target l with
     | Left l -> Left {l with offset =BinaryOperator {b with lhs=l.offset}}
     | Right _ -> Right exp)
@@ -448,16 +448,16 @@ let infer_range (r:D_lang.Stmt.d_for) : Exp.range option d_result =
     let (let*) = Option.bind in
     let (lb, ub, d) = match r with
     (* (int i = 0; i < 4; i++) *)
-    | {init=lb; cond={op=Lt; arg=ub}} ->
+    | {init=lb; cond={op=Lt; arg=ub; _}; _} ->
       (lb, ub, Increase)
     (* (int i = 4; i >= 0; i--) *)
-    | {init=ub; cond={op=GtEq; arg=lb}} ->
+    | {init=ub; cond={op=GtEq; arg=lb; _}; _} ->
       (lb, n_plus (Num 1) ub, Decrease)
     (* (int i = 0; i <= 4; i++) *)
-    | {init=lb; cond={op=LtEq; arg=ub}} ->
+    | {init=lb; cond={op=LtEq; arg=ub; _}; _} ->
       (lb, n_plus (Num 1) ub, Increase)
     (* (int i = 4; i > 0; i--) *)
-    | {init=ub; cond={op=Gt; arg=lb}} ->
+    | {init=ub; cond={op=Gt; arg=lb; _}; _} ->
       (n_plus (Num 1) lb, n_plus (Num 1) ub, Decrease)
     in
     let* step = match r.inc with
@@ -540,11 +540,11 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
   let ret_ns = Unknown.ret_ns in
   match c with
 
-  | SExpr (CallExpr {func=FunctionDecl{name=n}; args=[]})
+  | SExpr (CallExpr {func=FunctionDecl{name=n; _}; args=[]; _})
     when Variable.name n = "__syncthreads" ->
     ret Imp.Sync
 
-  | SExpr (CallExpr {func = FunctionDecl {name = n; _}; args = [b]})
+  | SExpr (CallExpr {func = FunctionDecl {name = n; _}; args = [b]; _})
     when Variable.name n = "__requires" ->
     ret_assert b
 
@@ -581,8 +581,8 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     let* l = cast_map parse_decl l |> Result.map List.concat in
     ret (Imp.Decl l)
 
-  | SExpr ((BinaryOperator {opcode="="; lhs=VarDecl {ty=ty} as lhs; rhs=rhs}))
-  | SExpr ((BinaryOperator {opcode="="; lhs=ParmVarDecl {ty=ty} as lhs; rhs=rhs}))
+  | SExpr ((BinaryOperator {opcode="="; lhs=VarDecl {ty=ty; _} as lhs; rhs=rhs; _}))
+  | SExpr ((BinaryOperator {opcode="="; lhs=ParmVarDecl {ty=ty; _} as lhs; rhs=rhs; _}))
     when is_pointer ty
     ->
     (match parse_load_expr lhs rhs with
@@ -590,8 +590,8 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
       parse_location_alias a
     | Right _ -> Ok [])
 
-  | SExpr (BinaryOperator {opcode="="; lhs=VarDecl {name=v}; rhs=rhs})
-  | SExpr (BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v}; rhs=rhs})
+  | SExpr (BinaryOperator {opcode="="; lhs=VarDecl {name=v; _}; rhs=rhs; _})
+  | SExpr (BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; _}; rhs=rhs; _})
     ->
     let* rhs = with_msg "assign.rhs" parse_exp rhs in
     let open Imp in
@@ -611,11 +611,11 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     | Some r -> ret (For (r, Block b))
     | None -> ret_loop b)
 
-  | DoStmt {body=body} ->
+  | DoStmt {body=body; _} ->
     let* body = with_msg "do.body" parse_stmt body in
     ret_loop body
 
-  | WhileStmt {body=body} ->
+  | WhileStmt {body=body; _} ->
     let* body = with_msg "while.body" parse_stmt body in
     ret_loop body
 
@@ -735,17 +735,17 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * array_t) list =
     | BreakStmt
     | SExpr _
       -> arrays
-    | IfStmt {then_stmt=s1; else_stmt=s2} ->
+    | IfStmt {then_stmt=s1; else_stmt=s2; _} ->
       let arrays = find_shared arrays s1 in
       find_shared arrays s2
     | CompoundStmt l ->
       List.fold_left find_shared arrays l
-    | ForStmt {body=d}
-    | WhileStmt {body=d}
-    | DoStmt {body=d}
-    | SwitchStmt {body=d}
+    | ForStmt {body=d; _}
+    | WhileStmt {body=d; _}
+    | DoStmt {body=d; _}
+    | SwitchStmt {body=d; _}
     | DefaultStmt d
-    | CaseStmt {body=d}
+    | CaseStmt {body=d; _}
       -> find_shared arrays d
   in
   find_shared [] s

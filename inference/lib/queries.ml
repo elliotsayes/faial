@@ -20,7 +20,7 @@ module Variables = struct
     let open Expr.Visit in
     e |> map (
       function
-      | MemberExpr {base=VarDecl {name=x; ty=ty}; name=f} ->
+      | MemberExpr {base=VarDecl {name=x; ty=ty}; name=f; _} ->
         let x = Variable.update_name (fun n -> n ^ "." ^ f) x in
         ParmVarDecl {name=x; ty=ty}
       | e' -> e'
@@ -54,14 +54,14 @@ module Variables = struct
       | UnresolvedLookup _
       -> Seq.empty
 
-      | UnaryOperator {child=e}
-      | Member {base=e}
-      | CXXNew {arg=e}
-      | CXXDelete {arg=e}
+      | UnaryOperator {child=e; _}
+      | Member {base=e; _}
+      | CXXNew {arg=e; _}
+      | CXXDelete {arg=e; _}
       -> e
 
-      | ArraySubscript {lhs=s1; rhs=s2}
-      | BinaryOperator {lhs=s1; rhs=s2}
+      | ArraySubscript {lhs=s1; rhs=s2; _}
+      | BinaryOperator {lhs=s1; rhs=s2; _}
       -> Seq.append s1 s2
 
       | ConditionalOperator e ->
@@ -69,8 +69,8 @@ module Variables = struct
         |> Seq.append e.then_expr
         |> Seq.append e.else_expr
 
-      | CXXOperatorCall {func=a; args=l}
-      | Call {func=a; args=l} ->
+      | CXXOperatorCall {func=a; args=l; _}
+      | Call {func=a; args=l; _} ->
         List.to_seq l
         |> Seq.concat
         |> Seq.append a
@@ -110,7 +110,7 @@ module Declarations = struct
   open C_lang
   let to_seq (s:Stmt.t) : Decl.t Seq.t =
     s |> Stmt.Visit.fold (function
-      | For {init=Some (ForInit.Decls l); body=s} ->
+      | For {init=Some (ForInit.Decls l); body=s; _} ->
         List.to_seq l
         |> Seq.append s
 
@@ -125,15 +125,15 @@ module Declarations = struct
 
       | Compound l -> List.to_seq l |> Seq.concat
 
-      | If {then_stmt=s1; else_stmt=s2} -> Seq.append s1 s2
+      | If {then_stmt=s1; else_stmt=s2; _} -> Seq.append s1 s2
 
-      | Do {body=s}
-      | Switch {body=s}
-      | While {body=s}
+      | Do {body=s; _}
+      | Switch {body=s; _}
+      | While {body=s; _}
       | Default s
-      | Case {body=s}
-      | For {init=Some (ForInit.Expr _); body=s}
-      | For {init=None; body=s}
+      | Case {body=s; _}
+      | For {init=Some (ForInit.Expr _); body=s; _}
+      | For {init=None; body=s; _}
         -> s
     )
 
@@ -198,8 +198,8 @@ module Calls = struct
     let rec to_seq (e:Expr.t) : t Seq.t =
       match e with
       (* Found a function call *)
-      | CallExpr {func=f; args=a}
-      | CXXOperatorCallExpr {func=f; args=a}
+      | CallExpr {func=f; args=a; _}
+      | CXXOperatorCallExpr {func=f; args=a; _}
       -> Seq.return {func=f; args=a}
 
       | CXXBoolLiteralExpr _
@@ -217,14 +217,14 @@ module Calls = struct
       | UnresolvedLookupExpr _
       -> Seq.empty
 
-      | UnaryOperator {child=e}
-      | MemberExpr {base=e}
-      | CXXNewExpr {arg=e}
-      | CXXDeleteExpr {arg=e}
+      | UnaryOperator {child=e; _}
+      | MemberExpr {base=e; _}
+      | CXXNewExpr {arg=e; _}
+      | CXXDeleteExpr {arg=e; _}
       -> to_seq e
 
-      | ArraySubscriptExpr {lhs=s1; rhs=s2}
-      | BinaryOperator {lhs=s1; rhs=s2}
+      | ArraySubscriptExpr {lhs=s1; rhs=s2; _}
+      | BinaryOperator {lhs=s1; rhs=s2; _}
       -> Seq.append (to_seq s1) (to_seq s2)
 
       | ConditionalOperator e ->
@@ -359,8 +359,8 @@ module Loops = struct
       | CompoundStmt l ->
         List.concat_map to_seq l
       | DefaultStmt s
-      | SwitchStmt {body=s}
-      | CaseStmt {body=s}
+      | SwitchStmt {body=s; _}
+      | CaseStmt {body=s; _}
         -> to_seq s
     in
     to_seq
@@ -378,12 +378,12 @@ module Loops = struct
           Block(List.concat_map stmt_to_s f.body);
           Line ("}");
         ]
-      | While {cond=b; body=s} -> [
+      | While {cond=b; body=s; _} -> [
           Line ("@while (" ^ C_lang.Expr.to_string b ^ ") {");
           Block (List.concat_map stmt_to_s s);
           Line "}"
         ]
-    | Do {cond=b; body=s} -> [
+    | Do {cond=b; body=s; _} -> [
         Line "}";
         Block (List.concat_map stmt_to_s s);
         Line ("@do (" ^ Expr.to_string b ^ ") {");
@@ -394,9 +394,9 @@ module Loops = struct
   let max_depth: t -> int =
     let rec depth1 (x: loop) : int =
       match x with
-      | For {body=s}
-      | While {body=s}
-      | Do {body=s}
+      | For {body=s; _}
+      | While {body=s; _}
+      | Do {body=s; _}
         -> 1 + depth s
     and depth (l: t) : int =
       List.fold_left (fun d e -> max d (depth1 e)) 0 l
@@ -420,9 +420,9 @@ module Loops = struct
 
   let data : loop -> Stmt.t =
     function
-    | For {data=s}
-    | While {data=s}
-    | Do {data=s}
+    | For {data=s; _}
+    | While {data=s; _}
+    | Do {data=s; _}
       -> s
 
   (* Given set of loops, filters out unsynchronized loops. *)
@@ -500,8 +500,8 @@ module MutatedVar = struct
 
   let rec get_writes (e:Expr.t) (writes:VarSet.t) : VarSet.t =
     match e with
-    | BinaryOperator {lhs=ParmVarDecl{name=x}; opcode="="; rhs=s2; ty=ty}
-    | BinaryOperator {lhs=VarDecl{name=x}; opcode="="; rhs=s2; ty=ty}
+    | BinaryOperator {lhs=ParmVarDecl{name=x; _}; opcode="="; rhs=s2; ty=ty}
+    | BinaryOperator {lhs=VarDecl{name=x; _}; opcode="="; rhs=s2; ty=ty}
     ->
       let is_int =
         match parse_type ty with
@@ -511,8 +511,8 @@ module MutatedVar = struct
       let w = if is_int then VarSet.add x writes else writes in
       get_writes s2 w
 
-    | CallExpr {func=f; args=a}
-    | CXXOperatorCallExpr {func=f; args=a}
+    | CallExpr {func=f; args=a; _}
+    | CXXOperatorCallExpr {func=f; args=a; _}
     -> f::a |> List.fold_left (fun writes e -> get_writes e writes) writes
 
     | ParmVarDecl _
@@ -530,14 +530,14 @@ module MutatedVar = struct
     | UnresolvedLookupExpr _
     -> writes
 
-    | UnaryOperator {child=e}
-    | MemberExpr {base=e}
-    | CXXNewExpr {arg=e}
-    | CXXDeleteExpr {arg=e}
+    | UnaryOperator {child=e; _}
+    | MemberExpr {base=e; _}
+    | CXXNewExpr {arg=e; _}
+    | CXXDeleteExpr {arg=e; _}
     -> get_writes e writes
 
-    | BinaryOperator {lhs=s1; rhs=s2}
-    | ArraySubscriptExpr {lhs=s1; rhs=s2}
+    | BinaryOperator {lhs=s1; rhs=s2; _}
+    | ArraySubscriptExpr {lhs=s1; rhs=s2; _}
     ->
       writes
       |> get_writes s1
@@ -549,7 +549,7 @@ module MutatedVar = struct
       |> get_writes e.then_expr
       |> get_writes e.else_expr
 
-    | CXXConstructExpr {args=l} ->
+    | CXXConstructExpr {args=l; _} ->
        List.fold_left (fun writes e -> get_writes e writes) writes l
 
   let typecheck (s: Stmt.t) : VarSet.t =
@@ -629,8 +629,8 @@ module MutatedVar = struct
           ) (env, VarSet.empty) l
 
         | DefaultStmt s
-        | SwitchStmt {body=s}
-        | CaseStmt {body=s}
+        | SwitchStmt {body=s; _}
+        | CaseStmt {body=s; _}
           -> typecheck (scope + 1) env s
     in
     typecheck 0 VarMap.empty s |> snd
@@ -659,12 +659,12 @@ module Conditionals = struct
 
     | CompoundStmt l -> List.to_seq l |> Seq.concat_map to_seq
 
-    | WhileStmt {body=s}
-    | ForStmt {body=s}
-    | DoStmt {body=s}
-    | SwitchStmt {body=s}
+    | WhileStmt {body=s; _}
+    | ForStmt {body=s; _}
+    | DoStmt {body=s; _}
+    | SwitchStmt {body=s; _}
     | DefaultStmt s
-    | CaseStmt {body=s}
+    | CaseStmt {body=s; _}
       ->
       to_seq s
 
@@ -699,8 +699,8 @@ module ForEach = struct
       Expr.opt_to_string f.cond ^ "; " ^
       Expr.opt_to_string f.inc ^
       ")"
-    | While {cond=b} -> "while (" ^ Expr.to_string b ^ ")"
-    | Do {cond=b} -> "do (" ^ Expr.to_string b ^ ")"
+    | While {cond=b; _} -> "while (" ^ Expr.to_string b ^ ")"
+    | Do {cond=b; _} -> "do (" ^ Expr.to_string b ^ ")"
 
   (* Search for all loops available *)
   let rec to_seq: Stmt.t -> t Seq.t =
@@ -720,11 +720,11 @@ module ForEach = struct
     | DeclStmt _
     | SExpr _
       -> Seq.empty
-    | IfStmt {then_stmt=s1; else_stmt=s2}
+    | IfStmt {then_stmt=s1; else_stmt=s2; _}
       -> to_seq s1 |> Seq.append (to_seq s2)
-    | SwitchStmt {body=s}
+    | SwitchStmt {body=s; _}
     | DefaultStmt s
-    | CaseStmt {body=s}
+    | CaseStmt {body=s; _}
       -> to_seq s
     | CompoundStmt l ->
       List.to_seq l

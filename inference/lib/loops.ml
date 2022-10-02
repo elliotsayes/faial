@@ -46,8 +46,8 @@ type d_for_range = {
 
 let parse_init: D_lang.ForInit.t option -> (variable*D_lang.Expr.t) option =
 	function
-	| Some (Decls ({ty_var={name=n}; init=Some (IExpr i)}::_)) -> Some (n, i)
-	| Some (Expr (BinaryOperator {lhs=l; opcode="="; rhs=i})) ->
+	| Some (Decls ({ty_var={name=n; _}; init=Some (IExpr i); _}::_)) -> Some (n, i)
+	| Some (Expr (BinaryOperator {lhs=l; opcode="="; rhs=i; _})) ->
 		(match D_lang.Expr.to_variable l with
 		| Some v -> Some (v, i)
 		| _ -> None)
@@ -55,7 +55,7 @@ let parse_init: D_lang.ForInit.t option -> (variable*D_lang.Expr.t) option =
 
 let parse_cond (c:D_lang.Expr.t option) : (variable * comparator unop) option =
 	match c with
-	| Some (BinaryOperator {lhs=l; opcode=o; rhs=r}) ->
+	| Some (BinaryOperator {lhs=l; opcode=o; rhs=r; _}) ->
 		(match D_lang.Expr.to_variable l, parse_cmp o with
 		| Some l, Some o -> Some (l, {op=o; arg=r})
 		| _, _ -> None)
@@ -63,12 +63,13 @@ let parse_cond (c:D_lang.Expr.t option) : (variable * comparator unop) option =
 
 let rec parse_inc (i:D_lang.Expr.t option) : (variable * increment unop) option =
 	match i with
-	| Some (BinaryOperator {opcode=","; lhs=l}) ->
+	| Some (BinaryOperator {opcode=","; lhs=l; _}) ->
 		parse_inc (Some l)
 	| Some (BinaryOperator {
 			lhs=l;
 			opcode="=";
-			rhs=BinaryOperator{lhs=l'; opcode=o; rhs=r}
+			rhs=BinaryOperator{lhs=l'; opcode=o; rhs=r; _};
+      _
 		}) ->
 		begin
 			match

@@ -13,7 +13,6 @@ let assert_nexp (expected:nexp) (given:nexp) =
 let assert_post (expected:Post.prog) (given:Post.prog) =
   let msg = "Expected:\n" ^ Post.prog_to_s expected ^ "\nGiven:\n" ^ Post.prog_to_s given in
   assert_equal expected given ~msg
-
 let tests = "test_predicates" >::: [
   "imp_to_post_1" >:: (fun _ ->
     (*
@@ -278,7 +277,7 @@ let tests = "test_predicates" >::: [
     in
     let open Proto in
     match p with
-    | [Acc (_, {access_index=[x1; x2]})] ->
+    | [Acc (_, {access_index=[x1; x2]; _})] ->
       assert_nexp (Var (Variable.from_name "x")) x1;
       assert_nexp (Var (Variable.from_name "x1")) x2;
     | _ -> assert false

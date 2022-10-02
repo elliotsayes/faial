@@ -60,8 +60,8 @@ let rec types_exp (env:Typing.t) (e:D_lang.Expr.t) : (Typing.t * Index.t) =
     types_exp_list env l
   in
   match e with
-  | ParmVarDecl {name=x}
-  | VarDecl {name=x} -> (env, Typing.get x env)
+  | ParmVarDecl {name=x; _}
+  | VarDecl {name=x; _} -> (env, Typing.get x env)
 
   | BinaryOperator b ->
     let x = D_lang.Expr.to_variable b.lhs in
@@ -85,8 +85,8 @@ let rec types_exp (env:Typing.t) (e:D_lang.Expr.t) : (Typing.t * Index.t) =
     ret [ c.cond; c.then_expr; c.else_expr ]
   
   | MemberExpr {base=e; _}
-  | CXXNewExpr {arg=e} 
-  | CXXDeleteExpr {arg=e} 
+  | CXXNewExpr {arg=e; _}
+  | CXXDeleteExpr {arg=e; _}
   | UnaryOperator {child=e; _} -> types_exp env e
 
   | SizeOfExpr _
@@ -212,11 +212,11 @@ let rec types_stmt (env:Typing.t) (s:D_lang.Stmt.t) : Typing.t * Stmt.t =
   | ReturnStmt -> (env, Stmt.no_access)
   
 
-  | CaseStmt {body=s}
-  | SwitchStmt {body=s}
+  | CaseStmt {body=s; _}
+  | SwitchStmt {body=s; _}
   | DefaultStmt s
-  | WhileStmt {body=s}
-  | DoStmt {body=s} -> types_stmt env s
+  | WhileStmt {body=s; _}
+  | DoStmt {body=s; _} -> types_stmt env s
   
   | CompoundStmt s ->
     types_stmt_list env s

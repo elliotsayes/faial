@@ -44,12 +44,12 @@ module Expr = struct
 
   let to_variable : t -> Variable.t option =
     function
-    | CXXMethodDecl {name=n}
-    | FunctionDecl {name=n}
-    | NonTypeTemplateParmDecl {name=n}
-    | ParmVarDecl {name=n}
-    | VarDecl {name=n}
-    | UnresolvedLookupExpr {name=n} -> Some n
+    | CXXMethodDecl {name=n; _}
+    | FunctionDecl {name=n; _}
+    | NonTypeTemplateParmDecl {name=n; _}
+    | ParmVarDecl {name=n; _}
+    | VarDecl {name=n; _}
+    | UnresolvedLookupExpr {name=n; _} -> Some n
     | _ -> None
 
   let name =
@@ -273,9 +273,9 @@ module ForInit = struct
   let loop_vars : t -> Variable.t list =
     let rec exp_var (e:Expr.t) : Variable.t list =
       match e with
-      | BinaryOperator {lhs=l; opcode=","; rhs=r} ->
+      | BinaryOperator {lhs=l; opcode=","; rhs=r; _} ->
         exp_var l |> Common.append_rev1 (exp_var r)
-      | BinaryOperator {lhs=l; opcode="="; rhs=_} ->
+      | BinaryOperator {lhs=l; opcode="="; _} ->
         (match Expr.to_variable l with
         | Some x -> [x]
         | None -> [])
@@ -403,12 +403,12 @@ module Stmt = struct
           Expr.opt_to_string f.cond ^ "; " ^
           Expr.opt_to_string f.inc ^
           ") {...}"
-      | WhileStmt {cond=b} -> "while (" ^ Expr.to_string b ^ ") {...}"
-      | DoStmt {cond=b} -> "{...} do (" ^ Expr.to_string b ^ ")";
-      | SwitchStmt {cond=b} -> "switch (" ^ Expr.to_string b ^ ") {...}";
+      | WhileStmt {cond=b; _} -> "while (" ^ Expr.to_string b ^ ") {...}"
+      | DoStmt {cond=b; _} -> "{...} do (" ^ Expr.to_string b ^ ")";
+      | SwitchStmt {cond=b; _} -> "switch (" ^ Expr.to_string b ^ ") {...}";
       | CaseStmt c -> "case " ^ Expr.to_string c.case ^ ": {...}"
       | DefaultStmt _ -> "default: {...}"
-      | IfStmt {cond=b} ->
+      | IfStmt {cond=b; _} ->
         "if (" ^ Expr.to_string b ^ ") {...} else {...}"
       | CompoundStmt l ->
         let c = List.length l |> string_of_int in
@@ -537,7 +537,8 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
   match c with
   | CXXOperatorCallExpr {
       func=CXXMethodDecl{name=v; _};
-      args=[ArraySubscriptExpr a; src]
+      args=[ArraySubscriptExpr a; src];
+      _
     } when Variable.name v = "operator="
     -> rewrite_write a src
 
