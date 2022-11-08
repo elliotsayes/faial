@@ -624,11 +624,10 @@ module Param = struct
 
   let ty_var (x:t) : TyVariable.t = x.ty_var
 
-  let to_global_array (x:t) : TyVariable.t option =
-    if TyVariable.has_type C_type.is_array x.ty_var
-    then Some x.ty_var
-    else None
+  let name (x:t) : Variable.t = x.ty_var.name
 
+  let has_type (type_of:C_type.t -> bool) (x:t) : bool =
+    TyVariable.has_type type_of x.ty_var
 
   let to_string (p:t) : string =
     let used = if p.is_used then "" else " unsed" in
@@ -679,10 +678,12 @@ module Kernel = struct
     params: Param.t list;
     attribute: KernelAttr.t;
   }
-
-  let global_arrays (x:t) : TyVariable.t list =
-    List.filter_map Param.to_global_array x.params
-
+  let make ~name ~code ~type_params ~params ~attribute =
+    {name; code; type_params; params; attribute}
+  let name (x:t) : string = x.name
+  let params (x:t) : Param.t list = x.params
+  let type_params (x:t) : c_type_param list = x.type_params
+  let attribute (x:t) : KernelAttr.t = x.attribute
 end
 
 type c_def =
@@ -1267,13 +1268,13 @@ let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : Kernel.t j
     let* name: string = with_field "name" cast_string o in
     (* Parameters may be faulty, recover: *)
     let ps = List.map parse_param ps |> List.concat_map Result.to_list in
-    Ok Kernel.{
-      name = name;
-      code = body;
-      params = ps;
-      type_params = type_params;
-      attribute = m;
-    }
+    Ok (Kernel.make
+      ~name:name
+      ~code:body
+      ~params:ps
+      ~type_params:type_params
+      ~attribute:m
+    )
   ) |> wrap_error "Kernel" j
 
 (* Function that checks if a variable is of type array and is being used *)

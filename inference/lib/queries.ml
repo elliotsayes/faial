@@ -6,13 +6,33 @@ module VarSet = Variable.Set
 module VarMap = Variable.Map
 type json = Yojson.Basic.t
 
-(* Serializes a set of variables as a list of strings *)
-let var_set_to_json (vars:VarSet.t) : json =
-  let vars = vars
-  |> VarSet.elements
-  |> List.map (fun x -> `String (Variable.name x))
+let var_list_to_json (vars:Variable.t list) : json =
+  let vars =
+    List.map (fun x -> `String (Variable.name x)) vars
   in
   `List vars
+
+(* Serializes a set of variables as a list of strings *)
+let var_set_to_json (vars:VarSet.t) : json =
+  vars |> VarSet.elements |> var_list_to_json
+
+module Params = struct
+  open C_lang
+  let summarize (k:Kernel.t) : json =
+    let filter_params (pred:C_type.t -> bool) : json =
+      k.params
+      |> List.filter (Param.has_type pred)
+      |> List.map Param.name
+      |> var_list_to_json
+    in
+    let global_arrays = filter_params C_type.is_array in
+    let global_int = filter_params C_type.is_int in
+    `Assoc [
+      "global_arrays", global_arrays;
+      "integers", global_int;
+      "total", `Int (List.length k.params);
+    ]
+end
 
 module Variables = struct
   open C_lang
@@ -289,7 +309,9 @@ module Calls = struct
       |> uses_arr
     in
     let uses_global =
-      Kernel.global_arrays k
+      k.params
+      |> List.filter (Param.has_type C_type.is_array)
+      |> List.map Param.ty_var
       |> List.to_seq
       |> Variables.to_set
       |> VarSet.union (globals |> List.map Decl.var |> VarSet.of_list)
