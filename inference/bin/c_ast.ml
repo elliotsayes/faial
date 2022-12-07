@@ -51,7 +51,8 @@ let main
         "declarations", Declarations.summarize k.code;
         "conditionals", Conditionals.summarize k.code;
         "variables", Variables.summarize k.code;
-        "params", Params.summarize k
+        "params", Params.summarize k;
+        "global decls", GlobalDeclArrays.summarize decls;
       ] :: js)
     | Declaration d ->
       let decls =

@@ -28,9 +28,19 @@ module Params = struct
     let global_arrays = filter_params C_type.is_array in
     let global_int = filter_params C_type.is_int in
     `Assoc [
-      "global_arrays", global_arrays;
+      "global arrays", global_arrays;
       "integers", global_int;
       "total", `Int (List.length k.params);
+    ]
+end
+
+module GlobalDeclArrays = struct
+  open C_lang
+  let summarize (ds: Decl.t list) : json =
+    let ds = List.filter Decl.is_array ds in
+    let ds = List.filter Decl.is_shared ds in
+    `Assoc [
+      "shared arrays", List.map Decl.var ds |> var_list_to_json;
     ]
 end
 
