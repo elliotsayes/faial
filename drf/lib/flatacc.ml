@@ -112,7 +112,11 @@ let f_kernel_to_s (k:f_kernel) : Serialize.PPrint.t list =
     mode_to_s a.access_mode ^ index_to_s a.access_index
   in
   let acc_to_s (a:cond_access) : t =
-    Line (acc_val_to_s a.ca_access ^ " if " ^ b_to_s a.ca_cond ^";")
+    let lineno = match a.ca_location with
+    | Some l -> (Location.line l |> Index.to_base1 |> string_of_int) ^ ": "
+    | None -> ""
+    in
+    Line (lineno ^ acc_val_to_s a.ca_access ^ " if " ^ b_to_s a.ca_cond ^";")
   in
   [
       Line ("array: " ^ k.f_kernel_array ^ ";");
