@@ -117,6 +117,13 @@ module LocationCache = struct
 
   let all (ht:t) : Location.t list =
     ht.all_locs
+
+  let to_string (ht:t) : string =
+    "[" ^ (
+      ht.all_locs
+      |> List.map (fun l -> Location.line l |> Index.to_base1 |> string_of_int)
+      |> Common.join ", "
+    ) ^ "]"
 end
 
 
@@ -245,7 +252,7 @@ let proof_to_s (p:proof) : Serialize.PPrint.t list =
 
 
 
-let print_kernels ((_, ks) : LocationCache.t * proof Streamutil.stream) : unit =
+let print_kernels ((lc, ks) : LocationCache.t * proof Streamutil.stream) : unit =
   print_endline "; symbexp";
   let count = ref 0 in
   Streamutil.iter (fun (p:proof) ->
@@ -254,4 +261,5 @@ let print_kernels ((_, ks) : LocationCache.t * proof Streamutil.stream) : unit =
     print_endline ("; bool " ^ (string_of_int curr));
     proof_to_s p |> Serialize.PPrint.print_doc
   ) ks;
+  print_endline ("; locations: " ^ (LocationCache.to_string lc));
   print_endline "; end of symbexp"
