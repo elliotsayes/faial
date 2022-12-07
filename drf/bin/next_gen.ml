@@ -227,8 +227,18 @@ let box_locals (w:Witness.t) : PrintBox.t =
 let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
 
-
-let main (fname: string) (timeout:int option) (show_proofs:bool) : unit =
+let main
+  (fname: string)
+  (timeout:int option)
+  (show_proofs:bool)
+  (show_proto:bool)
+  (show_wf:bool)
+  (show_align:bool)
+  (show_phase_split:bool)
+  (show_loc_split:bool)
+  (show_flat_acc:bool)
+  (show_symbexp:bool)
+: unit =
   let gv = GvParser.parse fname in
   (match gv with
     | Some x -> prerr_endline ("WARNING: parsed GV args: " ^ GvParser.to_string x);
@@ -257,12 +267,22 @@ let main (fname: string) (timeout:int option) (show_proofs:bool) : unit =
     let grid_dim = dim (fun gv -> gv.grid_dim) in
     let block_dim = dim (fun gv -> gv.block_dim) in
     let p = Proto.replace_constants key_vals p in
+    let show (b:bool) (call:unit -> unit) : unit =
+      if b then call () else ()
+    in
+    show show_proto (fun () -> Proto.print_k p);
     let p = Wellformed.translate p in
+    show show_wf (fun () -> Wellformed.print_kernels p);
     let p = Phasealign.translate p in
+    show show_align (fun () -> Phasealign.print_kernels p);
     let p = Phasesplit.translate p false in
+    show show_phase_split (fun () -> Phasesplit.print_kernels p);
     let p = Locsplit.translate p in
+    show show_loc_split (fun () -> Locsplit.print_kernels p);
     let p = Flatacc.translate p in
+    show show_flat_acc (fun () -> Flatacc.print_kernels p);
     let p = Symbexp.translate true p in
+    show show_symbexp (fun () -> Symbexp.print_kernels p);
     let open Z3_solver in
     let open Solution in
     let errors =
@@ -337,7 +357,47 @@ let show_proofs =
   let doc = "Show the Z3 proofs being generated." in
   Arg.(value & flag & info ["show-proofs"] ~doc)
 
-let main_t = Term.(const main $ get_fname $ get_timeout $ show_proofs)
+let show_proto =
+  let doc = "Show the MAP kernel." in
+  Arg.(value & flag & info ["show-map"] ~doc)
+
+let show_wf =
+  let doc = "Show the well-formed kernel." in
+  Arg.(value & flag & info ["show-well-formed"] ~doc)
+
+let show_aligned =
+  let doc = "Show the aligned kernel." in
+  Arg.(value & flag & info ["show-aligned"] ~doc)
+
+let show_phase_split =
+  let doc = "Show the phase-split kernel." in
+  Arg.(value & flag & info ["show-phase-split"] ~doc)
+
+let show_loc_split =
+  let doc = "Show the location-split kernel." in
+  Arg.(value & flag & info ["show-loc-split"] ~doc)
+
+let show_flat_acc =
+  let doc = "Show the flat-access kernel." in
+  Arg.(value & flag & info ["show-flat-acc"] ~doc)
+
+let show_symbexp =
+  let doc = "Show the symbexp kernel." in
+  Arg.(value & flag & info ["show-symbexp"] ~doc)
+
+let main_t = Term.(
+  const main
+  $ get_fname
+  $ get_timeout
+  $ show_proofs
+  $ show_proto
+  $ show_wf
+  $ show_aligned
+  $ show_phase_split
+  $ show_loc_split
+  $ show_flat_acc
+  $ show_symbexp
+)
 
 let info =
   let doc = "Print the C-AST" in
