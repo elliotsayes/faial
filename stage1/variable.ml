@@ -26,6 +26,13 @@ let location (x:t) : Location.t =
 
 let equal (x:t) (y:t) = String.equal x.name y.name
 
+let name_line (x:t) : string =
+  let l : string = match location_opt x with
+  | Some l -> ":" ^ (l |> Location.line |> Index.to_base1 |> string_of_int)
+  | None -> ""
+  in
+  name x ^ l
+
 let repr (x:t) : string =
   let l = Option.map Location.repr x.location |> Option.value ~default:"null" in
   "{name=\"" ^ x.name ^ "\", location="^ l ^ "}"

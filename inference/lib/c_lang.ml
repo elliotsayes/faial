@@ -119,9 +119,9 @@ module Expr = struct
       then "(" ^ o ^ "." ^ type_to_str j ^ ")"
       else o
     in
-    let var_name: Variable.t -> string =
+    let var_name : Variable.t -> string =
       if provenance
-      then Variable.repr
+      then Variable.name_line
       else Variable.name
     in
     let rec exp_to_s: t -> string =
