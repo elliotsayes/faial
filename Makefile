@@ -5,7 +5,7 @@ GITLAB_CACHE = /tmp/gitlab-cache
 BUILD = _build/default
 BIN = $(BUILD)/bin
 TEST = _build/test
-all: main c-ast pico ng data-dep
+all: c-ast pico ng data-dep
 
 clean:
 	$(DUNE) clean
@@ -25,9 +25,9 @@ ng:
 	$(DUNE) build drf/bin/next_gen.exe
 	cp -f $(BUILD)/drf/bin/next_gen.exe next-gen
 
-main:
-	$(DUNE) build drf/bin/main.exe
-	cp -f $(BUILD)/drf/bin/main.exe faial-bin
+#main:
+#	$(DUNE) build drf/bin/main.exe
+#	cp -f $(BUILD)/drf/bin/main.exe faial-bin
 
 pico:
 	$(DUNE) build bank_conflicts/pico.exe

@@ -281,7 +281,7 @@ let main
     show show_loc_split (fun () -> Locsplit.print_kernels p);
     let p = Flatacc.translate p in
     show show_flat_acc (fun () -> Flatacc.print_kernels p);
-    let p = Symbexp.translate true p in
+    let p = Symbexp.translate p in
     show show_symbexp (fun () -> Symbexp.print_kernels p);
     let open Z3_solver in
     let open Solution in

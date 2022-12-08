@@ -7,38 +7,89 @@ open Common
 open Exp
 open Flatacc
 
-type proof = {
-  proof_id: int;
-  proof_kernel: string;
-  proof_array: string;
-  proof_preds: Predicates.t list;
-  proof_funcs: Predicates.step_handler list;
-  proof_decls: string list;
-  proof_goal: bexp;
+module LocationIndex = struct
+  type t = {index: int; location:Location.t}
+  let mk (index:int) (location:Location.t) : t = {index; location}
+  let index (x:t) = x.index
+  let location (x:t) = x.location
+end
+
+(* The assign_task datatype creates two constructors.
+   - assign_mode: given a mode, returns a boolean expression that represents
+     assigning the given mode to the current mode-variable.
+   - assign_index: given an index and an index value (nexp) returns a boolean
+     expression that assigns the expression to the current index.
+*)
+type assign_task = {
+  assign_mode : mode -> bexp;
+  assign_index: int -> nexp -> bexp;
+  assign_loc: LocationIndex.t -> bexp;
 }
+
+module SymAccess = struct
+  type t = {location: LocationIndex.t; condition: bexp; access: access}
+  let mk ~location ~condition ~access = {location; condition; access}
+  (* Given a task generator serialize a conditional access *)
+  let to_bexp (t:assign_task) (a:t) : bexp =
+    let head = [
+        a.condition;
+        t.assign_mode a.access.access_mode;
+    ] in
+    let head = t.assign_loc a.location :: head in
+    head @ List.mapi t.assign_index a.access.access_index
+    |> b_and_ex
+
+end
+
+module Proof = struct
+  type t = {
+    id: int;
+    kernel_name: string;
+    array_name: string;
+    locations: Location.t list;
+    preds: Predicates.t list;
+    funcs: Predicates.step_handler list;
+    decls: string list;
+    goal: bexp;
+  }
+  let mk ~kernel_name ~array_name ~id ~goal ~locations : t =
+    let decls =
+      Freenames.free_names_bexp goal Variable.Set.empty
+      |> Variable.Set.elements
+      |> List.map Variable.name
+    in
+    let preds = Predicates.get_predicates goal in
+    let funcs = Predicates.get_functions goal in
+    {id; preds; funcs; decls; goal; array_name; kernel_name; locations;}
+
+    let to_string (p:t) : Serialize.PPrint.t list =
+      let open Common in
+      let open Serialize in
+      let open PPrint in
+      let preds =
+        let open Predicates in
+        List.map (fun x -> x.pred_name) p.preds
+        |> join ", "
+      in
+      [
+          Line ("array: " ^ p.array_name);
+          Line ("kernel: " ^ p.kernel_name);
+          Line ("predicates: " ^ preds ^ ";");
+          Line ("decls: " ^ (p.decls |> join ", ") ^ ";");
+          Line ("goal: " ^ b_to_s p.goal ^ ";");
+      ]
+
+end
 
 type h_prog = {
   prog_locals: Variable.Set.t;
   prog_accesses: cond_access list;
 }
 
-let mk_proof ~kernel:(k:string) ~array:(a:string) proof_id (goal:bexp) : proof =
-  let decls =
-    Freenames.free_names_bexp goal Variable.Set.empty
-    |> Variable.Set.elements
-    |> List.map Variable.name
-  in
-  {
-    proof_id = proof_id;
-    proof_preds = Predicates.get_predicates goal;
-    proof_funcs = Predicates.get_functions goal;
-    proof_decls = decls;
-    proof_goal = goal;
-    proof_array = a;
-    proof_kernel = k;
-  }
+(* When we lower the representation, we do not want to have source code
+   locations. Instead, we each *)
 
-let proj_access (locals:Variable.Set.t) (t:task) (ca:cond_access) : cond_access =
+let proj_access (locals:Variable.Set.t) (t:task) (idx:int) (ca:cond_access) : SymAccess.t =
   (* Add a suffix to a variable *)
   let var_append (x:Variable.t) (suffix:string) : Variable.t =
     Variable.set_name (Variable.name x ^ suffix) x
@@ -72,26 +123,12 @@ let proj_access (locals:Variable.Set.t) (t:task) (ca:cond_access) : cond_access 
       access_mode = a.access_mode
     }
   in
-  {
-    ca_access = inline_acc ca.ca_access;
-    ca_cond = inline_proj_b t ca.ca_cond;
-    ca_location = ca.ca_location;
-  }
+  let location = LocationIndex.mk idx ca.ca_location in
+  SymAccess.mk ~location ~access:(inline_acc ca.ca_access) ~condition:(inline_proj_b t ca.ca_cond)
 
-let proj_accesses locals t = List.map (proj_access locals t)
+let proj_accesses locals t : cond_access list -> SymAccess.t list = List.mapi (proj_access locals t)
 
-(* The assign_task datatype creates two constructors.
-   - assign_mode: given a mode, returns a boolean expression that represents
-     assigning the given mode to the current mode-variable.
-   - assign_index: given an index and an index value (nexp) returns a boolean
-     expression that assigns the expression to the current index.
-*)
-type assign_task = {
-  assign_mode : mode -> bexp;
-  assign_index: int -> nexp -> bexp;
-  assign_loc: Location.t -> bexp;
-}
-
+(*
 module LocationCache = struct
   type t = {
     loc_to_int: (Location.t, int) Hashtbl.t;
@@ -125,7 +162,7 @@ module LocationCache = struct
       |> Common.join ", "
     ) ^ "]"
 end
-
+*)
 
 let mode_to_nexp (m:mode) : nexp =
   Num (match m with
@@ -137,8 +174,9 @@ let mk_mode (t:task) = mk_var (prefix t ^ "mode")
 let mk_loc (t:task) = mk_var (prefix t ^ "loc")
 let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
 
+
 (* Returns the generators for the given task *)
-let mk_task_gen (cache:LocationCache.t) (t:task) : assign_task =
+let mk_task_gen (t:task) : assign_task =
   let this_mode_v : nexp = mk_mode t in
   let other_mode_v : nexp = mk_mode (other_task t) in
   let idx_v : int -> nexp = mk_idx t in
@@ -149,9 +187,9 @@ let mk_task_gen (cache:LocationCache.t) (t:task) : assign_task =
       |> b_and b
     else b
   in
-  let assign_loc (l:Location.t) : bexp =
+  let assign_loc (l:LocationIndex.t) : bexp =
         n_eq (mk_loc (other_task t))
-            (Num (LocationCache.get cache l))
+            (Num (LocationIndex.index l))
   in
   let assign_index (idx:int) (n:nexp) : bexp = n_eq (idx_v idx) n
   in
@@ -161,28 +199,12 @@ let mk_task_gen (cache:LocationCache.t) (t:task) : assign_task =
     assign_loc = assign_loc;
   }
 
-(* Given a task generator serialize a conditional access *)
-let cond_access_to_bexp (provenance:bool) (t:assign_task) (c:cond_access) :bexp =
-    let head = [
-        c.ca_cond;
-        t.assign_mode c.ca_access.access_mode;
-    ] in
-    let head = if provenance
-        then (match c.ca_location with
-        | Some x -> t.assign_loc x :: head
-        | None -> head
-        ) else head
-    in
-    head @ List.mapi t.assign_index c.ca_access.access_index
-    |> b_and_ex
 
-let cond_acc_list_to_bexp (provenance:bool) (t:assign_task) (l:cond_access list) : bexp =
-  List.map (cond_access_to_bexp provenance t) l
+let cond_acc_list_to_bexp (t:assign_task) (l:SymAccess.t list) : bexp =
+  List.map (SymAccess.to_bexp t) l
   |> b_or_ex
 
 let h_prog_to_bexp
-  (provenance:bool)
-  (cache:LocationCache.t)
   (locals:Variable.Set.t)
   (accs:cond_access list)
 :
@@ -190,9 +212,9 @@ let h_prog_to_bexp
 =
   (* Pick one access *)
   let task_to_bexp (t:task) : bexp =
-    let gen = mk_task_gen cache t in
+    let gen = mk_task_gen t in
     let accs = proj_accesses locals t accs in
-    cond_acc_list_to_bexp provenance gen accs
+    cond_acc_list_to_bexp gen accs
   in
   (* Make sure all indices match *)
   (* $T1$index$0 = $T2$index$0 ... *)
@@ -220,46 +242,39 @@ let h_prog_to_bexp
     get_dim accs |> gen_eq_index
   ]
 
-let f_kernel_to_proof (provenance:bool) (cache:LocationCache.t) (proof_id:int) (k:f_kernel) : proof =
-  h_prog_to_bexp provenance cache k.f_kernel_local_variables k.f_kernel_accesses
-  |> b_and k.f_kernel_pre
-  |> Constfold.b_opt (* Optimize the output expression *)
-  |> mk_proof proof_id ~kernel:k.f_kernel_name ~array:k.f_kernel_array
+let f_kernel_to_proof (proof_id:int) (k:f_kernel) : Proof.t =
+  let goal =
+    h_prog_to_bexp k.f_kernel_local_variables k.f_kernel_accesses
+    |> b_and k.f_kernel_pre
+    |> Constfold.b_opt (* Optimize the output expression *)
+  in
+  let locations =
+    k.f_kernel_accesses
+    |> List.map (fun x -> x.ca_location)
+  in
+  Proof.mk
+    ~id:proof_id
+    ~kernel_name:k.f_kernel_name
+    ~array_name:k.f_kernel_array
+    ~locations
+    ~goal
 
-let translate (provenance:bool) (stream:f_kernel Streamutil.stream) : (LocationCache.t * proof Streamutil.stream) =
-  let open Streamutil in
-  let c = LocationCache.create 100 in
-  c, mapi (f_kernel_to_proof provenance c) stream
+
+let translate (stream:f_kernel Streamutil.stream) : (Proof.t Streamutil.stream) =
+  Streamutil.mapi f_kernel_to_proof stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 
-let proof_to_s (p:proof) : Serialize.PPrint.t list =
-  let open Common in
-  let open Serialize in
-  let open PPrint in
-  let preds =
-    let open Predicates in
-    List.map (fun x -> x.pred_name) p.proof_preds
-    |> join ", "
-  in
-  [
-      Line ("array: " ^ p.proof_array);
-      Line ("kernel: " ^ p.proof_kernel);
-      Line ("predicates: " ^ preds ^ ";");
-      Line ("decls: " ^ (p.proof_decls |> join ", ") ^ ";");
-      Line ("goal: " ^ b_to_s p.proof_goal ^ ";");
-  ]
 
 
 
-let print_kernels ((lc, ks) : LocationCache.t * proof Streamutil.stream) : unit =
+let print_kernels (ks : Proof.t Streamutil.stream) : unit =
   print_endline "; symbexp";
   let count = ref 0 in
-  Streamutil.iter (fun (p:proof) ->
+  Streamutil.iter (fun (p:Proof.t) ->
     let curr = !count + 1 in
     count := curr;
     print_endline ("; bool " ^ (string_of_int curr));
-    proof_to_s p |> Serialize.PPrint.print_doc
+    Proof.to_string p |> Serialize.PPrint.print_doc
   ) ks;
-  print_endline ("; locations: " ^ (LocationCache.to_string lc));
   print_endline "; end of symbexp"

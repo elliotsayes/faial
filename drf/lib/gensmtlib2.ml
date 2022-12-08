@@ -128,29 +128,30 @@ struct
 
   let serialize_proof p : Smtlib.sexp list =
     let open Symbexp in
+    let open Proof in
     List.(flatten [
       (* String decl *)
-      decl_string "$array" p.proof_array;
+      decl_string "$array" p.array_name;
       (* Predicates: *)
-      map ser_predicate p.proof_preds;
+      map ser_predicate p.preds;
       (* Functions: *)
-      map ser_step_handler p.proof_funcs;
+      map ser_step_handler p.funcs;
       (* Variable declarations: *)
-      map Variable.from_name p.proof_decls |> map define_uint32 |> flatten;
+      map Variable.from_name p.decls |> map define_uint32 |> flatten;
       (* Goal of the proof: *)
-      [ b_assert p.proof_goal ];
+      [ b_assert p.goal ];
     ]) |> prove
 
-  let serialize_proofs (ps:Symbexp.proof list) : Smtlib.sexp list =
+  let serialize_proofs (ps:Symbexp.Proof.t list) : Smtlib.sexp list =
     List.(map serialize_proof ps |> flatten)
 end
 
 module Bv2 = Make(BvGen)
 module Std2 = Make(StdGen)
 
-let bv_serialize_proofs : Symbexp.proof list -> Smtlib.sexp list = Bv2.serialize_proofs
+let bv_serialize_proofs : Symbexp.Proof.t list -> Smtlib.sexp list = Bv2.serialize_proofs
 
-let int_serialize_proofs : Symbexp.proof list -> Smtlib.sexp list = Std2.serialize_proofs
+let int_serialize_proofs : Symbexp.Proof.t list -> Smtlib.sexp list = Std2.serialize_proofs
 
 let location_to_sexp (l:Location.t) : Smtlib.sexp =
   let open Location in
@@ -170,8 +171,8 @@ let location_to_sexp (l:Location.t) : Smtlib.sexp =
   let open Smtlib in
   let b = atom_to_string (String b) in
   List [Atom (Symbol "echo"); Atom (String b)]
-
-let translate (provenance:bool) ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream)) : Smtlib.sexp Streamutil.stream =
+(*
+let translate (ps:Symbexp.Proof.t Streamutil.stream) : Smtlib.sexp Streamutil.stream =
     let open Serialize in
     let open Symbexp in
 
@@ -189,18 +190,16 @@ let translate (provenance:bool) ((cache, ps):(Symbexp.LocationCache.t * Symbexp.
         List [symbol "pop"; Atom (Int 1);];
       ])
     in
-    if provenance then (
-        let locs : unit -> Smtlib.sexp Streamutil.stream = fun _ ->
-            LocationCache.all cache
-            |> Streamutil.from_list
-            |> Streamutil.map location_to_sexp
-        in
-        Streamutil.lazy_sequence proofs locs
-    ) else
-        proofs
+    let locs : unit -> Smtlib.sexp Streamutil.stream = fun _ ->
+        LocationCache.all cache
+        |> Streamutil.from_list
+        |> Streamutil.map location_to_sexp
+    in
+    Streamutil.lazy_sequence proofs locs
 
 let print: Smtlib.sexp Streamutil.stream -> unit =
   Streamutil.iter (fun x ->
     Serialize.s_print x;
     print_endline "";
   )
+*)

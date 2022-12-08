@@ -6,7 +6,7 @@ open Locsplit
 open Exp
 
 type cond_access = {
-  ca_location: Location.t option;
+  ca_location: Location.t;
   ca_access: access;
   ca_cond: bexp;
 }
@@ -71,7 +71,7 @@ let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
   let rec flatten_i (b:bexp) (i:u_inst) : cond_access list =
     match i with
     | UAssert _ -> failwith "Internall error: call rm_asserts first!"
-    | UAcc (x, e) -> [{ca_location = Variable.location_opt x; ca_access = e; ca_cond = b}]
+    | UAcc (x, e) -> [{ca_location = Variable.location x; ca_access = e; ca_cond = b}]
     | UCond (b', p) -> flatten_p (b_and b' b) p
     | ULoop (r, p) -> flatten_p (b_and (range_to_cond r) b) p
   and flatten_p (b:bexp) (p:u_prog) : cond_access list =
@@ -112,10 +112,7 @@ let f_kernel_to_s (k:f_kernel) : Serialize.PPrint.t list =
     mode_to_s a.access_mode ^ index_to_s a.access_index
   in
   let acc_to_s (a:cond_access) : t =
-    let lineno = match a.ca_location with
-    | Some l -> (Location.line l |> Index.to_base1 |> string_of_int) ^ ": "
-    | None -> ""
-    in
+    let lineno = (Location.line a.ca_location |> Index.to_base1 |> string_of_int) ^ ": " in
     Line (lineno ^ acc_val_to_s a.ca_access ^ " if " ^ b_to_s a.ca_cond ^";")
   in
   [

@@ -7,11 +7,11 @@
   (libraries stage0 ANSITerminal)
   )
 
-(executable
- (public_name faial-bin)
- (name main)
- (modules main parse2 scan)
- (libraries stage0 stage1 drf inference cmdliner tui))
+;(executable
+; (public_name faial-bin)
+; (name main)
+; (modules main parse2 scan)
+; (libraries stage0 stage1 drf inference cmdliner tui))
 
 (executable
  (public_name next-gen)
