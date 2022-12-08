@@ -1,2 +1,0 @@
-sexpdata==0.0.3
-beautifultable==1.0.0
