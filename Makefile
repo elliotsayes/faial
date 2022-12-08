@@ -5,7 +5,7 @@ GITLAB_CACHE = /tmp/gitlab-cache
 BUILD = _build/default
 BIN = $(BUILD)/bin
 TEST = _build/test
-all: c-ast pico ng data-dep
+all: c-ast pico faial-drf data-dep
 
 clean:
 	$(DUNE) clean
@@ -21,13 +21,9 @@ data-dep:
 build-test:
 	$(DUNE) build test
 
-ng:
-	$(DUNE) build drf/bin/next_gen.exe
-	cp -f $(BUILD)/drf/bin/next_gen.exe next-gen
-
-#main:
-#	$(DUNE) build drf/bin/main.exe
-#	cp -f $(BUILD)/drf/bin/main.exe faial-bin
+faial-drf:
+	$(DUNE) build drf/bin/main.exe
+	cp -f $(BUILD)/drf/bin/main.exe faial-drf
 
 pico:
 	$(DUNE) build bank_conflicts/pico.exe
@@ -35,9 +31,6 @@ pico:
 
 test: build-test
 	$(DUNE) runtest
-
-ui:
-	(cd faial-ui/ && cargo b --release)
 
 sys-test:
 	@./run-tests.py
@@ -51,4 +44,4 @@ gitlab-bin:
 gitlab: gitlab-test gitlab-bin
 
 
-.PHONY: all clean main build-test test ui pico sys-test gitlab gitlab-bin gitlab-test c-ast data-dep
+.PHONY: all clean faial-drf build-test test pico sys-test gitlab gitlab-bin gitlab-test c-ast data-dep
