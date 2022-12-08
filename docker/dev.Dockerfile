@@ -34,7 +34,7 @@ RUN cd /home/faial/c-to-json && \
 
 USER faial
 
-ARG FAIAL_VERSION=master
+ARG FAIAL_VERSION=main
 RUN \
      git clone https://gitlab.com/umb-svl/faial && \
     cd faial && \

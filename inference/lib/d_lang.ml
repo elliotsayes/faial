@@ -1,5 +1,5 @@
 open Stage0
-open Stage1
+open Protocols
 
 module StackTrace = Common.StackTrace
 module KernelAttr = C_lang.KernelAttr
@@ -10,7 +10,7 @@ type json = Yojson.Basic.t
 type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
-type array_t = Stage1.Exp.array_t
+type array_t = Protocols.Exp.array_t
 type d_type = json
 
 let list_to_s (f:'a -> string) (l:'a list) : string =

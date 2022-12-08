@@ -1,5 +1,5 @@
 open Stage0
-open Stage1
+open Protocols
 
 module StringMap = Common.StringMap
 module VarSet = Variable.Set

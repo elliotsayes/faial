@@ -9,4 +9,4 @@
  (name main)
  (modes exe)
  (modules main z3_solver)
- (libraries cmdliner printbox printbox-text stage0 stage1 drf inference tui))
+ (libraries cmdliner printbox printbox-text stage0 protocols drf inference tui))

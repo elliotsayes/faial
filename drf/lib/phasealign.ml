@@ -1,5 +1,5 @@
 open Stage0
-open Stage1
+open Protocols
 
 let (@) = Common.append_tr
 

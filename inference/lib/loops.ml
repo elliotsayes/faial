@@ -1,4 +1,4 @@
-open Stage1
+open Protocols
 
 type variable = Variable.t
 

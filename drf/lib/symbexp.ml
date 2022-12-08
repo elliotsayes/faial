@@ -1,5 +1,5 @@
 open Stage0
-open Stage1
+open Protocols
 
 let (@) = Common.append_tr
 
@@ -127,42 +127,6 @@ let proj_access (locals:Variable.Set.t) (t:task) (idx:int) (ca:cond_access) : Sy
   SymAccess.mk ~location ~access:(inline_acc ca.ca_access) ~condition:(inline_proj_b t ca.ca_cond)
 
 let proj_accesses locals t : cond_access list -> SymAccess.t list = List.mapi (proj_access locals t)
-
-(*
-module LocationCache = struct
-  type t = {
-    loc_to_int: (Location.t, int) Hashtbl.t;
-    mutable all_locs: Location.t list;
-  }
-
-  let create (size:int) : t = {
-    loc_to_int = Hashtbl.create size;
-    all_locs = []
-  }
-
-  let get (ht:t) (l:Location.t) : int =
-    match Hashtbl.find_opt ht.loc_to_int l with
-    | Some n -> n
-    | None ->
-      let n = Hashtbl.length ht.loc_to_int in
-      Hashtbl.add ht.loc_to_int l n;
-      ht.all_locs <- l::ht.all_locs;
-      n
-
-  let nth (ht:t) (idx:int) =
-    List.nth ht.all_locs idx
-
-  let all (ht:t) : Location.t list =
-    ht.all_locs
-
-  let to_string (ht:t) : string =
-    "[" ^ (
-      ht.all_locs
-      |> List.map (fun l -> Location.line l |> Index.to_base1 |> string_of_int)
-      |> Common.join ", "
-    ) ^ "]"
-end
-*)
 
 let mode_to_nexp (m:mode) : nexp =
   Num (match m with
