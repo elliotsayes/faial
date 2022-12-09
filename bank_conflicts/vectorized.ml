@@ -78,6 +78,7 @@ let make ~bank_count ~tid_count : t = {
 }
 
 let restrict (b:Exp.bexp) (ctx:t) : t =
+  print_endline ("Restrict: " ^ Serialize.PPrint.b_to_s b);
   let open Exp in
   { ctx with cond = b_and ctx.cond b }
 
@@ -129,6 +130,10 @@ and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
     failwith ("b_eval: pred " ^ x)
 
 let access (index:Exp.nexp) (ctx:t) =
+  let msg =
+    "[" ^ Serialize.PPrint.n_to_s index ^ "] " ^
+    "if (" ^ Serialize.PPrint.b_to_s ctx.cond ^ ")"
+  in
   let index = n_eval index ctx in
   let index = List.mapi (fun tid idx -> (tid, idx)) index in
   let cond = b_eval ctx.cond ctx in
@@ -145,13 +150,21 @@ let access (index:Exp.nexp) (ctx:t) =
       index
     |> IntSet.cardinal
   in
-  List.init ctx.bank_count bank
+  let tsx = List.init ctx.bank_count bank in
+  print_endline (
+    msg ^ " " ^
+    "max: " ^ string_of_int (snd (NMap.max tsx)) ^ " " ^
+    "\n\t" ^ NMap.to_string tsx
+  );
+  tsx
+
+let add = pointwise (+)
 
 let rec eval (p: Proto.prog) (ctx:t) : NMap.t =
   List.fold_left (fun cost (i:Proto.inst) ->
     match i with
     | Acc (_, {access_index=[n]; _}) ->
-      access n ctx
+      add cost (access n ctx)
     | Acc _ -> failwith ("Unsupported access")
     | Sync -> zero ctx
     | Cond (b, p) ->
@@ -161,7 +174,6 @@ let rec eval (p: Proto.prog) (ctx:t) : NMap.t =
       let has_next = Exp.range_has_next r in
       if b_eval has_next ctx |> BMap.some_true then
         let lo = n_eval r.range_lower_bound ctx in
-        let add = pointwise (+) in
         let cost =
           eval body (
             ctx
