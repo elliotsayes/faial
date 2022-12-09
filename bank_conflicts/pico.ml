@@ -11,19 +11,6 @@ let pico (fname : string) =
     let d_ast = c_ast |> D_lang.rewrite_program in
     let imp = d_ast |> D_to_imp.parse_program |> Result.get_ok in
     let proto = imp |> List.map Imp.compile in
-    (try
-      let ctx = Vectorized.make ~bank_count:32 ~tid_count:32 in
-      List.iter (fun p ->
-        let open Proto in
-        let cost = Vectorized.eval p.kernel_code ctx in
-        let max_cost = List.fold_left max 0 cost in
-(*         print_endline (Vectorized.NMap.to_string cost) *)
-        print_endline ("Dynamic cost: " ^ string_of_int max_cost)
-      ) proto;
-    with
-      _ -> print_endline "Dynamic analysis failed"
-    );
-    print_string "Static analysis: ";
     let cost_of_proto = Bankconflicts.p_k_cost proto in
     cost_of_proto |> Serialize.PPrint.n_to_s |> print_endline
   with

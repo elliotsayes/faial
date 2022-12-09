@@ -16,6 +16,9 @@ module NMap = struct
 
   let make (count:int) (f:int -> int) : t  = List.init count f
 
+  let constant ~count ~value : t =
+    make count (fun _ -> value)
+
   let merge : (int -> int -> int) -> t -> t -> t =
     pointwise
 
@@ -34,6 +37,9 @@ module BMap = struct
   type t = bool list
 
   let make (count:int) (f:int -> bool) : t  = List.init count f
+
+  let constant ~count ~value : t =
+    make count (fun _ -> value)
 
   let merge : (bool -> bool -> bool) -> t -> t -> t =
     pointwise
@@ -86,7 +92,7 @@ let put (x:Variable.t) (v:NMap.t) (ctx:t) : t =
   { ctx with env = Variable.Map.add x v ctx.env }
 
 let zero (ctx:t) : NMap.t =
-  NMap.make ctx.bank_count (fun _ -> 0)
+  NMap.constant ~count:ctx.bank_count ~value:0
 
 let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
   match n with
@@ -95,7 +101,7 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
     | Some x -> x
     | None -> failwith ("n_eval: undefined: " ^ Variable.name x))
 
-  | Num n -> NMap.make ctx.tid_count (fun _ -> n)
+  | Num n -> NMap.constant ~count:ctx.tid_count ~value:n
   | Bin (o, n1, n2) ->
     let o = Exp.eval_nbin o in
     let n1 = n_eval n1 ctx in
@@ -112,7 +118,7 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
 
 and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
   match b with
-  | Bool b -> BMap.make ctx.tid_count (fun _ -> b)
+  | Bool b -> BMap.constant ~count:ctx.tid_count ~value:b
   | NRel (o, n1, n2) ->
     let o = Exp.eval_nrel o in
     let n1 = n_eval n1 ctx in
