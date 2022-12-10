@@ -137,13 +137,9 @@ and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
   | Pred (x, _) ->
     failwith ("b_eval: pred " ^ x)
 
-let access (index:Exp.nexp) (ctx:t) =
-  let msg =
-    Serialize.PPrint.n_to_s index ^ " " ^
-    "if (" ^ Serialize.PPrint.b_to_s ctx.cond ^ ")"
-  in
-  let index = n_eval index ctx in
-  let index = List.mapi (fun tid idx -> (tid, idx)) index in
+let access ?(verbose=false) (index:Exp.nexp) (ctx:t) =
+  let v_index = n_eval index ctx in
+  let v_index = List.mapi (fun tid idx -> (tid, idx)) v_index in
   let cond = b_eval ctx.cond ctx in
   let in_cond (x:int) : bool =
     BMap.get_or x false cond
@@ -155,14 +151,21 @@ let access (index:Exp.nexp) (ctx:t) =
         then IntSet.add idx accum
         else accum)
       IntSet.empty
-      index
+      v_index
     |> IntSet.cardinal
   in
   let tsx = List.init ctx.bank_count bank in
-  print_endline (
-    msg ^ " " ^
-    "max: " ^ string_of_int (snd (NMap.max tsx)) ^ " " ^
-    "\n\t" ^ NMap.to_string tsx
+  (if verbose then (
+      let msg =
+        Serialize.PPrint.n_to_s index ^ " " ^
+        "if (" ^ Serialize.PPrint.b_to_s ctx.cond ^ ")"
+      in
+      print_endline (
+        msg ^ " " ^
+        "max: " ^ string_of_int (snd (NMap.max tsx)) ^ " " ^
+        "\n\t" ^ NMap.to_string tsx
+      ))
+    else ()
   );
   tsx
 
