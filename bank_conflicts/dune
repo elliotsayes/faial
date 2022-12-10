@@ -1,12 +1,16 @@
+(library
+  (name vectorized)
+  (modules vectorized)
+  (libraries stage0 protocols))
 
 (executable
  (public_name pico)
  (name pico)
  (modules pico bankconflicts z3expr)
- (libraries inference cmdliner z3))
+ (libraries inference cmdliner z3 vectorized))
 
 (executable
  (public_name faial-bc-dyn)
  (name dyn)
- (modules dyn vectorized)
- (libraries inference cmdliner z3))
+ (modules dyn)
+ (libraries inference cmdliner z3 vectorized))

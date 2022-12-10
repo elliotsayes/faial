@@ -73,7 +73,7 @@ type poly_ht = (int, nexp) Hashtbl.t
 
 type poly_t =
   | One of nexp
-  | Two of nexp * nexp
+  | Two of {constant: nexp; coeficient: nexp}
   | Many of poly_ht
 
 let poly_to_string x (p:poly_t) =
@@ -81,7 +81,7 @@ let poly_to_string x (p:poly_t) =
   let open PPrint in
   match p with
   | One n -> n_to_s n
-  | Two (n1, n2) -> n_par n1 ^ " + " ^ n_par n2 ^ " * " ^ x
+  | Two {constant=n1; coeficient=n2} -> n_par n1 ^ " + " ^ n_par n2 ^ " * " ^ x
   | Many ht ->
     hashtbl_elements ht
     |> List.map (fun (k, v) -> n_par v ^ " * " ^ x ^ "^" ^ (string_of_int k))
@@ -91,7 +91,7 @@ let make_poly e n =
   if n = 0 then
     One e
   else if n = 1 then
-    Two (Num 0, e)
+    Two {constant=Num 0; coeficient=e}
   else
     let ht = Hashtbl.create 1 in
     Hashtbl.add ht n e;
@@ -111,17 +111,18 @@ let poly_add_ht (src:poly_ht) (dst:poly_ht) : unit =
 let poly_add e1 e2 =
   match e1, e2 with
   | One n1, One n2 -> One (n_plus n1 n2)
-  | One n1, Two (n2, n3)
-  | Two (n2, n3), One n1 ->
-    Two (n_plus n2 n1, n3)
-  | Two (n1, n2), Two (n3, n4) -> Two (n_plus n1 n3, n_plus n2 n4)
+  | One n1, Two {constant=n2; coeficient=n3}
+  | Two {constant=n2; coeficient=n3}, One n1 ->
+    Two {constant=n_plus n2 n1; coeficient=n3}
+  | Two {constant=n1; coeficient=n2}, Two {constant=n3; coeficient=n4} ->
+    Two {constant=n_plus n1 n3; coeficient=n_plus n2 n4}
   | One n1, Many ht
   | Many ht, One n1 ->
     let ht = Hashtbl.copy ht in
     poly_update_ht ht 0 (n_plus n1);
     Many ht
-  | Two (n1, n2), Many ht
-  | Many ht, Two (n1, n2) ->
+  | Two {constant=n1; coeficient=n2}, Many ht
+  | Many ht, Two {constant=n1; coeficient=n2} ->
     let ht = Hashtbl.copy ht in
     poly_update_ht ht 0 (n_plus n1);
     poly_update_ht ht 1 (n_plus n2);
@@ -147,21 +148,26 @@ let rec poly_mult e1 e2 =
     ht
   in
   match e1, e2 with
-  | One n1, One n2 -> One (n_mult n1 n2)
-  | One n1, Two (n2, n3)
-  | Two (n2, n3), One n1
-    -> Two (n_mult n1 n2, n_mult n1 n3)
-  | Two (n1, n2), Two (n3, n4) ->
+  | One n1, One n2 ->
+    One (n_mult n1 n2)
+
+  | One n1, Two {constant=n2; coeficient=n3}
+  | Two {constant=n2; coeficient=n3}, One n1 ->
+    Two {constant=n_mult n1 n2; coeficient=n_mult n1 n3}
+
+  | Two {constant=n1; coeficient=n2}, Two {constant=n3; coeficient=n4} ->
       let ht' = poly_mult_ht (mk_poly_ht n3 n4) (1, n2) in
       poly_add (poly_mult (One n1) e2) (Many ht')
+
   | One n1, Many ht
   | Many ht, One n1 ->
     hashtbl_elements ht
     |> List.map (fun (i, n) -> (i, n_mult n n1))
     |> hashtbl_from_list
     |> (fun ht -> Many ht)
-  | Two (n1, n2), Many ht
-  | Many ht, Two (n1, n2)
+
+  | Two {constant=n1; coeficient=n2}, Many ht
+  | Many ht, Two {constant=n1; coeficient=n2}
     -> poly_mult (Many (mk_poly_ht n1 n2)) (Many ht)
   | Many ht1, Many ht2 ->
     let ht = Hashtbl.create ((Hashtbl.length ht1) * (Hashtbl.length ht2)) in
@@ -176,14 +182,16 @@ let poly_uminus (p:poly_t) : poly_t =
   let u_minus n = n_mult (Num (-1)) n in
   match p with
   | One n -> One (u_minus n)
-  | Two (n1, n2) -> Two (u_minus n1, u_minus n2)
+  | Two {constant=n1; coeficient=n2} ->
+    Two {constant=u_minus n1; coeficient=u_minus n2}
+
   | Many ht -> hashtbl_elements ht
     |> List.map (fun (k, v)-> (k, u_minus v))
     |> fun l -> Many (hashtbl_from_list l)
 
 let rec n_to_poly v (n:nexp) : poly_t =
   match n with
-  | Var x -> if x = v then Two (Num 0, Num 1) else One n
+  | Var x -> if x = v then Two {constant=Num 0; coeficient=Num 1} else One n
   | Num _ -> One n
   | Proj _
   | NCall _
@@ -213,7 +221,7 @@ let handle_bank_conflicts (n:nexp) : poly_t option =
     | One n ->
       (* var x (e.g., threadIdx.x) is not in the expression *)
       if handle_coefficient n then Some p else None
-    | Two (c, k) ->
+    | Two {constant=c; coeficient=k} ->
       (* The expression is of form: (k * x + c) *)
       if handle_coefficient c && handle_coefficient k
       then Some p else None
@@ -225,7 +233,7 @@ let p_cost : poly_t -> int = function
   (* constant access pattern: this is a broadcast *)
   | One _ -> 1
   (* linear access pattern: maximize degree with Z3 *)
-  | Two (_, n) ->
+  | Two {constant=_; coeficient=n} ->
     (* we call Z3 from here to calculate the bank conflict degree *)
     let open Z3 in
     let open Z3expr in
@@ -249,6 +257,7 @@ let p_cost : poly_t -> int = function
   (* non-linear access pattern: theory incomplete *)
   | Many _ -> num_banks
 
+
 (* n_cost returns bank conflict degree of a poly n *)
 let n_cost (n : nexp) : int =
   let bc_fail (reason : string) : int =
@@ -257,12 +266,20 @@ let n_cost (n : nexp) : int =
       reason (Serialize.PPrint.n_to_s n) num_banks;
     num_banks
   in
-  match handle_bank_conflicts n with
-  | Some p ->
-    begin try p_cost p with
-    | Z3expr.Not_implemented e -> bc_fail e (* Z3expr TODO *)
-    end
-  | None -> bc_fail "pattern not linear"    (* theory TODO *)
+  let ctx = Vectorized.make
+    ~bank_count:32 ~tid_count:32 ~use_array:(fun _ -> true)
+  in
+    try
+      Vectorized.access n ctx |> Vectorized.NMap.max |> snd
+    with
+      Failure _ -> (
+      match handle_bank_conflicts n with
+      | Some p ->
+        begin try p_cost p with
+        | Z3expr.Not_implemented e -> bc_fail e (* Z3expr TODO *)
+        end
+      | None -> bc_fail "pattern not linear"    (* theory TODO *)
+      )
 
 (* access_cost returns bank conflict cost of an access *)
 let access_cost (a : access) : int =
