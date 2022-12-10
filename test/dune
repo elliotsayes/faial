@@ -10,6 +10,6 @@
    test_slice
    test_queries
  )
- (libraries stage0 stage1 drf inference oUnit)
+ (libraries stage0 protocols drf inference oUnit)
 )
 

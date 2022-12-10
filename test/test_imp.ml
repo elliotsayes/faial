@@ -1,5 +1,5 @@
 open Inference
-open Stage1
+open Protocols
 
 open OUnit2
 open Exp
