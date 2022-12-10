@@ -16,15 +16,26 @@ let load_data (fname : string) : (string * int) list =
   with
     _ -> []
 
-let create_ctx ~bank_count ~tid_count ~env:(env:(string*int) list) : Vectorized.t =
+let shared_arrays (k:Proto.prog Proto.kernel) : Variable.Set.t =
+  let open Proto in
+  let open Exp in
+  Variable.Map.bindings k.kernel_arrays
+  |> List.filter_map (fun (k, a) ->
+    if a.array_hierarchy = SharedMemory then
+      Some k
+    else
+      None
+  )
+  |> Variable.Set.of_list
+
+let create_ctx ~bank_count ~tid_count ~env:(env:(string*int) list) ~arrays : Vectorized.t =
+  let use_array x = Variable.Set.mem x arrays in
   List.fold_left (fun ctx ((k:string), (v:int)) ->
     print_endline (k ^ " = " ^ string_of_int v);
     let k = Variable.from_name k in
     let v = Vectorized.NMap.constant ~count:tid_count ~value:v in
     Vectorized.put k v ctx
-  ) (Vectorized.make ~bank_count ~tid_count) env
-
-(* Main function *)
+  ) (Vectorized.make ~bank_count ~tid_count ~use_array) env
 
 let main (fname : string) : unit =
   try
@@ -35,8 +46,8 @@ let main (fname : string) : unit =
     let proto = imp |> List.map Imp.compile in
     let env = load_data "env.json" in
     (try
-      let ctx = create_ctx ~bank_count:32 ~tid_count:32 ~env in
       List.iter (fun p ->
+        let ctx = create_ctx ~bank_count:32 ~tid_count:32 ~env ~arrays:(shared_arrays p) in
         let open Proto in
         let cost = Vectorized.eval p.kernel_code ctx in
         let (bid, max_cost) = Vectorized.NMap.max cost in

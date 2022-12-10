@@ -72,15 +72,17 @@ type t = {
   tid_count: int;
   cond: Exp.bexp;
   env: NMap.t Variable.Map.t;
+  use_array: Variable.t -> bool
 }
 
-let make ~bank_count ~tid_count : t = {
+let make ~bank_count ~tid_count ~use_array : t = {
   cond = Exp.Bool true;
   env = Variable.MapUtil.from_list [
     Variable.from_name "threadIdx.x", NMap.make tid_count (fun tid -> tid);
   ];
   bank_count;
   tid_count;
+  use_array;
 }
 
 let restrict (b:Exp.bexp) (ctx:t) : t =
@@ -137,7 +139,7 @@ and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
 
 let access (index:Exp.nexp) (ctx:t) =
   let msg =
-    "[" ^ Serialize.PPrint.n_to_s index ^ "] " ^
+    Serialize.PPrint.n_to_s index ^ " " ^
     "if (" ^ Serialize.PPrint.b_to_s ctx.cond ^ ")"
   in
   let index = n_eval index ctx in
@@ -168,30 +170,35 @@ let add = pointwise (+)
 
 let rec eval (p: Proto.prog) (ctx:t) : NMap.t =
   List.fold_left (fun cost (i:Proto.inst) ->
-    match i with
-    | Acc (_, {access_index=[n]; _}) ->
-      add cost (access n ctx)
-    | Acc _ -> failwith ("Unsupported access")
-    | Sync -> zero ctx
-    | Cond (b, p) ->
-      restrict b ctx
-      |> eval p
-    | Loop (r, body) ->
-      let has_next = Exp.range_has_next r in
-      if b_eval has_next ctx |> BMap.some_true then
-        let lo = n_eval r.range_lower_bound ctx in
-        let cost =
-          eval body (
-            ctx
-            |> restrict has_next
-            |> put r.range_var lo
-          )
-          |> add cost
-        in
-        eval [Loop (Predicates.range_inc r, body)] ctx
-        |> add cost
-      else
+    let new_cost = match i with
+      | Acc (x, {access_index=[n]; _}) ->
+        if ctx.use_array x then
+          access n ctx
+        else
+          zero ctx
+      | Acc _ ->
+        failwith ("Unsupported access")
+      | Sync ->
         zero ctx
+      | Cond (b, p) ->
+        restrict b ctx |> eval p
+      | Loop (r, body) ->
+        let has_next = Exp.range_has_next r in
+        if b_eval has_next ctx |> BMap.some_true then
+          let lo = n_eval r.range_lower_bound ctx in
+          add (
+            eval body (
+              ctx
+              |> restrict has_next
+              |> put r.range_var lo
+            )
+          )
+          (eval [Loop (Predicates.range_inc r, body)] ctx)
+
+        else
+          zero ctx
+      in
+      add cost new_cost
   ) (zero ctx) p
 
 
