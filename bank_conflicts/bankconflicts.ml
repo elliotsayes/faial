@@ -288,45 +288,71 @@ let access_cost (a : access) : int =
 
 (* ----------------- kernel cost analysis -------------------- *)
 
-(* normalize ranges in acc to start with zero *)
-let rec normalize_ranges (acc: 'a acc_t) : 'a acc_t =
-  match acc with
-  (* TODO: check range for tid in step before normalizing *)
-  | Range (r, acc) ->
+
+module SymExp = struct
+  type t =
+    | Const of int
+  (*   | Product of Variable.t * nexp * sym_exp *)
+    | Sum of Variable.t * nexp * t
+
+  let rec to_string : t -> string =
+    function
+    | Const x -> string_of_int x
+    | Sum (x, n, s) -> "Σ_{" ^ Variable.name x ^ " < " ^ Serialize.PPrint.n_to_s n ^ "} " ^ to_string s
+
+  let rec flatten : t -> nexp =
+    function
+    | Const k -> Num k
+    | Sum (x, ub, s) ->
+      (match n_to_poly x (flatten s) with
+      | One k -> n_mult ub k
+      | Two {constant=c; coeficient=e} ->
+        (* S1(e) = (e * (e + 1)) / 2 *)
+        n_plus (n_div (n_mult e (n_plus e (Num 1))) (Num 2))
+              (n_mult c ub)
+      | Many p ->
+        failwith ("error: flatten(" ^ poly_to_string (Variable.name x) (Many p)))
+  end
+
+
+let rec acc_to_sym : access acc_t -> SymExp.t =
+  function
+  | Acc a -> Const (access_cost a)
+  | Cond (_, p) -> acc_to_sym p
+  | Range (r, p) ->
+    match r with
+    | {
+        range_var=x;
+        range_lower_bound=Num 0;
+        range_step = Default (Num 1);
+        range_upper_bound=ub;
+        _
+      } ->
+      Sum (x, ub, acc_to_sym p)
+    | {range_step = Default (Num 1); _} ->
       (* subst [range_var := range_var + lower_bound]: *)
-      let new_range_var = Bin (Plus, Var r.range_var, r.range_lower_bound) in
-      let acc = acc_t_subst (r.range_var, new_range_var) acc in
+      let new_range_var = n_plus (Var r.range_var) r.range_lower_bound in
+      let p = acc_t_subst (r.range_var, new_range_var) p in
       (* rewrite lower_bound..upper_bound to 0..(upper_bound-lower_bound): *)
-      let r : range = {
-        range_var = r.range_var;
-        range_lower_bound = Num 0;
-        range_upper_bound = Bin (Minus, r.range_upper_bound, r.range_lower_bound);
-        range_step = r.range_step;
-        range_dir = Increase } in
-      (* the resulting normalized range: *)
-      Range (r, normalize_ranges acc)
-  | Cond (b, acc) -> Cond (b, normalize_ranges acc)
-  | Acc _ -> acc
+      let upper_bound = n_minus r.range_upper_bound r.range_lower_bound in
+      Sum (r.range_var, upper_bound, acc_to_sym p)
+    | {range_step = Default k; _} ->
+      (* x := k (x + lb) *)
+      let new_range_var = n_mult (n_plus (Var r.range_var) r.range_lower_bound) k in
+      let p = acc_t_subst (r.range_var, new_range_var) p in
+      let iters = n_minus r.range_upper_bound r.range_lower_bound in
+      (*  (ub-lb)/k + (ub-lb)%k *)
+      let upper_bound = n_plus (n_div iters k) (n_mod iters k) in
+      Sum (r.range_var, upper_bound, acc_to_sym p)
+
+    | _ -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r)
 
 (* acc_t_cost returns cost of an acc_t expression *)
-let rec acc_t_cost (acc : 'a acc_t) : nexp =
-  let acc = normalize_ranges acc in
-  match acc with
-  | Range (r, acc) ->
-    begin match r.range_step with
-    | Default step ->
-        let lb = r.range_lower_bound in
-        let ub = r.range_upper_bound in
-          (*  ((ub - lb) / step) * (cost of acc):  *)
-          Bin (Mult, Bin (Div, Bin (Minus, ub, lb), step), acc_t_cost acc)
-    | StepName pred_name ->
-        Printf.eprintf "WARNING: range step %s unsupported in range %s\n"
-          pred_name (Serialize.PPrint.r_to_s r);
-        acc_t_cost acc
-        (* TODO: support more pred_name steps *)
-    end
-  | Cond (_, acc) -> acc_t_cost acc
-  | Acc a -> Num (access_cost a)
+let acc_t_cost (acc : access acc_t) : nexp =
+  acc
+  |> acc_to_sym
+  |> (fun x -> print_endline (SymExp.to_string x); x)
+  |> SymExp.flatten
 
 (* nexp_sum folds a nexp list into a nexp summation *)
 let nexp_sum : nexp list -> nexp =
