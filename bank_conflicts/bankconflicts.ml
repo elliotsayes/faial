@@ -68,155 +68,162 @@ let proto_to_acc (x:Variable.t) (f: access -> 'a) (p: prog) : 'a acc_t list =
 
 
 (* ----------------- poly_t type -------------------- *)
+module Poly = struct
+  type poly_ht = (int, nexp) Hashtbl.t
 
-type poly_ht = (int, nexp) Hashtbl.t
+  type t =
+    | One of nexp
+    | Two of {constant: nexp; coeficient: nexp}
+    | Many of poly_ht
 
-type poly_t =
-  | One of nexp
-  | Two of {constant: nexp; coeficient: nexp}
-  | Many of poly_ht
+  let to_string x (p:t) =
+    let open Serialize in
+    let open PPrint in
+    match p with
+    | One n -> n_to_s n
+    | Two {constant=n1; coeficient=n2} -> n_par n1 ^ " + " ^ n_par n2 ^ " * " ^ x
+    | Many ht ->
+      hashtbl_elements ht
+      |> List.map (fun (k, v) -> n_par v ^ " * " ^ x ^ "^" ^ (string_of_int k))
+      |> join " + "
 
-let poly_to_string x (p:poly_t) =
-  let open Serialize in
-  let open PPrint in
-  match p with
-  | One n -> n_to_s n
-  | Two {constant=n1; coeficient=n2} -> n_par n1 ^ " + " ^ n_par n2 ^ " * " ^ x
-  | Many ht ->
-    hashtbl_elements ht
-    |> List.map (fun (k, v) -> n_par v ^ " * " ^ x ^ "^" ^ (string_of_int k))
-    |> join " + "
+  let max_coeficient : t -> int =
+    function
+    | One _ -> 0
+    | Two _ -> 1
+    | Many ht -> Hashtbl.to_seq_keys ht |> Seq.fold_left max 0
 
-let make_poly e n =
-  if n = 0 then
-    One e
-  else if n = 1 then
-    Two {constant=Num 0; coeficient=e}
-  else
-    let ht = Hashtbl.create 1 in
-    Hashtbl.add ht n e;
-    Many ht
+  let make (e:nexp) (n:int) : t =
+    if n = 0 then
+      One e
+    else if n = 1 then
+      Two {constant=Num 0; coeficient=e}
+    else
+      let ht = Hashtbl.create 1 in
+      Hashtbl.add ht n e;
+      Many ht
 
-let update_ht (ht:('a, 'b) Hashtbl.t) (k:'a)  (f:'b option -> 'b)  : unit =
-  Hashtbl.replace ht k (f (Hashtbl.find_opt ht k))
+  let update_ht (ht:('a, 'b) Hashtbl.t) (k:'a)  (f:'b option -> 'b)  : unit =
+    Hashtbl.replace ht k (f (Hashtbl.find_opt ht k))
 
-let poly_update_ht (ht:poly_ht) (k:int) (f:nexp -> nexp) : unit =
-  update_ht ht k (function | Some v -> f v | None -> f (Num 0))
+  let poly_update_ht (ht:poly_ht) (k:int) (f:nexp -> nexp) : unit =
+    update_ht ht k (function | Some v -> f v | None -> f (Num 0))
 
-let poly_add_ht (src:poly_ht) (dst:poly_ht) : unit =
-  Hashtbl.iter (fun i n ->
-    poly_update_ht dst i (n_plus n)
-  ) src
+  let poly_add_ht (src:poly_ht) (dst:poly_ht) : unit =
+    Hashtbl.iter (fun i n ->
+      poly_update_ht dst i (n_plus n)
+    ) src
 
-let poly_add e1 e2 =
-  match e1, e2 with
-  | One n1, One n2 -> One (n_plus n1 n2)
-  | One n1, Two {constant=n2; coeficient=n3}
-  | Two {constant=n2; coeficient=n3}, One n1 ->
-    Two {constant=n_plus n2 n1; coeficient=n3}
-  | Two {constant=n1; coeficient=n2}, Two {constant=n3; coeficient=n4} ->
-    Two {constant=n_plus n1 n3; coeficient=n_plus n2 n4}
-  | One n1, Many ht
-  | Many ht, One n1 ->
-    let ht = Hashtbl.copy ht in
-    poly_update_ht ht 0 (n_plus n1);
-    Many ht
-  | Two {constant=n1; coeficient=n2}, Many ht
-  | Many ht, Two {constant=n1; coeficient=n2} ->
-    let ht = Hashtbl.copy ht in
-    poly_update_ht ht 0 (n_plus n1);
-    poly_update_ht ht 1 (n_plus n2);
-    Many ht
-  | Many ht1, Many ht2 ->
-    let ht2 = Hashtbl.copy ht2 in
-    poly_add_ht ht1 ht2;
-    Many ht2
+  let add (e1:t) (e2:t) : t =
+    match e1, e2 with
+    | One n1, One n2 -> One (n_plus n1 n2)
+    | One n1, Two {constant=n2; coeficient=n3}
+    | Two {constant=n2; coeficient=n3}, One n1 ->
+      Two {constant=n_plus n2 n1; coeficient=n3}
+    | Two {constant=n1; coeficient=n2}, Two {constant=n3; coeficient=n4} ->
+      Two {constant=n_plus n1 n3; coeficient=n_plus n2 n4}
+    | One n1, Many ht
+    | Many ht, One n1 ->
+      let ht = Hashtbl.copy ht in
+      poly_update_ht ht 0 (n_plus n1);
+      Many ht
+    | Two {constant=n1; coeficient=n2}, Many ht
+    | Many ht, Two {constant=n1; coeficient=n2} ->
+      let ht = Hashtbl.copy ht in
+      poly_update_ht ht 0 (n_plus n1);
+      poly_update_ht ht 1 (n_plus n2);
+      Many ht
+    | Many ht1, Many ht2 ->
+      let ht2 = Hashtbl.copy ht2 in
+      poly_add_ht ht1 ht2;
+      Many ht2
 
-let rec poly_mult e1 e2 =
-  let poly_mult_ht (src:poly_ht) ((i1,n1):int*nexp) : poly_ht =
-    (* z * x * (a + b*x + c*x^2) = a * z * x + z * b * x ^ 2 ... *)
-    let dst = Hashtbl.create (Hashtbl.length src) in
-    Hashtbl.iter (fun i2 n2 ->
-      Hashtbl.add dst (i1 + i2) (n_mult n1 n2)
-    ) src;
-    dst
-  in
-  let mk_poly_ht (n1:nexp) (n2:nexp) : poly_ht =
-    let ht = Hashtbl.create 2 in
-    Hashtbl.add ht 0 n1;
-    Hashtbl.add ht 1 n2;
-    ht
-  in
-  match e1, e2 with
-  | One n1, One n2 ->
-    One (n_mult n1 n2)
+  let rec mult (e1:t) (e2:t) : t =
+    let mult_ht (src:poly_ht) ((i1,n1):int*nexp) : poly_ht =
+      (* z * x * (a + b*x + c*x^2) = a * z * x + z * b * x ^ 2 ... *)
+      let dst = Hashtbl.create (Hashtbl.length src) in
+      Hashtbl.iter (fun i2 n2 ->
+        Hashtbl.add dst (i1 + i2) (n_mult n1 n2)
+      ) src;
+      dst
+    in
+    let mk_poly_ht (n1:nexp) (n2:nexp) : poly_ht =
+      let ht = Hashtbl.create 2 in
+      Hashtbl.add ht 0 n1;
+      Hashtbl.add ht 1 n2;
+      ht
+    in
+    match e1, e2 with
+    | One n1, One n2 ->
+      One (n_mult n1 n2)
 
-  | One n1, Two {constant=n2; coeficient=n3}
-  | Two {constant=n2; coeficient=n3}, One n1 ->
-    Two {constant=n_mult n1 n2; coeficient=n_mult n1 n3}
+    | One n1, Two {constant=n2; coeficient=n3}
+    | Two {constant=n2; coeficient=n3}, One n1 ->
+      Two {constant=n_mult n1 n2; coeficient=n_mult n1 n3}
 
-  | Two {constant=n1; coeficient=n2}, Two {constant=n3; coeficient=n4} ->
-      let ht' = poly_mult_ht (mk_poly_ht n3 n4) (1, n2) in
-      poly_add (poly_mult (One n1) e2) (Many ht')
+    | Two {constant=n1; coeficient=n2}, Two {constant=n3; coeficient=n4} ->
+        let ht' = mult_ht (mk_poly_ht n3 n4) (1, n2) in
+        add (mult (One n1) e2) (Many ht')
 
-  | One n1, Many ht
-  | Many ht, One n1 ->
-    hashtbl_elements ht
-    |> List.map (fun (i, n) -> (i, n_mult n n1))
-    |> hashtbl_from_list
-    |> (fun ht -> Many ht)
+    | One n1, Many ht
+    | Many ht, One n1 ->
+      hashtbl_elements ht
+      |> List.map (fun (i, n) -> (i, n_mult n n1))
+      |> hashtbl_from_list
+      |> (fun ht -> Many ht)
 
-  | Two {constant=n1; coeficient=n2}, Many ht
-  | Many ht, Two {constant=n1; coeficient=n2}
-    -> poly_mult (Many (mk_poly_ht n1 n2)) (Many ht)
-  | Many ht1, Many ht2 ->
-    let ht = Hashtbl.create ((Hashtbl.length ht1) * (Hashtbl.length ht2)) in
-    hashtbl_elements ht1
-    |> List.map (poly_mult_ht ht2)
-    |> List.iter (fun src ->
-      poly_add_ht src ht
-    );
-    Many ht
+    | Two {constant=n1; coeficient=n2}, Many ht
+    | Many ht, Two {constant=n1; coeficient=n2}
+      -> mult (Many (mk_poly_ht n1 n2)) (Many ht)
+    | Many ht1, Many ht2 ->
+      let ht = Hashtbl.create ((Hashtbl.length ht1) * (Hashtbl.length ht2)) in
+      hashtbl_elements ht1
+      |> List.map (mult_ht ht2)
+      |> List.iter (fun src ->
+        poly_add_ht src ht
+      );
+      Many ht
 
-let poly_uminus (p:poly_t) : poly_t =
-  let u_minus n = n_mult (Num (-1)) n in
-  match p with
-  | One n -> One (u_minus n)
-  | Two {constant=n1; coeficient=n2} ->
-    Two {constant=u_minus n1; coeficient=u_minus n2}
+  let uminus (p:t) : t =
+    let u_minus n = n_mult (Num (-1)) n in
+    match p with
+    | One n -> One (u_minus n)
+    | Two {constant=n1; coeficient=n2} ->
+      Two {constant=u_minus n1; coeficient=u_minus n2}
 
-  | Many ht -> hashtbl_elements ht
-    |> List.map (fun (k, v)-> (k, u_minus v))
-    |> fun l -> Many (hashtbl_from_list l)
+    | Many ht -> hashtbl_elements ht
+      |> List.map (fun (k, v)-> (k, u_minus v))
+      |> fun l -> Many (hashtbl_from_list l)
 
-let rec n_to_poly v (n:nexp) : poly_t =
-  match n with
-  | Var x -> if x = v then Two {constant=Num 0; coeficient=Num 1} else One n
-  | Num _ -> One n
-  | Proj _
-  | NCall _
-  | NIf _ -> One (Num 0)
-  | Bin (Plus, e1, e2) -> poly_add (n_to_poly v e1) (n_to_poly v e2)
-  | Bin (Minus, e1, e2) -> poly_add (n_to_poly v e1) (poly_uminus (n_to_poly v e2))
-  | Bin (Mult, e1, e2) -> poly_mult (n_to_poly v e1) (n_to_poly v e2)
-  | Bin _ -> One (Num 0)
+  let rec from_nexp v (n:nexp) : t =
+    match n with
+    | Var x -> if x = v then Two {constant=Num 0; coeficient=Num 1} else One n
+    | Num _ -> One n
+    | Proj _
+    | NCall _
+    | NIf _ -> One (Num 0)
+    | Bin (Plus, e1, e2) -> add (from_nexp v e1) (from_nexp v e2)
+    | Bin (Minus, e1, e2) -> add (from_nexp v e1) (uminus (from_nexp v e2))
+    | Bin (Mult, e1, e2) -> mult (from_nexp v e1) (from_nexp v e2)
+    | Bin _ -> One (Num 0)
 
 
-let proto_to_poly x v p : (poly_t list) acc_t list =
+end
+(*
+let proto_to_poly x v p : (Poly.t list) acc_t list =
   proto_to_acc x (fun (a:access) -> List.map (n_to_poly v) (a.access_index)) p
-
-
+*)
 (* ----------------- transaction cost analysis -------------------- *)
 
 (* This function indicates whether our theory CAN analyze the expression, not
    if there are bank-conflicts!  Returns None if we CANNOT analyze. *)
-let handle_bank_conflicts (n:nexp) : poly_t option =
+let handle_bank_conflicts (n:nexp) : Poly.t option =
   let handle_coefficient (n:nexp) : bool =
     let fns = Freenames.free_names_nexp n Variable.Set.empty in
     Variable.Set.disjoint (Variable.Set.of_list tid_vars) fns
   in
-  let handle_poly (x: Variable.t) : poly_t option =
-    let p = n_to_poly x n in
+  let handle_poly (x: Variable.t) : Poly.t option =
+    let p = Poly.from_nexp x n in
     match p with
     | One n ->
       (* var x (e.g., threadIdx.x) is not in the expression *)
@@ -229,7 +236,7 @@ let handle_bank_conflicts (n:nexp) : poly_t option =
   in List.find_map handle_poly tid_vars
 
 (* p_cost returns bank conflict degree of a poly p *)
-let p_cost : poly_t -> int = function
+let p_cost : Poly.t -> int = function
   (* constant access pattern: this is a broadcast *)
   | One _ -> 1
   (* linear access pattern: maximize degree with Z3 *)
@@ -304,14 +311,14 @@ module SymExp = struct
     function
     | Const k -> Num k
     | Sum (x, ub, s) ->
-      (match n_to_poly x (flatten s) with
+      (match Poly.from_nexp x (flatten s) with
       | One k -> n_mult ub k
       | Two {constant=c; coeficient=e} ->
         (* S1(e) = (e * (e + 1)) / 2 *)
         n_plus (n_div (n_mult e (n_plus e (Num 1))) (Num 2))
               (n_mult c ub)
       | Many p ->
-        failwith ("error: flatten(" ^ poly_to_string (Variable.name x) (Many p)))
+        failwith ("error: flatten(" ^ Poly.to_string (Variable.name x) (Many p)))
   end
 
 
