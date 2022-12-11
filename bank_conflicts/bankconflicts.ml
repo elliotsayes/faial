@@ -243,7 +243,8 @@ let handle_bank_conflicts (n:Exp.nexp) : Poly.t option =
 (* p_cost returns bank conflict degree of a poly p *)
 let p_cost : Poly.t -> int = function
   (* constant access pattern: this is a broadcast *)
-  | One _ -> 1
+  | One _ ->
+    1
   (* linear access pattern: maximize degree with Z3 *)
   | Two {constant=_; coeficient=n} ->
     (* we call Z3 from here to calculate the bank conflict degree *)
@@ -269,33 +270,38 @@ let p_cost : Poly.t -> int = function
   (* non-linear access pattern: theory incomplete *)
   | Many _ -> num_banks
 
+let has_thread_locals (locs : Variable.Set.t) (n:Exp.nexp) : bool =
+  let fvs = Freenames.free_names_nexp n Variable.Set.empty in
+  not (Variable.Set.inter locs fvs |> Variable.Set.is_empty)
 
 (* n_cost returns bank conflict degree of a poly n *)
-let n_cost (n : Exp.nexp) : int =
+let n_cost (locs : Variable.Set.t) (n : Exp.nexp) : int =
   let bc_fail (reason : string) : int =
     Printf.eprintf
       "WARNING: %s: %s: assuming worst case bank conflict of %d\n"
       reason (Serialize.PPrint.n_to_s n) num_banks;
     num_banks
   in
-  let ctx = Vectorized.make
-    ~bank_count:32 ~tid_count:32 ~use_array:(fun _ -> true)
-  in
-    try
-      Vectorized.access n ctx |> Vectorized.NMap.max |> snd
-    with
-      Failure _ -> (
-      match handle_bank_conflicts n with
-      | Some p ->
-        begin try p_cost p with
-        | Z3expr.Not_implemented e -> bc_fail e (* Z3expr TODO *)
-        end
-      | None -> bc_fail "pattern not linear"    (* theory TODO *)
-      )
+  if has_thread_locals locs n then num_banks
+  else
+    let ctx = Vectorized.make
+      ~bank_count:32 ~tid_count:32 ~use_array:(fun _ -> true)
+    in
+      try
+        Vectorized.access n ctx |> Vectorized.NMap.max |> snd
+      with
+        Failure _ -> (
+        match handle_bank_conflicts n with
+        | Some p ->
+          begin try p_cost p with
+          | Z3expr.Not_implemented e -> bc_fail e (* Z3expr TODO *)
+          end
+        | None -> bc_fail "pattern not linear"    (* theory TODO *)
+        )
 
 (* access_cost returns bank conflict cost of an access *)
-let access_cost (a : Exp.access) : int =
-  List.fold_left (+) 0 (List.map n_cost a.access_index)
+let access_cost (locs:Variable.Set.t) (a : Exp.access) : int =
+  List.fold_left (+) 0 (List.map (n_cost locs) a.access_index)
 
 
 (* ----------------- kernel cost analysis -------------------- *)
@@ -328,10 +334,10 @@ module SymExp = struct
 end
 
 
-let rec slice_to_sym : Slice.t -> SymExp.t =
+let rec slice_to_sym (locs:Variable.Set.t) : Slice.t -> SymExp.t =
   function
-  | Acc a -> Const (access_cost a)
-  | Cond (_, p) -> slice_to_sym p
+  | Acc a -> Const (access_cost locs a)
+  | Cond (_, p) -> slice_to_sym locs p
   | Loop (r, p) ->
     match r with
     | {
@@ -341,7 +347,7 @@ let rec slice_to_sym : Slice.t -> SymExp.t =
         range_upper_bound=ub;
         _
       } ->
-      Sum (x, ub, slice_to_sym p)
+      Sum (x, ub, slice_to_sym locs p)
     | {range_step = Default (Num 1); _} ->
       let open Exp in
       (* subst [range_var := range_var + lower_bound]: *)
@@ -349,7 +355,7 @@ let rec slice_to_sym : Slice.t -> SymExp.t =
       let p = Slice.subst (r.range_var, new_range_var) p in
       (* rewrite lower_bound..upper_bound to 0..(upper_bound-lower_bound): *)
       let upper_bound = n_minus r.range_upper_bound r.range_lower_bound in
-      Sum (r.range_var, upper_bound, slice_to_sym p)
+      Sum (r.range_var, upper_bound, slice_to_sym locs p)
     | {range_step = Default k; _} ->
       let open Exp in
       (* x := k (x + lb) *)
@@ -358,14 +364,14 @@ let rec slice_to_sym : Slice.t -> SymExp.t =
       let iters = n_minus r.range_upper_bound r.range_lower_bound in
       (*  (ub-lb)/k + (ub-lb)%k *)
       let upper_bound = n_plus (n_div iters k) (n_mod iters k) in
-      Sum (r.range_var, upper_bound, slice_to_sym p)
+      Sum (r.range_var, upper_bound, slice_to_sym locs p)
 
     | _ -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r)
 
 (* acc_t_cost returns cost of an acc_t expression *)
-let slice_to_nexp (acc : Slice.t) : Exp.nexp =
+let slice_to_nexp (locs:Variable.Set.t) (acc : Slice.t) : Exp.nexp =
   acc
-  |> slice_to_sym
+  |> slice_to_sym locs
   |> (fun x -> print_endline (SymExp.to_string x); x)
   |> SymExp.flatten
 
@@ -373,7 +379,7 @@ let slice_to_nexp (acc : Slice.t) : Exp.nexp =
 (* shared_cost returns the cost of all accesses to a shared memory array *)
 let shared_cost (k : Proto.prog Proto.kernel) (v : Variable.t) : Exp.nexp Seq.t =
   Slice.from_proto v k.kernel_code
-  |> Seq.map slice_to_nexp
+  |> Seq.map (slice_to_nexp k.kernel_local_variables)
 
 (* k_cost returns the cost of a kernel *)
 let k_cost (k : Proto.prog Proto.kernel) : Exp.nexp Seq.t =
