@@ -33,7 +33,7 @@ let brel_to_expr : brel -> context -> expr -> expr -> expr = function
 | BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
 
 let rec n_to_expr (ctx:context) (n:nexp) : expr = match n with
-  Var _
+| Var x -> Variable.name x |> Arithmetic.Integer.mk_const_s ctx
 | Proj _
 | NCall _ ->
     let n : string = Serialize.PPrint.n_to_s n in

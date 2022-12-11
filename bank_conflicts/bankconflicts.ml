@@ -205,7 +205,7 @@ module Poly = struct
 
   let rec from_nexp v (n:nexp) : t =
     match n with
-    | Var x -> if x = v then Two {constant=Num 0; coeficient=Num 1} else One n
+    | Var x -> if Variable.equal x v then Two {constant=Num 0; coeficient=Num 1} else One n
     | Num _ -> One n
     | Proj _
     | NCall _
@@ -240,6 +240,49 @@ let handle_bank_conflicts (n:Exp.nexp) : Poly.t option =
     | Many _ -> None
   in List.find_map handle_poly tid_vars
 
+let solve f (tid_count:int) (n:Exp.nexp) : Exp.nexp =
+  let open Exp in
+  let fvs = Freenames.free_names_nexp n Variable.Set.empty in
+  let tid = Variable.from_name "threadIdx.x" in
+  if Variable.Set.mem tid fvs then
+    let open Z3 in
+    let open Z3expr in
+    (* print_endline (Freenames.free_names_nexp n); *)
+    let ctx = mk_context [] in
+    let n_expr = n_to_expr ctx n in
+    let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
+    let lb_eq = Boolean.mk_eq ctx lb n_expr in
+    let opt = Optimize.mk_opt ctx in
+    Optimize.add opt [ lb_eq; b_to_expr ctx (b_and (n_ge (Var tid) (Num 0)) (n_lt (Var tid) (Num tid_count))) ];
+    let _ = f opt lb in
+    if Optimize.check opt = Solver.SATISFIABLE then
+      let m = Optimize.get_model opt |> Option.get in
+      let tid_val =
+        m
+        |> Model.get_const_decls
+        |> List.find_map (fun d ->
+          let key: string = FuncDecl.get_name d |> Symbol.get_string in
+          if key = "threadIdx.x" then
+            let e : string = FuncDecl.apply d []
+              |> (fun e -> Model.eval m e true)
+              |> Option.map Expr.to_string
+              |> Ojson.unwrap_or "?"
+            in
+            Some (int_of_string e)
+          else None)
+      in
+      match tid_val with
+      | Some tid_val -> Subst.ReplacePair.n_subst (tid, Num tid_val) n
+      | None -> n
+    else
+      failwith ("unable to find a lower bound")
+  else
+    n
+
+let minimize = solve Z3.Optimize.minimize
+let maximize = solve Z3.Optimize.maximize
+
+
 (* p_cost returns bank conflict degree of a poly p *)
 let p_cost : Poly.t -> int = function
   (* constant access pattern: this is a broadcast *)
@@ -253,8 +296,8 @@ let p_cost : Poly.t -> int = function
     (* print_endline (Freenames.free_names_nexp n); *)
     let ctx = mk_context [] in
     let n_expr = n_to_expr ctx n in
-    let k = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "k") in
-    let d = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "d") in
+    let k = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?k") in
+    let d = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?d") in
     let num (n : int) = Arithmetic.Integer.mk_numeral_i ctx n in
     let k_eq = Boolean.mk_eq ctx k n_expr in
     let d_eq = Boolean.mk_or ctx (bc_degrees |> List.map (fun n ->
@@ -282,6 +325,7 @@ let n_cost (locs : Variable.Set.t) (n : Exp.nexp) : int =
       reason (Serialize.PPrint.n_to_s n) num_banks;
     num_banks
   in
+  let locs = Variable.Set.remove (Variable.from_name "threadIdx.x") locs in
   if has_thread_locals locs n then num_banks
   else
     let ctx = Vectorized.make
@@ -350,18 +394,22 @@ let rec slice_to_sym (locs:Variable.Set.t) : Slice.t -> SymExp.t =
       Sum (x, ub, slice_to_sym locs p)
     | {range_step = Default (Num 1); _} ->
       let open Exp in
+      let lb = r.range_lower_bound |> minimize 1024 in
+      let ub = r.range_upper_bound |> maximize 1024 in
       (* subst [range_var := range_var + lower_bound]: *)
-      let new_range_var = n_plus (Var r.range_var) r.range_lower_bound in
+      let new_range_var = n_plus (Var r.range_var) lb in
       let p = Slice.subst (r.range_var, new_range_var) p in
       (* rewrite lower_bound..upper_bound to 0..(upper_bound-lower_bound): *)
-      let upper_bound = n_minus r.range_upper_bound r.range_lower_bound in
+      let upper_bound = n_minus ub lb in
       Sum (r.range_var, upper_bound, slice_to_sym locs p)
     | {range_step = Default k; _} ->
       let open Exp in
+      let lb = r.range_lower_bound |> minimize 1024 in
+      let ub = r.range_upper_bound |> maximize 1024 in
       (* x := k (x + lb) *)
-      let new_range_var = n_mult (n_plus (Var r.range_var) r.range_lower_bound) k in
+      let new_range_var = n_mult (n_plus (Var r.range_var) lb) k in
       let p = Slice.subst (r.range_var, new_range_var) p in
-      let iters = n_minus r.range_upper_bound r.range_lower_bound in
+      let iters = n_minus ub lb in
       (*  (ub-lb)/k + (ub-lb)%k *)
       let upper_bound = n_plus (n_div iters k) (n_mod iters k) in
       Sum (r.range_var, upper_bound, slice_to_sym locs p)
