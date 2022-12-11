@@ -410,8 +410,8 @@ let rec slice_to_sym (locs:Variable.Set.t) : Slice.t -> SymExp.t =
       let new_range_var = n_mult (n_plus (Var r.range_var) lb) k in
       let p = Slice.subst (r.range_var, new_range_var) p in
       let iters = n_minus ub lb in
-      (*  (ub-lb)/k + (ub-lb)%k *)
-      let upper_bound = n_plus (n_div iters k) (n_mod iters k) in
+      (*  (ub-lb)/k *)
+      let upper_bound = n_div iters k in
       Sum (r.range_var, upper_bound, slice_to_sym locs p)
 
     | _ -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r)
