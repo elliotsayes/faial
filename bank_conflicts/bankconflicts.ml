@@ -1,11 +1,6 @@
 open Stage0
 open Protocols
 
-open Exp
-open Proto
-open Common
-
-
 (* ----------------- constants -------------------- *)
 
 let tid_vars : Variable.t list =
@@ -20,55 +15,68 @@ let bc_degrees = [1; 2; 4; 8; 16; 32]
 
 (* ----------------- acc_t type -------------------- *)
 
-type 'a acc_t =
-  | Range of range * 'a acc_t
-  | Cond of bexp * 'a acc_t
-  | Acc of 'a
+module Slice = struct
 
-module Make (S:Subst.SUBST) = struct
-  module M = Subst.Make(S)
+  type t =
+    | Loop of Exp.range * t
+    | Cond of Exp.bexp * t
+    | Acc of Exp.access
 
-  let rec acc_t_subst (s:S.t) (acc: 'a acc_t) : 'a acc_t =
-    match acc with
-    | Range (r, acc) -> Range (M.r_subst s r, acc_t_subst s acc)
-    | Cond (b, acc) -> Cond (M.b_subst s b, acc_t_subst s acc)
-    | Acc a -> Acc (M.a_subst s a)
+  module Make (S:Subst.SUBST) = struct
+    module M = Subst.Make(S)
+
+    let rec subst (s:S.t) : t -> t =
+      function
+      | Loop (r, acc) -> Loop (M.r_subst s r, subst s acc)
+      | Cond (b, acc) -> Cond (M.b_subst s b, subst s acc)
+      | Acc a -> Acc (M.a_subst s a)
+
+  end
+
+  module S1 = Make(Subst.SubstPair)
+
+  let subst = S1.subst
+
+  let rec to_string (v : Variable.t) : t -> string =
+    function
+    | Loop (r, acc) ->
+        Serialize.PPrint.r_to_s r ^ ": " ^ to_string v acc
+    | Cond (b, acc) ->
+        "if ( " ^ Serialize.PPrint.b_to_s b ^ " ) " ^ to_string v acc
+    | Acc a ->
+        Serialize.PPrint.doc_to_string (Serialize.PPrint.acc_expr_to_s (v, a))
+
+  let rec access : t -> Exp.access =
+    function
+    | Loop (_, acc)
+    | Cond (_, acc) -> access acc
+    | Acc a -> a
+
+  let from_proto (x:Variable.t) : Proto.prog -> t Seq.t =
+    let rec on_i : Proto.inst -> t Seq.t =
+      function
+      | Proto.Acc (y, e) when Variable.equal x y ->
+        Seq.return (Acc e)
+      | Proto.Acc _
+      | Proto.Sync ->
+        Seq.empty
+      | Proto.Cond (b, p) ->
+        on_p p
+        |> Seq.map (fun i -> Cond (b, i))
+      | Proto.Loop (r, p) ->
+        on_p p
+        |> Seq.map (fun i -> (Loop (r, i)))
+
+    and on_p (l: Proto.prog) : t Seq.t =
+      l |> List.to_seq |> Seq.flat_map on_i
+    in
+    on_p
 
 end
 
-module S1 = Make(Subst.SubstPair)
-
-let acc_t_subst = S1.acc_t_subst
-
-let rec acc_t_to_s (v : Variable.t) : 'a acc_t -> string = function
-  | Range (r, acc) ->
-      (Serialize.PPrint.r_to_s r) ^ ": " ^ (acc_t_to_s v acc)
-  | Cond (b, acc) ->
-      "if ( " ^ (Serialize.PPrint.b_to_s b) ^ " ) " ^ (acc_t_to_s v acc)
-  | Acc a ->
-      Serialize.PPrint.doc_to_string (Serialize.PPrint.acc_expr_to_s (v, a))
-
-let rec get_acc (acc: 'a acc_t) =
-  match acc with
-  | Range (_, acc)
-  | Cond (_, acc) -> get_acc acc
-  | Acc a -> a
-
-let proto_to_acc (x:Variable.t) (f: access -> 'a) (p: prog) : 'a acc_t list =
-  let rec on_i (i:inst) : 'a acc_t list =
-    match i with
-    | Acc (y, e) -> if Variable.equal x y then [Acc (f e)] else []
-    | Sync -> []
-    | Cond (b, is) -> on_p is |> List.map (fun i : 'a acc_t -> (Cond (b, i)))
-    | Loop (r, is) -> on_p is |> List.map (fun i : 'a acc_t -> (Range (r, i)))
-
-  and on_p (l:prog) : 'a acc_t list =
-    List.concat_map on_i l
-  in on_p p
-
-
 (* ----------------- poly_t type -------------------- *)
 module Poly = struct
+  open Exp
   type poly_ht = (int, nexp) Hashtbl.t
 
   type t =
@@ -83,9 +91,9 @@ module Poly = struct
     | One n -> n_to_s n
     | Two {constant=n1; coeficient=n2} -> n_par n1 ^ " + " ^ n_par n2 ^ " * " ^ x
     | Many ht ->
-      hashtbl_elements ht
+      Common.hashtbl_elements ht
       |> List.map (fun (k, v) -> n_par v ^ " * " ^ x ^ "^" ^ (string_of_int k))
-      |> join " + "
+      |> Common.join " + "
 
   let max_coeficient : t -> int =
     function
@@ -167,9 +175,9 @@ module Poly = struct
 
     | One n1, Many ht
     | Many ht, One n1 ->
-      hashtbl_elements ht
+      Common.hashtbl_elements ht
       |> List.map (fun (i, n) -> (i, n_mult n n1))
-      |> hashtbl_from_list
+      |> Common.hashtbl_from_list
       |> (fun ht -> Many ht)
 
     | Two {constant=n1; coeficient=n2}, Many ht
@@ -177,7 +185,7 @@ module Poly = struct
       -> mult (Many (mk_poly_ht n1 n2)) (Many ht)
     | Many ht1, Many ht2 ->
       let ht = Hashtbl.create ((Hashtbl.length ht1) * (Hashtbl.length ht2)) in
-      hashtbl_elements ht1
+      Common.hashtbl_elements ht1
       |> List.map (mult_ht ht2)
       |> List.iter (fun src ->
         poly_add_ht src ht
@@ -191,9 +199,9 @@ module Poly = struct
     | Two {constant=n1; coeficient=n2} ->
       Two {constant=u_minus n1; coeficient=u_minus n2}
 
-    | Many ht -> hashtbl_elements ht
+    | Many ht -> Common.hashtbl_elements ht
       |> List.map (fun (k, v)-> (k, u_minus v))
-      |> fun l -> Many (hashtbl_from_list l)
+      |> fun l -> Many (Common.hashtbl_from_list l)
 
   let rec from_nexp v (n:nexp) : t =
     match n with
@@ -209,16 +217,13 @@ module Poly = struct
 
 
 end
-(*
-let proto_to_poly x v p : (Poly.t list) acc_t list =
-  proto_to_acc x (fun (a:access) -> List.map (n_to_poly v) (a.access_index)) p
-*)
+
 (* ----------------- transaction cost analysis -------------------- *)
 
 (* This function indicates whether our theory CAN analyze the expression, not
    if there are bank-conflicts!  Returns None if we CANNOT analyze. *)
-let handle_bank_conflicts (n:nexp) : Poly.t option =
-  let handle_coefficient (n:nexp) : bool =
+let handle_bank_conflicts (n:Exp.nexp) : Poly.t option =
+  let handle_coefficient (n:Exp.nexp) : bool =
     let fns = Freenames.free_names_nexp n Variable.Set.empty in
     Variable.Set.disjoint (Variable.Set.of_list tid_vars) fns
   in
@@ -266,7 +271,7 @@ let p_cost : Poly.t -> int = function
 
 
 (* n_cost returns bank conflict degree of a poly n *)
-let n_cost (n : nexp) : int =
+let n_cost (n : Exp.nexp) : int =
   let bc_fail (reason : string) : int =
     Printf.eprintf
       "WARNING: %s: %s: assuming worst case bank conflict of %d\n"
@@ -289,7 +294,7 @@ let n_cost (n : nexp) : int =
       )
 
 (* access_cost returns bank conflict cost of an access *)
-let access_cost (a : access) : int =
+let access_cost (a : Exp.access) : int =
   List.fold_left (+) 0 (List.map n_cost a.access_index)
 
 
@@ -297,17 +302,18 @@ let access_cost (a : access) : int =
 
 
 module SymExp = struct
+  open Exp
   type t =
     | Const of int
   (*   | Product of Variable.t * nexp * sym_exp *)
-    | Sum of Variable.t * nexp * t
+    | Sum of Variable.t * Exp.nexp * t
 
   let rec to_string : t -> string =
     function
     | Const x -> string_of_int x
     | Sum (x, n, s) -> "Σ_{" ^ Variable.name x ^ " < " ^ Serialize.PPrint.n_to_s n ^ "} " ^ to_string s
 
-  let rec flatten : t -> nexp =
+  let rec flatten : t -> Exp.nexp =
     function
     | Const k -> Num k
     | Sum (x, ub, s) ->
@@ -319,14 +325,14 @@ module SymExp = struct
               (n_mult c ub)
       | Many p ->
         failwith ("error: flatten(" ^ Poly.to_string (Variable.name x) (Many p)))
-  end
+end
 
 
-let rec acc_to_sym : access acc_t -> SymExp.t =
+let rec slice_to_sym : Slice.t -> SymExp.t =
   function
   | Acc a -> Const (access_cost a)
-  | Cond (_, p) -> acc_to_sym p
-  | Range (r, p) ->
+  | Cond (_, p) -> slice_to_sym p
+  | Loop (r, p) ->
     match r with
     | {
         range_var=x;
@@ -335,46 +341,51 @@ let rec acc_to_sym : access acc_t -> SymExp.t =
         range_upper_bound=ub;
         _
       } ->
-      Sum (x, ub, acc_to_sym p)
+      Sum (x, ub, slice_to_sym p)
     | {range_step = Default (Num 1); _} ->
+      let open Exp in
       (* subst [range_var := range_var + lower_bound]: *)
       let new_range_var = n_plus (Var r.range_var) r.range_lower_bound in
-      let p = acc_t_subst (r.range_var, new_range_var) p in
+      let p = Slice.subst (r.range_var, new_range_var) p in
       (* rewrite lower_bound..upper_bound to 0..(upper_bound-lower_bound): *)
       let upper_bound = n_minus r.range_upper_bound r.range_lower_bound in
-      Sum (r.range_var, upper_bound, acc_to_sym p)
+      Sum (r.range_var, upper_bound, slice_to_sym p)
     | {range_step = Default k; _} ->
+      let open Exp in
       (* x := k (x + lb) *)
       let new_range_var = n_mult (n_plus (Var r.range_var) r.range_lower_bound) k in
-      let p = acc_t_subst (r.range_var, new_range_var) p in
+      let p = Slice.subst (r.range_var, new_range_var) p in
       let iters = n_minus r.range_upper_bound r.range_lower_bound in
       (*  (ub-lb)/k + (ub-lb)%k *)
       let upper_bound = n_plus (n_div iters k) (n_mod iters k) in
-      Sum (r.range_var, upper_bound, acc_to_sym p)
+      Sum (r.range_var, upper_bound, slice_to_sym p)
 
     | _ -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r)
 
 (* acc_t_cost returns cost of an acc_t expression *)
-let acc_t_cost (acc : access acc_t) : nexp =
+let slice_to_nexp (acc : Slice.t) : Exp.nexp =
   acc
-  |> acc_to_sym
+  |> slice_to_sym
   |> (fun x -> print_endline (SymExp.to_string x); x)
   |> SymExp.flatten
 
-(* nexp_sum folds a nexp list into a nexp summation *)
-let nexp_sum : nexp list -> nexp =
-  List.fold_left n_plus (Num 0)
 
 (* shared_cost returns the cost of all accesses to a shared memory array *)
-let shared_cost (k : prog kernel) (v : Variable.t) : nexp =
-  let accs : 'a acc_t list = proto_to_acc v Fun.id k.kernel_code in
-  nexp_sum (List.map acc_t_cost accs)
+let shared_cost (k : Proto.prog Proto.kernel) (v : Variable.t) : Exp.nexp =
+  Slice.from_proto v k.kernel_code
+  |> Seq.map slice_to_nexp
+  |> Seq.fold_left Exp.n_plus (Num 0)
 
 (* k_cost returns the cost of a kernel *)
-let k_cost (k : prog kernel) : nexp =
-  let vs : Variable.t list = Variable.Set.elements (kernel_shared_arrays k) in
-  nexp_sum (List.map (shared_cost k) vs)
+let k_cost (k : Proto.prog Proto.kernel) : Exp.nexp =
+  Proto.kernel_shared_arrays k
+  |> Variable.Set.to_seq
+  |> Seq.map (shared_cost k)
+  |> Seq.fold_left Exp.n_plus (Num 0)
 
 (* p_k_cost returns the cost of all kernels in the program source *)
-let p_k_cost (ks : prog kernel list) : nexp =
-  Constfold.n_opt (nexp_sum (List.map k_cost ks))
+let p_k_cost (ks : Proto.prog Proto.kernel list) : Exp.nexp =
+  List.to_seq ks
+  |> Seq.map k_cost
+  |> Seq.fold_left Exp.n_plus (Num 0)
+  |> Constfold.n_opt
