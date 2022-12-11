@@ -371,21 +371,19 @@ let slice_to_nexp (acc : Slice.t) : Exp.nexp =
 
 
 (* shared_cost returns the cost of all accesses to a shared memory array *)
-let shared_cost (k : Proto.prog Proto.kernel) (v : Variable.t) : Exp.nexp =
+let shared_cost (k : Proto.prog Proto.kernel) (v : Variable.t) : Exp.nexp Seq.t =
   Slice.from_proto v k.kernel_code
   |> Seq.map slice_to_nexp
-  |> Seq.fold_left Exp.n_plus (Num 0)
 
 (* k_cost returns the cost of a kernel *)
-let k_cost (k : Proto.prog Proto.kernel) : Exp.nexp =
+let k_cost (k : Proto.prog Proto.kernel) : Exp.nexp Seq.t =
   Proto.kernel_shared_arrays k
   |> Variable.Set.to_seq
-  |> Seq.map (shared_cost k)
-  |> Seq.fold_left Exp.n_plus (Num 0)
+  |> Seq.concat_map (shared_cost k)
 
 (* p_k_cost returns the cost of all kernels in the program source *)
 let p_k_cost (ks : Proto.prog Proto.kernel list) : Exp.nexp =
   List.to_seq ks
-  |> Seq.map k_cost
+  |> Seq.concat_map k_cost
   |> Seq.fold_left Exp.n_plus (Num 0)
   |> Constfold.n_opt
