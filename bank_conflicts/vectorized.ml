@@ -86,7 +86,7 @@ let make ~bank_count ~tid_count ~use_array : t = {
 }
 
 let restrict (b:Exp.bexp) (ctx:t) : t =
-  print_endline ("Restrict: " ^ Serialize.PPrint.b_to_s b);
+(*   print_endline ("Restrict: " ^ Serialize.PPrint.b_to_s b); *)
   let open Exp in
   { ctx with cond = b_and ctx.cond b }
 
@@ -153,6 +153,7 @@ let access ?(verbose=false) (index:Exp.nexp) (ctx:t) =
       IntSet.empty
       v_index
     |> IntSet.cardinal
+    |> fun x -> x - 1
   in
   let tsx = List.init ctx.bank_count bank in
   (if verbose then (
@@ -189,6 +190,7 @@ let rec eval (p: Proto.prog) (ctx:t) : NMap.t =
         let has_next = Exp.range_has_next r in
         if b_eval has_next ctx |> BMap.some_true then
           let lo = n_eval r.range_lower_bound ctx in
+          let r = Predicates.range_next r in
           add (
             eval body (
               ctx
@@ -196,7 +198,7 @@ let rec eval (p: Proto.prog) (ctx:t) : NMap.t =
               |> put r.range_var lo
             )
           )
-          (eval [Loop (Predicates.range_inc r, body)] ctx)
+          (eval [Loop (r, body)] ctx)
 
         else
           zero ctx

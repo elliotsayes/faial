@@ -214,6 +214,9 @@ let step_inc (s:step_expr) : nexp -> nexp =
   | Default n -> n_plus n
   | StepName pred_name -> (get_step_handler pred_name).step_handler_inc
 
+let range_next (r:range) : range =
+  { r with range_lower_bound = step_inc r.range_step r.range_lower_bound}
+
 let step_dec (s:step_expr) : nexp -> nexp =
   match s with
   | Default n -> fun m -> n_minus m n
