@@ -203,6 +203,15 @@ module Poly = struct
       |> List.map (fun (k, v)-> (k, u_minus v))
       |> fun l -> Many (Common.hashtbl_from_list l)
 
+  let to_seq : t -> (nexp*int) Seq.t =
+    function
+    | One x -> Seq.return (x, 0)
+    | Two {constant=n1; coeficient=n2} -> [n1, 0; n2, 1] |> List.to_seq
+    | Many ht ->
+      Common.hashtbl_elements ht
+      |> List.to_seq
+      |> Seq.map (fun (x, y) -> (y, x))
+
   let rec from_nexp v (n:nexp) : t =
     match n with
     | Var x -> if Variable.equal x v then Two {constant=Num 0; coeficient=Num 1} else One n
@@ -355,7 +364,6 @@ module SymExp = struct
   open Exp
   type t =
     | Const of int
-  (*   | Product of Variable.t * nexp * sym_exp *)
     | Sum of Variable.t * Exp.nexp * t
 
   let rec to_string : t -> string =
@@ -363,18 +371,78 @@ module SymExp = struct
     | Const x -> string_of_int x
     | Sum (x, n, s) -> "Σ_{" ^ Variable.name x ^ " < " ^ Serialize.PPrint.n_to_s n ^ "} " ^ to_string s
 
+  type factor = { power: int; divisor: int }
+
+  let factor_to_n (e:nexp) (i: factor) : nexp =
+    let rec pow (x:nexp) (n:int) : nexp =
+      match n with
+      | 0 -> Num 1
+      | 1 -> x
+      | _ -> n_mult x (pow x (n - 1))
+    in
+    n_div (pow e i.power) (Num i.divisor)
+
+  let sum power e : Exp.nexp =
+    let rec formula : factor list -> nexp =
+      function
+      | [f] -> factor_to_n e f
+      | f :: l -> n_plus (factor_to_n e f) (formula l)
+      | [] -> Num 0
+    in
+    (* https://en.wikipedia.org/wiki/Faulhaber%27s_formula *)
+    match power with
+    | 0 -> e
+    | 1 ->
+      formula [
+        {power=1; divisor=2};
+        {power=2; divisor=2};
+      ]
+    | 2 ->
+      formula [
+        {power=1; divisor=6};
+        {power=2; divisor=2};
+        {power=3; divisor=3};
+      ]
+    | 3 ->
+      formula [
+        {power=2; divisor=4};
+        {power=3; divisor=2};
+        {power=4; divisor=4};
+      ]
+    | 4 ->
+      formula [
+        {power=1; divisor=(-30)};
+        {power=3; divisor=3};
+        {power=4; divisor=2};
+        {power=5; divisor=5};
+      ]
+    | 5 ->
+      formula [
+        {power=2; divisor=(-12)};
+        {power=4; divisor=12};
+        {power=5; divisor=2};
+        {power=6; divisor=6};
+      ]
+    | 6 ->
+      formula [
+        {power=1; divisor=42};
+        {power=3; divisor=(-6)};
+        {power=5; divisor=2};
+        {power=6; divisor=2};
+        {power=7; divisor=7};
+      ]
+    | _ -> failwith ("S_" ^ string_of_int power ^ " not implemented")
+
   let rec flatten : t -> Exp.nexp =
     function
     | Const k -> Num k
     | Sum (x, ub, s) ->
-      (match Poly.from_nexp x (flatten s) with
-      | One k -> n_mult ub k
-      | Two {constant=c; coeficient=e} ->
-        (* S1(e) = (e * (e + 1)) / 2 *)
-        n_plus (n_div (n_mult e (n_mult ub (n_plus ub (Num 1)))) (Num 2))
-              (n_mult c ub)
-      | Many p ->
-        failwith ("error: flatten(" ^ Poly.to_string (Variable.name x) (Many p)))
+      Poly.from_nexp x (flatten s)
+      |> Poly.to_seq
+      |> Seq.map (fun (coefficient, degree) ->
+        n_mult coefficient (sum degree ub)
+      )
+      |> Seq.fold_left n_plus (Num 0)
 end
 
 
@@ -413,7 +481,6 @@ let rec slice_to_sym (locs:Variable.Set.t) : Slice.t -> SymExp.t =
       (*  (ub-lb)/k *)
       let upper_bound = n_div iters k in
       Sum (r.range_var, upper_bound, slice_to_sym locs p)
-
     | _ -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r)
 
 (* acc_t_cost returns cost of an acc_t expression *)
