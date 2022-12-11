@@ -371,7 +371,7 @@ module SymExp = struct
       | One k -> n_mult ub k
       | Two {constant=c; coeficient=e} ->
         (* S1(e) = (e * (e + 1)) / 2 *)
-        n_plus (n_div (n_mult e (n_plus e (Num 1))) (Num 2))
+        n_plus (n_div (n_mult e (n_mult ub (n_plus ub (Num 1)))) (Num 2))
               (n_mult c ub)
       | Many p ->
         failwith ("error: flatten(" ^ Poly.to_string (Variable.name x) (Many p)))
