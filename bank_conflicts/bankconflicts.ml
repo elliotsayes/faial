@@ -266,7 +266,9 @@ let handle_bank_conflicts (n:Exp.nexp) : Poly.t option =
       then Some p else None
     | Many _ -> None
   in List.find_map handle_poly tid_var_list
-
+(*
+  Either maximizes or minimizes n to replace tids by constants.
+  *)
 let solve f (thread_count:Vec3.t) (n:Exp.nexp) : Exp.nexp =
   let open Exp in
   let solve
@@ -289,16 +291,15 @@ let solve f (thread_count:Vec3.t) (n:Exp.nexp) : Exp.nexp =
   if contains_tids fvs then begin
     let open Z3 in
     let open Z3expr in
-    (* print_endline (Freenames.free_names_nexp n); *)
     let ctx = mk_context [] in
     let n_expr = n_to_expr ctx n in
     let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
-    let opt = Optimize.mk_opt ctx in
     let restrict tid tid_count =
       let lhs = n_ge (Var tid) (Num 0) in
       let rhs = n_lt (Var tid) (Num tid_count) in
       b_to_expr ctx (b_and lhs rhs)
     in
+    let opt = Optimize.mk_opt ctx in
     Optimize.add opt [
         Boolean.mk_eq ctx lb n_expr;
         restrict tidx thread_count.x;
