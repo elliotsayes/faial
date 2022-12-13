@@ -3,15 +3,33 @@ open Protocols
 
 (* ----------------- constants -------------------- *)
 
-let tid_vars : Variable.t list =
-  List.map Variable.from_name
-  ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"]
+let tidx = Variable.from_name "threadIdx.x"
+let tidy = Variable.from_name "threadIdx.y"
+let tidz = Variable.from_name "threadIdx.z"
+
+let tid_var_list : Variable.t list = [tidx; tidy; tidz]
+
+let tid_var_set : Variable.Set.t = Variable.Set.of_list tid_var_list
+
+let contains_tids (vs:Variable.Set.t) : bool =
+  Variable.Set.mem tidx vs &&
+  Variable.Set.mem tidy vs &&
+  Variable.Set.mem tidz vs
 
 let num_banks : int = 32
 
 let bc_degrees = [1; 2; 4; 8; 16; 32]
 (* TODO: generate bc_degrees from num_banks *)
 
+
+module Vec3 = struct
+  type t = {x : int; y: int; z: int;}
+  let mk ~x:x ~y:y ~z:z : t = {x=x; y=y; z=z}
+  let to_string (v:t) =
+    "{.x = " ^ string_of_int v.x ^
+    ", .y= " ^ string_of_int v.y ^
+    ", .z= " ^ string_of_int v.z ^ "}"
+end
 
 (* ----------------- acc_t type -------------------- *)
 
@@ -234,7 +252,7 @@ end
 let handle_bank_conflicts (n:Exp.nexp) : Poly.t option =
   let handle_coefficient (n:Exp.nexp) : bool =
     let fns = Freenames.free_names_nexp n Variable.Set.empty in
-    Variable.Set.disjoint (Variable.Set.of_list tid_vars) fns
+    Variable.Set.disjoint tid_var_set fns
   in
   let handle_poly (x: Variable.t) : Poly.t option =
     let p = Poly.from_nexp x n in
@@ -247,46 +265,81 @@ let handle_bank_conflicts (n:Exp.nexp) : Poly.t option =
       if handle_coefficient c && handle_coefficient k
       then Some p else None
     | Many _ -> None
-  in List.find_map handle_poly tid_vars
+  in List.find_map handle_poly tid_var_list
 
-let solve f (tid_count:int) (n:Exp.nexp) : Exp.nexp =
+let solve f (thread_count:Vec3.t) (n:Exp.nexp) : Exp.nexp =
   let open Exp in
+  let solve
+    (opt:Z3.Optimize.optimize)
+    (lb:Z3.Expr.expr)
+    (handler:Z3.Model.model -> Exp.nexp)
+  :
+    Exp.nexp
+  =
+    let open Z3 in
+    let _ = f opt lb in
+    if Optimize.check opt = Solver.SATISFIABLE then
+      Optimize.get_model opt
+      |> Option.map handler
+      |> fun x -> Option.value x ~default:n
+    else
+      n
+  in
   let fvs = Freenames.free_names_nexp n Variable.Set.empty in
-  let tid = Variable.from_name "threadIdx.x" in
-  if Variable.Set.mem tid fvs then
+  if contains_tids fvs then begin
     let open Z3 in
     let open Z3expr in
     (* print_endline (Freenames.free_names_nexp n); *)
     let ctx = mk_context [] in
     let n_expr = n_to_expr ctx n in
     let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
-    let lb_eq = Boolean.mk_eq ctx lb n_expr in
     let opt = Optimize.mk_opt ctx in
-    Optimize.add opt [ lb_eq; b_to_expr ctx (b_and (n_ge (Var tid) (Num 0)) (n_lt (Var tid) (Num tid_count))) ];
-    let _ = f opt lb in
-    if Optimize.check opt = Solver.SATISFIABLE then
-      let m = Optimize.get_model opt |> Option.get in
-      let tid_val =
-        m
-        |> Model.get_const_decls
-        |> List.find_map (fun d ->
-          let key: string = FuncDecl.get_name d |> Symbol.get_string in
-          if key = "threadIdx.x" then
-            let e : string = FuncDecl.apply d []
-              |> (fun e -> Model.eval m e true)
-              |> Option.map Expr.to_string
-              |> Ojson.unwrap_or "?"
-            in
-            Some (int_of_string e)
-          else None)
-      in
-      match tid_val with
-      | Some tid_val -> Subst.ReplacePair.n_subst (tid, Num tid_val) n
-      | None -> n
-    else
-      failwith ("unable to find a lower bound")
-  else
-    n
+    let restrict tid tid_count =
+      let lhs = n_ge (Var tid) (Num 0) in
+      let rhs = n_lt (Var tid) (Num tid_count) in
+      b_to_expr ctx (b_and lhs rhs)
+    in
+    Optimize.add opt [
+        Boolean.mk_eq ctx lb n_expr;
+        restrict tidx thread_count.x;
+        restrict tidx thread_count.y;
+        restrict tidx thread_count.z;
+      ]
+    ;
+    solve opt lb (fun m ->
+      (* Go through all declarations of the model *)
+      List.fold_left (fun accum d ->
+        (* For each declaration, if it's one of the TIDs, then
+          replace tid by the value in the model in the accumulator
+          *)
+        (* Convert the declaration to a variable *)
+        let tid : Variable.t =
+          d
+          |> FuncDecl.get_name
+          |> Symbol.get_string
+          |> Variable.from_name
+        in
+        (* If the variable is a tid *)
+        if Variable.Set.mem tid tid_var_set then (
+          (* Replace each tid by the value in the model *)
+          (* Variables in the model are actually functions with
+            0 args, so we create a function call *)
+          let e = FuncDecl.apply d [] in
+          (* We then evaluate the function call *)
+          match Model.eval m e true with
+          | Some tid_val ->
+            (* Try to cast tid to an integer and then substitute *)
+            (* Try to cast a value to a string, if we fail, return None *)
+            (try
+              let tid_val = Expr.to_string tid_val |> int_of_string in
+              Subst.ReplacePair.n_subst (tid, Num tid_val) accum
+            with
+              Failure _ -> accum)
+          | None -> accum
+        ) else accum
+      ) n (Model.get_const_decls m)
+    )
+  end else n
 
 let minimize = solve Z3.Optimize.minimize
 let maximize = solve Z3.Optimize.maximize
@@ -325,7 +378,7 @@ let p_cost : Poly.t -> int = function
 let has_thread_locals (locs : Variable.Set.t) (n:Exp.nexp) : bool =
   let fvs = Freenames.free_names_nexp n Variable.Set.empty in
   not (Variable.Set.inter locs fvs |> Variable.Set.is_empty)
-
+(* https://cs.calvin.edu/courses/cs/374/CUDA/CUDA-Thread-Indexing-Cheatsheet.pdf *)
 (* n_cost returns bank conflict degree of a poly n *)
 let n_cost (locs : Variable.Set.t) (n : Exp.nexp) : int =
   let bc_fail (reason : string) : int =
@@ -446,10 +499,10 @@ module SymExp = struct
 end
 
 
-let rec slice_to_sym (locs:Variable.Set.t) : Slice.t -> SymExp.t =
+let rec slice_to_sym (thread_count:Vec3.t) (locs:Variable.Set.t) : Slice.t -> SymExp.t =
   function
   | Acc a -> Const (access_cost locs a)
-  | Cond (_, p) -> slice_to_sym locs p
+  | Cond (_, p) -> slice_to_sym thread_count locs p
   | Loop (r, p) ->
     match r with
     | {
@@ -459,52 +512,52 @@ let rec slice_to_sym (locs:Variable.Set.t) : Slice.t -> SymExp.t =
         range_upper_bound=ub;
         _
       } ->
-      Sum (x, ub, slice_to_sym locs p)
+      Sum (x, ub, slice_to_sym thread_count locs p)
     | {range_step = Default (Num 1); _} ->
       let open Exp in
-      let lb = r.range_lower_bound |> minimize 1024 in
-      let ub = r.range_upper_bound |> maximize 1024 in
+      let lb = r.range_lower_bound |> minimize thread_count in
+      let ub = r.range_upper_bound |> maximize thread_count in
       (* subst [range_var := range_var + lower_bound]: *)
       let new_range_var = n_plus (Var r.range_var) lb in
       let p = Slice.subst (r.range_var, new_range_var) p in
       (* rewrite lower_bound..upper_bound to 0..(upper_bound-lower_bound): *)
       let upper_bound = n_minus ub lb in
-      Sum (r.range_var, upper_bound, slice_to_sym locs p)
+      Sum (r.range_var, upper_bound, slice_to_sym thread_count locs p)
     | {range_step = Default k; _} ->
       let open Exp in
-      let lb = r.range_lower_bound |> minimize 1024 in
-      let ub = r.range_upper_bound |> maximize 1024 in
+      let lb = r.range_lower_bound |> minimize thread_count in
+      let ub = r.range_upper_bound |> maximize thread_count in
       (* x := k (x + lb) *)
       let new_range_var = n_mult (n_plus (Var r.range_var) lb) k in
       let p = Slice.subst (r.range_var, new_range_var) p in
       let iters = n_minus ub lb in
       (*  (ub-lb)/k *)
       let upper_bound = n_div iters k in
-      Sum (r.range_var, upper_bound, slice_to_sym locs p)
+      Sum (r.range_var, upper_bound, slice_to_sym thread_count locs p)
     | _ -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r)
 
 (* acc_t_cost returns cost of an acc_t expression *)
-let slice_to_nexp (locs:Variable.Set.t) (acc : Slice.t) : Exp.nexp =
+let slice_to_nexp (thread_count:Vec3.t) (locs:Variable.Set.t) (acc : Slice.t) : Exp.nexp =
   acc
-  |> slice_to_sym locs
+  |> slice_to_sym thread_count locs
   |> (fun x -> print_endline (SymExp.to_string x); x)
   |> SymExp.flatten
 
 
 (* shared_cost returns the cost of all accesses to a shared memory array *)
-let shared_cost (k : Proto.prog Proto.kernel) (v : Variable.t) : Exp.nexp Seq.t =
+let shared_cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) (v : Variable.t) : Exp.nexp Seq.t =
   Slice.from_proto v k.kernel_code
-  |> Seq.map (slice_to_nexp k.kernel_local_variables)
+  |> Seq.map (slice_to_nexp thread_count k.kernel_local_variables)
 
 (* k_cost returns the cost of a kernel *)
-let k_cost (k : Proto.prog Proto.kernel) : Exp.nexp Seq.t =
+let k_cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) : Exp.nexp Seq.t =
   Proto.kernel_shared_arrays k
   |> Variable.Set.to_seq
-  |> Seq.concat_map (shared_cost k)
+  |> Seq.concat_map (shared_cost thread_count k)
 
 (* p_k_cost returns the cost of all kernels in the program source *)
-let p_k_cost (ks : Proto.prog Proto.kernel list) : Exp.nexp =
+let p_k_cost (thread_count:Vec3.t) (ks : Proto.prog Proto.kernel list) : Exp.nexp =
   List.to_seq ks
-  |> Seq.concat_map k_cost
+  |> Seq.concat_map (k_cost thread_count)
   |> Seq.fold_left Exp.n_plus (Num 0)
   |> Constfold.n_opt
