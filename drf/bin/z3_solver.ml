@@ -493,7 +493,7 @@ module Solution = struct
     Streamutil.map (fun p ->
       let options = [
       ("model", "true");
-        ("proof", "false");
+      ("proof", "false");
       ] @
       begin match timeout with
         | Some timeout -> ["timeout", string_of_int timeout]
