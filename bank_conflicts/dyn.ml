@@ -30,12 +30,16 @@ let shared_arrays (k:Proto.prog Proto.kernel) : Variable.Set.t =
 
 let create_ctx ~bank_count ~tid_count ~env:(env:(string*int) list) ~arrays : Vectorized.t =
   let use_array x = Variable.Set.mem x arrays in
+  let tid = Vectorized.NMap.make tid_count (fun tid -> tid) in
+  let ctx = Vectorized.make ~bank_count ~tid_count ~use_array
+    |> Vectorized.put (Variable.from_name "threadIdx.x") tid
+  in
   List.fold_left (fun ctx ((k:string), (v:int)) ->
     print_endline (k ^ " = " ^ string_of_int v);
     let k = Variable.from_name k in
     let v = Vectorized.NMap.constant ~count:tid_count ~value:v in
     Vectorized.put k v ctx
-  ) (Vectorized.make ~bank_count ~tid_count ~use_array) env
+  ) ctx env
 
 let main (fname : string) : unit =
   try

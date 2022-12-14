@@ -376,23 +376,39 @@ let p_cost : Poly.t -> int = function
   (* non-linear access pattern: theory incomplete *)
   | Many _ -> num_banks
 
-let has_thread_locals (locs : Variable.Set.t) (n:Exp.nexp) : bool =
-  let fvs = Freenames.free_names_nexp n Variable.Set.empty in
-  not (Variable.Set.inter locs fvs |> Variable.Set.is_empty)
 (* https://cs.calvin.edu/courses/cs/374/CUDA/CUDA-Thread-Indexing-Cheatsheet.pdf *)
 (* n_cost returns bank conflict degree of a poly n *)
-let n_cost (locs : Variable.Set.t) (n : Exp.nexp) : int =
+let n_cost (thread_count:Vec3.t) (locs : Variable.Set.t) (n : Exp.nexp) : int =
   let bc_fail (reason : string) : int =
     Printf.eprintf
       "WARNING: %s: %s: assuming worst case bank conflict of %d\n"
       reason (Serialize.PPrint.n_to_s n) num_banks;
     num_banks
   in
-  let locs = Variable.Set.remove (Variable.from_name "threadIdx.x") locs in
+  let locs = Variable.Set.remove tidx locs in
+  let locs = Variable.Set.remove tidy locs in
+  let locs = Variable.Set.remove tidz locs in
+  let has_thread_locals (locs : Variable.Set.t) (n:Exp.nexp) : bool =
+    let fvs = Freenames.free_names_nexp n Variable.Set.empty in
+    not (Variable.Set.inter locs fvs |> Variable.Set.is_empty)
+  in
   if has_thread_locals locs n then num_banks
   else
-    let ctx = Vectorized.make
-      ~bank_count:32 ~tid_count:32 ~use_array:(fun _ -> true)
+    let thread_x_count = min thread_count.x num_banks in
+    let thread_y_count = min thread_count.y (num_banks - thread_x_count + 1) in
+    let thread_z_count = min thread_count.z (num_banks - thread_x_count - thread_y_count + 2) in
+    let thread_x_count = max thread_x_count 1 in
+    let thread_y_count = max thread_y_count 1 in
+    let thread_z_count = max thread_z_count 1 in
+    let ctx =
+      let open Vectorized in
+        make
+        ~bank_count:num_banks
+        ~tid_count:num_banks
+        ~use_array:(fun _ -> true)
+      |> put tidx (NMap.make num_banks (fun x -> Common.modulo x thread_x_count))
+      |> put tidy (NMap.make num_banks (fun y -> Common.modulo y thread_y_count))
+      |> put tidz (NMap.make num_banks (fun z -> Common.modulo z thread_z_count))
     in
       try
         Vectorized.access n ctx |> Vectorized.NMap.max |> snd
@@ -407,8 +423,8 @@ let n_cost (locs : Variable.Set.t) (n : Exp.nexp) : int =
         )
 
 (* access_cost returns bank conflict cost of an access *)
-let access_cost (locs:Variable.Set.t) (a : Exp.access) : int =
-  List.fold_left (+) 0 (List.map (n_cost locs) a.access_index)
+let access_cost (thread_count:Vec3.t) (locs:Variable.Set.t) (a : Exp.access) : int =
+  List.fold_left (+) 0 (List.map (n_cost thread_count locs) a.access_index)
 
 
 (* ----------------- kernel cost analysis -------------------- *)
@@ -502,7 +518,7 @@ end
 
 let rec slice_to_sym (thread_count:Vec3.t) (locs:Variable.Set.t) : Slice.t -> SymExp.t =
   function
-  | Acc a -> Const (access_cost locs a)
+  | Acc a -> Const (access_cost thread_count locs a)
   | Cond (_, p) -> slice_to_sym thread_count locs p
   | Loop (r, p) ->
     match r with

@@ -77,9 +77,7 @@ type t = {
 
 let make ~bank_count ~tid_count ~use_array : t = {
   cond = Exp.Bool true;
-  env = Variable.MapUtil.from_list [
-    Variable.from_name "threadIdx.x", NMap.make tid_count (fun tid -> tid);
-  ];
+  env = Variable.Map.empty;
   bank_count;
   tid_count;
   use_array;
