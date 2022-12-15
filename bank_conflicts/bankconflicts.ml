@@ -83,7 +83,6 @@ module Slice = struct
             (n * mult, mult :: l)
           ) a.dim (1, []) |> snd
           in
-          print_endline (List.map string_of_int dim |> Common.join ", ");
           let e = List.fold_right (fun (n, offset) accum ->
             let offset = offset * a.byte_count in
             let n = if Common.modulo offset 4 = 0 then
@@ -348,7 +347,7 @@ module IndexAnalysis = struct
         |> put_tids thread_count
       in
       try
-        (Vectorized.access n ctx |> Vectorized.NMap.max).value
+        (Vectorized.access n ctx |> Vectorized.NMap.max).value - 1
       with
         Failure _ -> (
         match handle_bank_conflicts n with
@@ -557,19 +556,13 @@ end
 
 
 (* k_cost returns the cost of a kernel *)
-let k_cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) : Exp.nexp Seq.t =
+let cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) : Exp.nexp =
   Slice.from_kernel k
   |> Seq.map (fun s ->
     let s1 = SymExp.from_slice thread_count k.kernel_local_variables s in
     let s2 = SymExp.flatten s1 in
-    print_endline (Slice.to_string s ^ "\n-> " ^ SymExp.to_string s1 ^ "\n-> " ^ Serialize.PPrint.n_to_s s2);
+    print_endline ("   Slice: " ^ Slice.to_string s ^ "\nSymbolic: " ^ SymExp.to_string s1 ^ "\n     Exp: " ^ Serialize.PPrint.n_to_s s2 ^ "\n");
     s2
   )
-
-
-(* p_k_cost returns the cost of all kernels in the program source *)
-let p_k_cost (thread_count:Vec3.t) (ks : Proto.prog Proto.kernel list) : Exp.nexp =
-  List.to_seq ks
-  |> Seq.concat_map (k_cost thread_count)
   |> Seq.fold_left Exp.n_plus (Num 0)
   |> Constfold.n_opt

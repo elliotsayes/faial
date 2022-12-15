@@ -12,8 +12,11 @@ let pico (fname : string) (thread_count:Vec3.t) =
     let d_ast = c_ast |> D_lang.rewrite_program in
     let imp = d_ast |> D_to_imp.parse_program |> Result.get_ok in
     let proto = imp |> List.map Imp.compile in
-    let cost_of_proto = Bankconflicts.p_k_cost thread_count proto in
-    cost_of_proto |> Serialize.PPrint.n_to_s |> print_endline
+    List.iter (fun k ->
+      let cost_of_proto = Bankconflicts.cost thread_count k in
+      print_string (k.kernel_name ^ ": ");
+      cost_of_proto |> Serialize.PPrint.n_to_s |> print_endline
+    ) proto
   with
   | Common.ParseError b ->
       Buffer.output_buffer stderr b;
