@@ -26,9 +26,9 @@ module Vec3 = struct
   type t = {x : int; y: int; z: int;}
   let mk ~x:x ~y:y ~z:z : t = {x=x; y=y; z=z}
   let to_string (v:t) =
-    "{.x = " ^ string_of_int v.x ^
-    ", .y= " ^ string_of_int v.y ^
-    ", .z= " ^ string_of_int v.z ^ "}"
+    "[" ^ string_of_int v.x ^
+    ", " ^ string_of_int v.y ^
+    ", " ^ string_of_int v.z ^ "]"
 end
 
 (* ----------------- acc_t type -------------------- *)
@@ -38,7 +38,7 @@ module Slice = struct
   type t =
     | Loop of Exp.range * t
     | Cond of Exp.bexp * t
-    | Acc of Exp.access
+    | Index of Exp.nexp
 
   module Make (S:Subst.SUBST) = struct
     module M = Subst.Make(S)
@@ -47,7 +47,7 @@ module Slice = struct
       function
       | Loop (r, acc) -> Loop (M.r_subst s r, subst s acc)
       | Cond (b, acc) -> Cond (M.b_subst s b, subst s acc)
-      | Acc a -> Acc (M.a_subst s a)
+      | Index a -> Index (M.n_subst s a)
 
   end
 
@@ -55,40 +55,65 @@ module Slice = struct
 
   let subst = S1.subst
 
-  let rec to_string (v : Variable.t) : t -> string =
+  let rec to_string : t -> string =
     function
     | Loop (r, acc) ->
-        Serialize.PPrint.r_to_s r ^ ": " ^ to_string v acc
+        Serialize.PPrint.r_to_s r ^ ": " ^ to_string acc
     | Cond (b, acc) ->
-        "if ( " ^ Serialize.PPrint.b_to_s b ^ " ) " ^ to_string v acc
-    | Acc a ->
-        Serialize.PPrint.doc_to_string (Serialize.PPrint.acc_expr_to_s (v, a))
+        "if ( " ^ Serialize.PPrint.b_to_s b ^ " ) " ^ to_string acc
+    | Index a ->
+        "[" ^ Serialize.PPrint.n_to_s a ^ "]"
 
-  let rec access : t -> Exp.access =
-    function
-    | Loop (_, acc)
-    | Cond (_, acc) -> access acc
-    | Acc a -> a
+  type array_size = { byte_count: int; dim: int list}
 
-  let from_proto (x:Variable.t) : Proto.prog -> t Seq.t =
+  let from_kernel (k: Proto.prog Proto.kernel) : t Seq.t =
+    let open Exp in
+    let shared : array_size Variable.Map.t = Variable.Map.filter_map (fun _ v ->
+      if v.array_hierarchy = SharedMemory then
+        let open Inference in
+        let ty = Common.join " " v.array_type |> C_type.make in
+        match C_type.sizeof ty with
+        | Some n -> Some {byte_count=n; dim=v.array_size}
+        | None -> Some {byte_count=4; dim=v.array_size}
+      else
+        None
+      ) k.kernel_arrays
+    in
     let rec on_i : Proto.inst -> t Seq.t =
       function
-      | Proto.Acc (y, e) when Variable.equal x y ->
-        Seq.return (Acc e)
-      | Proto.Acc _
+      | Proto.Acc (x, {access_index=l; _}) ->
+        (* Flatten n-dimensional array and apply word size *)
+        (match Variable.Map.find_opt x shared with
+        | Some a ->
+          (* Accumulate the values so that when we have
+            [2, 2, 2] -> [1, 2, 4]
+            *)
+          let dim = List.fold_right (fun n (mult, l) ->
+            (n * mult, mult :: l)
+          ) a.dim (1, []) |> snd
+          in
+          print_endline (List.map string_of_int dim |> Common.join ", ");
+          let e = List.fold_right (fun (n, offset) accum ->
+            n_div (n_mult n (Num (offset * a.byte_count))) (Num 4)
+            |> n_plus accum
+          ) (Common.zip l dim) (Num 0)
+          in
+          Seq.return (Index e)
+        | None -> Seq.empty)
       | Proto.Sync ->
         Seq.empty
       | Proto.Cond (b, p) ->
         on_p p
-        |> Seq.map (fun i -> Cond (b, i))
+        |> Seq.map (fun (i:t) : t -> Cond (b, i))
       | Proto.Loop (r, p) ->
         on_p p
         |> Seq.map (fun i -> (Loop (r, i)))
 
     and on_p (l: Proto.prog) : t Seq.t =
-      l |> List.to_seq |> Seq.flat_map on_i
+      List.to_seq l |> Seq.flat_map on_i
     in
-    on_p
+    on_p k.kernel_code
+
 
 end
 
@@ -245,171 +270,95 @@ module Poly = struct
 
 end
 
-(* ----------------- transaction cost analysis -------------------- *)
 
-(* This function indicates whether our theory CAN analyze the expression, not
-   if there are bank-conflicts!  Returns None if we CANNOT analyze. *)
-let handle_bank_conflicts (n:Exp.nexp) : Poly.t option =
-  let handle_coefficient (n:Exp.nexp) : bool =
-    let fns = Freenames.free_names_nexp n Variable.Set.empty in
-    Variable.Set.disjoint tid_var_set fns
-  in
-  let handle_poly (x: Variable.t) : Poly.t option =
-    let p = Poly.from_nexp x n in
-    match p with
-    | One n ->
-      (* var x (e.g., threadIdx.x) is not in the expression *)
-      if handle_coefficient n then Some p else None
-    | Two {constant=c; coeficient=k} ->
-      (* The expression is of form: (k * x + c) *)
-      if handle_coefficient c && handle_coefficient k
-      then Some p else None
-    | Many _ -> None
-  in List.find_map handle_poly tid_var_list
-(*
-  Either maximizes or minimizes n to replace tids by constants.
-  *)
-let solve f (thread_count:Vec3.t) (n:Exp.nexp) : Exp.nexp =
-  let open Exp in
-  let solve
-    (opt:Z3.Optimize.optimize)
-    (lb:Z3.Expr.expr)
-    (handler:Z3.Model.model -> Exp.nexp)
-  :
-    Exp.nexp
-  =
-    let open Z3 in
-    let _ = f opt lb in
-    if Optimize.check opt = Solver.SATISFIABLE then
-      Optimize.get_model opt
-      |> Option.map handler
-      |> fun x -> Option.value x ~default:n
+module IndexAnalysis = struct
+  (* ----------------- transaction cost analysis -------------------- *)
+
+  (* This function indicates whether our theory CAN analyze the expression, not
+    if there are bank-conflicts!  Returns None if we CANNOT analyze. *)
+  let handle_bank_conflicts (n:Exp.nexp) : Poly.t option =
+    let handle_coefficient (n:Exp.nexp) : bool =
+      let fns = Freenames.free_names_nexp n Variable.Set.empty in
+      Variable.Set.disjoint tid_var_set fns
+    in
+    let handle_poly (x: Variable.t) : Poly.t option =
+      let p = Poly.from_nexp x n in
+      match p with
+      | One n ->
+        (* var x (e.g., threadIdx.x) is not in the expression *)
+        if handle_coefficient n then Some p else None
+      | Two {constant=c; coeficient=k} ->
+        (* The expression is of form: (k * x + c) *)
+        if handle_coefficient c && handle_coefficient k
+        then Some p else None
+      | Many _ -> None
+    in List.find_map handle_poly tid_var_list
+
+  (* p_cost returns bank conflict degree of a poly p *)
+  let p_cost : Poly.t -> int = function
+    (* constant access pattern: this is a broadcast *)
+    | One _ ->
+      1
+    (* linear access pattern: maximize degree with Z3 *)
+    | Two {constant=_; coeficient=n} ->
+      (* we call Z3 from here to calculate the bank conflict degree *)
+      let open Z3 in
+      let open Z3expr in
+      (* print_endline (Freenames.free_names_nexp n); *)
+      let ctx = mk_context [] in
+      let n_expr = n_to_expr ctx n in
+      let k = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?k") in
+      let d = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?d") in
+      let num (n : int) = Arithmetic.Integer.mk_numeral_i ctx n in
+      let k_eq = Boolean.mk_eq ctx k n_expr in
+      let d_eq = Boolean.mk_or ctx (bc_degrees |> List.map (fun n ->
+        Boolean.mk_eq ctx d (num n))) in
+      let d_divides_k = Boolean.mk_eq ctx
+        (Arithmetic.Integer.mk_mod ctx k d) (num 0) in
+      let opt = Optimize.mk_opt ctx in
+      Optimize.add opt [ k_eq; d_eq; d_divides_k ];
+      let handle = Optimize.maximize opt d in
+      (* print_string (Optimize.to_string opt); *) (* print SMT-LIB *)
+      assert (Optimize.check opt = Solver.SATISFIABLE);
+      Z.to_int (Arithmetic.Integer.get_big_int (Optimize.get_upper handle))
+    (* non-linear access pattern: theory incomplete *)
+    | Many _ -> num_banks
+
+  (* https://cs.calvin.edu/courses/cs/374/CUDA/CUDA-Thread-Indexing-Cheatsheet.pdf *)
+  (* n_cost returns bank conflict degree of a poly n *)
+  let analyze (thread_count:Vec3.t) (thread_locals : Variable.Set.t) (n : Exp.nexp) : int =
+    let bc_fail (reason : string) : int =
+      Printf.eprintf
+        "WARNING: %s: %s: assuming worst case bank conflict of %d\n"
+        reason (Serialize.PPrint.n_to_s n) num_banks;
+      num_banks
+    in
+    let locs = thread_locals in
+    let locs = Variable.Set.remove tidx locs in
+    let locs = Variable.Set.remove tidy locs in
+    let locs = Variable.Set.remove tidz locs in
+    let has_thread_locals (locs : Variable.Set.t) (n:Exp.nexp) : bool =
+      let fvs = Freenames.free_names_nexp n Variable.Set.empty in
+      not (Variable.Set.inter locs fvs |> Variable.Set.is_empty)
+    in
+    if has_thread_locals locs n then num_banks
     else
-      n
-  in
-  let fvs = Freenames.free_names_nexp n Variable.Set.empty in
-  if contains_tids fvs then begin
-    let open Z3 in
-    let open Z3expr in
-    let ctx = mk_context [] in
-    let n_expr = n_to_expr ctx n in
-    let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
-    let restrict tid tid_count =
-      let lhs = n_ge (Var tid) (Num 0) in
-      let rhs = n_lt (Var tid) (Num tid_count) in
-      b_to_expr ctx (b_and lhs rhs)
-    in
-    let opt = Optimize.mk_opt ctx in
-    Optimize.add opt [
-        Boolean.mk_eq ctx lb n_expr;
-        restrict tidx thread_count.x;
-        restrict tidx thread_count.y;
-        restrict tidx thread_count.z;
-      ]
-    ;
-    solve opt lb (fun m ->
-      (* Go through all declarations of the model *)
-      List.fold_left (fun accum d ->
-        (* For each declaration, if it's one of the TIDs, then
-          replace tid by the value in the model in the accumulator
-          *)
-        (* Convert the declaration to a variable *)
-        let tid : Variable.t =
-          d
-          |> FuncDecl.get_name
-          |> Symbol.get_string
-          |> Variable.from_name
-        in
-        (* If the variable is a tid *)
-        if Variable.Set.mem tid tid_var_set then (
-          (* Replace each tid by the value in the model *)
-          (* Variables in the model are actually functions with
-            0 args, so we create a function call *)
-          let e = FuncDecl.apply d [] in
-          (* We then evaluate the function call *)
-          match Model.eval m e true with
-          | Some tid_val ->
-            (* Try to cast tid to an integer and then substitute *)
-            (* Try to cast a value to a string, if we fail, return None *)
-            (try
-              let tid_val = Expr.to_string tid_val |> int_of_string in
-              Subst.ReplacePair.n_subst (tid, Num tid_val) accum
-            with
-              Failure _ -> accum)
-          | None -> accum
-        ) else accum
-      ) n (Model.get_const_decls m)
-    )
-  end else n
-
-let minimize = solve Z3.Optimize.minimize
-let maximize = solve Z3.Optimize.maximize
-
-
-(* p_cost returns bank conflict degree of a poly p *)
-let p_cost : Poly.t -> int = function
-  (* constant access pattern: this is a broadcast *)
-  | One _ ->
-    1
-  (* linear access pattern: maximize degree with Z3 *)
-  | Two {constant=_; coeficient=n} ->
-    (* we call Z3 from here to calculate the bank conflict degree *)
-    let open Z3 in
-    let open Z3expr in
-    (* print_endline (Freenames.free_names_nexp n); *)
-    let ctx = mk_context [] in
-    let n_expr = n_to_expr ctx n in
-    let k = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?k") in
-    let d = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?d") in
-    let num (n : int) = Arithmetic.Integer.mk_numeral_i ctx n in
-    let k_eq = Boolean.mk_eq ctx k n_expr in
-    let d_eq = Boolean.mk_or ctx (bc_degrees |> List.map (fun n ->
-      Boolean.mk_eq ctx d (num n))) in
-    let d_divides_k = Boolean.mk_eq ctx
-      (Arithmetic.Integer.mk_mod ctx k d) (num 0) in
-    let opt = Optimize.mk_opt ctx in
-    Optimize.add opt [ k_eq; d_eq; d_divides_k ];
-    let handle = Optimize.maximize opt d in
-    (* print_string (Optimize.to_string opt); *) (* print SMT-LIB *)
-    assert (Optimize.check opt = Solver.SATISFIABLE);
-    Z.to_int (Arithmetic.Integer.get_big_int (Optimize.get_upper handle))
-  (* non-linear access pattern: theory incomplete *)
-  | Many _ -> num_banks
-
-(* https://cs.calvin.edu/courses/cs/374/CUDA/CUDA-Thread-Indexing-Cheatsheet.pdf *)
-(* n_cost returns bank conflict degree of a poly n *)
-let n_cost (thread_count:Vec3.t) (locs : Variable.Set.t) (n : Exp.nexp) : int =
-  let bc_fail (reason : string) : int =
-    Printf.eprintf
-      "WARNING: %s: %s: assuming worst case bank conflict of %d\n"
-      reason (Serialize.PPrint.n_to_s n) num_banks;
-    num_banks
-  in
-  let locs = Variable.Set.remove tidx locs in
-  let locs = Variable.Set.remove tidy locs in
-  let locs = Variable.Set.remove tidz locs in
-  let has_thread_locals (locs : Variable.Set.t) (n:Exp.nexp) : bool =
-    let fvs = Freenames.free_names_nexp n Variable.Set.empty in
-    not (Variable.Set.inter locs fvs |> Variable.Set.is_empty)
-  in
-  if has_thread_locals locs n then num_banks
-  else
-    let thread_x_count = min thread_count.x num_banks in
-    let thread_y_count = min thread_count.y (num_banks - thread_x_count + 1) in
-    let thread_z_count = min thread_count.z (num_banks - thread_x_count - thread_y_count + 2) in
-    let thread_x_count = max thread_x_count 1 in
-    let thread_y_count = max thread_y_count 1 in
-    let thread_z_count = max thread_z_count 1 in
-    let ctx =
-      let open Vectorized in
-        make
-        ~bank_count:num_banks
-        ~tid_count:num_banks
-        ~use_array:(fun _ -> true)
-      |> put tidx (NMap.make num_banks (fun x -> Common.modulo x thread_x_count))
-      |> put tidy (NMap.make num_banks (fun y -> Common.modulo y thread_y_count))
-      |> put tidz (NMap.make num_banks (fun z -> Common.modulo z thread_z_count))
-    in
+      let thread_x_count = min thread_count.x num_banks in
+      let thread_y_count = min thread_count.y (num_banks - thread_x_count + 1) in
+      let thread_z_count = min thread_count.z (num_banks - thread_x_count - thread_y_count + 2) in
+      let thread_x_count = max thread_x_count 1 in
+      let thread_y_count = max thread_y_count 1 in
+      let thread_z_count = max thread_z_count 1 in
+      let ctx =
+        let open Vectorized in
+          make
+          ~bank_count:num_banks
+          ~tid_count:num_banks
+          ~use_array:(fun _ -> true)
+        |> put tidx (NMap.make num_banks (fun x -> Common.modulo x thread_x_count))
+        |> put tidy (NMap.make num_banks (fun y -> Common.modulo y thread_y_count))
+        |> put tidz (NMap.make num_banks (fun z -> Common.modulo z thread_z_count))
+      in
       try
         Vectorized.access n ctx |> Vectorized.NMap.max |> snd
       with
@@ -422,13 +371,9 @@ let n_cost (thread_count:Vec3.t) (locs : Variable.Set.t) (n : Exp.nexp) : int =
         | None -> bc_fail "pattern not linear"    (* theory TODO *)
         )
 
-(* access_cost returns bank conflict cost of an access *)
-let access_cost (thread_count:Vec3.t) (locs:Variable.Set.t) (a : Exp.access) : int =
-  List.fold_left (+) 0 (List.map (n_cost thread_count locs) a.access_index)
-
+end
 
 (* ----------------- kernel cost analysis -------------------- *)
-
 
 module SymExp = struct
   open Exp
@@ -513,64 +458,126 @@ module SymExp = struct
         n_mult coefficient (sum degree ub)
       )
       |> Seq.fold_left n_plus (Num 0)
+
+  (*
+    Either maximizes or minimizes n to replace tids by constants.
+    *)
+  let solve f (thread_count:Vec3.t) (n:Exp.nexp) : Exp.nexp =
+    let open Exp in
+    let solve
+      (opt:Z3.Optimize.optimize)
+      (lb:Z3.Expr.expr)
+      (handler:Z3.Model.model -> Exp.nexp)
+    :
+      Exp.nexp
+    =
+      let open Z3 in
+      let _ = f opt lb in
+      if Optimize.check opt = Solver.SATISFIABLE then
+        Optimize.get_model opt
+        |> Option.map handler
+        |> fun x -> Option.value x ~default:n
+      else
+        n
+    in
+    let fvs = Freenames.free_names_nexp n Variable.Set.empty in
+    if contains_tids fvs then begin
+      let open Z3 in
+      let open Z3expr in
+      let ctx = mk_context [] in
+      let n_expr = n_to_expr ctx n in
+      let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
+      let restrict tid tid_count =
+        let lhs = n_ge (Var tid) (Num 0) in
+        let rhs = n_lt (Var tid) (Num tid_count) in
+        b_to_expr ctx (b_and lhs rhs)
+      in
+      let opt = Optimize.mk_opt ctx in
+      Optimize.add opt [
+          Boolean.mk_eq ctx lb n_expr;
+          restrict tidx thread_count.x;
+          restrict tidx thread_count.y;
+          restrict tidx thread_count.z;
+        ]
+      ;
+      solve opt lb (fun m ->
+        (* Go through all declarations of the model *)
+        List.fold_left (fun accum d ->
+          (* For each declaration, if it's one of the TIDs, then
+            replace tid by the value in the model in the accumulator
+            *)
+          (* Convert the declaration to a variable *)
+          let tid : Variable.t =
+            d
+            |> FuncDecl.get_name
+            |> Symbol.get_string
+            |> Variable.from_name
+          in
+          (* If the variable is a tid *)
+          if Variable.Set.mem tid tid_var_set then (
+            (* Replace each tid by the value in the model *)
+            (* Variables in the model are actually functions with
+              0 args, so we create a function call *)
+            let e = FuncDecl.apply d [] in
+            (* We then evaluate the function call *)
+            match Model.eval m e true with
+            | Some tid_val ->
+              (* Try to cast tid to an integer and then substitute *)
+              (* Try to cast a value to a string, if we fail, return None *)
+              (try
+                let tid_val = Expr.to_string tid_val |> int_of_string in
+                Subst.ReplacePair.n_subst (tid, Num tid_val) accum
+              with
+                Failure _ -> accum)
+            | None -> accum
+          ) else accum
+        ) n (Model.get_const_decls m)
+      )
+    end else n
+
+  let minimize = solve Z3.Optimize.minimize
+  let maximize = solve Z3.Optimize.maximize
+
+  let rec from_slice (thread_count:Vec3.t) (locs:Variable.Set.t) : Slice.t -> t =
+    function
+    | Index a -> Const (IndexAnalysis.analyze thread_count locs a)
+    | Cond (_, p) -> from_slice thread_count locs p
+    | Loop (r, p) ->
+      match r with
+      | {
+          range_var=x;
+          range_lower_bound=Num 0;
+          range_step = Default (Num 1);
+          range_upper_bound=ub;
+          _
+        } ->
+        Sum (x, ub, from_slice thread_count locs p)
+      | {range_step = Default k; _} ->
+        let open Exp in
+        let lb = r.range_lower_bound |> minimize thread_count in
+        let ub = r.range_upper_bound |> maximize thread_count in
+        (* x := k (x + lb) *)
+        let new_range_var = n_mult (n_plus (Var r.range_var) lb) k in
+        let p = Slice.subst (r.range_var, new_range_var) p in
+        let iters = n_minus ub lb in
+        (*  (ub-lb)/k *)
+        let upper_bound = n_div iters k in
+        Sum (r.range_var, upper_bound, from_slice thread_count locs p)
+      | _ -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r)
+
 end
 
 
-let rec slice_to_sym (thread_count:Vec3.t) (locs:Variable.Set.t) : Slice.t -> SymExp.t =
-  function
-  | Acc a -> Const (access_cost thread_count locs a)
-  | Cond (_, p) -> slice_to_sym thread_count locs p
-  | Loop (r, p) ->
-    match r with
-    | {
-        range_var=x;
-        range_lower_bound=Num 0;
-        range_step = Default (Num 1);
-        range_upper_bound=ub;
-        _
-      } ->
-      Sum (x, ub, slice_to_sym thread_count locs p)
-    | {range_step = Default (Num 1); _} ->
-      let open Exp in
-      let lb = r.range_lower_bound |> minimize thread_count in
-      let ub = r.range_upper_bound |> maximize thread_count in
-      (* subst [range_var := range_var + lower_bound]: *)
-      let new_range_var = n_plus (Var r.range_var) lb in
-      let p = Slice.subst (r.range_var, new_range_var) p in
-      (* rewrite lower_bound..upper_bound to 0..(upper_bound-lower_bound): *)
-      let upper_bound = n_minus ub lb in
-      Sum (r.range_var, upper_bound, slice_to_sym thread_count locs p)
-    | {range_step = Default k; _} ->
-      let open Exp in
-      let lb = r.range_lower_bound |> minimize thread_count in
-      let ub = r.range_upper_bound |> maximize thread_count in
-      (* x := k (x + lb) *)
-      let new_range_var = n_mult (n_plus (Var r.range_var) lb) k in
-      let p = Slice.subst (r.range_var, new_range_var) p in
-      let iters = n_minus ub lb in
-      (*  (ub-lb)/k *)
-      let upper_bound = n_div iters k in
-      Sum (r.range_var, upper_bound, slice_to_sym thread_count locs p)
-    | _ -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r)
-
-(* acc_t_cost returns cost of an acc_t expression *)
-let slice_to_nexp (thread_count:Vec3.t) (locs:Variable.Set.t) (acc : Slice.t) : Exp.nexp =
-  acc
-  |> slice_to_sym thread_count locs
-  |> (fun x -> print_endline (SymExp.to_string x); x)
-  |> SymExp.flatten
-
-
-(* shared_cost returns the cost of all accesses to a shared memory array *)
-let shared_cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) (v : Variable.t) : Exp.nexp Seq.t =
-  Slice.from_proto v k.kernel_code
-  |> Seq.map (slice_to_nexp thread_count k.kernel_local_variables)
-
 (* k_cost returns the cost of a kernel *)
 let k_cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) : Exp.nexp Seq.t =
-  Proto.kernel_shared_arrays k
-  |> Variable.Set.to_seq
-  |> Seq.concat_map (shared_cost thread_count k)
+  Slice.from_kernel k
+  |> Seq.map (fun s ->
+    let s1 = SymExp.from_slice thread_count k.kernel_local_variables s in
+    let s2 = SymExp.flatten s1 in
+    print_endline (Slice.to_string s ^ "\n-> " ^ SymExp.to_string s1 ^ "\n-> " ^ Serialize.PPrint.n_to_s s2);
+    s2
+  )
+
 
 (* p_k_cost returns the cost of all kernels in the program source *)
 let p_k_cost (thread_count:Vec3.t) (ks : Proto.prog Proto.kernel list) : Exp.nexp =
