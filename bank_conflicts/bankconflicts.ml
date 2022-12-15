@@ -13,8 +13,8 @@ let tid_var_list : Variable.t list = [tidx; tidy; tidz]
 let tid_var_set : Variable.Set.t = Variable.Set.of_list tid_var_list
 
 let contains_tids (vs:Variable.Set.t) : bool =
-  Variable.Set.mem tidx vs &&
-  Variable.Set.mem tidy vs &&
+  Variable.Set.mem tidx vs ||
+  Variable.Set.mem tidy vs ||
   Variable.Set.mem tidz vs
 
 let num_banks : int = 32
@@ -313,7 +313,6 @@ module IndexAnalysis = struct
       let opt = Optimize.mk_opt ctx in
       Optimize.add opt [ k_eq; d_eq; d_divides_k ];
       let handle = Optimize.maximize opt d in
-      (* print_string (Optimize.to_string opt); *) (* print SMT-LIB *)
       assert (Optimize.check opt = Solver.SATISFIABLE);
       Z.to_int (Arithmetic.Integer.get_big_int (Optimize.get_upper handle))
     (* non-linear access pattern: theory incomplete *)
@@ -447,25 +446,25 @@ module SymExp = struct
       |> Seq.fold_left n_plus (Num 0)
 
   (*
-    Either maximizes or minimizes n to replace tids by constants.
+    Maximizes the given expression, and replaces tids by concrete values.
     *)
-  let solve f (thread_count:Vec3.t) (n:Exp.nexp) : Exp.nexp =
+  let maximize (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * Exp.nexp) list =
     let open Exp in
     let solve
       (opt:Z3.Optimize.optimize)
       (lb:Z3.Expr.expr)
-      (handler:Z3.Model.model -> Exp.nexp)
+      (handler:Z3.Model.model -> (Variable.t * Exp.nexp) list)
     :
-      Exp.nexp
+      (Variable.t * Exp.nexp) list
     =
       let open Z3 in
-      let _ = f opt lb in
+      let _ = Optimize.maximize opt lb in
       if Optimize.check opt = Solver.SATISFIABLE then
         Optimize.get_model opt
         |> Option.map handler
-        |> fun x -> Option.value x ~default:n
+        |> fun x -> Option.value x ~default:[]
       else
-        n
+        []
     in
     let fvs = Freenames.free_names_nexp n Variable.Set.empty in
     if contains_tids fvs then begin
@@ -489,10 +488,8 @@ module SymExp = struct
       ;
       solve opt lb (fun m ->
         (* Go through all declarations of the model *)
-        List.fold_left (fun accum d ->
-          (* For each declaration, if it's one of the TIDs, then
-            replace tid by the value in the model in the accumulator
-            *)
+        Model.get_const_decls m
+        |> List.map (fun d ->
           (* Convert the declaration to a variable *)
           let tid : Variable.t =
             d
@@ -500,32 +497,35 @@ module SymExp = struct
             |> Symbol.get_string
             |> Variable.from_name
           in
-          (* If the variable is a tid *)
-          if Variable.Set.mem tid tid_var_set then (
-            (* Replace each tid by the value in the model *)
-            (* Variables in the model are actually functions with
-              0 args, so we create a function call *)
-            let e = FuncDecl.apply d [] in
-            (* We then evaluate the function call *)
-            match Model.eval m e true with
-            | Some tid_val ->
-              (* Try to cast tid to an integer and then substitute *)
-              (* Try to cast a value to a string, if we fail, return None *)
-              (try
-                let tid_val = Expr.to_string tid_val |> int_of_string in
-                Subst.ReplacePair.n_subst (tid, Num tid_val) accum
-              with
-                Failure _ -> accum)
-            | None -> accum
-          ) else accum
-        ) n (Model.get_const_decls m)
+          (d, tid)
+        )
+        (* Only keep tids *)
+        |> List.filter (fun (_, tid) -> Variable.Set.mem tid tid_var_set)
+        (* Evaluate the value *)
+        |> List.filter_map (fun (d, tid) ->
+          (* Replace each tid by the value in the model *)
+          (* Variables in the model are actually functions with
+            0 args, so we create a function call *)
+          (* We then evaluate the function call *)
+          Model.eval m (FuncDecl.apply d []) true
+          |> Option.map (fun tid_val -> (tid, tid_val))
+        )
+        |> List.filter_map (fun (tid, tid_val) ->
+            (* Try to cast tid to an integer and then substitute *)
+            (* Try to cast a value to a string, if we fail, return None *)
+            (try
+              let tid_val = Expr.to_string tid_val |> int_of_string in
+              Some (tid, Num tid_val)
+            with
+              Failure _ -> None)
+        )
       )
-    end else n
-
-  let minimize = solve Z3.Optimize.minimize
-  let maximize = solve Z3.Optimize.maximize
+    end else []
 
   let rec from_slice (thread_count:Vec3.t) (locs:Variable.Set.t) : Slice.t -> t =
+    let n_subst (kvs:(Variable.t * Exp.nexp) list) (e:Exp.nexp) : Exp.nexp =
+      List.fold_left (fun e (k,v) -> Subst.ReplacePair.n_subst (k, v) e) e kvs
+    in
     function
     | Index a -> Const (IndexAnalysis.analyze thread_count locs a)
     | Cond (_, p) -> from_slice thread_count locs p
@@ -538,18 +538,19 @@ module SymExp = struct
           range_upper_bound=ub;
           _
         } ->
+        let ub = n_subst (maximize thread_count ub) ub in
         Sum (x, ub, from_slice thread_count locs p)
       | {range_step = Default k; _} ->
         let open Exp in
-        let lb = r.range_lower_bound |> minimize thread_count in
-        let ub = r.range_upper_bound |> maximize thread_count in
         (* x := k (x + lb) *)
+        let iters = n_minus r.range_upper_bound r.range_lower_bound in
+        let kvs = maximize thread_count iters in
+        let iters = n_subst kvs iters in
+        let lb = n_subst kvs r.range_lower_bound in
         let new_range_var = n_mult (n_plus (Var r.range_var) lb) k in
         let p = Slice.subst (r.range_var, new_range_var) p in
-        let iters = n_minus ub lb in
         (*  (ub-lb)/k *)
-        let upper_bound = n_div iters k in
-        Sum (r.range_var, upper_bound, from_slice thread_count locs p)
+        Sum (r.range_var, n_div iters k, from_slice thread_count locs p)
       | _ -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r)
 
 end
