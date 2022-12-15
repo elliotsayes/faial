@@ -557,7 +557,15 @@ end
 
 (* k_cost returns the cost of a kernel *)
 let cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) : Exp.nexp =
-  Slice.from_kernel k
+  let subst x n p =
+    Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p in
+  let p =
+    k.kernel_code
+    |> subst "blockDim.x" thread_count.x
+    |> subst "blockDim.y" thread_count.y
+    |> subst "blockDim.z" thread_count.z
+  in
+  Slice.from_kernel { k with kernel_code = p }
   |> Seq.map (fun s ->
     let s1 = SymExp.from_slice thread_count k.kernel_local_variables s in
     let s2 = SymExp.flatten s1 in
