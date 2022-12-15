@@ -18,6 +18,7 @@ let contains_tids (vs:Variable.Set.t) : bool =
   Variable.Set.mem tidz vs
 
 let num_banks : int = 32
+let word_size = 4
 
 let bc_degrees = [1; 2; 4; 8; 16; 32]
 (* TODO: generate bc_degrees from num_banks *)
@@ -65,7 +66,7 @@ module Slice = struct
         let ty = Common.join " " v.array_type |> C_type.make in
         match C_type.sizeof ty with
         | Some n -> Some {byte_count=n; dim=v.array_size}
-        | None -> Some {byte_count=4; dim=v.array_size}
+        | None -> Some {byte_count=word_size; dim=v.array_size}
       else
         None
       ) k.kernel_arrays
@@ -85,10 +86,10 @@ module Slice = struct
           in
           let e = List.fold_right (fun (n, offset) accum ->
             let offset = offset * a.byte_count in
-            let n = if Common.modulo offset 4 = 0 then
-              n_mult n (Num (offset / 4))
+            let n = if offset mod word_size = 0 then
+              n_mult n (Num (offset / word_size))
             else
-              n_div (n_mult n (Num offset)) (Num 4)
+              n_div (n_mult n (Num offset)) (Num word_size)
             in
             n_plus n accum
           ) (Common.zip l dim) (Num 0)
