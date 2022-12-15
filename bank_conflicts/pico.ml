@@ -32,9 +32,9 @@ let vec3 : Vec3.t Cmdliner.Arg.conv =
     fun s ->
     try
       match Yojson.Basic.from_string s with
-      | `List [`Int x; `Int y; `Int z] -> Ok (Vec3.mk ~x ~y ~z)
-      | `List [`Int x; `Int y] -> Ok (Vec3.mk ~x ~y ~z:1)
-      | `List [`Int x] | `Int x -> Ok (Vec3.mk ~x:x ~y:1 ~z:1)
+      | `List [`Int x; `Int y; `Int z] -> Ok (Vec3.make ~x ~y ~z)
+      | `List [`Int x; `Int y] -> Ok (Vec3.make ~x ~y ~z:1)
+      | `List [`Int x] | `Int x -> Ok (Vec3.make ~x:x ~y:1 ~z:1)
       | _ -> Error (`Msg "Expecting a number of a list of up to 3 numbers (eg, [x,y,z])")
     with
       _ -> Error (`Msg ("Error parsing vec3"))
@@ -46,7 +46,7 @@ let vec3 : Vec3.t Cmdliner.Arg.conv =
 
 let thread_count =
   let doc = "Set the number of threads per block.\nExamples:\n--blockDim 1024\n--blockDim [16,16]." in
-  Arg.(value & opt vec3 (Vec3.mk ~x:1024 ~y:1 ~z:1) & info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
+  Arg.(value & opt vec3 (Vec3.make ~x:1024 ~y:1 ~z:1) & info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
 
 let pico_t = Term.(const pico $ get_fname $ thread_count)
 

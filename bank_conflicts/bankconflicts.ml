@@ -1,11 +1,12 @@
 open Stage0
 open Protocols
+module Vec3 = Vectorized.Vec3
 
 (* ----------------- constants -------------------- *)
 
-let tidx = Variable.from_name "threadIdx.x"
-let tidy = Variable.from_name "threadIdx.y"
-let tidz = Variable.from_name "threadIdx.z"
+let tidx = Vectorized.tidx
+let tidy = Vectorized.tidy
+let tidz = Vectorized.tidz
 
 let tid_var_list : Variable.t list = [tidx; tidy; tidz]
 
@@ -20,16 +21,6 @@ let num_banks : int = 32
 
 let bc_degrees = [1; 2; 4; 8; 16; 32]
 (* TODO: generate bc_degrees from num_banks *)
-
-
-module Vec3 = struct
-  type t = {x : int; y: int; z: int;}
-  let mk ~x:x ~y:y ~z:z : t = {x=x; y=y; z=z}
-  let to_string (v:t) =
-    "[" ^ string_of_int v.x ^
-    ", " ^ string_of_int v.y ^
-    ", " ^ string_of_int v.z ^ "]"
-end
 
 (* ----------------- acc_t type -------------------- *)
 
@@ -348,24 +339,16 @@ module IndexAnalysis = struct
     in
     if has_thread_locals locs n then num_banks
     else
-      let thread_x_count = min thread_count.x num_banks in
-      let thread_y_count = min thread_count.y (num_banks - thread_x_count + 1) in
-      let thread_z_count = min thread_count.z (num_banks - thread_x_count - thread_y_count + 2) in
-      let thread_x_count = max thread_x_count 1 in
-      let thread_y_count = max thread_y_count 1 in
-      let thread_z_count = max thread_z_count 1 in
       let ctx =
         let open Vectorized in
           make
           ~bank_count:num_banks
-          ~tid_count:num_banks
+          ~warp_count:num_banks
           ~use_array:(fun _ -> true)
-        |> put tidx (NMap.make num_banks (fun x -> Common.modulo x thread_x_count))
-        |> put tidy (NMap.make num_banks (fun y -> Common.modulo y thread_y_count))
-        |> put tidz (NMap.make num_banks (fun z -> Common.modulo z thread_z_count))
+        |> put_tids thread_count
       in
       try
-        Vectorized.access n ctx |> Vectorized.NMap.max |> snd
+        (Vectorized.access n ctx |> Vectorized.NMap.max).value
       with
         Failure _ -> (
         match handle_bank_conflicts n with

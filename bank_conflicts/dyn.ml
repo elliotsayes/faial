@@ -1,6 +1,7 @@
 open Stage0
 open Protocols
 open Inference
+module Vec3 = Vectorized.Vec3
 
 let load_data (fname : string) : (string * int) list =
   try
@@ -28,16 +29,15 @@ let shared_arrays (k:Proto.prog Proto.kernel) : Variable.Set.t =
   )
   |> Variable.Set.of_list
 
-let create_ctx ~bank_count ~tid_count ~env:(env:(string*int) list) ~arrays : Vectorized.t =
+let create_ctx ~bank_count ~env:(env:(string*int) list) ~arrays : Vectorized.t =
   let use_array x = Variable.Set.mem x arrays in
-  let tid = Vectorized.NMap.make tid_count (fun tid -> tid) in
-  let ctx = Vectorized.make ~bank_count ~tid_count ~use_array
-    |> Vectorized.put (Variable.from_name "threadIdx.x") tid
+  let ctx = Vectorized.make ~bank_count ~warp_count:bank_count ~use_array
+    |> Vectorized.put_tids (Vec3.make ~x:bank_count ~y:1 ~z:1)
   in
   List.fold_left (fun ctx ((k:string), (v:int)) ->
     print_endline (k ^ " = " ^ string_of_int v);
     let k = Variable.from_name k in
-    let v = Vectorized.NMap.constant ~count:tid_count ~value:v in
+    let v = Vectorized.NMap.constant ~count:bank_count ~value:v in
     Vectorized.put k v ctx
   ) ctx env
 
@@ -51,11 +51,11 @@ let main (fname : string) : unit =
     let env = load_data "env.json" in
     (try
       List.iter (fun p ->
-        let ctx = create_ctx ~bank_count:32 ~tid_count:32 ~env ~arrays:(shared_arrays p) in
+        let ctx = create_ctx ~bank_count:32 ~env ~arrays:(shared_arrays p) in
         let open Proto in
         let cost = Vectorized.eval p.kernel_code ctx in
-        let (bid, max_cost) = Vectorized.NMap.max cost in
-        print_endline ("Dynamic cost (bid " ^ string_of_int bid ^ "): " ^ string_of_int max_cost)
+        let v = Vectorized.NMap.max cost in
+        print_endline ("Dynamic cost (bid " ^ string_of_int v.index ^ "): " ^ string_of_int v.value)
       ) proto;
       ()
     with
