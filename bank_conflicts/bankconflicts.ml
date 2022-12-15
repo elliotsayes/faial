@@ -94,8 +94,13 @@ module Slice = struct
           in
           print_endline (List.map string_of_int dim |> Common.join ", ");
           let e = List.fold_right (fun (n, offset) accum ->
-            n_div (n_mult n (Num (offset * a.byte_count))) (Num 4)
-            |> n_plus accum
+            let offset = offset * a.byte_count in
+            let n = if Common.modulo offset 4 = 0 then
+              n_mult n (Num (offset / 4))
+            else
+              n_div (n_mult n (Num offset)) (Num 4)
+            in
+            n_plus accum n
           ) (Common.zip l dim) (Num 0)
           in
           Seq.return (Index e)
