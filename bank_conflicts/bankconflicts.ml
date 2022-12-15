@@ -79,9 +79,9 @@ module Slice = struct
           (* Accumulate the values so that when we have
             [2, 2, 2] -> [1, 2, 4]
             *)
-          let dim = List.fold_right (fun n (mult, l) ->
+          let dim = List.fold_left (fun (mult, l) n ->
             (n * mult, mult :: l)
-          ) a.dim (1, []) |> snd
+          ) (1, []) a.dim |> snd |> List.rev
           in
           let e = List.fold_right (fun (n, offset) accum ->
             let offset = offset * a.byte_count in
@@ -90,7 +90,7 @@ module Slice = struct
             else
               n_div (n_mult n (Num offset)) (Num 4)
             in
-            n_plus accum n
+            n_plus n accum
           ) (Common.zip l dim) (Num 0)
           in
           Seq.return (Index e)
