@@ -80,18 +80,15 @@ module Slice = struct
           (* Accumulate the values so that when we have
             [2, 2, 2] -> [1, 2, 4]
             *)
+          let dim = List.map (fun n -> (a.byte_count * n) / word_size) a.dim in
+          print_endline (dim |> List.map string_of_int |> Vectorized.list_to_string);
           let dim = List.fold_left (fun (mult, l) n ->
             (n * mult, mult :: l)
-          ) (1, []) a.dim |> snd |> List.rev
+          ) (1, []) (List.rev dim) |> snd
           in
+          print_endline (dim |> List.map string_of_int |> Vectorized.list_to_string);
           let e = List.fold_right (fun (n, offset) accum ->
-            let offset = offset * a.byte_count in
-            let n = if offset mod word_size = 0 then
-              n_mult n (Num (offset / word_size))
-            else
-              n_div (n_mult n (Num offset)) (Num word_size)
-            in
-            n_plus n accum
+            n_plus (n_mult n (Num (offset))) accum
           ) (Common.zip l dim) (Num 0)
           in
           Seq.return (Index e)
