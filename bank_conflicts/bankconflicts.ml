@@ -83,7 +83,7 @@ module Slice = struct
           let dim = List.map (fun n -> a.byte_count * n) a.dim in
           let dim = List.fold_left (fun (mult, l) n ->
             (n * mult, mult :: l)
-          ) (1, []) (List.rev dim) |> snd
+          ) (a.byte_count, []) (List.rev dim) |> snd
           in
           let e = List.fold_right (fun (n, offset) accum ->
             n_plus (n_div (n_mult n (Num (offset))) (Num word_size)) accum
