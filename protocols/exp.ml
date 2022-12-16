@@ -156,6 +156,10 @@ let n_mult n1 n2 =
 
 let n_div n1 n2 =
   match n1, n2 with
+  | Bin (Mult, e, Num n1), Num n2 when n1 > n2 ->
+    Bin (Mult, e, Num (n1/n2))
+  | Bin (Mult, Num n1, e), Num n2 when n1 > n2 ->
+    Bin (Mult, e, Num (n1/n2))
   | _, Num 1 -> n1
   | Num 0, _ -> Num 0
   | _, Num 0 -> failwith ("Division by 0")
