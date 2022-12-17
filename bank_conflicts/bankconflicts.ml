@@ -362,11 +362,13 @@ module SymExp = struct
   type t =
     | Const of int
     | Sum of Variable.t * Exp.nexp * t
+    | Add of t list
 
   let rec to_string : t -> string =
     function
     | Const x -> string_of_int x
     | Sum (x, n, s) -> "Σ_{" ^ Variable.name x ^ " < " ^ Serialize.PPrint.n_to_s n ^ "} " ^ to_string s
+    | Add l -> List.map to_string l |> Common.join " + "
 
   type factor = { power: int; divisor: int }
 
@@ -440,6 +442,9 @@ module SymExp = struct
         n_mult coefficient (sum degree ub)
       )
       |> Seq.fold_left n_plus (Num 0)
+    | Add l ->
+      List.map flatten l
+      |> List.fold_left n_plus (Num 0)
 
   (*
     Maximizes the given expression, and replaces tids by concrete values.
@@ -527,6 +532,19 @@ module SymExp = struct
     | Cond (_, p) -> from_slice thread_count locs p
     | Loop (r, p) ->
       match r with
+      | {
+          range_var=x;
+          range_step = StepName "pow2";
+          _
+        } ->
+        (match Predicates.r_eval_opt r with
+        | Some l ->
+          let l = List.map (fun i ->
+            let p = Slice.subst (x, Num i) p in
+            from_slice thread_count locs p
+          ) l in
+          Add l
+        | None -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r))
       | {
           range_var=x;
           range_lower_bound=Num 0;

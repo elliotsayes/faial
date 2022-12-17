@@ -240,3 +240,20 @@ let range_last (r:range) : nexp =
 
 let range_inc (r:range) : range =
   { r with range_lower_bound = n_plus r.range_lower_bound (Num 1) }
+
+let r_eval_res (r:range) : (int list, string) Result.t =
+  let (let*) = Result.bind in
+  let* lb = n_eval_res r.range_lower_bound in
+  let* ub = n_eval_res r.range_upper_bound in
+  let rec r_eval (lb:int) : (int list, string) Result.t =
+    if lb < ub then
+      let* new_lb = n_eval_res (step_inc r.range_step (Num lb)) in
+      let* l = r_eval new_lb in
+      Ok (lb :: l)
+    else
+      Ok []
+  in
+  r_eval lb
+
+let r_eval_opt (r:range) : int list option =
+  r_eval_res r |> Result.to_option

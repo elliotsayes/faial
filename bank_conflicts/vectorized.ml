@@ -93,11 +93,7 @@ end = struct
     Array.get v x
 
   let map = Array.map
-(*
-  let get_or (idx:int) (b:bool) (x:t) : bool =
-    try Array.get x idx with
-    | Invalid_argument _ -> b
-*)
+
   let to_array x = x
   let from_array x = x
 end
@@ -166,15 +162,12 @@ let put_tids (thread_count:Vec3.t) (ctx:t) : t =
   let n_tidx = NMap.map (fun id ->
     id mod thread_count.x) wids
   in
-(*   print_endline ("x: " ^ NMap.to_string n_tidx); *)
   let n_tidy = NMap.map (fun id ->
     (id / thread_count.x) mod thread_count.y) wids
   in
-(*   print_endline ("y: " ^ NMap.to_string n_tidy); *)
   let n_tidz = NMap.map (fun id ->
     (id / (thread_count.x * thread_count.y)) mod thread_count.z) wids
   in
-(*   print_endline ("z: " ^ NMap.to_string n_tidz); *)
   ctx
   |> put tidx n_tidx
   |> put tidy n_tidy
@@ -258,12 +251,12 @@ let access ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
 
 let add = NMap.pointwise (+)
 
-let rec eval (p: Proto.prog) (ctx:t) : NMap.t =
+let rec eval ?(verbose=true) (p: Proto.prog) (ctx:t) : NMap.t =
   List.fold_left (fun cost (i:Proto.inst) ->
     let new_cost = match i with
       | Acc (x, {access_index=[n]; _}) ->
         if ctx.use_array x then
-          access n ctx
+          access ~verbose n ctx
         else
           zero_cost ctx
       | Acc _ ->
