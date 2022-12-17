@@ -314,6 +314,17 @@ module IndexAnalysis = struct
     (* non-linear access pattern: theory incomplete *)
     | Many _ -> num_banks
 
+  let rec remove_offset (n: Exp.nexp) : Exp.nexp =
+    match n with
+    | Var x -> if Variable.Set.mem x tid_var_set then n else Num 0
+    | Bin (Plus, n1, n2) -> Exp.n_plus (remove_offset n1) (remove_offset n2)
+    | Bin (Minus, n1, n2) -> Exp.n_minus (remove_offset n1) (remove_offset n2)
+    | Num _
+    | NCall _
+    | NIf _
+    | Proj _
+    | Bin _ -> n
+
   (* https://cs.calvin.edu/courses/cs/374/CUDA/CUDA-Thread-Indexing-Cheatsheet.pdf *)
   (* n_cost returns bank conflict degree of a poly n *)
   let analyze (thread_count:Vec3.t) (thread_locals : Variable.Set.t) (n : Exp.nexp) : int =
@@ -342,7 +353,7 @@ module IndexAnalysis = struct
         |> put_tids thread_count
       in
       try
-        (Vectorized.access n ctx |> Vectorized.NMap.max).value - 1
+        (Vectorized.access (remove_offset n) ctx |> Vectorized.NMap.max).value - 1
       with
         Failure _ -> (
         match handle_bank_conflicts n with
