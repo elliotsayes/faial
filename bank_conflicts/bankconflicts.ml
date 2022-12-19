@@ -24,6 +24,15 @@ let word_size = 4
 (* ----------------- acc_t type -------------------- *)
 
 module Slice = struct
+  (*
+    Given a protocol, generates a sequence of accesses with their
+    surrounding context (loops and conditionals).
+
+    Additionally, we:
+      - convert from multiple-dimension accesses to a single dimension
+      - take into account the byte size of the array type
+  *)
+
 
   type t =
     | Loop of Exp.range * t
@@ -106,7 +115,21 @@ end
 
 
 module IndexAnalysis = struct
+  (*
+    Given an arithmetic expression perform index analysis that yields the
+    number of bank conflicts:
+     1. remove any offsets that exist, ex `10 + tid` becomes `tid`
+     2. evaluate any expression with constants and tids
+    *)
 
+  (* Given a numeric expression try to remove any offsets in the form of
+     `expression + constant` or `expression - constant`.
+
+     The way we do this is by first getting all the free-names that are
+     **not** tids. Secondly, we rearrange the expression as a polynomial
+     in terms of each free variable. Third, we only keep polynomials that
+     mention a tid, otherwise we can safely discard such a polynomial.
+     *)
   let remove_offset (fvs: Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
     let rec rm_offset (n: Exp.nexp) : Variable.t list -> Exp.nexp =
       function
@@ -133,7 +156,14 @@ module IndexAnalysis = struct
       n
     else n
 
-  (* n_cost returns bank conflict degree of a poly n *)
+  (*
+    1. If the expressions contains any thread-local variable, return the max
+       number of bank conflicts
+    2. Remove any uniform offsets that appear in the expression
+    3. Try to evaluate the expression, which will only work if the expression
+       does _not_ contain any variables.
+    4. Otherwise, return the max number of bank conflicts.
+  *)
   let analyze (thread_count:Vec3.t) (thread_locals : Variable.Set.t) (n : Exp.nexp) : int =
     let bc_fail (reason : string) : int =
       Printf.eprintf
