@@ -21,9 +21,6 @@ let contains_tids (vs:Variable.Set.t) : bool =
 let num_banks : int = 32
 let word_size = 4
 
-let bc_degrees = [1; 2; 4; 8; 16; 32]
-(* TODO: generate bc_degrees from num_banks *)
-
 (* ----------------- acc_t type -------------------- *)
 
 module Slice = struct
