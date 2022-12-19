@@ -77,78 +77,76 @@ module Slice = struct
       (lb:Z3.Expr.expr)
       (handler:Z3.Model.model -> (Variable.t * Exp.nexp) list)
     :
-      (Variable.t * Exp.nexp) list
+      (Variable.t * Exp.nexp) list option
     =
       let open Z3 in
       let _ = Optimize.maximize opt lb in
       if Optimize.check opt = Solver.SATISFIABLE then
         Optimize.get_model opt
         |> Option.map handler
-        |> fun x -> Option.value x ~default:[]
       else
+        None
+    in
+    let open Z3 in
+    let open Z3expr in
+    let ctx = mk_context ["timeout", string_of_int timeout] in
+    let n_expr = n_to_expr ctx n in
+    let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
+    let restrict tid tid_count =
+      let lhs = n_ge (Var tid) (Num 0) in
+      let rhs = n_lt (Var tid) (Num tid_count) in
+      b_to_expr ctx (b_and lhs rhs)
+    in
+    let opt = Optimize.mk_opt ctx in
+    Optimize.add opt [
+        Boolean.mk_eq ctx lb n_expr;
+        restrict tidx thread_count.x;
+        restrict tidx thread_count.y;
+        restrict tidx thread_count.z;
+      ]
+    ;
+    match solve opt lb (fun m ->
+      (* Go through all declarations of the model *)
+      Model.get_const_decls m
+      |> List.map (fun d ->
+        (* Convert the declaration to a variable *)
+        let tid : Variable.t =
+          d
+          |> FuncDecl.get_name
+          |> Symbol.get_string
+          |> Variable.from_name
+        in
+        (d, tid)
+      )
+      (* Only keep tids *)
+      |> List.filter (fun (_, tid) -> Variable.Set.mem tid tid_var_set)
+      (* Evaluate the value *)
+      |> List.filter_map (fun (d, tid) ->
+        (* Replace each tid by the value in the model *)
+        (* Variables in the model are actually functions with
+          0 args, so we create a function call *)
+        (* We then evaluate the function call *)
+        Model.eval m (FuncDecl.apply d []) true
+        |> Option.map (fun tid_val -> (tid, tid_val))
+      )
+      |> List.filter_map (fun (tid, tid_val) ->
+          (* Try to cast tid to an integer and then substitute *)
+          (* Try to cast a value to a string, if we fail, return None *)
+          (try
+            let tid_val = Expr.to_string tid_val |> int_of_string in
+            Some (tid, Num tid_val)
+          with
+            Failure _ -> None)
+      )
+    ) with
+    | Some l -> l
+    | None ->
         (print_endline ("ERROR: could not maximize expression: " ^ Serialize.PPrint.n_to_s n);
         [
           tidx, Num 0;
           tidy, Num 0;
           tidz, Num 0
         ])
-
-    in
-    let fvs = Freenames.free_names_nexp n Variable.Set.empty in
-    if contains_tids fvs then begin
-      let open Z3 in
-      let open Z3expr in
-      let ctx = mk_context ["timeout", string_of_int timeout] in
-      let n_expr = n_to_expr ctx n in
-      let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
-      let restrict tid tid_count =
-        let lhs = n_ge (Var tid) (Num 0) in
-        let rhs = n_lt (Var tid) (Num tid_count) in
-        b_to_expr ctx (b_and lhs rhs)
-      in
-      let opt = Optimize.mk_opt ctx in
-      Optimize.add opt [
-          Boolean.mk_eq ctx lb n_expr;
-          restrict tidx thread_count.x;
-          restrict tidx thread_count.y;
-          restrict tidx thread_count.z;
-        ]
-      ;
-      solve opt lb (fun m ->
-        (* Go through all declarations of the model *)
-        Model.get_const_decls m
-        |> List.map (fun d ->
-          (* Convert the declaration to a variable *)
-          let tid : Variable.t =
-            d
-            |> FuncDecl.get_name
-            |> Symbol.get_string
-            |> Variable.from_name
-          in
-          (d, tid)
-        )
-        (* Only keep tids *)
-        |> List.filter (fun (_, tid) -> Variable.Set.mem tid tid_var_set)
-        (* Evaluate the value *)
-        |> List.filter_map (fun (d, tid) ->
-          (* Replace each tid by the value in the model *)
-          (* Variables in the model are actually functions with
-            0 args, so we create a function call *)
-          (* We then evaluate the function call *)
-          Model.eval m (FuncDecl.apply d []) true
-          |> Option.map (fun tid_val -> (tid, tid_val))
-        )
-        |> List.filter_map (fun (tid, tid_val) ->
-            (* Try to cast tid to an integer and then substitute *)
-            (* Try to cast a value to a string, if we fail, return None *)
-            (try
-              let tid_val = Expr.to_string tid_val |> int_of_string in
-              Some (tid, Num tid_val)
-            with
-              Failure _ -> None)
-        )
-      )
-    end else []
 
   let uniform (thread_count:Vec3.t) (r:Exp.range) : Exp.range =
     let open Exp in
