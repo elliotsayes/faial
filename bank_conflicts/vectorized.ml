@@ -220,7 +220,8 @@ and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
 let access ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
   let idx_bid =
     let idx = n_eval index ctx |> NMap.to_array in
-    let bid = Array.map (fun x -> x mod ctx.bank_count) idx in
+    (* We handle "gracefully" index out of bounds *)
+    let bid = Array.map (fun x -> Common.modulo x ctx.bank_count) idx in
     Array.combine idx bid
   in
   (* Create a mutable array *)
