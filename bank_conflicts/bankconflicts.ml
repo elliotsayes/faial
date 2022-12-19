@@ -300,9 +300,11 @@ module IndexAnalysis = struct
 
 end
 
-(* ----------------- kernel cost analysis -------------------- *)
-
 module SymExp = struct
+  (*
+    1. Generates a summation from a slice.
+    2. Flattens a summation expression as a single numeric expression.
+   *)
   open Exp
   type t =
     | Const of int
