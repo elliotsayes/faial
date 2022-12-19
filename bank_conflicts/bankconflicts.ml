@@ -31,6 +31,7 @@ module Slice = struct
     Additionally, we:
       - convert from multiple-dimension accesses to a single dimension
       - take into account the byte size of the array type
+      - convert non-uniform loops into uniform loops
   *)
 
 
@@ -65,7 +66,106 @@ module Slice = struct
 
   type array_size = { byte_count: int; dim: int list}
 
-  let from_kernel (k: Proto.prog Proto.kernel) : t Seq.t =
+
+  (*
+    Maximizes the given expression, and replaces tids by concrete values.
+    *)
+  let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * Exp.nexp) list =
+    let open Exp in
+    let solve
+      (opt:Z3.Optimize.optimize)
+      (lb:Z3.Expr.expr)
+      (handler:Z3.Model.model -> (Variable.t * Exp.nexp) list)
+    :
+      (Variable.t * Exp.nexp) list
+    =
+      let open Z3 in
+      let _ = Optimize.maximize opt lb in
+      if Optimize.check opt = Solver.SATISFIABLE then
+        Optimize.get_model opt
+        |> Option.map handler
+        |> fun x -> Option.value x ~default:[]
+      else
+        (print_endline ("ERROR: could not maximize expression: " ^ Serialize.PPrint.n_to_s n);
+        [
+          tidx, Num 0;
+          tidy, Num 0;
+          tidz, Num 0
+        ])
+
+    in
+    let fvs = Freenames.free_names_nexp n Variable.Set.empty in
+    if contains_tids fvs then begin
+      let open Z3 in
+      let open Z3expr in
+      let ctx = mk_context ["timeout", string_of_int timeout] in
+      let n_expr = n_to_expr ctx n in
+      let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
+      let restrict tid tid_count =
+        let lhs = n_ge (Var tid) (Num 0) in
+        let rhs = n_lt (Var tid) (Num tid_count) in
+        b_to_expr ctx (b_and lhs rhs)
+      in
+      let opt = Optimize.mk_opt ctx in
+      Optimize.add opt [
+          Boolean.mk_eq ctx lb n_expr;
+          restrict tidx thread_count.x;
+          restrict tidx thread_count.y;
+          restrict tidx thread_count.z;
+        ]
+      ;
+      solve opt lb (fun m ->
+        (* Go through all declarations of the model *)
+        Model.get_const_decls m
+        |> List.map (fun d ->
+          (* Convert the declaration to a variable *)
+          let tid : Variable.t =
+            d
+            |> FuncDecl.get_name
+            |> Symbol.get_string
+            |> Variable.from_name
+          in
+          (d, tid)
+        )
+        (* Only keep tids *)
+        |> List.filter (fun (_, tid) -> Variable.Set.mem tid tid_var_set)
+        (* Evaluate the value *)
+        |> List.filter_map (fun (d, tid) ->
+          (* Replace each tid by the value in the model *)
+          (* Variables in the model are actually functions with
+            0 args, so we create a function call *)
+          (* We then evaluate the function call *)
+          Model.eval m (FuncDecl.apply d []) true
+          |> Option.map (fun tid_val -> (tid, tid_val))
+        )
+        |> List.filter_map (fun (tid, tid_val) ->
+            (* Try to cast tid to an integer and then substitute *)
+            (* Try to cast a value to a string, if we fail, return None *)
+            (try
+              let tid_val = Expr.to_string tid_val |> int_of_string in
+              Some (tid, Num tid_val)
+            with
+              Failure _ -> None)
+        )
+      )
+    end else []
+
+  let uniform (thread_count:Vec3.t) (r:Exp.range) : Exp.range =
+    let open Exp in
+    let fvs = Freenames.free_names_range r Variable.Set.empty in
+    if contains_tids fvs then
+      let r_subst (r:range) : (Variable.t * Exp.nexp) list -> range =
+        List.fold_left (fun r (k,v) -> Subst.ReplacePair.r_subst (k, v) r) r
+      in
+      let r' =
+        maximize thread_count (n_minus r.range_upper_bound r.range_lower_bound)
+        |> r_subst r
+      in
+      print_endline ("Making range uniform: for (" ^ Serialize.PPrint.r_to_s r ^ ") ⇨ for (" ^ Serialize.PPrint.r_to_s r' ^ ")");
+      r'
+    else r
+
+  let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
     let open Exp in
     let shared : array_size Variable.Map.t = Variable.Map.filter_map (fun _ v ->
       if v.array_hierarchy = SharedMemory then
@@ -105,7 +205,7 @@ module Slice = struct
         |> Seq.map (fun (i:t) : t -> Cond (b, i))
       | Proto.Loop (r, p) ->
         on_p p
-        |> Seq.map (fun i -> (Loop (r, i)))
+        |> Seq.map (fun i -> (Loop (uniform thread_count r, i)))
 
     and on_p (l: Proto.prog) : t Seq.t =
       List.to_seq l |> Seq.flat_map on_i
@@ -293,87 +393,7 @@ module SymExp = struct
       List.map flatten l
       |> List.fold_left n_plus (Num 0)
 
-  (*
-    Maximizes the given expression, and replaces tids by concrete values.
-    *)
-  let maximize (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * Exp.nexp) list =
-    let open Exp in
-    let solve
-      (opt:Z3.Optimize.optimize)
-      (lb:Z3.Expr.expr)
-      (handler:Z3.Model.model -> (Variable.t * Exp.nexp) list)
-    :
-      (Variable.t * Exp.nexp) list
-    =
-      let open Z3 in
-      let _ = Optimize.maximize opt lb in
-      if Optimize.check opt = Solver.SATISFIABLE then
-        Optimize.get_model opt
-        |> Option.map handler
-        |> fun x -> Option.value x ~default:[]
-      else
-        []
-    in
-    let fvs = Freenames.free_names_nexp n Variable.Set.empty in
-    if contains_tids fvs then begin
-      let open Z3 in
-      let open Z3expr in
-      let ctx = mk_context [] in
-      let n_expr = n_to_expr ctx n in
-      let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
-      let restrict tid tid_count =
-        let lhs = n_ge (Var tid) (Num 0) in
-        let rhs = n_lt (Var tid) (Num tid_count) in
-        b_to_expr ctx (b_and lhs rhs)
-      in
-      let opt = Optimize.mk_opt ctx in
-      Optimize.add opt [
-          Boolean.mk_eq ctx lb n_expr;
-          restrict tidx thread_count.x;
-          restrict tidx thread_count.y;
-          restrict tidx thread_count.z;
-        ]
-      ;
-      solve opt lb (fun m ->
-        (* Go through all declarations of the model *)
-        Model.get_const_decls m
-        |> List.map (fun d ->
-          (* Convert the declaration to a variable *)
-          let tid : Variable.t =
-            d
-            |> FuncDecl.get_name
-            |> Symbol.get_string
-            |> Variable.from_name
-          in
-          (d, tid)
-        )
-        (* Only keep tids *)
-        |> List.filter (fun (_, tid) -> Variable.Set.mem tid tid_var_set)
-        (* Evaluate the value *)
-        |> List.filter_map (fun (d, tid) ->
-          (* Replace each tid by the value in the model *)
-          (* Variables in the model are actually functions with
-            0 args, so we create a function call *)
-          (* We then evaluate the function call *)
-          Model.eval m (FuncDecl.apply d []) true
-          |> Option.map (fun tid_val -> (tid, tid_val))
-        )
-        |> List.filter_map (fun (tid, tid_val) ->
-            (* Try to cast tid to an integer and then substitute *)
-            (* Try to cast a value to a string, if we fail, return None *)
-            (try
-              let tid_val = Expr.to_string tid_val |> int_of_string in
-              Some (tid, Num tid_val)
-            with
-              Failure _ -> None)
-        )
-      )
-    end else []
-
   let rec from_slice (thread_count:Vec3.t) (locs:Variable.Set.t) : Slice.t -> t =
-    let n_subst (kvs:(Variable.t * Exp.nexp) list) (e:Exp.nexp) : Exp.nexp =
-      List.fold_left (fun e (k,v) -> Subst.ReplacePair.n_subst (k, v) e) e kvs
-    in
     function
     | Index a -> Const (IndexAnalysis.analyze thread_count locs a)
     | Cond (_, p) -> from_slice thread_count locs p
@@ -399,16 +419,12 @@ module SymExp = struct
           range_upper_bound=ub;
           _
         } ->
-        let ub = n_subst (maximize thread_count ub) ub in
         Sum (x, ub, from_slice thread_count locs p)
       | {range_step = Default k; _} ->
         let open Exp in
         (* x := k (x + lb) *)
         let iters = n_minus r.range_upper_bound r.range_lower_bound in
-        let kvs = maximize thread_count iters in
-        let iters = n_subst kvs iters in
-        let lb = n_subst kvs r.range_lower_bound in
-        let new_range_var = n_mult (n_plus (Var r.range_var) lb) k in
+        let new_range_var = n_mult (n_plus (Var r.range_var) r.range_lower_bound) k in
         let p = Slice.subst (r.range_var, new_range_var) p in
         (*  (ub-lb)/k *)
         Sum (r.range_var, n_div iters k, from_slice thread_count locs p)
@@ -427,7 +443,7 @@ let cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) : Exp.nexp =
     |> subst "blockDim.y" thread_count.y
     |> subst "blockDim.z" thread_count.z
   in
-  Slice.from_kernel { k with kernel_code = p }
+  Slice.from_kernel thread_count { k with kernel_code = p }
   |> Seq.map (fun s ->
     let s1 = SymExp.from_slice thread_count k.kernel_local_variables s in
     let s2 = SymExp.flatten s1 in
