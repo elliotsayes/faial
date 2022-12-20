@@ -171,10 +171,12 @@ let n_minus n1 n2 =
   | Num n1, Num n2 -> Num (n1 - n2)
   | _, _ -> Bin (Minus, n1, n2)
 
-let n_mult n1 n2 =
+let rec n_mult n1 n2 =
   match n1, n2 with
   | Num 1, n | n, Num 1 -> n
   | Num 0, _ | _, Num 0 -> Num 0
+  | Bin (Div, e, Num n2), Num n1 when n1 mod n2 = 0 -> n_mult (Num (n1 / n2)) e
+  | Num n1, Bin (Div, e, Num n2) when n1 mod n2 = 0 -> n_mult (Num (n1 / n2)) e
   | Num n1, Num n2 -> Num (n1 * n2)
   | Num n1, Bin (Mult, Num n2, e)
   | Bin (Mult, Num n1, e), Num n2 ->

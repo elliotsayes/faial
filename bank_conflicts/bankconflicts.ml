@@ -185,13 +185,13 @@ module Slice = struct
           (* Accumulate the values so that when we have
             [2, 2, 2] -> [1, 2, 4]
             *)
-          let dim = List.map (fun n -> a.byte_count / word_size * n) a.dim in
+          let dim = a.dim |> List.rev in
           let dim = List.fold_left (fun (mult, l) n ->
             (n * mult, mult :: l)
-          ) (a.byte_count / word_size, []) (List.rev dim) |> snd
+          ) (1, []) dim |> snd
           in
           let e = List.fold_right (fun (n, offset) accum ->
-            n_plus (n_mult n (Num (offset))) accum
+            n_plus (n_mult (n_div n (Num word_size)) (Num (a.byte_count * offset))) accum
           ) (Common.zip l dim) (Num 0)
           in
           Seq.return (Index e)
@@ -433,7 +433,6 @@ module SymExp = struct
 end
 
 
-(* k_cost returns the cost of a kernel *)
 let cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) : Exp.nexp =
   let subst x n p =
     Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p in
@@ -443,12 +442,16 @@ let cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) : Exp.nexp =
     |> subst "blockDim.y" thread_count.y
     |> subst "blockDim.z" thread_count.z
   in
+  (* 1. break a kernel into slices *)
   Slice.from_kernel thread_count { k with kernel_code = p }
   |> Seq.map (fun s ->
+    (* Convert a slice into an expression *)
     let s1 = SymExp.from_slice thread_count k.kernel_local_variables s in
+    (* Flatten the expression *)
     let s2 = SymExp.flatten s1 in
     print_endline ("   Slice: " ^ Slice.to_string s ^ "\nSymbolic: " ^ SymExp.to_string s1 ^ "\n     Exp: " ^ Serialize.PPrint.n_to_s s2 ^ "\n");
     s2
   )
+  (* 2. Add all expressions together *)
   |> Seq.fold_left Exp.n_plus (Num 0)
   |> Constfold.n_opt
