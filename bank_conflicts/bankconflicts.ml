@@ -314,7 +314,7 @@ module SymExp = struct
   let rec to_string : t -> string =
     function
     | Const x -> string_of_int x
-    | Sum (x, n, s) -> "Σ_{" ^ Variable.name x ^ " < " ^ Serialize.PPrint.n_to_s n ^ "} " ^ to_string s
+    | Sum (x, n, s) -> "Σ_{1 ≤ " ^ Variable.name x ^ " ≤ " ^ Serialize.PPrint.n_to_s n ^ "} " ^ to_string s
     | Add l -> List.map to_string l |> Common.join " + "
 
   type factor = { power: int; divisor: int }
@@ -379,6 +379,12 @@ module SymExp = struct
       ]
     | _ -> failwith ("S_" ^ string_of_int power ^ " not implemented")
 
+  let rec to_sage : t -> string =
+    function
+    | Const k -> string_of_int k
+    | Sum (x, ub, s) -> "sum(" ^ to_sage s ^ ", " ^ Variable.name x ^ ", 1, " ^ Serialize.PPrint.n_to_s ub ^ ")"
+    | Add l -> List.map to_sage l |> Common.join " + "
+
   let rec flatten : t -> Exp.nexp =
     function
     | Const k -> Num k
@@ -424,7 +430,7 @@ module SymExp = struct
         let open Exp in
         (* x := k (x + lb) *)
         let iters = n_minus r.range_upper_bound r.range_lower_bound in
-        let new_range_var = n_mult (n_plus (Var r.range_var) r.range_lower_bound) k in
+        let new_range_var = n_mult (n_plus (Var r.range_var) (n_plus (Num 1) r.range_lower_bound)) k in
         let p = Slice.subst (r.range_var, new_range_var) p in
         (*  (ub-lb)/k *)
         Sum (r.range_var, n_div iters k, from_slice thread_count locs p)
