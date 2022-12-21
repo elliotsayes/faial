@@ -1,5 +1,4 @@
 open Stage0
-open Protocols
 open Inference
 open Bankconflicts
 
@@ -14,8 +13,8 @@ let pico (fname : string) (thread_count:Vec3.t) =
     let proto = imp |> List.map Imp.compile in
     List.iter (fun k ->
       let cost_of_proto = Bankconflicts.cost thread_count k in
-      print_string (k.kernel_name ^ ": ");
-      cost_of_proto |> Serialize.PPrint.n_to_s |> print_endline
+      print_string (k.kernel_name ^ ":\n");
+      cost_of_proto |> print_endline
     ) proto
   with
   | Common.ParseError b ->

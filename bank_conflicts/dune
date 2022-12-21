@@ -7,7 +7,7 @@
  (public_name pico)
  (name pico)
  (modules pico bankconflicts z3expr)
- (libraries inference cmdliner z3 bc))
+ (libraries inference cmdliner z3 bc printbox printbox-text))
 
 (executable
  (public_name faial-bc-dyn)

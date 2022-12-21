@@ -379,11 +379,11 @@ module SymExp = struct
       ]
     | _ -> failwith ("S_" ^ string_of_int power ^ " not implemented")
 
-  let rec to_sage : t -> string =
+  let rec to_maxima : t -> string =
     function
     | Const k -> string_of_int k
-    | Sum (x, ub, s) -> "sum(" ^ to_sage s ^ ", " ^ Variable.name x ^ ", 1, " ^ Serialize.PPrint.n_to_s ub ^ ")"
-    | Add l -> List.map to_sage l |> Common.join " + "
+    | Sum (x, ub, s) -> "sum(" ^ to_maxima s ^ ", " ^ Variable.name x ^ ", 1, " ^ Serialize.PPrint.n_to_s ub ^ ")"
+    | Add l -> List.map to_maxima l |> Common.join " + "
 
   let rec flatten : t -> Exp.nexp =
     function
@@ -398,6 +398,43 @@ module SymExp = struct
     | Add l ->
       List.map flatten l
       |> List.fold_left n_plus (Num 0)
+
+  let cleanup_maxima_output (x:string) : string =
+    let lines = String.split_on_char '\n' x in
+    let max_len = List.map String.length lines
+      |> List.fold_left max 0
+    in
+    let offsets =
+      lines
+      |> List.filter_map (fun line ->
+        String.to_seqi line
+        |> Seq.find (fun (_, a) -> a <> ' ')
+        |> Option.map fst
+      )
+    in
+    let min_offset = List.fold_left min max_len offsets in
+    lines
+    |> List.map (fun line ->
+      Stage0.Slice.from_start min_offset
+      |> Stage0.Slice.substring line
+    )
+    |> Common.join "\n"
+
+  let run ?(exe="maxima") (x:t) : string =
+    let expr = to_maxima x ^ ",simpsum;" in
+    let (_, txt) =
+      let cmd = Filename.quote_command exe ["--very-quiet"; "--disable-readline"] in
+      Unix.open_process cmd
+      |> Common.with_process_in_out (fun ic oc ->
+        (* Send the expression to be processed *)
+        output_string oc expr;
+        (* Close output to ensure it is processed *)
+        close_out oc;
+        (* Receive the output *)
+        Common.ic_to_string ic
+      )
+    in
+    txt |> cleanup_maxima_output
 
   let rec from_slice (thread_count:Vec3.t) (locs:Variable.Set.t) : Slice.t -> t =
     function
@@ -439,7 +476,7 @@ module SymExp = struct
 end
 
 
-let cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) : Exp.nexp =
+let cost (thread_count:Vec3.t) ?(use_maxima=true) (k : Proto.prog Proto.kernel) : string =
   let subst x n p =
     Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p in
   let p =
@@ -449,15 +486,46 @@ let cost (thread_count:Vec3.t) (k : Proto.prog Proto.kernel) : Exp.nexp =
     |> subst "blockDim.z" thread_count.z
   in
   (* 1. break a kernel into slices *)
-  Slice.from_kernel thread_count { k with kernel_code = p }
-  |> Seq.map (fun s ->
-    (* Convert a slice into an expression *)
-    let s1 = SymExp.from_slice thread_count k.kernel_local_variables s in
-    (* Flatten the expression *)
-    let s2 = SymExp.flatten s1 in
-    print_endline ("   Slice: " ^ Slice.to_string s ^ "\nSymbolic: " ^ SymExp.to_string s1 ^ "\n     Exp: " ^ Serialize.PPrint.n_to_s s2 ^ "\n");
-    s2
-  )
-  (* 2. Add all expressions together *)
-  |> Seq.fold_left Exp.n_plus (Num 0)
-  |> Constfold.n_opt
+  let total = Slice.from_kernel thread_count { k with kernel_code = p }
+    |> Seq.map (fun s ->
+      (* Convert a slice into an expression *)
+      let s1 = SymExp.from_slice thread_count k.kernel_local_variables s in
+      (* Flatten the expression *)
+      let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
+      (if use_maxima then (
+        PrintBox.(
+          tree (s |> Slice.to_string |> String.cat "▶ Context: " |> text)
+          [
+            tree ("▶ Cost:" |> text_with_style blue)
+            [
+              text (SymExp.run s1) |> hpad 1 |> frame
+            ]
+          ]
+        ) |> PrintBox_text.output stdout;
+        print_endline ""
+      ) else (
+        PrintBox.(
+          tree (s |> Slice.to_string |> String.cat "▶ Context: " |> text)
+          [
+            tree ("▶ Cost: "  ^ SymExp.to_string s1 |> text)
+            [
+              s1
+              |> SymExp.flatten
+              |> Serialize.PPrint.n_to_s
+              |> String.cat "▶ Cost (simplified): "
+              |> text_with_style blue
+            ]
+          ]
+        )
+        |> PrintBox_text.output stdout;
+        print_endline "\n"
+      ));
+      s1
+    )
+    |> List.of_seq
+  in
+  let total = SymExp.Add total in
+  if use_maxima then
+    PrintBox.(text (SymExp.run total) |> hpad 1 |> frame |> PrintBox_text.to_string)
+  else
+    SymExp.flatten total |> Constfold.n_opt |> Serialize.PPrint.n_to_s

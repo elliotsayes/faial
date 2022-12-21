@@ -262,3 +262,42 @@ let get_line offset filename =
   match get_lines filename ~offset ~count:1 with
   | [l] -> l
   | _ -> failwith "Unexpected output"
+
+let with_process_in (f:in_channel -> 'a) (in_c:in_channel) : (Unix.process_status * 'a) =
+  let j = try f in_c with
+    | exc ->
+      let _ = Unix.close_process_in in_c in
+      raise exc
+  in
+    (Unix.close_process_in in_c, j)
+
+let with_process_out (f:out_channel -> 'a) (out_c:out_channel) : (Unix.process_status * 'a) =
+  let j = try f out_c with
+    | exc ->
+      let _ = Unix.close_process_out out_c in
+      raise exc
+  in
+    (Unix.close_process_out out_c, j)
+
+let with_process_in_out
+  (handle: in_channel -> out_channel -> 'a)
+  (ic_oc:(in_channel *out_channel))
+:
+  (Unix.process_status * 'a)
+=
+  let res = try handle (fst ic_oc) (snd ic_oc) with
+    | exc ->
+      let _ = Unix.close_process ic_oc in
+      raise exc
+  in
+    (Unix.close_process ic_oc, res)
+
+let ic_to_string ?(chunk_size=1024) (ic:in_channel) : string =
+  let buffer = Buffer.create chunk_size in
+  let rec loop () =
+    try
+      Buffer.add_channel buffer ic chunk_size; loop ()
+    with End_of_file ->
+      Buffer.contents buffer
+  in
+  loop ()
