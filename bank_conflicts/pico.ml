@@ -9,6 +9,7 @@ let pico
   (thread_count:Vec3.t)
   (use_maxima:bool)
   (show_all:bool)
+  (explain:bool)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
@@ -18,7 +19,7 @@ let pico
     let proto = imp |> List.map Imp.compile in
     List.iter (fun k ->
       let cost_of_proto =
-        Bankconflicts.cost ~use_maxima ~skip_zero:(not show_all)
+        Bankconflicts.cost ~explain ~use_maxima ~skip_zero:(not show_all)
         thread_count k
       in
       print_string (k.kernel_name ^ ":\n");
@@ -66,7 +67,18 @@ let show_all =
   let doc = "By default we skip accesses that yield 0 bank-conflicts." in
   Arg.(value & flag & info ["show-all"] ~doc)
 
-let pico_t = Term.(const pico $ get_fname $ thread_count $ use_maxima $ show_all)
+let explain =
+  let doc = "Show bank-conflicts per location." in
+  Arg.(value & flag & info ["explain"] ~doc)
+
+let pico_t = Term.(
+  const pico
+  $ get_fname
+  $ thread_count
+  $ use_maxima
+  $ show_all
+  $ explain
+)
 
 let info =
   let doc = "Static performance analysis for GPU programs" in
