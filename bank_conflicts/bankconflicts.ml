@@ -239,7 +239,7 @@ module SymExp = struct
 
   let rec from_slice (thread_count:Vec3.t) (locs:Variable.Set.t) : Shared_access.t -> t =
     function
-    | Index a -> Const (IndexAnalysis.analyze thread_count locs a)
+    | Index a -> Const (IndexAnalysis.analyze thread_count locs a.index)
     | Cond (_, p) -> from_slice thread_count locs p
     | Loop (r, p) ->
       match r with
@@ -290,7 +290,6 @@ let cost (thread_count:Vec3.t) ?(skip_zero=true) ?(use_maxima=true) ?(explain=tr
     if explain then
       Seq.filter_map (fun s ->
         (* Convert a slice into an expression *)
-(*         Tui.LocationUI.print s.location; *)
         let s1 = SymExp.from_slice thread_count k.kernel_local_variables s in
         if skip_zero && SymExp.is_zero s1 then
           None
@@ -302,6 +301,9 @@ let cost (thread_count:Vec3.t) ?(skip_zero=true) ?(use_maxima=true) ?(explain=tr
             else
               s1 |> SymExp.flatten |> Serialize.PPrint.n_to_s
           in
+          ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
+          s |> Shared_access.location |> Tui.LocationUI.print;
+          print_endline "";
           let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
           PrintBox.(
             tree (s |> Shared_access.to_string |> String.cat "▶ Context: " |> text)

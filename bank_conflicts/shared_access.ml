@@ -12,10 +12,12 @@ open Stage0
 
 let word_size = 4
 
+type shared_access = {shared_array: Variable.t; index: Exp.nexp}
+
 type t =
   | Loop of Exp.range * t
   | Cond of Exp.bexp * t
-  | Index of Exp.nexp
+  | Index of shared_access
 
 module Make (S:Subst.SUBST) = struct
   module M = Subst.Make(S)
@@ -24,7 +26,7 @@ module Make (S:Subst.SUBST) = struct
     function
     | Loop (r, acc) -> Loop (M.r_subst s r, subst s acc)
     | Cond (b, acc) -> Cond (M.b_subst s b, subst s acc)
-    | Index a -> Index (M.n_subst s a)
+    | Index a -> Index { a with index = M.n_subst s a.index }
 
 end
 
@@ -39,7 +41,18 @@ let rec to_string : t -> string =
   | Cond (b, acc) ->
       "if ( " ^ Serialize.PPrint.b_to_s b ^ " ) " ^ to_string acc
   | Index a ->
-      "[" ^ Serialize.PPrint.n_to_s a ^ "]"
+      "[" ^ Serialize.PPrint.n_to_s a.index ^ "]"
+
+let rec shared_array : t -> Variable.t =
+  function
+  | Index a -> a.shared_array
+  | Loop (_, p)
+  | Cond (_, p) -> shared_array p
+
+let location (x: t) : Location.t =
+  x
+  |> shared_array
+  |> Variable.location
 
 type array_size = { byte_count: int; dim: int list}
 
@@ -171,7 +184,7 @@ let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
           n_plus (n_mult (n_div n (Num word_size)) (Num (a.byte_count * offset))) accum
         ) (Common.zip l dim) (Num 0)
         in
-        Seq.return (Index e)
+        Seq.return (Index {shared_array=x; index=e})
       | None -> Seq.empty)
     | Proto.Sync ->
       Seq.empty
