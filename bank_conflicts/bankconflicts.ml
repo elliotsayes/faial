@@ -317,6 +317,8 @@ module SymExp = struct
     | Sum (x, n, s) -> "Σ_{1 ≤ " ^ Variable.name x ^ " ≤ " ^ Serialize.PPrint.n_to_s n ^ "} " ^ to_string s
     | Add l -> List.map to_string l |> Common.join " + "
 
+  let add (l:t list) : t = Add l
+
   type factor = { power: int; divisor: int }
 
   let factor_to_n (e:nexp) (i: factor) : nexp =
@@ -425,7 +427,7 @@ module SymExp = struct
     let (_, txt) =
       let cmd = Filename.quote_command exe ["--very-quiet"; "--disable-readline"] in
       Unix.open_process cmd
-      |> Common.with_process_in_out (fun ic oc ->
+      |> Common.with_process_in_out (fun (ic, oc) ->
         (* Send the expression to be processed *)
         output_string oc expr;
         (* Close output to ensure it is processed *)
@@ -492,45 +494,41 @@ let cost (thread_count:Vec3.t) ?(use_maxima=true) (k : Proto.prog Proto.kernel) 
       let s1 = SymExp.from_slice thread_count k.kernel_local_variables s in
       (* Flatten the expression *)
       let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
-      (if use_maxima then (
-        PrintBox.(
-          tree (s |> Slice.to_string |> String.cat "▶ Context: " |> text)
+      let simplified_cost =
+        if use_maxima then
+          SymExp.run s1
+        else
+          s1 |> SymExp.flatten |> Serialize.PPrint.n_to_s
+      in
+      PrintBox.(
+        tree (s |> Slice.to_string |> String.cat "▶ Context: " |> text)
+        [
+          tree ("▶ Cost: "  ^ SymExp.to_string s1 |> text)
           [
-            tree ("▶ Cost:" |> text_with_style blue)
-            [
-              text (SymExp.run s1) |> hpad 1 |> frame
-            ]
-          ]
-        ) |> PrintBox_text.output stdout;
-        print_endline ""
-      ) else (
-        PrintBox.(
-          tree (s |> Slice.to_string |> String.cat "▶ Context: " |> text)
+          tree ("▶ Cost (simplified):" |> text_with_style blue)
           [
-            tree ("▶ Cost: "  ^ SymExp.to_string s1 |> text)
-            [
-              s1
-              |> SymExp.flatten
-              |> Serialize.PPrint.n_to_s
-              |> String.cat "▶ Cost (simplified): "
-              |> text_with_style blue
-            ]
+            text_with_style blue simplified_cost |> hpad 1
           ]
-        )
-        |> PrintBox_text.output stdout;
-        print_endline "\n"
-      ));
+          ]
+        ]
+      ) |> PrintBox_text.output stdout;
+      print_endline "";
       s1
     )
     |> List.of_seq
+    |> SymExp.add
   in
-  let total = SymExp.Add total in
-  if use_maxima then
-    PrintBox.(
-      text (SymExp.run total)
-      |> hpad 1
-      |> frame
-      |> PrintBox_text.to_string
-    )
-  else
-    SymExp.flatten total |> Constfold.n_opt |> Serialize.PPrint.n_to_s
+  let total =
+    if use_maxima then
+      SymExp.run total
+    else
+      SymExp.flatten total
+      |> Constfold.n_opt
+      |> Serialize.PPrint.n_to_s
+  in
+  PrintBox.(
+    text total
+    |> hpad 1
+    |> frame
+  )
+  |> PrintBox_text.to_string
