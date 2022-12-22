@@ -526,6 +526,11 @@ let cost (thread_count:Vec3.t) ?(use_maxima=true) (k : Proto.prog Proto.kernel) 
   in
   let total = SymExp.Add total in
   if use_maxima then
-    PrintBox.(text (SymExp.run total) |> hpad 1 |> frame |> PrintBox_text.to_string)
+    PrintBox.(
+      text (SymExp.run total)
+      |> hpad 1
+      |> frame
+      |> PrintBox_text.to_string
+    )
   else
     SymExp.flatten total |> Constfold.n_opt |> Serialize.PPrint.n_to_s
