@@ -263,34 +263,61 @@ let get_line offset filename =
   | [l] -> l
   | _ -> failwith "Unexpected output"
 
-let with_process_in (f:in_channel -> 'a) (in_c:in_channel) : (Unix.process_status * 'a) =
-  let j = try f in_c with
-    | exc ->
-      let _ = Unix.close_process_in in_c in
-      raise exc
-  in
-    (Unix.close_process_in in_c, j)
+module type CloseProcess = sig
+  type t
+  val close_process : t -> Unix.process_status
+end
 
-let with_process_out (f:out_channel -> 'a) (out_c:out_channel) : (Unix.process_status * 'a) =
-  let j = try f out_c with
-    | exc ->
-      let _ = Unix.close_process_out out_c in
-      raise exc
-  in
-    (Unix.close_process_out out_c, j)
+module WithProcess (C:CloseProcess) = struct
+  let with_process
+    (handle:C.t -> 'a)
+    (ch:C.t)
+  :
+    (Unix.process_status * 'a)
+  =
+    let res = try handle ch with
+      | exc ->
+        let _ = C.close_process ch in
+        raise exc
+    in
+      (C.close_process ch, res)
+end
 
-let with_process_in_out
-  (handle: in_channel -> out_channel -> 'a)
-  (ic_oc:(in_channel *out_channel))
-:
+module WithProcessIn = WithProcess(struct
+  type t = in_channel
+  let close_process = Unix.close_process_in
+end)
+
+let with_process_in :
+  (in_channel -> 'a) ->
+  in_channel ->
   (Unix.process_status * 'a)
 =
-  let res = try handle (fst ic_oc) (snd ic_oc) with
-    | exc ->
-      let _ = Unix.close_process ic_oc in
-      raise exc
-  in
-    (Unix.close_process ic_oc, res)
+  WithProcessIn.with_process
+
+module WithProcessOut = WithProcess(struct
+  type t = out_channel
+  let close_process = Unix.close_process_out
+end)
+
+let with_process_out :
+  (out_channel -> 'a) ->
+  out_channel ->
+  (Unix.process_status * 'a)
+=
+  WithProcessOut.with_process
+
+module WithProcessInOut = WithProcess(struct
+  type t = in_channel * out_channel
+  let close_process = Unix.close_process
+end)
+
+let with_process_in_out :
+  (in_channel * out_channel -> 'a) ->
+  in_channel * out_channel ->
+  (Unix.process_status * 'a)
+=
+  WithProcessInOut.with_process
 
 let ic_to_string ?(chunk_size=1024) (ic:in_channel) : string =
   let buffer = Buffer.create chunk_size in
