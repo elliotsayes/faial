@@ -1,5 +1,3 @@
-open Stage0
-
 let make_bold ?(color=[ANSITerminal.Foreground ANSITerminal.Red]) =
    ANSITerminal.sprintf ([ANSITerminal.Bold] @ color) "%s";
 

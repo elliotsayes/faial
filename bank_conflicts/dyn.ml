@@ -2,7 +2,6 @@ open Stage0
 open Protocols
 open Inference
 open Bc
-module Vec3 = Vectorized.Vec3
 
 let load_data (fname : string) : (string * int) list =
   try

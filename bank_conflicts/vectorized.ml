@@ -1,10 +1,6 @@
 open Stage0
 open Protocols
 
-let tidx = Variable.from_name "threadIdx.x"
-let tidy = Variable.from_name "threadIdx.y"
-let tidz = Variable.from_name "threadIdx.z"
-
 let pointwise (f:'a -> 'a -> 'b) (l1:'a list) (l2:'a list) :
   'b list
 =
@@ -147,16 +143,6 @@ let put (x:Variable.t) (v:NMap.t) (ctx:t) : t =
 let zero_cost (ctx:t) : NMap.t =
   NMap.constant ~count:ctx.bank_count ~value:0
 
-
-module Vec3 = struct
-  type t = {x : int; y: int; z: int;}
-  let make ~x:x ~y:y ~z:z : t = {x=x; y=y; z=z}
-  let to_string (v:t) =
-    "[" ^ string_of_int v.x ^
-    ", " ^ string_of_int v.y ^
-    ", " ^ string_of_int v.z ^ "]"
-end
-
 let put_tids (thread_count:Vec3.t) (ctx:t) : t =
   let wids = NMap.make ctx.warp_count (fun x -> x) in
   let n_tidx = NMap.map (fun id ->
@@ -169,9 +155,9 @@ let put_tids (thread_count:Vec3.t) (ctx:t) : t =
     (id / (thread_count.x * thread_count.y)) mod thread_count.z) wids
   in
   ctx
-  |> put tidx n_tidx
-  |> put tidy n_tidy
-  |> put tidz n_tidz
+  |> put Variable.tidx n_tidx
+  |> put Variable.tidy n_tidy
+  |> put Variable.tidz n_tidz
 
 let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
   match n with

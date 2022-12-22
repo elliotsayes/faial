@@ -6,6 +6,12 @@ let make ~name ~location : t = {name=name; location=Some location}
 
 let from_name (name:string) : t = {name=name; location=None}
 
+let tidx : t = from_name "threadIdx.x"
+
+let tidy : t = from_name "threadIdx.y"
+
+let tidz : t = from_name "threadIdx.z"
+
 let update_name (f: string -> string) (v:t) : t =
   { v with name = f v.name }
 
@@ -62,3 +68,16 @@ let fresh (xs:Set.t) (x:t) : t =
   if Set.mem x xs
   then do_fresh_name x 1
   else x
+
+let is_tid (x:t) : bool =
+  equal x tidx || equal x tidy || equal x tidz
+
+let tid_var_list : t list = [tidx; tidy; tidz]
+
+let tid_var_set : Set.t = Set.of_list tid_var_list
+
+let contains_tids (vs:Set.t) : bool =
+  Set.mem tidx vs ||
+  Set.mem tidy vs ||
+  Set.mem tidz vs
+
