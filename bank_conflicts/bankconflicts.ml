@@ -321,6 +321,13 @@ module SymExp = struct
 
   type factor = { power: int; divisor: int }
 
+  let rec is_zero : t -> bool =
+    function
+    | Const 0 -> true
+    | Const _ -> false
+    | Sum (_, _, s) -> is_zero s
+    | Add l -> List.for_all is_zero l
+
   let factor_to_n (e:nexp) (i: factor) : nexp =
     let rec pow (x:nexp) (n:int) : nexp =
       match n with
@@ -478,7 +485,7 @@ module SymExp = struct
 end
 
 
-let cost (thread_count:Vec3.t) ?(use_maxima=true) (k : Proto.prog Proto.kernel) : string =
+let cost (thread_count:Vec3.t) ?(skip_zero=true) ?(use_maxima=true) (k : Proto.prog Proto.kernel) : string =
   let subst x n p =
     Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p in
   let p =
@@ -489,31 +496,35 @@ let cost (thread_count:Vec3.t) ?(use_maxima=true) (k : Proto.prog Proto.kernel) 
   in
   (* 1. break a kernel into slices *)
   let total = Slice.from_kernel thread_count { k with kernel_code = p }
-    |> Seq.map (fun s ->
+    |> Seq.filter_map (fun s ->
       (* Convert a slice into an expression *)
       let s1 = SymExp.from_slice thread_count k.kernel_local_variables s in
-      (* Flatten the expression *)
-      let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
-      let simplified_cost =
-        if use_maxima then
-          SymExp.run s1
-        else
-          s1 |> SymExp.flatten |> Serialize.PPrint.n_to_s
-      in
-      PrintBox.(
-        tree (s |> Slice.to_string |> String.cat "▶ Context: " |> text)
-        [
-          tree ("▶ Cost: "  ^ SymExp.to_string s1 |> text)
+      if skip_zero && SymExp.is_zero s1 then
+        None
+      else Some (
+        (* Flatten the expression *)
+        let simplified_cost =
+          if use_maxima then
+            SymExp.run s1
+          else
+            s1 |> SymExp.flatten |> Serialize.PPrint.n_to_s
+        in
+        let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
+        PrintBox.(
+          tree (s |> Slice.to_string |> String.cat "▶ Context: " |> text)
           [
-          tree ("▶ Cost (simplified):" |> text_with_style blue)
-          [
-            text_with_style blue simplified_cost |> hpad 1
+            tree ("▶ Cost: "  ^ SymExp.to_string s1 |> text)
+            [
+            tree ("▶ Cost (simplified):" |> text_with_style blue)
+            [
+              text_with_style blue simplified_cost |> hpad 1
+            ]
+            ]
           ]
-          ]
-        ]
-      ) |> PrintBox_text.output stdout;
-      print_endline "";
-      s1
+        ) |> PrintBox_text.output stdout;
+        print_endline "";
+        s1
+      )
     )
     |> List.of_seq
     |> SymExp.add
