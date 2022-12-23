@@ -37,7 +37,7 @@ let subst = S1.subst
 let rec to_string : t -> string =
   function
   | Loop (r, acc) ->
-      Serialize.PPrint.r_to_s r ^ ": " ^ to_string acc
+      "for (" ^ Serialize.PPrint.r_to_s r ^ ") " ^ to_string acc
   | Cond (b, acc) ->
       "if ( " ^ Serialize.PPrint.b_to_s b ^ " ) " ^ to_string acc
   | Index a ->
