@@ -153,6 +153,42 @@ let uniform (thread_count:Vec3.t) (r:Exp.range) : Exp.range =
     r'
   else r
 
+let byte_count_multiplier (byte_count:int) (l:Exp.nexp list) : Exp.nexp list =
+  if byte_count/word_size = 1 then
+    l
+  else (
+    let open Exp in
+    let n_s = Serialize.PPrint.n_to_s in
+    let bs = string_of_int byte_count ^  "/" ^ string_of_int word_size in
+    let arr l = List.map n_s l |> Common.join ", " in
+    let l' = List.map (fun n ->
+      n_mult (Num byte_count) (n_div n (Num word_size))
+      ) l
+    in
+    print_endline ("Applied byte-modifier : " ^ bs ^ " " ^ arr l  ^ " -> " ^ arr l');
+    l'
+  )
+
+let flatten_multi_dim (dim:int list) (l:Exp.nexp list) : Exp.nexp =
+  match l with
+  | [e] -> e
+  | _ ->
+    let open Exp in
+    (* Accumulate the values so that when we have
+      [2, 2, 2] -> [1, 2, 4]
+      *)
+    let dim =
+      dim
+      |> List.rev
+      |> List.fold_left (fun (mult, l) n ->
+        (n * mult, mult :: l)
+      ) (1, [])
+      |> snd
+    in
+    List.fold_right (fun (n, offset) accum ->
+      n_plus (n_mult n (Num offset)) accum
+    ) (Common.zip l dim) (Num 0)
+
 let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
   let open Exp in
   let shared : array_size Variable.Map.t = Variable.Map.filter_map (fun _ v ->
@@ -172,17 +208,10 @@ let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
       (* Flatten n-dimensional array and apply word size *)
       (match Variable.Map.find_opt x shared with
       | Some a ->
-        (* Accumulate the values so that when we have
-          [2, 2, 2] -> [1, 2, 4]
-          *)
-        let dim = a.dim |> List.rev in
-        let dim = List.fold_left (fun (mult, l) n ->
-          (n * mult, mult :: l)
-        ) (1, []) dim |> snd
-        in
-        let e = List.fold_right (fun (n, offset) accum ->
-          n_plus (n_mult (n_div n (Num word_size)) (Num (a.byte_count * offset))) accum
-        ) (Common.zip l dim) (Num 0)
+        let e =
+          l
+          |> byte_count_multiplier a.byte_count
+          |> flatten_multi_dim a.dim
         in
         Seq.return (Index {shared_array=x; index=e})
       | None -> Seq.empty)
