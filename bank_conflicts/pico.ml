@@ -1,8 +1,87 @@
 open Stage0
 open Inference
 open Bc
+open Protocols
 
 (* Main function *)
+
+let cost
+  ?(skip_zero=true)
+  ?(use_maxima=true)
+  ?(explain=true)
+  ?(num_banks=32)
+  (thread_count:Vec3.t)
+  (k : Proto.prog Proto.kernel)
+:
+  string
+=
+  let subst x n p =
+    Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p in
+  let p =
+    k.kernel_code
+    |> subst "blockDim.x" thread_count.x
+    |> subst "blockDim.y" thread_count.y
+    |> subst "blockDim.z" thread_count.z
+  in
+  let handle_slice =
+    if explain then
+      Seq.filter_map (fun s ->
+        (* Convert a slice into an expression *)
+        let s1 = Symbolic.from_slice num_banks thread_count k.kernel_local_variables s in
+        if skip_zero && Symbolic.is_zero s1 then
+          None
+        else Some (
+          (* Flatten the expression *)
+          let simplified_cost =
+            if use_maxima then
+              Symbolic.run s1
+            else
+              s1 |> Symbolic.flatten |> Serialize.PPrint.n_to_s
+          in
+          ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
+          s |> Shared_access.location |> Tui.LocationUI.print;
+          print_endline "";
+          let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
+          PrintBox.(
+            tree (s |> Shared_access.to_string |> String.cat "▶ Context: " |> text)
+            [
+              tree ("▶ Cost: "  ^ Symbolic.to_string s1 |> text)
+              [
+                tree ("▶ Cost (simplified):" |> text_with_style blue)
+                [
+                  text_with_style blue simplified_cost |> hpad 1
+                ]
+              ]
+            ]
+          ) |> PrintBox_text.output stdout;
+          print_endline "\n";
+          s1
+        )
+      )
+    else
+      Seq.map (Symbolic.from_slice num_banks thread_count k.kernel_local_variables)
+  in
+  (* 1. break a kernel into slices *)
+  let total = Shared_access.from_kernel thread_count { k with kernel_code = p }
+    |> handle_slice
+    |> List.of_seq
+    |> Symbolic.add
+  in
+  let total =
+    if use_maxima then
+      Symbolic.run total
+    else
+      Symbolic.flatten total
+      |> Constfold.n_opt
+      |> Serialize.PPrint.n_to_s
+  in
+  PrintBox.(
+    text total
+    |> hpad 1
+    |> frame
+  )
+  |> PrintBox_text.to_string
+
 
 let pico
   (fname : string)
@@ -19,7 +98,7 @@ let pico
     let proto = imp |> List.map Imp.compile in
     List.iter (fun k ->
       let cost_of_proto =
-        Bankconflicts.cost ~explain ~use_maxima ~skip_zero:(not show_all)
+        cost ~explain ~use_maxima ~skip_zero:(not show_all)
         thread_count k
       in
       print_string (k.kernel_name ^ ":\n");

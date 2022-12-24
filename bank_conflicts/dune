@@ -1,6 +1,8 @@
 (library
   (name bc)
-  (modules vec3 vectorized poly shared_access z3expr)
+  (modules
+    vec3 vectorized poly shared_access z3expr index_analysis
+    symbolic)
   (libraries
     ; 3rd-pary
     z3
@@ -10,7 +12,7 @@
 (executable
  (public_name pico)
  (name pico)
- (modules pico bankconflicts)
+ (modules pico)
  (libraries cmdliner z3 bc printbox printbox-text))
 
 (executable
