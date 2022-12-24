@@ -2,15 +2,12 @@ open Stage0
 open Inference
 
 let analyze (j:Yojson.Basic.t) : unit =
-  let open Indexflow in
-  let open C_lang in
-  let open D_to_imp in
   match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = D_lang.rewrite_program k1 in
        Indexflow.types_program k2
        |> List.iter (fun (name, d) ->
-        print_endline (name ^ "," ^ Stmt.to_string d)
+        print_endline (name ^ "," ^ Indexflow.Stmt.to_string d)
       )
 
   | Error e ->

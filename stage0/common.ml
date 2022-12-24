@@ -85,9 +85,6 @@ let flatten_opt : 'a option list -> 'a list =
 let either_split (l: ('a, 'b) Either.t list) : 'a list * 'b list =
   List.partition_map (fun a -> a) l
 
-let map_opt (f:'a -> 'b option) : 'a list -> 'b list  =
-  List.concat_map (fun x -> f x |> Option.to_list)
-
 let contains ~needle:(needle:string) (s:string) : bool =
   let n_len = String.length needle in
   let s_len = String.length s in
@@ -265,3 +262,69 @@ let get_line offset filename =
   match get_lines filename ~offset ~count:1 with
   | [l] -> l
   | _ -> failwith "Unexpected output"
+
+module type CloseProcess = sig
+  type t
+  val close_process : t -> Unix.process_status
+end
+
+module WithProcess (C:CloseProcess) = struct
+  let with_process
+    (handle:C.t -> 'a)
+    (ch:C.t)
+  :
+    (Unix.process_status * 'a)
+  =
+    let res = try handle ch with
+      | exc ->
+        let _ = C.close_process ch in
+        raise exc
+    in
+      (C.close_process ch, res)
+end
+
+module WithProcessIn = WithProcess(struct
+  type t = in_channel
+  let close_process = Unix.close_process_in
+end)
+
+let with_process_in :
+  (in_channel -> 'a) ->
+  in_channel ->
+  (Unix.process_status * 'a)
+=
+  WithProcessIn.with_process
+
+module WithProcessOut = WithProcess(struct
+  type t = out_channel
+  let close_process = Unix.close_process_out
+end)
+
+let with_process_out :
+  (out_channel -> 'a) ->
+  out_channel ->
+  (Unix.process_status * 'a)
+=
+  WithProcessOut.with_process
+
+module WithProcessInOut = WithProcess(struct
+  type t = in_channel * out_channel
+  let close_process = Unix.close_process
+end)
+
+let with_process_in_out :
+  (in_channel * out_channel -> 'a) ->
+  in_channel * out_channel ->
+  (Unix.process_status * 'a)
+=
+  WithProcessInOut.with_process
+
+let ic_to_string ?(chunk_size=1024) (ic:in_channel) : string =
+  let buffer = Buffer.create chunk_size in
+  let rec loop () =
+    try
+      Buffer.add_channel buffer ic chunk_size; loop ()
+    with End_of_file ->
+      Buffer.contents buffer
+  in
+  loop ()

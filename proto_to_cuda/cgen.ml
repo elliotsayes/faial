@@ -1,5 +1,5 @@
 open Stage0
-open Stage1
+open Protocols
 
 open Exp
 open Proto
@@ -111,7 +111,7 @@ let acc_expr_to_dummy (x, a) (racuda : bool) : PPrint.t list =
 (* Converts a loop increment to a string *)
 let inc_to_s (r : range) (n_to_s : nexp -> string) : string =
   let pred_to_s (pred : string) : string = 
-    if String.starts_with "pow" pred
+    if String.starts_with ~prefix:"pow" pred
     then String.sub pred 3 (String.length pred - 3)
     else begin Printf.eprintf "WARNING: range step %s unsupported in range %s\n"
         pred (PPrint.r_to_s r);
@@ -190,7 +190,7 @@ let mk_types_compatible
           arr.array_type
     }
   in
-  VarMap.mapi (fun k -> fun v -> mk_array_compatible v) arrays
+  VarMap.mapi (fun _ -> fun v -> mk_array_compatible v) arrays
 
 (* Checks if a string is a known C++/CUDA type *)
 let is_known_type (s : string) : bool =
@@ -211,7 +211,7 @@ let declare_unknown_types (vm : array_t VarMap.t) : string list =
     | _ :: types -> arr_type_to_decl types
   in
   VarMap.bindings vm
-  |> List.filter_map (fun (k, v) -> arr_type_to_decl v.array_type)
+  |> List.filter_map (fun (_, v) -> arr_type_to_decl v.array_type)
   (* Remove duplicates *)
   |> Common.StringSet.of_list
   |> Common.StringSet.elements
@@ -247,7 +247,8 @@ let arr_to_shared (vm : array_t VarMap.t) : PPrint.t list =
 let local_var_to_l (vs : VarSet.t) : PPrint.t list =
   (* A local variable must not be a tid/dummy variable *)
   VarSet.diff vs thread_locals
-  |> VarSet.filter (fun v -> not (String.starts_with "__dummy" (var_name v)))
+  |> VarSet.filter (fun v -> not
+                       (String.starts_with ~prefix:"__dummy" (var_name v)))
   |> VarSet.elements
   (* Use a single function to initialize all local variables *)
   |> List.map (fun v -> PPrint.Line ("int " ^ var_name v ^ " = __dummy_int();"))
@@ -258,7 +259,7 @@ let arr_to_dummy (vm : array_t VarMap.t) : PPrint.t list =
       PPrint.Line (arr_type v true ^ " " ^ var_to_dummy k ^ ";"))
 
 let body_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) : PPrint.t =
-  let shared_arr = arr_to_shared (VarMap.filter (fun k -> fun v ->
+  let shared_arr = arr_to_shared (VarMap.filter (fun _ -> fun v ->
       v.array_hierarchy = SharedMemory) k.kernel_arrays) in
   let local_var = local_var_to_l k.kernel_local_variables in
   let dummy_var = arr_to_dummy k.kernel_arrays in
@@ -276,7 +277,7 @@ let kernel_to_s
     else declare_unknown_types k.kernel_arrays in
   let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
   let k_name = if k.kernel_name = "main" then "kernel" else k.kernel_name in
-  let global_arr = global_arr_to_l (VarMap.filter (fun k -> fun v ->
+  let global_arr = global_arr_to_l (VarMap.filter (fun _ -> fun v ->
       v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
   let global_var = global_var_to_l k.kernel_global_variables in
   [
@@ -310,7 +311,7 @@ let kernel_to_toml (k : 'a kernel) (racuda : bool) : Otoml.t =
   let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
   let header = (type_decls @ funct_protos |> join "\n") ^ "\n" in
   let body = PPrint.doc_to_string [body_to_s (prog_to_s racuda) k] in
-  let global_arr = VarMap.filter (fun k -> fun v ->
+  let global_arr = VarMap.filter (fun _ -> fun v ->
       v.array_hierarchy = GlobalMemory) k.kernel_arrays in
   let open Otoml in
   TomlTable

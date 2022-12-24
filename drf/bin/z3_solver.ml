@@ -1,5 +1,5 @@
 open Stage0
-open Stage1
+open Protocols
 open Drf
 
 open Exp
@@ -168,7 +168,7 @@ let add
   (b_to_expr : Z3.context -> bexp -> Expr.expr)
   (s:Solver.solver)
   (ctx:Z3.context)
-  (p:Symbexp.proof)
+  (p:Symbexp.Proof.t)
 :
   unit
 =
@@ -177,7 +177,7 @@ let add
     |> b_to_expr ctx
 	in
 	let vars : Expr.expr list =
-    p.proof_decls
+    p.decls
     |> List.map (fun (x:string) ->
       n_le (Var (Variable.from_name x)) (Num 2147483647)
       |> b_to_expr ctx
@@ -192,7 +192,7 @@ let add
   else [])
   @
   [
-    b_to_expr ctx (Predicates.inline p.proof_goal)
+    b_to_expr ctx (Predicates.inline p.goal)
   ]
   |> Solver.add s
 
@@ -200,7 +200,6 @@ module Environ = struct
 	type t = (string * string) list
 
 	let to_json (env:t) : json =
-		let open Yojson.Basic in
 		`Assoc (
 			List.map (fun (k, v) -> (k, `String v)) env
 		)
@@ -239,7 +238,6 @@ module Vec3 = struct
     ]
 
     let to_json (v:t) : json =
-		let open Yojson.Basic in
 		`Assoc [
 			"x", `String v.x;
 			"y", `String v.y;
@@ -273,7 +271,6 @@ module Task = struct
 		{thread_idx=tid; locals=locals; mode=mode; location=location}
 
 	let to_json (x:t) : json =
-		let open Yojson.Basic in
 		`Assoc [
 			"threadIdx", Vec3.to_json x.thread_idx;
 			"locals", Environ.to_json x.locals;
@@ -303,7 +300,6 @@ module Witness = struct
   }
 
 	let to_json (x:t) : json =
-		let open Yojson.Basic in
 		let (t1, t2) = x.tasks in
 		`Assoc [
 			"task1", Task.to_json t1;
@@ -394,7 +390,7 @@ module Witness = struct
 		let (t1_mode, t2_mode) = parse_mode kvs in
 		(env, (parse_indices kvs, t1_mode, t2_mode)) 
 
-	let parse (cache:Symbexp.LocationCache.t) (parse_num:string -> string) ~proof_id ~block_dim ~grid_dim (m:Model.model) : t =
+	let parse (parse_location:int -> Location.t) (parse_num:string -> string) ~proof_id ~block_dim ~grid_dim (m:Model.model) : t =
 		let env = Environ.parse parse_num m in
     let parse_loc (tid:string) =
       env
@@ -402,7 +398,7 @@ module Witness = struct
       |> Option.map (fun x ->
         x
         |> int_of_string
-        |> Symbexp.LocationCache.nth cache
+        |> parse_location
       )
     in
     let t1_loc = parse_loc "1" in
@@ -488,7 +484,7 @@ module Solution = struct
     ?(show_proofs=false)
     ~block_dim
     ~grid_dim
-    ((cache, ps):(Symbexp.LocationCache.t * Symbexp.proof Streamutil.stream))
+    (ps:Symbexp.Proof.t Streamutil.stream)
   :
     t Streamutil.stream
   =
@@ -497,7 +493,7 @@ module Solution = struct
     Streamutil.map (fun p ->
       let options = [
       ("model", "true");
-        ("proof", "false");
+      ("proof", "false");
       ] @
       begin match timeout with
         | Some timeout -> ["timeout", string_of_int timeout]
@@ -522,8 +518,7 @@ module Solution = struct
 						solve !b_to_expr
 			in
 			(if show_proofs then (
-        let open ANSITerminal in
-        let title = "proof #" ^ string_of_int p.proof_id in
+        let title = "proof #" ^ string_of_int p.id in
         let body = Solver.to_string s ^ "(check-sat)\n(get-model)\n" in
         Tui.print_frame ~title ~body
       ) else ());
@@ -533,7 +528,7 @@ module Solution = struct
 			| UNSATISFIABLE -> Drf
 			| SATISFIABLE ->
 				(match Solver.get_model s with
-				| Some m -> Racy (Witness.parse cache !parse_num ~block_dim ~grid_dim ~proof_id:p.proof_id m)
+				| Some m -> Racy (Witness.parse (List.nth p.locations) !parse_num ~block_dim ~grid_dim ~proof_id:p.id m)
 				| None -> failwith "INVALID")
 			| UNKNOWN -> Unknown
 			in

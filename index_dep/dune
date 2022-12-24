@@ -3,4 +3,4 @@
  (name data_dep)
  (modes exe)
  (modules data_dep indexflow)
- (libraries inference stage0 stage1 cmdliner))
+ (libraries inference stage0 protocols cmdliner))

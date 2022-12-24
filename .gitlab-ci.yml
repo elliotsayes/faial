@@ -5,26 +5,12 @@ variables:
 .cache: &global_cache
   before_script:
     - export PATH="$PATH:$CI_PROJECT_DIR"
-    - export CARGO_HOME="$CI_PROJECT_DIR/cargo"
-    - echo CARGO_HOME=$CARGO_HOME
-    - rustup --version
-    - rustc --version
-    - cargo --version
     - opam --version
     - ocamlc --version
-    - z3 --version
-    - ls /opt/faial-ui
-    - ls faial-ui/
-    - cp -a /home/faial/.cargo "$CARGO_HOME"
-    - echo "FOUND PACKAGES:"; find "$CARGO_HOME"/registry/ -iname '*.crate' -type f -exec basename '{}' \;
-    - cp -a /opt/faial-ui/target "$CI_PROJECT_DIR/faial-ui/target"
-    - ls faial-ui/
 
   cache:
     key: "Ubuntu-$CI_COMMIT_REF_NAME-1"
     paths:
-    - .cargo
-    - faial-ui/target
     - _build
 
 
@@ -34,14 +20,9 @@ test:
     - rm -f ./target/*/faial
     - cd "$CI_PROJECT_DIR"
     - eval $(opam config env)
-    - cd faial-ui
-    - cargo b
-    - cp ./target/debug/faial ..
-    - cd ..
     - export PATH="$PATH:$PWD"
     - make
     - make test
-    - ./run-tests.py --verbose
 
 build-dist:
   <<: *global_cache
@@ -51,15 +32,10 @@ build-dist:
     - eval $(opam config env)
     - dune build --release
     - cp -Lr _build/install/default/bin/* ./
-    - cd faial-ui
-    - cargo b --release
-    - cp ./target/release/faial ..
 
   artifacts:
     paths:
-      - faial-bin
-      - faial
-      - next-gen
+      - faial-drf
       - c-ast
       - pico
       - README.md
@@ -83,7 +59,7 @@ bundle:
     - tar xf c-to-json-bin.tar.bz2
     - rm c-to-json-bin.tar.bz2
     # faial:
-    - cp ../faial ../faial-bin ../pico ../c-ast ../next-gen bin/
+    - cp ../faial ../pico ../c-ast ../faial-drf bin/
     - cp ../README.md ../LICENSE  ./
     # display tree & bundle:
     - tree

@@ -84,26 +84,54 @@ let eval_brel o : bool -> bool -> bool =
   | BOr -> (||)
   | BAnd -> (&&)
 
-let rec n_eval (n: nexp) : int =
+let rec n_eval_res (n: nexp) : (int, string) Result.t =
+  let (let*) = Result.bind in
   match n with
-  | Var x -> failwith ("n_eval: variable " ^ (Variable.name x))
-  | Num n -> n
-  | Bin (o, n1, n2) -> eval_nbin o (n_eval n1) (n_eval n2)
-  | Proj _ -> failwith ("n_eval: proj")
-  | NCall (x,_) -> failwith ("n_eval: call " ^ x)
+  | Var x -> Error ("n_eval: variable " ^ Variable.name x)
+  | Num n -> Ok n
+  | Bin (o, n1, n2) ->
+    let* n1 = n_eval_res n1 in
+    let* n2 = n_eval_res n2 in
+    Ok (eval_nbin o n1 n2)
+  | Proj _ -> Error "n_eval: proj"
+  | NCall (x,_) -> Error ("n_eval: call " ^ x)
   | NIf (b, n1, n2) ->
-    if (b_eval b) then (n_eval n1) else (n_eval n2)
-and b_eval (b: bexp) : bool =
+    let* b = b_eval_res b in
+    if b then n_eval_res n1 else n_eval_res n2
+
+and b_eval_res (b: bexp) : (bool, string) Result.t =
+  let (let*) = Result.bind in
   match b with
-  | Bool b -> b
+  | Bool b -> Ok b
   | NRel (o, n1, n2) ->
-    eval_nrel o (n_eval n1) (n_eval n2)
+    let* n1 = n_eval_res n1 in
+    let* n2 = n_eval_res n2 in
+    Ok (eval_nrel o n1 n2)
   | BRel (o, b1, b2) ->
-    eval_brel o (b_eval b1) (b_eval b2)
+    let* b1 = b_eval_res b1 in
+    let* b2 = b_eval_res b2 in
+    Ok (eval_brel o b1 b2)
   | BNot b ->
-    not (b_eval b)
+    let* b = b_eval_res b in
+    Ok (not b)
   | Pred (x, _) ->
-    failwith ("b_eval: pred " ^ x)
+    Error ("b_eval: pred " ^ x)
+
+let n_eval_opt (n: nexp) : int option =
+  n_eval_res n |> Result.to_option
+
+let b_eval_opt (b: bexp) : bool option =
+  b_eval_res b |> Result.to_option
+
+let n_eval (n: nexp) : int =
+  match n_eval_res n with
+  | Ok n -> n
+  | Error e -> failwith e
+
+let b_eval (b: bexp) : bool =
+  match b_eval_res b with
+  | Ok b -> b
+  | Error e -> failwith e
 
 let n_rel o n1 n2 =
   match n1, n2 with
@@ -143,10 +171,12 @@ let n_minus n1 n2 =
   | Num n1, Num n2 -> Num (n1 - n2)
   | _, _ -> Bin (Minus, n1, n2)
 
-let n_mult n1 n2 =
+let rec n_mult n1 n2 =
   match n1, n2 with
   | Num 1, n | n, Num 1 -> n
   | Num 0, _ | _, Num 0 -> Num 0
+  | Bin (Div, e, Num n2), Num n1 when n1 mod n2 = 0 -> n_mult (Num (n1 / n2)) e
+  | Num n1, Bin (Div, e, Num n2) when n1 mod n2 = 0 -> n_mult (Num (n1 / n2)) e
   | Num n1, Num n2 -> Num (n1 * n2)
   | Num n1, Bin (Mult, Num n2, e)
   | Bin (Mult, Num n1, e), Num n2 ->

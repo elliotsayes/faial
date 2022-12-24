@@ -1,5 +1,5 @@
 open Stage0
-open Stage1
+open Protocols
 
 open Exp
 open Proto
@@ -9,12 +9,6 @@ module VarSet = Variable.Set
 let arr = Variable.from_name "A"
 let ub = Variable.from_name "n"
 let tid = Variable.from_name "threadIdx.x"
-
-let thread_globals : VarSet.t =
-  VarSet.of_list (List.map Variable.from_name
-                    ["gridDim.x"; "blockIdx.x"; "blockDim.x";
-                     "gridDim.y"; "blockIdx.y"; "blockDim.y";
-                     "gridDim.z"; "blockIdx.z"; "blockDim.z"])
 
 let write (p : prog) : prog =
   p @ [Acc (arr, {access_index = [Var tid]; access_mode = W})]

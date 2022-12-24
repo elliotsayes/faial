@@ -29,19 +29,16 @@ let get_nth (i:int) (l: 'a list) : 'a option =
 (* --- Helpers for Yojson --- *)
 
 let cast_object (j:Yojson.Basic.t) : j_object option =
-  let open Yojson.Basic.Util in
   match j with
   | `Assoc l -> Some l
   | _ -> None
 
 let cast_string (j:Yojson.Basic.t) : string option =
-  let open Yojson.Basic.Util in
   match j with
   | `String v -> Some v
   | _ -> None
 
 let cast_bool (j:Yojson.Basic.t) : bool option =
-  let open Yojson.Basic.Util in
   match j with
   | `Bool v -> Some v
   | _ -> None

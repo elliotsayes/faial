@@ -34,20 +34,18 @@ RUN cd /home/faial/c-to-json && \
 
 USER faial
 
-ARG FAIAL_VERSION=master
+ARG FAIAL_VERSION=main
 RUN \
      git clone https://gitlab.com/umb-svl/faial && \
     cd faial && \
     ./configure.sh -y && \
     git checkout ${FAIAL_VERSION} && \
     eval $(opam env)  && \
-    make && \
-    make ui
+    make
 
 USER root
 RUN \
-  cp /home/faial/faial/faial-bin /usr/local/bin && \
-  cp /home/faial/faial/faial-ui/target/release/faial /usr/local/bin
+  cp /home/faial/faial/faial-drf /usr/local/bin && \
 
 USER faial
 RUN faial faial/tutorial/saxpy.cu

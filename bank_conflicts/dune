@@ -1,6 +1,20 @@
+(library
+  (name bc)
+  (modules vec3 vectorized poly shared_access z3expr)
+  (libraries
+    ; 3rd-pary
+    z3
+    ; 1st-pary
+    stage0 protocols inference))
 
 (executable
  (public_name pico)
  (name pico)
- (modules pico bankconflicts z3expr)
- (libraries inference cmdliner z3))
+ (modules pico bankconflicts)
+ (libraries cmdliner z3 bc printbox printbox-text))
+
+(executable
+ (public_name faial-bc-dyn)
+ (name dyn)
+ (modules dyn)
+ (libraries inference cmdliner z3 bc))

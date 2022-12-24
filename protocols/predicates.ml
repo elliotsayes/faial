@@ -125,7 +125,7 @@ let all_predicates_db : (string, t) Hashtbl.t =
 
 let all_step_handlers_db : (string, step_handler) Hashtbl.t =
   all_predicates
-  |> Common.map_opt (fun x ->
+  |> List.filter_map (fun x ->
   match x.pred_step with
   | Some s -> Some (s.step_handler_name, s)
   | None -> None)
@@ -214,6 +214,9 @@ let step_inc (s:step_expr) : nexp -> nexp =
   | Default n -> n_plus n
   | StepName pred_name -> (get_step_handler pred_name).step_handler_inc
 
+let range_next (r:range) : range =
+  { r with range_lower_bound = step_inc r.range_step r.range_lower_bound}
+
 let step_dec (s:step_expr) : nexp -> nexp =
   match s with
   | Default n -> fun m -> n_minus m n
@@ -237,3 +240,20 @@ let range_last (r:range) : nexp =
 
 let range_inc (r:range) : range =
   { r with range_lower_bound = n_plus r.range_lower_bound (Num 1) }
+
+let r_eval_res (r:range) : (int list, string) Result.t =
+  let (let*) = Result.bind in
+  let* lb = n_eval_res r.range_lower_bound in
+  let* ub = n_eval_res r.range_upper_bound in
+  let rec r_eval (lb:int) : (int list, string) Result.t =
+    if lb < ub then
+      let* new_lb = n_eval_res (step_inc r.range_step (Num lb)) in
+      let* l = r_eval new_lb in
+      Ok (lb :: l)
+    else
+      Ok []
+  in
+  r_eval lb
+
+let r_eval_opt (r:range) : int list option =
+  r_eval_res r |> Result.to_option

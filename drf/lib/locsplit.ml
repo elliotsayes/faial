@@ -1,5 +1,5 @@
 open Stage0
-open Stage1
+open Protocols
 
 open Wellformed
 open Phasesplit
@@ -62,7 +62,7 @@ let filter_by_location (x:Variable.t) (i: u_inst) : u_inst option =
   and filter_p (p:u_prog) : u_prog option =
     let p = List.map filter_i p in
     if List.exists is_has p then
-      Some (Common.map_opt possibility_to_option p)
+      Some (List.filter_map possibility_to_option p)
     else
       None
   in

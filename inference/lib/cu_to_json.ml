@@ -1,15 +1,10 @@
-let run_process (cmd:string) (f:in_channel -> 'a) : (Unix.process_status * 'a) =
-  let in_c = Unix.open_process_in cmd in
-  let j = try f in_c with exc ->
-    let _ = Unix.close_process_in in_c in
-    raise exc
-  in
-    (Unix.close_process_in in_c, j)
+open Stage0
 
 let cu_to_json_opt ?(exe="cu-to-json") ?(ignore_fail=false) (fname : string) : (Yojson.Basic.t, int * string) Result.t =
   let cmd = Filename.quote_command exe [fname] in
-  let (r, j) = run_process cmd
-    (fun ic -> try Ok (Yojson.Basic.from_channel ic) with
+  let (r, j) =
+    Unix.open_process_in cmd
+    |> Common.with_process_in (fun ic -> try Ok (Yojson.Basic.from_channel ic) with
       Yojson.Json_error e -> Error e
     )
   in

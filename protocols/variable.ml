@@ -6,8 +6,17 @@ let make ~name ~location : t = {name=name; location=Some location}
 
 let from_name (name:string) : t = {name=name; location=None}
 
-let set_name (name:string) (v:t) =
-  { v with name = name }
+let tidx : t = from_name "threadIdx.x"
+
+let tidy : t = from_name "threadIdx.y"
+
+let tidz : t = from_name "threadIdx.z"
+
+let update_name (f: string -> string) (v:t) : t =
+  { v with name = f v.name }
+
+let set_name (name:string) : t -> t =
+  update_name (fun _ -> name)
 
 let set_location (location:Location.t) (v:t) : t =
   { v with location = Some location}
@@ -22,6 +31,13 @@ let location (x:t) : Location.t =
   location_opt x |> Option.value ~default:Location.empty
 
 let equal (x:t) (y:t) = String.equal x.name y.name
+
+let name_line (x:t) : string =
+  let l : string = match location_opt x with
+  | Some l -> ":" ^ (l |> Location.line |> Index.to_base1 |> string_of_int)
+  | None -> ""
+  in
+  name x ^ l
 
 let repr (x:t) : string =
   let l = Option.map Location.repr x.location |> Option.value ~default:"null" in
@@ -52,3 +68,16 @@ let fresh (xs:Set.t) (x:t) : t =
   if Set.mem x xs
   then do_fresh_name x 1
   else x
+
+let is_tid (x:t) : bool =
+  equal x tidx || equal x tidy || equal x tidz
+
+let tid_var_list : t list = [tidx; tidy; tidz]
+
+let tid_var_set : Set.t = Set.of_list tid_var_list
+
+let contains_tids (vs:Set.t) : bool =
+  Set.mem tidx vs ||
+  Set.mem tidy vs ||
+  Set.mem tidz vs
+

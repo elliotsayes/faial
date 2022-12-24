@@ -50,7 +50,7 @@ let intersect (lhs:t) (rhs:t) : bool =
 
 let add_or (f:t -> t -> t) (lhs:t) (rhs:t) : t =
   if intersect lhs rhs then
-    { lhs with interval = Interval.(lhs.interval + rhs.interval) }
+    { lhs with interval = Interval.union lhs.interval rhs.interval }
   else
     f lhs rhs
 

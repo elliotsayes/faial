@@ -9,7 +9,6 @@ let s_list (elems:Smtlib.sexp list) : Smtlib.sexp =
 let symbol (s:string) = Smtlib.Atom (Smtlib.Symbol s)
 
 let call (func:string) (args:Smtlib.sexp list) =
-  let open Smtlib in
   s_list (symbol func::args)
 
 let atoms : string list -> Smtlib.sexp list =

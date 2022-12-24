@@ -1,63 +1,135 @@
 open Stage0
-open Stage1
+open Protocols
 open Inference
 open Drf
 
-open Exp
-open Proto
-open Common
-open Cmdliner
+module VarSet = Variable.Set
+module Environ = Z3_solver.Environ
+module Witness = Z3_solver.Witness
+module Vec3 = Z3_solver.Vec3
+module Task = Z3_solver.Task
+module T = ANSITerminal
 
-(** Prints the nth-line of a file (starts at base 0) *)
-let nth_line filename n =
-  let ic = open_in filename in
-  let rec iter i =
-    let line = input_line ic in
-    if i = n then begin
+module Dim3 = struct
+  type t = {x : int; y: int; z: int;}
+  let mk ?(x=1) ?(y=1) ?(z=1) () : t = {x=x; y=y; z=z}
+
+  let parse_opt (l:string) : t option =
+    let len = String.length l in
+    if len >= 2 && String.get l 0 = '[' && String.get l (len - 1) = ']' then
+      let l = String.sub l 1 (len - 2) in
+      match String.split_on_char ',' l |> List.map int_of_string with
+      | [x; y; z] -> Some (mk ~x ~y ~z ())
+      | [x; y] -> Some (mk ~x ~y ())
+      | [x] -> Some (mk ~x ())
+      | [] -> Some (mk ())
+      | _ -> None
+    else
+      None
+
+  let parse (l:string) : t =
+    match parse_opt l with
+    | Some x -> x
+    | None -> failwith ("Dim3.parse: " ^ l)
+
+  let to_string (d:t) : string =
+    let x = string_of_int d.x in
+    let y = string_of_int d.y in
+    let z = string_of_int d.z in
+    "{x=" ^ x ^ ", y=" ^ y ^ ", z=" ^ z ^ "}"
+
+  let to_vec3 (d:t) : Vec3.t =
+    let x = string_of_int d.x in
+    let y = string_of_int d.y in
+    let z = string_of_int d.z in
+    Vec3.mk ~x ~y ~z
+
+  let to_assoc (prefix:string) (d:t) : (string * int) list =
+    [
+      (prefix ^ "x", d.x);
+      (prefix ^ "y", d.y);
+      (prefix ^ "z", d.z)
+    ] 
+end
+
+module GvParser = struct
+  type t = {
+    pass: bool;
+    block_dim: Dim3.t;
+    grid_dim: Dim3.t;
+    options: string list;
+  }
+
+  let to_string (x:t) : string =
+    "{pass=" ^ (if x.pass then "true" else "false") ^
+      ", block_dim=" ^ Dim3.to_string x.block_dim ^
+      ", grid_dim=" ^ Dim3.to_string x.grid_dim ^ "}"
+
+  let to_assoc (x:t) : (string * int) list =
+    Dim3.to_assoc "blockDim." x.block_dim @ Dim3.to_assoc "gridDim." x.grid_dim 
+
+  let parse (filename:string) : t option =
+    let header filename : string * string =
+      let ic = open_in filename in
+      let l1 = input_line ic in
+      let l2 = input_line ic in
       close_in ic;
-      (line)
-    end else iter (succ i)
-  in
-  iter 0
+      (l1, l2)
+    in
+    let parse_line (l:string) : string list option =
+      let len = String.length l in
+      if len >= 2 && String.starts_with ~prefix:"//" l then
+        String.sub l 2 (len - 2)
+        |> String.trim
+        |> String.split_on_char ' '
+        |> Option.some
+      else
+        None
+    in
+    let parse_header (l1, l2: string * string) =
+      let l1 = parse_line l1 in
+      let l2 = parse_line l2 in
+      match l1, l2 with
+      | Some ["pass"], Some l2 -> Some (true, l2)
+      | Some ["fail"], Some l2 -> Some (false, l2)
+      | _, _ -> None
+    in
+    let parse_opts opts (l:string list) =
+      let offset ~prefix:(sep:string) (part:string) : string option =
+        if String.starts_with ~prefix:sep part then
+          let len = String.length sep in
+          Some (String.sub part len (String.length part - len))
+        else None
+      in
+      List.fold_left (fun (x:t) (part:string) : t ->
+        match offset ~prefix:"--blockDim=" part with
+        | Some block_dim -> { x with block_dim = Dim3.parse block_dim }
+        | None ->
+          (match offset ~prefix:"--gridDim=" part with
+            | Some grid_dim -> {x with grid_dim = Dim3.parse grid_dim }
+            | None ->
+              (match offset ~prefix:"-D" part with
+                | Some opt -> {x with options = x.options @ [opt]}
+                | None ->
+                  prerr_endline ("GvParser.parse: skipping parameter: " ^ part);
+                  x
+              ))
+      ) opts l
+    in  
+    let (l1, l2) = header filename in
+    match parse_header (l1, l2) with
+    | Some (pass, opts) ->
+      Some (parse_opts {
+        pass = pass;
+        block_dim = Dim3.mk ();
+        grid_dim = Dim3.mk ();
+        options = [];
+      } opts)
+    | None -> None
+end
 
-(** Human-readable parser: *)
-let v2_parse fname input : prog kernel =
 
-  let filebuf = Lexing.from_channel input in
-  Scan.set_filename filebuf fname;
-  try Parse2.main Scan.read filebuf with
-  | Parse2.Error ->
-    let sloc = Location.from_lexbuf filebuf in
-    let b = Buffer.create 1024 in
-    (try
-      Printf.bprintf b "\n%a" Tui.LocationUI.bprint sloc
-    with
-      Sys_error _ -> ());
-    Buffer.output_buffer stderr b;
-    exit (-1)
-
-(** Machine-readable parser: *)
-let safe_run f =
-  try
-    f ()
-  with
-  | Yojson.Json_error("Blank input data") ->
-    (* If the input is blank, just ignore the input and err with -1 *)
-    exit (-1)
-  | Yojson.Json_error(e) -> begin
-      Printf.eprintf "Error parsing JSON: %s" e;
-      exit (-1)
-    end
-  | Common.ParseError b ->
-    Buffer.output_buffer stderr b;
-    exit (-1)
-
-type command = WLang | ALang | PLang | CLang | HLang | BLang | Sat | Typecheck | Parse
-
-let parse_from_ctj ic : Imp.p_kernel list =
-  let open C_lang in
-  let open D_to_imp in
-  let j = Yojson.Basic.from_channel ic in
+let parse_imp (j:Yojson.Basic.t) : Imp.p_kernel list =
   match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = D_lang.rewrite_program k1 in
@@ -71,200 +143,268 @@ let parse_from_ctj ic : Imp.p_kernel list =
         D_to_imp.print_error e;
         exit(-1)
       )
+
   | Error e ->
     Rjson.print_error e;
     exit(-1)
 
-
-let main_t =
-  let use_bv =
-    let doc = "Generate bit-vector code." in
-    Arg.(value & flag & info ["b"; "bv"] ~doc)
-  in
-
-  let expect_typefail =
-    let doc = "Expect typechecking failure." in
-    Arg.(value & flag & info ["expect-invalid"] ~doc)
-  in
-
-  let use_json =
-    let doc = "Parse a JSON file" in
-    Arg.(value & flag & info ["json"] ~doc)
-  in
-
-  let skip_typecheck =
-    let doc = "Skip the typechecking stage" in
-    Arg.(value & flag & info ["skip-type-check"] ~doc)
-  in
-
-  let decls =
-    let doc = "Set the value of certain variables. Formatted as -D<variable>=<value>. For instance, '-DblockDim.x=512'" in
-    Arg.(value & opt_all string [] & info ["D"; "set"] ~docv:"KEYVALS" ~doc)
-  in
-
-  let get_fname =
-    let doc = "The path $(docv) of the GPU contract." in
-    Arg.(value & pos 0 (some string) None & info [] ~docv:"CONTRACT" ~doc)
-  in
-
-  let do_main
-    (cmd: command)
-    (fname: string option)
-    (use_bv: bool)
-    (use_json: bool)
-    (expect_typing_fail: bool)
-    (skip_typecheck: bool)
-    (sets: string list) : unit
-  =
-    let _ = use_bv in (* XXX: use_bv is currently unused, why? *)
-    let halt_when b f k : unit =
-      if b then (f k; raise Exit)
-      else ()
-    in
-
-    let ic = match fname with
-      | Some fname -> open_in fname
-      | None -> stdin
-    in
-    let on_kv x =
-      let kv = String.split_on_char '=' x in
-      let kv = List.map String.trim kv in
-      match kv with
-      | [k; v] -> Some (k, int_of_string v)
-      | _ -> None
-    in
-    let sets = List.map on_kv sets |> flatten_opt in
-    try
-      let fname = match fname with
-      | Some x -> x
-      | None -> "<STDIN>"
-      in
-      let ks : prog kernel list = if use_json
-        then begin
-          let ks = parse_from_ctj ic in
-          (if cmd = Parse
-          then (List.iter Imp.print_kernel ks; [])
-          else ks)
-          |> List.map Imp.compile
-        end else
-          [v2_parse fname ic]
-      in
-      if List.length ks = 0 && cmd != Parse then begin
-        print_endline "Error: kernel not found!";
-        exit (1)
-      end else
-      List.iter (fun k ->
-        let b = Buffer.create 1024 in
-        let type_check_failed =
-          not skip_typecheck
-          && Typecheck.typecheck_kernel k
-          |> Tui.bprint_errors b
-        in
-        Buffer.output_buffer stderr b;
-        if type_check_failed then
-          exit (if expect_typing_fail then 0 else -1)
-        else
-          ()
-        ;
-        try
-          let provenance = true in
-          let key_vals =
-            sets @ Proto.kernel_constants k
-            |> List.filter (fun (x,_) ->
-              (* Make sure we only replace thread-global variables *)
-              Variable.Set.mem (Variable.from_name x) k.kernel_global_variables
-            )
-          in
-          let thread_count : int list = Common.map_opt (fun (k, v) ->
-            if List.mem k ["blockDim.x"; "blockDim.y"; "blockDim.z"] then
-              Some v
-            else
-              None
-          ) sets in
-          let undef_block_dim_x = not (List.mem_assoc "blockDim.x" key_vals) in 
-          let check_drf = undef_block_dim_x || 
-            if List.length thread_count > 0
-            then (List.fold_left ( * ) 1 thread_count) > 1
-            else true
-          in
-          let k = if check_drf
-            then k
-            else (
-              prerr_endline ("WARNING: skip checks for '" ^ k.kernel_name ^ "', since blockDim <= 1 (no concurrency)");
-              clear_kernel k
-            )
-          in
-          let k = Proto.replace_constants key_vals k in
-          halt_when (cmd = Typecheck) Proto.print_k k;
-          let ks = Wellformed.translate k in
-          halt_when (cmd = WLang) Wellformed.print_kernels ks;
-          let ks = Phasealign.translate ks in
-          halt_when (cmd = ALang) Phasealign.print_kernels ks;
-          let ks = Phasesplit.translate ks expect_typing_fail in
-          halt_when (cmd = PLang) Phasesplit.print_kernels ks;
-          let ks = Locsplit.translate ks in
-          halt_when (cmd = CLang) Locsplit.print_kernels ks;
-          let ks = Flatacc.translate ks in
-          halt_when (cmd = HLang) Flatacc.print_kernels ks;
-          let ks = Symbexp.translate provenance ks in
-          halt_when (cmd = BLang) Symbexp.print_kernels ks;
-          let ks = Gensmtlib2.translate provenance ks in
-          Gensmtlib2.print ks;
-          ()
-        with Exit -> ()
-      ) ks
-    with
-      | Phasesplit.PhasesplitException errs ->
-          let b = Buffer.create 1024 in
-          let _ = Tui.bprint_errors b errs in
-          Buffer.output_buffer stderr b;
-          exit (if expect_typing_fail then 0 else -1)
-      | e ->
-      (match fname with
-      | Some _ -> close_in_noerr ic
-      | None -> ()
-      );
-      raise e
-  in
-  let get_cmd =
-    (* Override the codegeneration (for debugging only). *)
-    let doc = "Step 0: print what was parsed" in
-    let p = Parse, Arg.info ["0"] ~doc in
-    let doc = "Step 1: inline assignments and replace key-values" in
-    let tc = Typecheck, Arg.info ["1"] ~doc in
-    let doc = "Step 2: well-formed protocol" in
-    let k1 = WLang, Arg.info ["2"] ~doc in
-    let doc = "Step 3: aligned protocol" in
-    let k2 = ALang, Arg.info ["3"] ~doc in
-    let doc = "Step 4: split protocol per phase" in
-    let k3 = PLang, Arg.info ["4"] ~doc in
-    let doc = "Step 5: split phase per location" in
-    let k4 = CLang, Arg.info ["5"] ~doc in
-    let doc = "Step 6: flatten phases" in
-    let k5 = HLang, Arg.info ["6"] ~doc in
-    let doc = "Step 7: generate booleans" in
-    let k6 = BLang, Arg.info ["7"] ~doc in
-    let doc = "Step 8: generate SMT." in
-    let sat = Sat, Arg.info ["8"; "sat"] ~doc in
-    Arg.(last & vflag_all [Sat] [p; tc; k1; k2; k3; k4; k5; k6; sat])
-  in
-  Term.(
-    const do_main
-    $ get_cmd
-    $ get_fname
-    $ use_bv
-    $ use_json
-    $ expect_typefail
-    $ skip_typecheck
-    $ decls
+let box_environ (e:Environ.t) : PrintBox.t =
+  PrintBox.(
+    v_record (List.map (fun (k,v) -> (k, text v)) e)
+    |> frame
   )
 
-let info =
-  let doc = "Verifies a GPU contract" in
-  Cmd.info "faial-bin" ~doc
+let struct_to_s (l:(string * string) list) : string =
+  l
+  |> List.map (fun (key, elem) -> (key ^ " = " ^ elem))
+  |> Common.join " | "
 
+let dim_to_s (v: Vec3.t) : string =
+  ["x", v.x; "y", v.y; "z", v.z]
+  |> List.filter (fun (_, v) -> v <> "1")
+  |> struct_to_s
+
+
+let idx_to_s ~idx ~dim =
+  let pos_fields =
+    Vec3.to_assoc dim
+    |> List.filter_map (fun (k, v) -> if v = "1" then None else Some k)
+  in
+  idx
+  |> Vec3.to_assoc
+  |> List.filter (fun (k, _) -> List.mem k pos_fields)
+  |> struct_to_s
+
+
+let box_idx key ~idx ~dim =
+  let idx = idx_to_s ~idx ~dim in
+  if idx = "" then []
+  else [key, idx]
+
+
+let box_tasks (block_dim:Vec3.t) (t1:Task.t) (t2:Task.t) : PrintBox.t =
+  let open PrintBox in
+  let locals =
+    t1.locals
+    |> List.map (fun (k, v1) -> 
+      [| text k; text v1; text (List.assoc_opt k t2.locals |> Ojson.unwrap_or "?") |]
+    )
+  in
+  let locals =
+    [|
+      text "threadIdx";
+      text @@ idx_to_s ~idx:t1.thread_idx ~dim:block_dim;
+      text @@ idx_to_s ~idx:t2.thread_idx ~dim:block_dim;
+    |] :: locals
+    |> Array.of_list
+  in
+  grid locals |> frame
+
+let box_globals (w:Witness.t) : PrintBox.t =
+  let dim x = if x = "1" then 0 else 1 in
+  let dim_len v =
+    let open Vec3 in
+    dim v.x + dim v.y + dim v.z
+  in
+  let box_dim name v =
+    if dim_len v = 0 then []
+    else
+      [name, dim_to_s v]
+  in
+  [
+    "index", Common.join " │ " w.indices;
+  ]
+  @ box_dim "gridDim" w.grid_dim
+  @ box_idx "blockIdx" ~idx:w.block_idx ~dim:w.grid_dim
+  @ box_dim "blockDim" w.block_dim
+  @ w.globals
+  |> box_environ
+
+let box_locals (w:Witness.t) : PrintBox.t =
+  let (t1, t2) = w.tasks in
+  box_tasks w.block_dim t1 t2
+
+let print_box: PrintBox.t -> unit =
+  PrintBox_text.output stdout
+
+let main
+  (fname: string)
+  (timeout:int option)
+  (show_proofs:bool)
+  (show_proto:bool)
+  (show_wf:bool)
+  (show_align:bool)
+  (show_phase_split:bool)
+  (show_loc_split:bool)
+  (show_flat_acc:bool)
+  (show_symbexp:bool)
+: unit =
+  let gv = GvParser.parse fname in
+  (match gv with
+    | Some x -> prerr_endline ("WARNING: parsed GV args: " ^ GvParser.to_string x);
+    | None -> ()
+  );
+  let j = Cu_to_json.cu_to_json ~ignore_fail:true fname in
+  let p = parse_imp j in
+  List.iter (fun p ->
+    let p = Imp.compile p in
+    let kernel_name = p.kernel_name in
+    let key_vals =
+      Proto.kernel_constants p
+      |> List.filter (fun (x,_) ->
+        (* Make sure we only replace thread-global variables *)
+        VarSet.mem (Variable.from_name x) p.kernel_global_variables
+      )
+    in
+    let key_vals = match gv with
+    | Some gv -> GvParser.to_assoc gv @ key_vals
+    | None -> key_vals
+    in
+    let dim (f:GvParser.t -> Dim3.t) : Vec3.t option = match gv with
+      | Some gv -> Some (Dim3.to_vec3 (f gv))
+      | None -> None
+    in
+    let grid_dim = dim (fun gv -> gv.grid_dim) in
+    let block_dim = dim (fun gv -> gv.block_dim) in
+    let p = Proto.replace_constants key_vals p in
+    let show (b:bool) (call:unit -> unit) : unit =
+      if b then call () else ()
+    in
+    show show_proto (fun () -> Proto.print_k p);
+    let p = Wellformed.translate p in
+    show show_wf (fun () -> Wellformed.print_kernels p);
+    let p = Phasealign.translate p in
+    show show_align (fun () -> Phasealign.print_kernels p);
+    let p = Phasesplit.translate p false in
+    show show_phase_split (fun () -> Phasesplit.print_kernels p);
+    let p = Locsplit.translate p in
+    show show_loc_split (fun () -> Locsplit.print_kernels p);
+    let p = Flatacc.translate p in
+    show show_flat_acc (fun () -> Flatacc.print_kernels p);
+    let p = Symbexp.translate p in
+    show show_symbexp (fun () -> Symbexp.print_kernels p);
+    let open Z3_solver in
+    let open Solution in
+    let errors =
+      p
+      |> solve
+          ~grid_dim
+          ~block_dim
+          ~timeout:timeout
+          ~show_proofs
+      |> Streamutil.map_opt (
+        function
+        | Drf -> None
+        | Unknown -> Some (Either.Left p)
+        | Racy w -> Some (Either.Right (p, w))
+      )
+      |> Streamutil.to_list
+    in
+    let print_errors errs =
+      errs |> List.iteri (fun i (w:Witness.t) ->
+        T.print_string [T.Bold; T.Foreground T.Blue] ("\n~~~~ Data-race " ^ string_of_int (i + 1) ^ " ~~~~\n\n");
+        let locs =
+          let (t1, t2) = w.tasks in
+          let l = [t1.location; t2.location] |> Common.flatten_opt in
+          match l with
+          | [x1; x2] when x1 = x2 -> [x1]
+          | [x1; x2] when x2 < x1 -> [x2; x1]
+          | _ -> l
+        in
+        (match locs with
+        | [x] -> Tui.LocationUI.print x
+        | [x1; x2] -> Tui.LocationUI.print2 x1 x2
+        | _ -> failwith "??"
+        );
+        print_endline "";
+        T.print_string [T.Bold] ("Globals\n");
+        box_globals w |> print_box;
+        T.print_string [T.Bold] ("\n\nLocals\n");
+        box_locals w |> print_box;
+        print_endline "";
+        T.print_string [T.Underlined] ("(proof #" ^ string_of_int w.proof_id ^ ")\n");
+      );
+    in
+    match Common.either_split errors with
+    | [], [] -> T.print_string [T.Bold; T.Foreground T.Green] ("Kernel '" ^ kernel_name ^ "' is DRF!\n")
+    | unk, errs ->
+      let has_unknown = List.length unk > 0 in
+      let errs = List.split errs |> snd in
+      let err_count = List.length errs |> string_of_int in
+      let dr = "data-race" ^ (if err_count = "1" then "" else "s") in
+      T.print_string [T.Bold; T.Foreground T.Red] ("Kernel '" ^ kernel_name ^ "' has " ^ err_count ^ " " ^ dr ^ ".\n");
+      print_errors errs;
+      if has_unknown then
+        T.print_string [T.Foreground T.Red] ("A portion of the kernel was not analyzable. Try to increasing the timeout.\n")
+      else ();
+      if err_count <> "0" || has_unknown then
+        exit 1
+      else
+        ()
+  ) p
+
+open Cmdliner
+
+let get_fname = 
+  let doc = "The path $(docv) of the GPU program." in
+  Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
+
+let get_timeout =
+  let doc = "Sets a timeout in millisecs. Default: $(docv)" in
+  Arg.(value & opt (some int) None & info ["t"; "timeout"] ~docv:"MILISECS" ~doc)
+
+let show_proofs =
+  let doc = "Show the Z3 proofs being generated." in
+  Arg.(value & flag & info ["show-proofs"] ~doc)
+
+let show_proto =
+  let doc = "Show the MAP kernel." in
+  Arg.(value & flag & info ["show-map"] ~doc)
+
+let show_wf =
+  let doc = "Show the well-formed kernel." in
+  Arg.(value & flag & info ["show-well-formed"] ~doc)
+
+let show_aligned =
+  let doc = "Show the aligned kernel." in
+  Arg.(value & flag & info ["show-aligned"] ~doc)
+
+let show_phase_split =
+  let doc = "Show the phase-split kernel." in
+  Arg.(value & flag & info ["show-phase-split"] ~doc)
+
+let show_loc_split =
+  let doc = "Show the location-split kernel." in
+  Arg.(value & flag & info ["show-loc-split"] ~doc)
+
+let show_flat_acc =
+  let doc = "Show the flat-access kernel." in
+  Arg.(value & flag & info ["show-flat-acc"] ~doc)
+
+let show_symbexp =
+  let doc = "Show the symbexp kernel." in
+  Arg.(value & flag & info ["show-symbexp"] ~doc)
+
+let main_t = Term.(
+  const main
+  $ get_fname
+  $ get_timeout
+  $ show_proofs
+  $ show_proto
+  $ show_wf
+  $ show_aligned
+  $ show_phase_split
+  $ show_loc_split
+  $ show_flat_acc
+  $ show_symbexp
+)
+
+let info =
+  let doc = "Print the C-AST" in
+  Cmd.info "next-gen" ~version:"%%VERSION%%" ~doc
 
 let () =
   Cmd.v info main_t
   |> Cmd.eval
   |> exit
+

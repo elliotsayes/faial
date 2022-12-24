@@ -1,4 +1,4 @@
-open Stage1
+open Protocols
 
 type variable = Variable.t
 
@@ -35,45 +35,46 @@ let parse_cmp (o:string) : comparator option =
 	| _ -> None
 
 type 'a unop =
-	{op: 'a; arg: D_lang.d_exp}
+	{op: 'a; arg: D_lang.Expr.t}
 
 type d_for_range = {
 	name: variable;
-	init: D_lang.d_exp;
+	init: D_lang.Expr.t;
 	cond: comparator unop;
 	inc: increment unop;
 }
 
-let parse_init: D_lang.d_for_init option -> (variable*D_lang.d_exp) option =
+let parse_init: D_lang.ForInit.t option -> (variable*D_lang.Expr.t) option =
 	function
-	| Some (ForDecl ({name=n; init=Some (IExp i)}::_)) -> Some (n, i)
-	| Some (ForExp (BinaryOperator {lhs=l; opcode="="; rhs=i})) ->
-		(match D_lang.get_variable l with
+	| Some (Decls ({ty_var={name=n; _}; init=Some (IExpr i); _}::_)) -> Some (n, i)
+	| Some (Expr (BinaryOperator {lhs=l; opcode="="; rhs=i; _})) ->
+		(match D_lang.Expr.to_variable l with
 		| Some v -> Some (v, i)
 		| _ -> None)
 	| _ -> None
 
-let parse_cond (c:D_lang.d_exp option) : (variable * comparator unop) option =
+let parse_cond (c:D_lang.Expr.t option) : (variable * comparator unop) option =
 	match c with
-	| Some (BinaryOperator {lhs=l; opcode=o; rhs=r}) ->
-		(match D_lang.get_variable l, parse_cmp o with
+	| Some (BinaryOperator {lhs=l; opcode=o; rhs=r; _}) ->
+		(match D_lang.Expr.to_variable l, parse_cmp o with
 		| Some l, Some o -> Some (l, {op=o; arg=r})
 		| _, _ -> None)
 	| _ -> None
 
-let rec parse_inc (i:D_lang.d_exp option) : (variable * increment unop) option =
+let rec parse_inc (i:D_lang.Expr.t option) : (variable * increment unop) option =
 	match i with
-	| Some (BinaryOperator {opcode=","; lhs=l}) ->
+	| Some (BinaryOperator {opcode=","; lhs=l; _}) ->
 		parse_inc (Some l)
 	| Some (BinaryOperator {
 			lhs=l;
 			opcode="=";
-			rhs=BinaryOperator{lhs=l'; opcode=o; rhs=r}
+			rhs=BinaryOperator{lhs=l'; opcode=o; rhs=r; _};
+      _
 		}) ->
 		begin
 			match
-				D_lang.get_variable l,
-				D_lang.get_variable l',
+				D_lang.Expr.to_variable l,
+				D_lang.Expr.to_variable l',
 				parse_inc_op o
 			with
 			| Some l, Some l', Some o when Variable.equal l l' ->
@@ -83,11 +84,11 @@ let rec parse_inc (i:D_lang.d_exp option) : (variable * increment unop) option =
 	| _ -> None
 
 
-let parse_for (loop: D_lang.d_for) : d_for_range option =
+let parse_for (loop: D_lang.Stmt.d_for) : d_for_range option =
 	let (let*) = Option.bind in
 	let* (x1, init) = parse_init loop.init in
-	let* (x2, cond) = parse_cond loop.cond in
-	let* (x3, inc) = parse_inc loop.inc in
+	let* (_, cond) = parse_cond loop.cond in
+	let* (_, inc) = parse_inc loop.inc in
 	Some {
 		name = x1;
 		init = init;
@@ -97,7 +98,7 @@ let parse_for (loop: D_lang.d_for) : d_for_range option =
 
 
 let unop_to_s (f:'a -> string) (u:'a unop) : string =
-	f u.op ^ " " ^ D_lang.exp_to_s u.arg
+	f u.op ^ " " ^ D_lang.Expr.to_string u.arg
 
 let opt_to_s (f:'a -> string) (o:'a option) : string =
 	match o with
@@ -122,7 +123,7 @@ let inc_to_s : increment -> string = function
 let for_range_to_s (l:d_for_range) : string =
 	"(" ^
 		Variable.name l.name ^
-		"= " ^ D_lang.exp_to_s l.init ^
+		"= " ^ D_lang.Expr.to_string l.init ^
 		"; " ^ unop_to_s cmp_to_s l.cond ^
 		"; " ^ unop_to_s inc_to_s l.inc ^
 	")"

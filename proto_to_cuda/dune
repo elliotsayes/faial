@@ -2,7 +2,7 @@
  (name cgen)
  (modules cgen)
  (wrapped false)
- (libraries inference stage0 stage1 otoml))
+ (libraries inference stage0 protocols otoml))
 
 (executable
  (public_name proto-to-cuda)

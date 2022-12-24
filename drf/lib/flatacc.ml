@@ -1,12 +1,12 @@
 open Stage0
-open Stage1
+open Protocols
 
 open Wellformed
 open Locsplit
 open Exp
 
 type cond_access = {
-  ca_location: Location.t option;
+  ca_location: Location.t;
   ca_access: access;
   ca_cond: bexp;
 }
@@ -23,7 +23,6 @@ type f_kernel = {
 }
 
 let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
-  let open Phasealign in
   let is_assert (i:u_inst) =
     match i with
     | UAssert _ -> true
@@ -45,7 +44,7 @@ let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
   in
   let rm_asserts (p:u_prog) : u_prog =
     let rm_asserts_0 (p:u_prog) : u_prog =
-      let asserts = Common.map_opt (fun i ->
+      let asserts = List.filter_map (fun i ->
         match i with
         | UAssert b -> Some b
         | _ -> None
@@ -72,7 +71,7 @@ let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
   let rec flatten_i (b:bexp) (i:u_inst) : cond_access list =
     match i with
     | UAssert _ -> failwith "Internall error: call rm_asserts first!"
-    | UAcc (x, e) -> [{ca_location = Variable.location_opt x; ca_access = e; ca_cond = b}]
+    | UAcc (x, e) -> [{ca_location = Variable.location x; ca_access = e; ca_cond = b}]
     | UCond (b', p) -> flatten_p (b_and b' b) p
     | ULoop (r, p) -> flatten_p (b_and (range_to_cond r) b) p
   and flatten_p (b:bexp) (p:u_prog) : cond_access list =
@@ -113,7 +112,8 @@ let f_kernel_to_s (k:f_kernel) : Serialize.PPrint.t list =
     mode_to_s a.access_mode ^ index_to_s a.access_index
   in
   let acc_to_s (a:cond_access) : t =
-    Line (acc_val_to_s a.ca_access ^ " if " ^ b_to_s a.ca_cond ^";")
+    let lineno = (Location.line a.ca_location |> Index.to_base1 |> string_of_int) ^ ": " in
+    Line (lineno ^ acc_val_to_s a.ca_access ^ " if " ^ b_to_s a.ca_cond ^";")
   in
   [
       Line ("array: " ^ k.f_kernel_array ^ ";");

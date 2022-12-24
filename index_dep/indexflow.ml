@@ -1,5 +1,5 @@
 open Stage0
-open Stage1
+open Protocols
 open Inference
 
 open D_lang
@@ -27,7 +27,7 @@ module Typing = struct
   let make : t = Variable.Map.empty
 
   let add : t -> t -> t =
-    Variable.Map.union (fun k v1 v2 ->
+    Variable.Map.union (fun _ v1 v2 ->
       Some (Index.add v1 v2)
     )
 
@@ -55,17 +55,16 @@ module Typing = struct
 end
 
 
-let rec types_exp (env:Typing.t) (e:D_lang.d_exp) : (Typing.t * Index.t) =
-  let ret (l:D_lang.d_exp list) : Typing.t * Index.t =
+let rec types_exp (env:Typing.t) (e:D_lang.Expr.t) : (Typing.t * Index.t) =
+  let ret (l:D_lang.Expr.t list) : Typing.t * Index.t =
     types_exp_list env l
   in
-  let open D_lang in
   match e with
-  | ParmVarDecl {name=x}
-  | VarDecl {name=x} -> (env, Typing.get x env)
+  | ParmVarDecl {name=x; _}
+  | VarDecl {name=x; _} -> (env, Typing.get x env)
 
   | BinaryOperator b ->
-    let x = D_lang.get_variable b.lhs in
+    let x = D_lang.Expr.to_variable b.lhs in
     (match x, b.opcode = "=" with
     | Some x, true -> 
       let (env, a) = types_exp env b.rhs in
@@ -86,8 +85,8 @@ let rec types_exp (env:Typing.t) (e:D_lang.d_exp) : (Typing.t * Index.t) =
     ret [ c.cond; c.then_expr; c.else_expr ]
   
   | MemberExpr {base=e; _}
-  | CXXNewExpr {arg=e} 
-  | CXXDeleteExpr {arg=e} 
+  | CXXNewExpr {arg=e; _}
+  | CXXDeleteExpr {arg=e; _}
   | UnaryOperator {child=e; _} -> types_exp env e
 
   | SizeOfExpr _
@@ -103,7 +102,7 @@ let rec types_exp (env:Typing.t) (e:D_lang.d_exp) : (Typing.t * Index.t) =
   | CXXBoolLiteralExpr _ -> (env, Index.Independent)
 
 
-and types_exp_list (env:Typing.t) (l: d_exp list) : Typing.t * Index.t =
+and types_exp_list (env:Typing.t) (l: D_lang.Expr.t list) : Typing.t * Index.t =
   match l with
   | [] -> (env, Index.Independent)
   | e :: es ->
@@ -152,14 +151,14 @@ module Stmt = struct
 
 end
 
-let types_init (env:Typing.t) (e:d_init) : Typing.t * Index.t =
+let types_init (env:Typing.t) (e:Init.t) : Typing.t * Index.t =
   let open Index in
   match e with
   | CXXConstructExpr _ -> (env, Independent)
   | InitListExpr l -> types_exp_list env l.args
-  | IExp e -> types_exp env e
+  | IExpr e -> types_exp env e
 
-let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
+let rec types_stmt (env:Typing.t) (s:D_lang.Stmt.t) : Typing.t * Stmt.t =
   match s with
   | WriteAccessStmt d ->
     (* Abort if any index is dependent *)
@@ -172,7 +171,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
     (Typing.put s.target Index.Dependent env, Stmt.has_access ty)
 
   | DeclStmt (d::is) ->
-    let x = d.name in
+    let x = d.ty_var.name in
     let (env, ty) = match d.init with
       | Some i -> types_init env i
       | None -> (env, Index.Independent)
@@ -190,7 +189,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
   | ForStmt s ->
     let orig_env = env in
     (* 1. Abort if any variable used in the loop range is dependent *)
-    let (env, ctl) = types_exp_list env (for_to_exp s) in
+    let (env, ctl) = types_exp_list env (D_lang.for_to_expr s) in
     (* 2. Get all loop variables being "declared" *)
     let xs = for_loop_vars s in
     (* 3. Get the old values of each loop variable (if any) *)
@@ -205,7 +204,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
     (* 7. Merge the original with the final one *)
     (env |> Typing.add orig_env, Stmt.add_control ty ctl)
 
-  | SExp _
+  | SExpr _
   | DeclStmt []
   | BreakStmt
   | GotoStmt
@@ -213,11 +212,11 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
   | ReturnStmt -> (env, Stmt.no_access)
   
 
-  | CaseStmt {body=s}
-  | SwitchStmt {body=s}
+  | CaseStmt {body=s; _}
+  | SwitchStmt {body=s; _}
   | DefaultStmt s
-  | WhileStmt {body=s}
-  | DoStmt {body=s} -> types_stmt env s
+  | WhileStmt {body=s; _}
+  | DoStmt {body=s; _} -> types_stmt env s
   
   | CompoundStmt s ->
     types_stmt_list env s
@@ -226,7 +225,7 @@ let rec types_stmt (env:Typing.t) (s:d_stmt) : Typing.t * Stmt.t =
 
 
 
-and types_stmt_list (env:Typing.t) (s:d_stmt list) : Typing.t * Stmt.t =
+and types_stmt_list (env:Typing.t) (s:D_lang.Stmt.t list) : Typing.t * Stmt.t =
   match s with
   | [] -> (env, Stmt.no_access)
   | s :: ss ->
@@ -234,11 +233,11 @@ and types_stmt_list (env:Typing.t) (s:d_stmt list) : Typing.t * Stmt.t =
     let (env, ty2) = types_stmt_list env ss in
     (env, Stmt.add ty1 ty2)
 
-let types_kernel (k:d_kernel) : Stmt.t =
+let types_kernel (k:Kernel.t) : Stmt.t =
   (* Initialize the environment: each parameter is independent *)
   let env =
     k.params
-    |> List.map (fun (p:C_lang.c_param) -> p.name)
+    |> List.map (fun (p:C_lang.Param.t) -> p.ty_var.name)
     |> List.fold_left (fun env x -> Typing.add_i x env) Typing.make
   in
   types_stmt env k.code |> snd
@@ -249,4 +248,4 @@ let types_def : d_def -> (string * Stmt.t) option =
   | Kernel k -> Some (k.name, types_kernel k)
 
 let types_program : d_program -> (string * Stmt.t) list =
-  Common.map_opt types_def
+  List.filter_map types_def

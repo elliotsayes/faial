@@ -22,9 +22,6 @@ let s_list_string : string list -> string = s_list s_string
 let assert_o (f:'a -> string) (o1:'a option) (o2:'a option) : unit =
 	assert_equal ~printer:(s_option f) o1 o2
 
-let assert_int (x1:int) (x2:int) : unit =
-	assert_equal ~printer:s_int x1 x2
-
 let tests = "ctype" >::: [
 
   "split_array_type" >:: (fun _ ->

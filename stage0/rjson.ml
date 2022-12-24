@@ -9,7 +9,6 @@ let (let*) = Result.bind
 (* Monadic pipe *)
 let (>>=) = Result.bind
 
-let wrap = Common.wrap
 let unwrap_or = Common.unwrap_or
 
 let unless (first:('a, 'e) Result.t) (second:('a, 'e) Result.t) : ('a, 'e) Result.t =
@@ -62,10 +61,10 @@ let error_to_string (e:j_error) : string =
 type 'a j_result = ('a, j_error) Result.t
 
 let root_cause (msg:string) (j:Yojson.Basic.t) : 'a j_result =
-  Result.Error (RootCause (msg, j))
+  Result.Error (StackTrace.RootCause (msg, j))
 
 let because (msg:string) (j:Yojson.Basic.t) (e:j_error) : 'a j_result =
-  Result.Error (Because ((msg, j), e))
+  Result.Error (StackTrace.Because ((msg, j), e))
 
 let type_mismatch ty j =
   root_cause ("type mismatch: expecting " ^ ty ^ ", but got " ^ type_name j) j
@@ -85,31 +84,26 @@ let map_all (f:'a -> ('b, 'e) Result.t) (err:int -> 'a -> 'e -> 'e) (l:'a list) 
 
 
 let cast_object (j:Yojson.Basic.t) : j_object j_result =
-  let open Yojson.Basic.Util in
   match j with
   | `Assoc l -> Ok l
   | _ -> type_mismatch "object" j 
 
 let cast_string (j:Yojson.Basic.t) : string j_result =
-  let open Yojson.Basic.Util in
   match j with
   | `String v -> Ok v
   | _ -> type_mismatch "string" j 
 
 let cast_bool (j:Yojson.Basic.t) : bool j_result =
-  let open Yojson.Basic.Util in
   match j with
   | `Bool v -> Ok v
   | _ -> type_mismatch "bool" j 
 
 let cast_int (j:Yojson.Basic.t) : int j_result =
-  let open Yojson.Basic.Util in
   match j with
   | `Int v -> Ok v
   | _ -> type_mismatch "int" j 
 
 let cast_float (j:Yojson.Basic.t) : float j_result =
-  let open Yojson.Basic.Util in
   match j with
   | `Float v -> Ok v
   | _ -> type_mismatch "float" j 
