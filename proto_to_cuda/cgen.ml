@@ -22,7 +22,7 @@ let thread_locals : VarSet.t =
     ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"]
   |> VarSet.of_list
 
-let cpp_types : Common.StringSet.t =
+let known_types : Common.StringSet.t =
   ["__builtin_va_list"; "__float128"; "__int128_t"; "__uint128_t"; "bool";
    "char"; "char16_t"; "char32_t"; "cudaError_t"; "cudaStream"; "cudaStream_t";
    "cudaTextureObject_t"; "curandDiscreteDistribution_st";
@@ -53,12 +53,9 @@ let racuda_protos : string list =
 (* ----------------- serialization -------------------- *)
 let var_name (v : Variable.t) : string = v.name
 
-let join (sep : string) (elems : string list) : string =
-  List.rev elems |> Common.join sep
-
 (* Converts an array index to a string *)
 let idx_to_s (f : 'a -> string) (l : 'a list) : string =
-  "[" ^ (join "][" (List.map f l)) ^ "]"
+  "[" ^ (Common.join "][" (List.map f l)) ^ "]"
 
 (* Converts source expression to a RaCUDA-friendly form *)
 let rec n_par (n : nexp) : string =
@@ -156,8 +153,8 @@ let rec inst_to_s (racuda : bool) : inst -> PPrint.t list = function
 let arr_type (arr : array_t) (strip_const : bool) : string =
   if arr.array_type = [] then "int"
   else if strip_const then List.filter (fun x -> x <> "const") arr.array_type
-                           |> join " "
-  else join " " arr.array_type  
+                           |> Common.join " "
+  else Common.join " " arr.array_type  
 
 (* Removes template parameters from a C++ type *)
 let remove_template (s : string) : string =
@@ -195,7 +192,7 @@ let mk_types_compatible
 
 (* Checks if a string is a known C++/CUDA type *)
 let is_known_type (s : string) : bool =
-  if Common.StringSet.mem s cpp_types then true
+  if Common.StringSet.mem s known_types then true
   else match String.length s with
     | 0 -> true
     | len -> Common.StringSet.mem (String.sub s 0 (len - 1)) vector_types
@@ -283,8 +280,8 @@ let kernel_to_s
   let global_var = global_var_to_l k.kernel_global_variables in
   let params = global_arr @ global_var in
   [
-    Line (join "\n" (type_decls @ funct_protos));
-    Line ("__global__ void " ^ k_name ^ "(" ^ join ", " params ^ ")");
+    Line (Common.join "\n" (type_decls @ funct_protos));
+    Line ("__global__ void " ^ k_name ^ "(" ^ Common.join ", " params ^ ")");
     Line "{";
     (body_to_s f k);
     Line "}"
@@ -305,12 +302,12 @@ let scalars_to_l (vs : VarSet.t) : (string * Otoml.t) list =
   VarSet.elements (VarSet.diff vs thread_globals)
   |> List.map (fun v -> (var_name v, Otoml.TomlString "int"))
 
-let kernel_to_toml (k : 'a kernel) (racuda : bool) : Otoml.t =
+let kernel_to_toml (k : prog kernel) (racuda : bool) : Otoml.t =
   let k = {k with kernel_arrays = mk_types_compatible k.kernel_arrays racuda} in
   let type_decls = if racuda then []
     else declare_unknown_types k.kernel_arrays in
   let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
-  let header = (type_decls @ funct_protos |> join "\n") ^ "\n" in
+  let header = (type_decls @ funct_protos |> Common.join "\n") ^ "\n" in
   let body = PPrint.doc_to_string [body_to_s (prog_to_s racuda) k] in
   let global_arr = VarMap.filter (fun _ -> fun v ->
       v.array_hierarchy = GlobalMemory) k.kernel_arrays in
@@ -328,5 +325,5 @@ let kernel_to_toml (k : 'a kernel) (racuda : bool) : Otoml.t =
 let print_toml (table : Otoml.t) : unit =
   print_string (Otoml.Printer.to_string table)
 
-let print_t (k : 'a kernel) (racuda : bool) : unit =
+let print_t (k : prog kernel) (racuda : bool) : unit =
   print_toml (kernel_to_toml k racuda)
