@@ -281,10 +281,10 @@ let kernel_to_s
   let global_arr = global_arr_to_l (VarMap.filter (fun _ -> fun v ->
       v.array_hierarchy = GlobalMemory) k.kernel_arrays) in
   let global_var = global_var_to_l k.kernel_global_variables in
+  let params = global_arr @ global_var in
   [
     Line (join "\n" (type_decls @ funct_protos));
-    Line "__global__";
-    Line ("void " ^ k_name ^ "(" ^ join ", " (global_arr @ global_var) ^ ")");
+    Line ("__global__ void " ^ k_name ^ "(" ^ join ", " params ^ ")");
     Line "{";
     (body_to_s f k);
     Line "}"
