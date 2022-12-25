@@ -8,8 +8,10 @@ open Protocols
 let cost
   ?(skip_zero=true)
   ?(use_maxima=true)
+  ?(use_absynth=true)
   ?(explain=true)
   ?(num_banks=32)
+  ?(absynth_exe="absynth")
   (thread_count:Vec3.t)
   (k : Proto.prog Proto.kernel)
 :
@@ -23,6 +25,14 @@ let cost
     |> subst "blockDim.y" thread_count.y
     |> subst "blockDim.z" thread_count.z
   in
+  let render_s (s: Symbolic.t) : string =
+    if use_maxima then
+      Symbolic.run_maxima s
+    else if use_absynth then
+      Symbolic.run_absynth ~exe:absynth_exe s
+    else
+      Symbolic.flatten s |> Serialize.PPrint.n_to_s
+  in
   let handle_slice =
     if explain then
       Seq.filter_map (fun s ->
@@ -32,12 +42,7 @@ let cost
           None
         else Some (
           (* Flatten the expression *)
-          let simplified_cost =
-            if use_maxima then
-              Symbolic.run s1
-            else
-              s1 |> Symbolic.flatten |> Serialize.PPrint.n_to_s
-          in
+          let simplified_cost = render_s s1 in
           ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
           s |> Shared_access.location |> Tui.LocationUI.print;
           print_endline "";
@@ -67,14 +72,7 @@ let cost
     |> List.of_seq
     |> Symbolic.add
   in
-  let total =
-    if use_maxima then
-      Symbolic.run total
-    else
-      Symbolic.flatten total
-      |> Constfold.n_opt
-      |> Serialize.PPrint.n_to_s
-  in
+  let total = render_s total in
   PrintBox.(
     text total
     |> hpad 1
@@ -87,8 +85,10 @@ let pico
   (fname : string)
   (thread_count:Vec3.t)
   (use_maxima:bool)
+  (use_absynth:bool)
   (show_all:bool)
   (explain:bool)
+  (absynth_exe:string)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
@@ -98,8 +98,14 @@ let pico
     let proto = imp |> List.map Imp.compile in
     List.iter (fun k ->
       let cost_of_proto =
-        cost ~explain ~use_maxima ~skip_zero:(not show_all)
-        thread_count k
+        cost
+          ~explain
+          ~use_maxima
+          ~use_absynth
+          ~skip_zero:(not show_all)
+          ~absynth_exe
+          thread_count
+          k
       in
       print_string (k.kernel_name ^ ":\n");
       cost_of_proto |> print_endline
@@ -138,9 +144,17 @@ let thread_count =
   let doc = "Set the number of threads per block.\nExamples:\n--blockDim 1024\n--blockDim [16,16]." in
   Arg.(value & opt vec3 (Vec3.make ~x:1024 ~y:1 ~z:1) & info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
 
+let absynth_exe =
+  let doc = "Sets the path to the absynth executable." in
+  Arg.(value & opt string "absynth" & info ["absynth-exe"] ~doc)
+
 let use_maxima =
   let doc = "Uses maxima to simplify the cost of each access." in
   Arg.(value & flag & info ["maxima"] ~doc)
+
+let use_absynth =
+  let doc = "Uses absynth to simplify the cost of each access." in
+  Arg.(value & flag & info ["absynth"] ~doc)
 
 let show_all =
   let doc = "By default we skip accesses that yield 0 bank-conflicts." in
@@ -155,8 +169,10 @@ let pico_t = Term.(
   $ get_fname
   $ thread_count
   $ use_maxima
+  $ use_absynth
   $ show_all
   $ explain
+  $ absynth_exe
 )
 
 let info =

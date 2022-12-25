@@ -5,7 +5,7 @@
     symbolic)
   (libraries
     ; 3rd-pary
-    z3
+    z3 str
     ; 1st-pary
     stage0 protocols inference))
 

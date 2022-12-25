@@ -128,21 +128,92 @@ let cleanup_maxima_output (x:string) : string =
   )
   |> Common.join "\n"
 
-let run ?(exe="maxima") (x:t) : string =
-  let expr = to_maxima x ^ ",simpsum;" in
+let run_prog ~out ~exe args =
   let (_, txt) =
-    let cmd = Filename.quote_command exe ["--very-quiet"; "--disable-readline"] in
+    let cmd = Filename.quote_command exe args in
     Unix.open_process cmd
     |> Common.with_process_in_out (fun (ic, oc) ->
       (* Send the expression to be processed *)
-      output_string oc expr;
+      output_string oc out;
       (* Close output to ensure it is processed *)
       close_out oc;
       (* Receive the output *)
       Common.ic_to_string ic
     )
   in
-  txt |> cleanup_maxima_output
+  txt
+
+let run_maxima ?(exe="maxima") (x:t) : string =
+  let expr = to_maxima x ^ ",simpsum;" in
+  run_prog ~out:expr ~exe ["--very-quiet"; "--disable-readline"]
+  |> cleanup_maxima_output
+
+let to_absynth : t -> string =
+  let indent (depth:int) : string = String.make depth '\t' in
+  let n_to_s = Serialize.PPrint.n_to_s in
+  let rec translate (depth:int) : t -> string =
+    function
+    | Const k -> indent depth ^ "tick " ^ string_of_int k ^ "\n"
+    | Sum (x, ub, s) ->
+      indent depth ^ Variable.name x ^ " = 0\n" ^
+      indent depth ^ "while " ^ Variable.name x ^ " < " ^ n_to_s ub ^ ":\n" ^
+      indent (depth + 1) ^ Variable.name x ^ " = " ^ Variable.name x ^ " + 1\n" ^
+      translate (depth + 1) s
+    | Add l -> List.map (translate depth) l |> Common.join ""
+  in
+  fun x ->
+    "def f():\n" ^
+    translate 1 x
+
+let with_tmp ~prefix ~suffix (f:string -> 'a) : 'a =
+  let fname = Filename.temp_file prefix suffix in
+  try
+      let res = f fname in
+      Sys.remove fname;
+      res
+  with ex ->
+      Sys.remove fname;
+      raise ex
+
+let write_string ~filename ~data : unit =
+  let oc = open_out filename in
+  try
+    output_string oc data;
+    close_out oc
+  with ex ->
+    close_out oc;
+    raise ex
+
+let cleanup_absynth (x:string) : string option =
+  let (let*) = Option.bind in
+  let* x =
+    String.split_on_char '\n' x
+    |> List.find_opt (String.starts_with ~prefix:"    Bound:")
+  in
+  let* (_, x) = Common.split ':' x in
+  Some (String.trim x)
+
+let contains ~substring (s:string) : bool =
+    let re = Str.regexp_string substring in
+    try ignore (Str.search_forward re s 0); true
+    with Not_found -> false
+
+let run_absynth ?(exe="absynth") (x:t) : string =
+  let out = to_absynth x in
+  let data = with_tmp ~prefix:"absynth_" ~suffix:".imp" (fun filename ->
+      write_string ~filename ~data:out;
+      run_prog ~out ~exe [filename]
+    )
+  in
+  match cleanup_absynth data with
+  | Some x -> x
+  | None ->
+    if contains ~substring:"Sorry, I could not find a bound" data then
+      "No bound found."
+    else (
+      print_endline data;
+      "???"
+    )
 
 let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) : Shared_access.t -> t =
   function
