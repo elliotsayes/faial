@@ -13,7 +13,8 @@ let thread_globals : VarSet.t =
   List.map Variable.from_name
     ["blockDim.x"; "blockIdx.x"; "gridDim.x"; "gridIdx.x"; "threadDim.x";
      "blockDim.y"; "blockIdx.y"; "gridDim.y"; "gridIdx.y"; "threadDim.y";
-     "blockDim.z"; "blockIdx.z"; "gridDim.z"; "gridIdx.z"; "threadDim.z"]
+     "blockDim.z"; "blockIdx.z"; "gridDim.z"; "gridIdx.z"; "threadDim.z";
+     "warpSize"]
   |> VarSet.of_list
 
 let thread_locals : VarSet.t =
