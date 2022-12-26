@@ -10,7 +10,7 @@
     stage0 protocols inference))
 
 (executable
- (public_name pico)
+ (public_name faial-bc)
  (name pico)
  (modules pico)
  (libraries cmdliner z3 bc printbox printbox-text))

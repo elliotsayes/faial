@@ -176,8 +176,8 @@ let pico_t = Term.(
 )
 
 let info =
-  let doc = "Static performance analysis for GPU programs" in
-  Cmd.info "pico" ~version:"%%VERSION%%" ~doc
+  let doc = "Static analysis of bank-conflicts for GPU programs" in
+  Cmd.info "faial-bc" ~version:"%%VERSION%%" ~doc
 
 let () =
   Cmd.v info pico_t

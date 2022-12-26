@@ -35,15 +35,16 @@ build-dist:
 
   artifacts:
     paths:
-      - faial-drf
       - c-ast
-      - pico
+      - faial-drf
+      - faial-bc
+      - faial-bc-dyn
       - README.md
       - LICENSE
 
 bundle:
   stage: deploy
-  dependencies: 
+  dependencies:
     - build-dist
   only:
     # Only add branches that also exist in c-to-json and faial-infer!
@@ -59,7 +60,7 @@ bundle:
     - tar xf c-to-json-bin.tar.bz2
     - rm c-to-json-bin.tar.bz2
     # faial:
-    - cp ../faial ../pico ../c-ast ../faial-drf bin/
+    - cp ../faial-bc ../c-ast ../faial-drf bin/
     - cp ../README.md ../LICENSE  ./
     # display tree & bundle:
     - tree
