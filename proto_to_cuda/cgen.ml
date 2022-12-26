@@ -7,6 +7,7 @@ open Serialize
 
 module VarSet = Variable.Set
 module VarMap = Variable.Map
+module StringSet = Common.StringSet
 
 (* ----------------- constants -------------------- *)
 let thread_globals : VarSet.t =
@@ -22,7 +23,7 @@ let thread_locals : VarSet.t =
     ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"]
   |> VarSet.of_list
 
-let known_types : Common.StringSet.t =
+let known_types : StringSet.t =
   ["__builtin_va_list"; "__float128"; "__int128_t"; "__uint128_t"; "bool";
    "char"; "char16_t"; "char32_t"; "cudaError_t"; "cudaStream"; "cudaStream_t";
    "cudaTextureObject_t"; "curandDiscreteDistribution_st";
@@ -37,12 +38,12 @@ let known_types : Common.StringSet.t =
    "int16_t"; "int32_t"; "int64_t"; "int8_t"; "long"; "ptrdiff_t"; "short";
    "size_t"; "uint"; "uint16_t"; "uint32_t"; "uint8_t"; "ushort"; "wchar_t";
    "void"]
-  |> Common.StringSet.of_list
+  |> StringSet.of_list
 
-let vector_types : Common.StringSet.t =
+let vector_types : StringSet.t =
   ["char"; "double"; "float"; "int"; "long"; "longlong";
    "short"; "uchar"; "uint"; "ulong"; "ulonglong"; "ushort";]
-  |> Common.StringSet.of_list
+  |> StringSet.of_list
 
 let cuda_protos : string list =
   ["extern __device__ int __dummy_int();"]
@@ -125,12 +126,12 @@ let inc_to_s (r : range) (n_to_s : nexp -> string) : string =
 
 (* Converts source instruction to a valid CUDA operation *)
 let rec inst_to_s (racuda : bool) : inst -> PPrint.t list = function
+  | Acc e -> acc_expr_to_dummy e racuda
   | Sync -> [Line "__syncthreads();"]
-  | Acc e -> (acc_expr_to_dummy e racuda)
-  | Cond (b, p1) ->
+  | Cond (b, p) ->
     [
       Line ("if (" ^ (if racuda then b_to_s else PPrint.b_to_s) b ^ ") {");
-      Block (List.map (inst_to_s racuda) p1 |> List.flatten);
+      Block (List.map (inst_to_s racuda) p |> List.flatten);
       Line "}"
     ]
   | Loop (r, p) ->
@@ -149,14 +150,46 @@ let rec inst_to_s (racuda : bool) : inst -> PPrint.t list = function
       Line "}"
     ]
 
-(* Get the type of an array, defaulting to int if it is unknown *)
+(* Converts source instruction to the list of variables used in it *)
+let rec inst_to_vars : inst -> Variable.t list = function
+  | Acc (_, e) -> List.map n_to_vars e.access_index |> List.flatten
+  | Sync -> []
+  | Cond (b, p) -> b_to_vars b :: List.map inst_to_vars p |> List.flatten
+  | Loop (r, p) -> r_to_vars r :: List.map inst_to_vars p |> List.flatten
+and n_to_vars : nexp -> Variable.t list = function
+  | Var x -> [x]
+  | Num _ -> []
+  | Bin (_, e1, e2) -> n_to_vars e1 @ n_to_vars e2
+  | Proj (_, x) -> [x]
+  | NCall (_, e) -> n_to_vars e
+  | NIf (b, e1, e2) -> b_to_vars b @ n_to_vars e1 @ n_to_vars e2
+and b_to_vars : bexp -> Variable.t list = function
+  | Bool _ -> []
+  | NRel (_, e1, e2) -> n_to_vars e1 @ n_to_vars e2
+  | BRel (_, b1, b2) -> b_to_vars b1 @ b_to_vars b2
+  | BNot b -> b_to_vars b
+  | Pred (_, e) -> n_to_vars e
+and r_to_vars (r : range) : Variable.t list =
+  let step_variables = match r.range_step with
+    | Default e -> n_to_vars e
+    | StepName _ -> []
+  in
+  [[r.range_var]; n_to_vars r.range_lower_bound;
+   n_to_vars r.range_upper_bound; step_variables]
+  |> List.flatten
+
+(* Gets the set of variables used in a list of instructions *)
+let variables_used (l : inst list) : VarSet.t =
+  List.map inst_to_vars l |> List.flatten |> VarSet.of_list
+
+(* Gets the type of an array, defaulting to int if it is unknown *)
 let arr_type (arr : array_t) (strip_const : bool) : string =
   if arr.array_type = [] then "int"
   else if strip_const then List.filter (fun x -> x <> "const") arr.array_type
                            |> Common.join " "
   else Common.join " " arr.array_type  
 
-(* Removes template parameters from a C++ type *)
+(* Removes template parameters from a CUDA type *)
 let remove_template (s : string) : string =
   match String.index_opt s '<' with
   | None -> s
@@ -190,12 +223,12 @@ let mk_types_compatible
   in
   VarMap.mapi (fun _ -> fun v -> mk_array_compatible v) arrays
 
-(* Checks if a string is a known C++/CUDA type *)
+(* Checks if a string is a known CUDA type *)
 let is_known_type (s : string) : bool =
-  if Common.StringSet.mem s known_types then true
+  if StringSet.mem s known_types then true
   else match String.length s with
     | 0 -> true
-    | len -> Common.StringSet.mem (String.sub s 0 (len - 1)) vector_types
+    | len -> StringSet.mem (String.sub s 0 (len - 1)) vector_types
              && match s.[len - 1] with
              | '1' | '2' | '3' | '4' -> true
              | _ -> false
@@ -211,8 +244,8 @@ let declare_unknown_types (vm : array_t VarMap.t) : string list =
   VarMap.bindings vm
   |> List.filter_map (fun (_, v) -> arr_type_to_decl v.array_type)
   (* Remove duplicates *)
-  |> Common.StringSet.of_list
-  |> Common.StringSet.elements
+  |> StringSet.of_list
+  |> StringSet.elements
 
 (* Include prototypes for bitwise operators in RaCUDA-friendly kernels *)
 let base_protos (racuda : bool) : string list =
@@ -256,17 +289,21 @@ let arr_to_dummy (vm : array_t VarMap.t) : PPrint.t list =
   |> List.map (fun (k, v) -> 
       PPrint.Line (arr_type v true ^ " " ^ var_to_dummy k ^ ";"))
 
-let body_to_s (f : 'a -> PPrint.t list) (k : 'a kernel) : PPrint.t =
+(* Serialization of the kernel body *)
+let body_to_s (f : prog -> PPrint.t list) (k : prog kernel) : PPrint.t =
   let shared_arr = arr_to_shared (VarMap.filter (fun _ -> fun v ->
       v.array_hierarchy = SharedMemory) k.kernel_arrays) in
-  let local_var = local_var_to_l k.kernel_local_variables in
+  let used_var = variables_used k.kernel_code in
+  (* Remove unused local variables *)
+  let local_var = VarSet.inter used_var k.kernel_local_variables
+                  |> local_var_to_l in
   let dummy_var = arr_to_dummy k.kernel_arrays in
   PPrint.Block (shared_arr @ local_var @ dummy_var @ (f k.kernel_code))
 
 (* Serialization of the kernel *)
 let kernel_to_s
-    (f : 'a -> PPrint.t list)
-    (k : 'a kernel)
+    (f : prog -> PPrint.t list)
+    (k : prog kernel)
     (racuda : bool)
   : PPrint.t list =
   let open PPrint in
