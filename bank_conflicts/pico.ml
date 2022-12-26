@@ -94,7 +94,7 @@ let pico
     let parsed_json = Cu_to_json.cu_to_json fname in
     let c_ast = parsed_json |> C_lang.parse_program |> Result.get_ok in
     let d_ast = c_ast |> D_lang.rewrite_program in
-    let imp = d_ast |> D_to_imp.parse_program |> Result.get_ok in
+    let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
     let proto = imp |> List.map Imp.compile in
     List.iter (fun k ->
       let cost_of_proto =
