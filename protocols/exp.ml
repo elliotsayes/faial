@@ -165,6 +165,9 @@ let n_plus n1 n2 =
   | _, Num _ -> Bin (Plus, n2, n1)
   | _, _ -> Bin (Plus, n1, n2)
 
+let n_inc (n:nexp) : nexp =
+  n_plus n (Num 1)
+
 let n_minus n1 n2 =
   match n1, n2 with
   | n, Num 0 -> n

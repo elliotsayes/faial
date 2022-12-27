@@ -1,3 +1,4 @@
+//
 __shared__ float y[1024];
 
 __global__

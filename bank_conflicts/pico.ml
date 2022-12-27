@@ -7,11 +7,13 @@ open Protocols
 
 let cost
   ?(skip_zero=true)
-  ?(use_maxima=true)
-  ?(use_absynth=true)
+  ?(use_maxima=false)
+  ?(use_absynth=false)
+  ?(use_cofloco=false)
   ?(explain=true)
   ?(num_banks=32)
   ?(absynth_exe="absynth")
+  ?(cofloco_exe="cofloco")
   (thread_count:Vec3.t)
   (k : Proto.prog Proto.kernel)
 :
@@ -30,6 +32,8 @@ let cost
       Symbolic.run_maxima s
     else if use_absynth then
       Symbolic.run_absynth ~exe:absynth_exe s
+    else if use_cofloco then
+      Symbolic.run_cofloco ~exe:cofloco_exe s
     else
       Symbolic.flatten s |> Serialize.PPrint.n_to_s
   in
@@ -86,9 +90,11 @@ let pico
   (thread_count:Vec3.t)
   (use_maxima:bool)
   (use_absynth:bool)
+  (use_cofloco:bool)
   (show_all:bool)
   (explain:bool)
   (absynth_exe:string)
+  (cofloco_exe:string)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
@@ -102,8 +108,10 @@ let pico
           ~explain
           ~use_maxima
           ~use_absynth
+          ~use_cofloco
           ~skip_zero:(not show_all)
           ~absynth_exe
+          ~cofloco_exe
           thread_count
           k
       in
@@ -148,6 +156,10 @@ let absynth_exe =
   let doc = "Sets the path to the absynth executable." in
   Arg.(value & opt string "absynth" & info ["absynth-exe"] ~doc)
 
+let cofloco_exe =
+  let doc = "Sets the path to the CoFloCo executable." in
+  Arg.(value & opt string "cofloco" & info ["cofloco-exe"] ~doc)
+
 let use_maxima =
   let doc = "Uses maxima to simplify the cost of each access." in
   Arg.(value & flag & info ["maxima"] ~doc)
@@ -155,6 +167,10 @@ let use_maxima =
 let use_absynth =
   let doc = "Uses absynth to simplify the cost of each access." in
   Arg.(value & flag & info ["absynth"] ~doc)
+
+let use_cofloco =
+  let doc = "Uses CoFloCo to simplify the cost of each access." in
+  Arg.(value & flag & info ["cofloco"] ~doc)
 
 let show_all =
   let doc = "By default we skip accesses that yield 0 bank-conflicts." in
@@ -170,9 +186,11 @@ let pico_t = Term.(
   $ thread_count
   $ use_maxima
   $ use_absynth
+  $ use_cofloco
   $ show_all
   $ explain
   $ absynth_exe
+  $ cofloco_exe
 )
 
 let info =
