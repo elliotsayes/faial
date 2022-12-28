@@ -220,7 +220,8 @@ let run_absynth ?(exe="absynth") (x:t) : string =
 module Fvs = struct
   type t = {var_to_idx : int Variable.Map.t; all_vars: Variable.t list}
 
-  let empty : t = {var_to_idx=Variable.Map.empty; all_vars=[]}
+  let empty : t =
+    {var_to_idx=Variable.Map.empty; all_vars=[]}
 
   let get (x:Variable.t) (fvs:t) : int =
     Variable.Map.find x fvs.var_to_idx
@@ -251,6 +252,13 @@ module Environ = struct
       |> List.map Variable.name
       |> List.map String.uppercase_ascii
       |> Array.of_list
+    in
+    let data =
+      if Array.length data = 0 then
+        (* CoFloCo does support empty environments. *)
+        Array.of_list ["X"]
+      else
+        data
     in
     {ctx; data}
 
@@ -300,21 +308,30 @@ let to_cofloco (s: t) : string =
       let n_to_s = Serialize.PPrint.n_to_s in
       let ub = n_to_s ub |> String.uppercase_ascii in
       let (idx', rest) = translate (idx + 2) s in
-      idx',
+      idx' + 1,
       [
         (* Initialize the loop *)
+        "% init loop";
         rule
           ~src:(self env)
           ~dst:[call (idx + 1) (Environ.put x (Num 0) env)] ();
+        "% next iter";
         (* Transition of next iteration *)
         rule ~src:(call (idx + 1) env) ~dst:[
           call (idx + 1) (Environ.put x (Exp.n_inc (Var x)) env); (* next iter *)
           call (idx + 2) env (* loop body *)
         ] ~cnd:[x_s ^ "<" ^ ub ] ();
-        (* Transition of end of loop: *)
-        rule ~src:(call (idx + 1) env) ~cnd:[x_s ^ " >= " ^ ub] ();
+        "% loop body";
       ] @
       rest
+      @ [
+        "% end of loop body";
+        rule ~src:(call idx' env) ();
+        (* Transition of end of loop: *)
+        "% end loop";
+        rule ~src:(call (idx + 1) env) ~cnd:[x_s ^ " >= " ^ ub]
+            ~dst:[call (idx' + 1) env] ();
+      ]
     | Add l ->
       List.fold_right (fun (s:t) ((idx:int), l1) ->
         let (idx, l2) = translate idx s in
@@ -333,6 +350,8 @@ let to_cofloco (s: t) : string =
   (l @ [rule ~src:(call idx env) ()])
   |> Common.join "\n"
 
+let r_id = Str.regexp {|nat(\([A-Za-z_0-9-]+\))|}
+
 let cleanup_cofloco (x:string) : string option =
   let (let*) = Option.bind in
   let* x =
@@ -340,15 +359,16 @@ let cleanup_cofloco (x:string) : string option =
     |> List.find_opt (String.starts_with ~prefix:"###")
   in
   let* (_, x) = Common.split ':' x in
-  let x = String.lowercase_ascii x in
+  let x = String.lowercase_ascii x |> Str.global_replace r_id "\\1" in
   Some (String.trim x)
 
 let run_cofloco ?(exe="cofloco") (x:t) : string =
   let expr = to_cofloco x in
   let data = run_prog ~out:expr ~exe ["-v"; "0"; "-i"; "/dev/stdin"] in
-  data
-  |> cleanup_cofloco
-  |> Ojson.unwrap_or data
+  match data |> cleanup_cofloco with
+  | Some x -> x
+  | None ->
+    data
 
 (* ---------------------------------------------------------- *)
 
