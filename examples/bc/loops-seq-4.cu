@@ -12,4 +12,7 @@ void saxpy(int n, float a, float *x)
       for (int k = 0; k < n; k++) {
           y[2 * threadIdx.x] = a*x[k];
       }
+     for (int k1 = 0; k1 < n; k1++) {
+          y[2 * threadIdx.x] = a*x[k1];
+      }
 }

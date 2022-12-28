@@ -151,6 +151,9 @@ let string_to_buffer (s:string) =
   Buffer.add_string b s;
   b
 
+let replace ~substring ~by : string -> string =
+  Str.global_replace (Str.regexp_string substring) by
+
 let buffer_prepend (b:Buffer.t) (s:string) : Buffer.t =
   let result = Buffer.create (Buffer.length b + String.length s) in
   Buffer.add_string result s;

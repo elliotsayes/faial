@@ -10,10 +10,12 @@ let cost
   ?(use_maxima=false)
   ?(use_absynth=false)
   ?(use_cofloco=false)
+  ?(use_koat=false)
   ?(explain=true)
   ?(num_banks=32)
   ?(absynth_exe="absynth")
   ?(cofloco_exe="cofloco")
+  ?(koat_exe="koat2")
   (thread_count:Vec3.t)
   (k : Proto.prog Proto.kernel)
 :
@@ -34,6 +36,8 @@ let cost
       Symbolic.run_absynth ~exe:absynth_exe s
     else if use_cofloco then
       Symbolic.run_cofloco ~exe:cofloco_exe s
+    else if use_koat then
+      Symbolic.run_koat ~exe:koat_exe s
     else
       Symbolic.flatten s |> Serialize.PPrint.n_to_s
   in
@@ -91,10 +95,12 @@ let pico
   (use_maxima:bool)
   (use_absynth:bool)
   (use_cofloco:bool)
+  (use_koat:bool)
   (show_all:bool)
   (explain:bool)
   (absynth_exe:string)
   (cofloco_exe:string)
+  (koat_exe:string)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
@@ -109,9 +115,11 @@ let pico
           ~use_maxima
           ~use_absynth
           ~use_cofloco
+          ~use_koat
           ~skip_zero:(not show_all)
           ~absynth_exe
           ~cofloco_exe
+          ~koat_exe
           thread_count
           k
       in
@@ -160,6 +168,10 @@ let cofloco_exe =
   let doc = "Sets the path to the CoFloCo executable." in
   Arg.(value & opt string "cofloco" & info ["cofloco-exe"] ~doc)
 
+let koat_exe =
+  let doc = "Sets the path to the KoAT2 executable." in
+  Arg.(value & opt string "koat2" & info ["koat-exe"] ~doc)
+
 let use_maxima =
   let doc = "Uses maxima to simplify the cost of each access." in
   Arg.(value & flag & info ["maxima"] ~doc)
@@ -171,6 +183,10 @@ let use_absynth =
 let use_cofloco =
   let doc = "Uses CoFloCo to simplify the cost of each access." in
   Arg.(value & flag & info ["cofloco"] ~doc)
+
+let use_koat =
+  let doc = "Uses KoAT2 to simplify the cost of each access." in
+  Arg.(value & flag & info ["koat"] ~doc)
 
 let show_all =
   let doc = "By default we skip accesses that yield 0 bank-conflicts." in
@@ -187,10 +203,12 @@ let pico_t = Term.(
   $ use_maxima
   $ use_absynth
   $ use_cofloco
+  $ use_koat
   $ show_all
   $ explain
   $ absynth_exe
   $ cofloco_exe
+  $ koat_exe
 )
 
 let info =
