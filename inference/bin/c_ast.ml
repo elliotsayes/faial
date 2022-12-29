@@ -6,7 +6,7 @@ let analyze (j:Yojson.Basic.t) : C_lang.c_program  * D_lang.d_program * (Imp.p_k
   match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = D_lang.rewrite_program k1 in
-      (match D_to_imp.parse_program k2 with
+      (match D_to_imp.Default.parse_program k2 with
       | Ok k3 -> (k1, k2, k3)
       | Error e ->
         C_lang.print_program k1;

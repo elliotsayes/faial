@@ -1,4 +1,5 @@
 open Exp
+open Stage0
 
 let rec norm (b:bexp) : bexp list =
   match b with
@@ -23,6 +24,12 @@ let bexp_to_bool b =
   match b with
   | Bool b -> Some b
   | _ -> None
+
+let rec gcd a b =
+  if b = 0 then
+    a
+  else
+    gcd b (a mod b)
 
 let rec n_opt (a : nexp) : nexp =
   match a with
@@ -76,7 +83,40 @@ let rec n_opt (a : nexp) : nexp =
     | LeftShift, a, Num n -> n_opt (n_mult a (Num (Predicates.pow 2 n)))
     | RightShift, a, Num n -> n_opt (n_div a (Num (Predicates.pow 2 n)))
     (* Compute *)
-    | _, Num n1, Num n2 -> Num ((eval_nbin b) n1 n2)
+      (*
+
+      e1   e2   n2*e1 + n1*e2
+      -- + -- = -------------
+      n1   n2    n1*n2
+
+       *)
+    | Mult, Bin (Div, Num n1, Num n2), Bin (Div, Num n3, Num n4) ->
+      n_opt (Bin (Div, Num (n1*n3), Num (n2*n4)))
+    | Plus, Bin (Div, e1, Num n1), Bin (Div, e2, Num n2) ->
+      let e1 = Bin (Mult, e1, Num n2) in
+      let e2 = Bin (Mult, e2, Num n1) in
+      let e1_e2 = n_opt (Bin (Plus, e1, e2)) in
+      n_opt (n_div e1_e2 (Num (n1*n2)))
+    (*
+        e1         e1 + e2*e3
+        --- + e3 = ---------
+        e2           e2
+      *)
+    | Plus, Bin (Div, e1, Num n2), Num n3
+    | Plus, Num n3, Bin (Div, e1, Num n2) ->
+      n_opt (Bin (Div, Bin (Plus, e1, Num (n2*n3)), Num n2))
+      (*
+              n2    n1 * n2
+        n1 * --- = --------
+              e        e
+      *)
+    | Mult, Bin (Div, Num n2, e), Num n1
+    | Mult, Num n1, Bin (Div, Num n2, e)
+      ->
+      n_opt (Bin (Div, Num (n1 * n2), e))
+    | Div, Num n1, Num n2 when Common.modulo n1 n2 = 0 -> Num (n1 / n2)
+    | Div, Num n1, Num n2 -> Bin (Div, Num (n1 / gcd n1 n2), Num (n2 / gcd n1 n2))
+    | o, Num n1, Num n2 when o <> Div -> Num ((eval_nbin b) n1 n2)
     (* Propagate *)
     | _, _, _ -> Bin (b, a1, a2)
 

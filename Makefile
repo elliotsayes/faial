@@ -5,7 +5,7 @@ GITLAB_CACHE = /tmp/gitlab-cache
 BUILD = _build/default
 BIN = $(BUILD)/bin
 TEST = _build/test
-all: c-ast pico faial-drf data-dep proto-to-cuda faial-bc-dyn
+all: c-ast faial-bc faial-drf proto-to-cuda data-dep faial-bc-dyn
 
 clean:
 	$(DUNE) clean
@@ -30,9 +30,9 @@ faial-bc-dyn:
 	$(DUNE) build bank_conflicts/dyn.exe
 	cp -f $(BUILD)/bank_conflicts/dyn.exe faial-bc-dyn
 
-pico:
+faial-bc:
 	$(DUNE) build bank_conflicts/pico.exe
-	cp -f $(BUILD)/bank_conflicts/pico.exe pico
+	cp -f $(BUILD)/bank_conflicts/pico.exe faial-bc
 
 proto-to-cuda:
 	$(DUNE) build proto_to_cuda/prototocuda.exe
@@ -57,4 +57,4 @@ gitlab-bin:
 gitlab: gitlab-test gitlab-bin
 
 
-.PHONY: all clean faial-bc-dyn faial-drf build-test test pico proto-to-cuda gen_kernels sys-test gitlab gitlab-bin gitlab-test c-ast data-dep
+.PHONY: all clean faial-bc faial-bc-dyn faial-drf proto-to-cuda gen_kernels build-test test sys-test gitlab gitlab-bin gitlab-test c-ast data-dep

@@ -341,7 +341,7 @@ module Witness = struct
 		let biggest_idx =
 			List.split kvs
 			|> fst
-			|> List.filter (fun k -> Common.contains ~needle:"$idx$" k)
+			|> List.filter (fun k -> Common.contains ~substring:"$idx$" k)
 			|> List.map (fun k ->
 					match Common.rsplit '$' k with
 					| Some (_, idx) -> int_of_string idx

@@ -1,5 +1,6 @@
 open Stage0
 open Protocols
+open Logger
 
 module StackTrace = Common.StackTrace
 module KernelAttr = C_lang.KernelAttr
@@ -103,6 +104,8 @@ and i_exp =
   | BExp of i_bexp
   | Unknown
 
+module Make (L: Logger) = struct
+
 let parse_bin (op:string) (l:i_exp) (r:i_exp) : i_exp =
   match op with
   (* bool -> bool -> bool *)
@@ -127,7 +130,7 @@ let parse_bin (op:string) (l:i_exp) (r:i_exp) : i_exp =
   | "|" -> NExp (Bin (BitOr, l, r))
   | "&" -> NExp (Bin (BitAnd, l, r))
   | _ ->
-    prerr_endline ("WARNING: parse_bin: rewriting to unknown binary operator: " ^ op);
+    L.warning ("parse_bin: rewriting to unknown binary operator: " ^ op);
     Unknown
 
 let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
@@ -152,15 +155,15 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
     (match C_lang.parse_type ty with
     | Ok ty ->
       let size = C_type.sizeof ty |> Ojson.unwrap_or 4 in
-      prerr_endline ("WARNING: sizeof(" ^ C_type.to_string ty ^ ") = " ^ string_of_int size);
+      L.warning ("sizeof(" ^ C_type.to_string ty ^ ") = " ^ string_of_int size);
       ret_n (Num size)
     | Error _ ->
-      prerr_endline ("WARNING: could not parse type: sizeof(" ^ C_lang.type_to_str ty ^ ") = ?");
+      L.warning ("could not parse type: sizeof(" ^ C_lang.type_to_str ty ^ ") = ?");
       Ok Unknown)
   | IntegerLiteral n
   | CharacterLiteral n -> ret_n (Num n)
   | FloatingLiteral n -> 
-    prerr_endline ("WARNING: parse_nexp: converting float '" ^ Float.to_string n ^ "' to integer");
+    L.warning ("parse_nexp: converting float '" ^ Float.to_string n ^ "' to integer");
     ret_n (Num (Float.to_int n))
   | ConditionalOperator o ->
     let* b = parse_e "cond" o.cond in
@@ -203,7 +206,7 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
   | CallExpr _ 
   | UnaryOperator _
   | CXXOperatorCallExpr _ ->
-    prerr_endline ("WARNING: parse_exp: rewriting to unknown: " ^ D_lang.Expr.to_string e);
+    L.warning ("WARNING: parse_exp: rewriting to unknown: " ^ D_lang.Expr.to_string e);
     Ok Unknown
 
   | _ ->
@@ -379,7 +382,7 @@ let parse_decl (d:D_lang.Decl.t) : (Variable.t * Imp.locality * nexp option) lis
     in
     Ok ((d.ty_var.name, Imp.Local, n) :: Unknown.as_decls Imp.Local vars )
   ) else (
-    prerr_endline ("WARNING: parse_decl: skipping non-int local variable '" ^ Variable.name d.ty_var.name ^ "' type: " ^ Rjson.pp_js d.ty_var.ty);
+    L.warning ("parse_decl: skipping non-int local variable '" ^ Variable.name d.ty_var.name ^ "' type: " ^ Rjson.pp_js d.ty_var.ty);
     Ok []
   )
 
@@ -831,3 +834,7 @@ let parse_program (p:D_lang.d_program) : Imp.p_kernel list d_result =
     | [] -> Ok []
   in
   parse_p [] [] [] p
+end
+
+module Default = Make(Logger.Default)
+module Silent = Make(Logger.Silent)

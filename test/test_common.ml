@@ -21,17 +21,17 @@ let tests = "tests" >::: [
     assert_equal [1; 2; 3; 4] (append_tr [] [1;2;3;4])
   );
   "contains" >:: (fun _ ->
-    assert (contains ~needle:"abc" "abc");
-    assert (contains ~needle:"" "abc");
-    assert (contains ~needle:"a" "abc");
-    assert (contains ~needle:"b" "abc");
-    assert (contains ~needle:"c" "abc");
-    assert (contains ~needle:"ab" "abc");
-    assert (contains ~needle:"bc" "abc");
-    assert (contains ~needle:"abc" "aaabc");
-    assert (not (contains ~needle:"abc" "aaab"));
-    assert (not (contains ~needle:"abc" "aabab"));
-    assert (contains ~needle:"abc" "aababc");
+    assert (contains ~substring:"abc" "abc");
+    assert (contains ~substring:"" "abc");
+    assert (contains ~substring:"a" "abc");
+    assert (contains ~substring:"b" "abc");
+    assert (contains ~substring:"c" "abc");
+    assert (contains ~substring:"ab" "abc");
+    assert (contains ~substring:"bc" "abc");
+    assert (contains ~substring:"abc" "aaabc");
+    assert (not (contains ~substring:"abc" "aaab"));
+    assert (not (contains ~substring:"abc" "aabab"));
+    assert (contains ~substring:"abc" "aababc");
   );
   "range" >:: (fun _ ->
     assert_equal [0] (range 0);
