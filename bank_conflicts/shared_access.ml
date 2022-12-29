@@ -39,9 +39,9 @@ let rec to_string : t -> string =
   | Loop (r, acc) ->
       "for (" ^ Serialize.PPrint.r_to_s r ^ ") " ^ to_string acc
   | Cond (b, acc) ->
-      "if ( " ^ Serialize.PPrint.b_to_s b ^ " ) " ^ to_string acc
+      "if (" ^ Serialize.PPrint.b_to_s b ^ ") " ^ to_string acc
   | Index a ->
-      "[" ^ Serialize.PPrint.n_to_s a.index ^ "]"
+      "acc(" ^ Serialize.PPrint.n_to_s a.index ^ ")"
 
 let rec shared_array : t -> Variable.t =
   function
@@ -138,20 +138,22 @@ let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * E
         Variable.tidz, Num 0
       ])
 
-let uniform (thread_count:Vec3.t) (r:Exp.range) : Exp.range =
+let uniform (thread_count:Vec3.t) (r:Exp.range) : Exp.range option =
   let open Exp in
   let fvs = Freenames.free_names_range r Variable.Set.empty in
   if Variable.contains_tids fvs then
-    let r_subst (r:range) : (Variable.t * Exp.nexp) list -> range =
-      List.fold_left (fun r (k,v) -> Subst.ReplacePair.r_subst (k, v) r) r
-    in
-    let r' =
-      maximize thread_count (n_minus r.range_upper_bound r.range_lower_bound)
-      |> r_subst r
-    in
-    print_endline ("Making range uniform: for (" ^ Serialize.PPrint.r_to_s r ^ ") 🡆 for (" ^ Serialize.PPrint.r_to_s r' ^ ")");
-    r'
-  else r
+    Some (
+      let r_subst (r:range) : (Variable.t * Exp.nexp) list -> range =
+        List.fold_left (fun r (k,v) -> Subst.ReplacePair.r_subst (k, v) r) r
+      in
+      let r' =
+        maximize thread_count (n_minus r.range_upper_bound r.range_lower_bound)
+        |> r_subst r
+      in
+      print_endline ("Making range uniform: for (" ^ Serialize.PPrint.r_to_s r ^ ") 🡆 for (" ^ Serialize.PPrint.r_to_s r' ^ ")");
+      r'
+    )
+  else None
 
 let byte_count_multiplier (byte_count:int) (l:Exp.nexp list) : Exp.nexp list =
   if byte_count/word_size = 1 then
@@ -222,7 +224,18 @@ let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
       |> Seq.map (fun (i:t) : t -> Cond (b, i))
     | Proto.Loop (r, p) ->
       on_p p
-      |> Seq.map (fun i -> (Loop (uniform thread_count r, i)))
+      |> Seq.map (fun i ->
+        match uniform thread_count r with
+        | Some r' ->
+          let cnd =
+            b_and
+              (n_ge (Var r.range_var) r.range_lower_bound)
+              (n_lt (Var r.range_var) r.range_upper_bound)
+          in
+          Loop (r', Cond(cnd, i))
+        | None ->
+          Loop (r, i)
+      )
 
   and on_p (l: Proto.prog) : t Seq.t =
     List.to_seq l |> Seq.flat_map on_i
