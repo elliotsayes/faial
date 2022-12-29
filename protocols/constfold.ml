@@ -80,8 +80,8 @@ let rec n_opt (a : nexp) : nexp =
     | Mult, Num 1, a
     | Mult, a, Num 1
     -> a
-    | LeftShift, a, Num n -> n_opt (n_mult a (Num (Predicates.pow 2 n)))
-    | RightShift, a, Num n -> n_opt (n_div a (Num (Predicates.pow 2 n)))
+    | LeftShift, a, Num n -> n_opt (n_mult a (Num (Common.pow ~base:2 n)))
+    | RightShift, a, Num n -> n_opt (n_div a (Num (Common.pow ~base:2 n)))
     (* Compute *)
       (*
 

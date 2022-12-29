@@ -471,7 +471,7 @@ let infer_range (r:D_lang.Stmt.d_for) : Exp.range option d_result =
       Some (StepName (Printf.sprintf "pow%d" a))
     | {op=LShift; arg=Num a}
     | {op=RShift; arg=Num a} ->
-      Some (StepName (Printf.sprintf "pow%d" (Predicates.pow 2 a)))
+      Some (StepName (Printf.sprintf "pow%d" (Common.pow ~base:2 a)))
     | _ -> None
     in
     Some {

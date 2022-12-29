@@ -33,19 +33,6 @@ let step_to_codegen (s:step_handler) : nexp codegen =
     codegen_body = s.step_handler_body (Var (Variable.from_name "x"));
   }
 
-
-let is_even n =
-  n mod 2 = 0
-
-let pow base exponent =
-  if exponent < 0 then invalid_arg "exponent can not be negative" else
-  let rec aux accumulator base = function
-    | 0 -> accumulator
-    | 1 -> base * accumulator
-    | e when is_even e -> aux accumulator (base * base) (e / 2)
-    | e -> aux (base * accumulator) (base * base) ((e - 1) / 2) in
-  aux 1 base exponent
-
 let eq_nums x l : bexp =
   List.map (fun i -> n_eq x (Num i)) l
   |> b_or_ex
@@ -54,7 +41,7 @@ let gen_pow (base:int) (n:nexp) : bexp =
   let ub = 0xFFFFFFFF in
   (* Generate a list of powers *)
   let rec pows (n:int) : int list =
-    let x = pow base n in
+    let x = Common.pow ~base n in
     if x > ub then []
     else if x == ub then [x]
     else x :: pows (n + 1)
@@ -64,12 +51,12 @@ let gen_pow (base:int) (n:nexp) : bexp =
 let highest_power (base:int) (n:int) : int =
   let exponent : float = Float.log(Float.of_int n)
     /. Float.log(Float.of_int base) in
-  pow base (Float.to_int(exponent))
+  Common.pow ~base (Float.to_int(exponent))
 
 let all_predicates : t list =
   let mk_uint size : t =
     let n : string = "uint" ^(string_of_int size) in
-    let b (x:nexp) : bexp = n_le x (Num ((pow 2 size) - 1)) in
+    let b (x:nexp) : bexp = n_le x (Num ((Common.pow ~base:2 size) - 1)) in
     {
         pred_name = n;
         pred_body = b;
@@ -86,7 +73,7 @@ let all_predicates : t list =
     let rec gen (n:int) (x:nexp) : nexp =
       if n <= 0 then (Num 1)
       else
-        let p = Num (pow base n) in
+        let p = Num (pow ~base n) in
         NIf (n_gt x p, p, gen (n - 1) x)
     in
     let trunc_fun (n:nexp) : nexp =

@@ -546,14 +546,18 @@ let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) :
         range_step = StepName "pow2";
         _
       } ->
-      (match Predicates.r_eval_opt r with
-      | Some l ->
-        let l = List.map (fun i ->
-          let p = Shared_access.subst (x, Num i) p in
-          from_slice num_banks thread_count locs p
-        ) l in
+        let r_def =
+          Common.range 64 |> List.map (Common.pow ~base:2)
+        in
+        let l =
+          Predicates.r_eval_opt r
+          |> Ojson.unwrap_or r_def
+          |> List.map (fun i ->
+            let p = Shared_access.subst (x, Num i) p in
+            from_slice num_banks thread_count locs p
+          )
+        in
         Add l
-      | None -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r))
     | {
         range_var=x;
         range_lower_bound=Num 0;
