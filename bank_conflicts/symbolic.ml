@@ -179,8 +179,11 @@ let run_prog ~out ~exe args =
   in
   txt
 
-let run_maxima ?(exe="maxima") (x:t) : string =
+let run_maxima ?(verbose=false) ?(exe="maxima") (x:t) : string =
   let expr = to_maxima x ^ ",simpsum;" in
+  (if verbose
+    then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
+    else ());
   run_prog ~out:expr ~exe ["--very-quiet"; "--disable-readline"]
   |> cleanup_maxima_output
 
@@ -231,8 +234,11 @@ let cleanup_absynth (x:string) : string option =
   let* (_, x) = Common.split ':' x in
   Some (String.trim x)
 
-let run_absynth ?(exe="absynth") (x:t) : string =
+let run_absynth ?(verbose=false) ?(exe="absynth") (x:t) : string =
   let out = to_absynth x in
+  (if verbose
+    then prerr_endline ("Absynth output:\n" ^ out ^ "\n")
+    else ());
   let data = with_tmp ~prefix:"absynth_" ~suffix:".imp" (fun filename ->
       write_string ~filename ~data:out;
       run_prog ~out ~exe [filename]
@@ -431,9 +437,12 @@ let cleanup_cofloco (env:Environ.t) (x:string) : string option =
   let x = Environ.decode x env in
   Some (String.trim x)
 
-let run_cofloco ?(exe="cofloco") (s:t) : string =
+let run_cofloco ?(verbose=false) ?(exe="cofloco") (s:t) : string =
   let env = fvs s Fvs.empty |> Environ.from_fvs in
   let expr = to_cofloco env s in
+  (if verbose
+    then prerr_endline ("CoFloCo output:\n" ^ expr ^ "\n")
+    else ());
   let data = run_prog ~out:expr ~exe ["-v"; "0"; "-i"; "/dev/stdin"] in
   match data |> cleanup_cofloco env with
   | Some x -> x
@@ -524,9 +533,12 @@ let cleanup_koat (env:Environ.t) (x:string) : string option =
   let x = Environ.decode (String.trim x) env |> Str.global_replace r_id "\\1" in
   Some x
 
-let run_koat ?(exe="koat2") (s:t) : string =
+let run_koat ?(exe="koat2") ?(verbose=false) (s:t) : string =
   let env = fvs s Fvs.empty |> Environ.from_fvs in
   let expr = to_koat env s in
+  (if verbose
+    then prerr_endline ("KoAT output:\n" ^ expr ^ "\n")
+    else ());
   let data = run_prog ~out:expr ~exe ["analyse"; "-i"; "/dev/stdin"] in
   match data |> cleanup_koat env with
   | Some x -> x
