@@ -92,7 +92,7 @@ let rec flatten : t -> Exp.nexp =
   | Const k -> Num k
   | Sum (x, ub, s) ->
     Poly.from_nexp x (flatten s)
-    |> Poly.to_seq
+    |> Poly.N.to_seq
     |> Seq.map (fun (coefficient, degree) ->
       n_mult coefficient (sum degree ub)
     )
@@ -100,6 +100,17 @@ let rec flatten : t -> Exp.nexp =
   | Add l ->
     List.map flatten l
     |> List.fold_left n_plus (Num 0)
+
+let simplify (s : t) : string =
+  let e = flatten s in
+  let fvs = Freenames.free_names_nexp e Variable.Set.empty in
+
+  if Variable.Set.is_empty fvs then
+    Constfold.n_opt e |> Serialize.PPrint.n_to_s
+  else
+    Poly.from_nexp (Variable.Set.choose fvs) e
+    |> Poly.N.map1 Constfold.n_opt
+    |> Poly.N.to_string
 
 (* --------------------------------- Absynth ---------------------- *)
 
@@ -394,7 +405,7 @@ let cleanup_cofloco (env:Environ.t) (x:string) : string option =
     |> List.find_opt (String.starts_with ~prefix:"###")
   in
   let* (_, x) = Common.split ':' x in
-  let x = Environ.decode x env |> Str.global_replace r_id "\\1" in
+  let x = Environ.decode x env in
   Some (String.trim x)
 
 let run_cofloco ?(exe="cofloco") (s:t) : string =

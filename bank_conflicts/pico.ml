@@ -39,7 +39,7 @@ let cost
     else if use_koat then
       Symbolic.run_koat ~exe:koat_exe s
     else
-      Symbolic.flatten s |> Serialize.PPrint.n_to_s
+      Symbolic.simplify s
   in
   let handle_slice =
     if explain then

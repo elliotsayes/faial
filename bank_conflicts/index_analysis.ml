@@ -21,12 +21,12 @@ let remove_offset (fvs: Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
       print_endline ("Removing offset variable '" ^ Variable.name x ^ "' from: " ^ Serialize.PPrint.n_to_s n);
       Poly.from_nexp x n
       (* We only want to keep polynomials that mention tid *)
-      |> Poly.filter (fun coef _ ->
+      |> Poly.N.filter (fun coef _ ->
         Freenames.free_names_nexp coef Variable.Set.empty
         |> Variable.contains_tids
       )
       (* Recurse to remove any other constant factor mentioning fvs *)
-      |> Poly.map (fun n _ ->
+      |> Poly.N.map1 (fun n ->
         rm_offset n fvs
       )
       (* Now convert back to a numeric expression *)

@@ -24,6 +24,12 @@ let bexp_to_bool b =
   | Bool b -> Some b
   | _ -> None
 
+let rec gcd a b =
+  if b = 0 then
+    a
+  else
+    gcd b (a mod b)
+
 let rec n_opt (a : nexp) : nexp =
   match a with
   | Var _ 
@@ -76,7 +82,13 @@ let rec n_opt (a : nexp) : nexp =
     | LeftShift, a, Num n -> n_opt (n_mult a (Num (Predicates.pow 2 n)))
     | RightShift, a, Num n -> n_opt (n_div a (Num (Predicates.pow 2 n)))
     (* Compute *)
-    | _, Num n1, Num n2 -> Num ((eval_nbin b) n1 n2)
+    | Plus, Bin (Div, Num n2, e), Num n1 -> n_opt (n_div (n_plus (Num (n1 * n2)) e) (Num n2))
+    | Plus, Num n1, Bin (Div, Num n2, e) -> n_opt (n_div (n_plus (Num (n1 * n2)) e) (Num n2))
+    | Mult, Bin (Div, Num n2, e), Num n1
+    | Mult, Num n1, Bin (Div, Num n2, e) -> n_opt (n_div (Num (n1 * n2)) e)
+    | Div, Num n1, Num n2 when n1 mod n2 = 0 -> Num (n1 / n2)
+    | Div, Num n1, Num n2 -> Bin (Div, Num (n1 / gcd n1 n2), Num (n2 / gcd n1 n2))
+    | o, Num n1, Num n2 when o <> Div -> Num ((eval_nbin b) n1 n2)
     (* Propagate *)
     | _, _, _ -> Bin (b, a1, a2)
 
