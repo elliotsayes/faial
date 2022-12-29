@@ -546,12 +546,18 @@ let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) :
         range_step = StepName "pow2";
         _
       } ->
-        let r_def =
-          Common.range 64 |> List.map (Common.pow ~base:2)
-        in
         let l =
           Predicates.r_eval_opt r
-          |> Ojson.unwrap_or r_def
+          |> (function
+            | Some l -> l
+            | None ->
+              let x = Variable.name r.range_var in
+              prerr_endline (
+                "Warning: approximated loop (" ^
+                Serialize.PPrint.r_to_s r ^
+                ") 🡆 (" ^ x ^ " in 1 .. MAX_INT; " ^ x ^ " * 2)");
+              Common.range 64 |> List.map (Common.pow ~base:2)
+            )
           |> List.map (fun i ->
             let p = Shared_access.subst (x, Num i) p in
             from_slice num_banks thread_count locs p

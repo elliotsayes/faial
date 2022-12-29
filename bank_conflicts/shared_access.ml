@@ -149,7 +149,7 @@ let uniform (thread_count:Vec3.t) (r:Exp.range) : Exp.range =
       maximize thread_count (n_minus r.range_upper_bound r.range_lower_bound)
       |> r_subst r
     in
-    print_endline ("Making range uniform: for (" ^ Serialize.PPrint.r_to_s r ^ ") ⇨ for (" ^ Serialize.PPrint.r_to_s r' ^ ")");
+    print_endline ("Making range uniform: for (" ^ Serialize.PPrint.r_to_s r ^ ") 🡆 for (" ^ Serialize.PPrint.r_to_s r' ^ ")");
     r'
   else r
 
