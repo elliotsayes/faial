@@ -10,19 +10,68 @@ module type Num = sig
   val to_string: t -> string
 end
 
+type 'a poly_ht = (int, 'a) Hashtbl.t
+
+type 'a t =
+  | Exp0 of 'a
+  | Exp1 of {constant: 'a; coefficient: 'a}
+  | Many of 'a poly_ht
+
+let max_exponent : 'a t -> int =
+  function
+  | Exp0 _ -> 0
+  | Exp1 _ -> 1
+  | Many ht -> Hashtbl.to_seq_keys ht |> Seq.fold_left max 0
+
+let update_ht (ht:('a, 'b) Hashtbl.t) (k:'a)  (f:'b option -> 'b)  : unit =
+  Hashtbl.replace ht k (f (Hashtbl.find_opt ht k))
+
+let map (f:'a -> int -> 'b) : 'a t -> 'b t =
+  function
+  | Exp0 n -> Exp0 (f n 0)
+  | Exp1 {constant=n0; coefficient=n1} ->
+    Exp1 {constant=f n0 0; coefficient=f n1 1}
+  | Many ht ->
+    let ht' = Hashtbl.copy ht in
+    Hashtbl.filter_map_inplace (fun expi coef ->
+      Some (f coef expi)
+    ) ht';
+    Many ht'
+
+let map1 (f:'a -> 'b) : 'a t -> 'b t =
+  map (fun e _ -> f e)
+
+let exponent_to_string (n:int) : string =
+  String.fold_right (fun c a ->
+    let c = match c with
+    | '0' -> "⁰"
+    | '1' -> "¹"
+    | '2' -> "²"
+    | '3' -> "³"
+    | '4' -> "⁴"
+    | '5' -> "⁵"
+    | '6' -> "⁶"
+    | '7' -> "⁷"
+    | '8' -> "⁸"
+    | '9' -> "⁹"
+    | c -> String.make 1 c
+    in
+    c ^ a
+  ) (string_of_int n) ""
+
+
 module Make(N:Num) = struct
-  type poly_ht = (int, N.t) Hashtbl.t
 
-  type t =
-    | Exp0 of N.t
-    | Exp1 of {constant: N.t; coefficient: N.t}
-    | Many of poly_ht
+  type t' = N.t t
+  type t = t'
 
-  let max_exponent : t -> int =
-    function
-    | Exp0 _ -> 0
-    | Exp1 _ -> 1
-    | Many ht -> Hashtbl.to_seq_keys ht |> Seq.fold_left max 0
+  let poly_update_ht (ht:N.t poly_ht) (k:int) (f:'b -> 'a) : unit =
+    update_ht ht k (function | Some v -> f v | None -> f N.zero)
+
+  let poly_add_ht (src:N.t poly_ht) (dst:N.t poly_ht) : unit =
+    Hashtbl.iter (fun i n ->
+      poly_update_ht dst i (N.plus n)
+    ) src
 
   let make (e:N.t) (n:int) : t =
     if n = 0 then
@@ -34,24 +83,6 @@ module Make(N:Num) = struct
       Hashtbl.add ht n e;
       Many ht
 
-  let update_ht (ht:('a, 'b) Hashtbl.t) (k:'a)  (f:'b option -> 'b)  : unit =
-    Hashtbl.replace ht k (f (Hashtbl.find_opt ht k))
-
-  let poly_update_ht (ht:poly_ht) (k:int) (f:'a -> 'a) : unit =
-    update_ht ht k (function | Some v -> f v | None -> f N.zero)
-
-  let poly_add_ht (src:poly_ht) (dst:poly_ht) : unit =
-    Hashtbl.iter (fun i n ->
-      poly_update_ht dst i (N.plus n)
-    ) src
-
-  (* Given an exponent, return the coefficient *)
-  let get (exponent:int) : t -> 'a =
-    function
-    | Exp0 n
-    | Exp1 {constant=n; _} -> n
-    | Many ht ->
-      Option.value (Hashtbl.find_opt ht exponent) ~default:N.zero
 
   let add (e1: t) (e2: t) : t =
     match e1, e2 with
@@ -76,28 +107,47 @@ module Make(N:Num) = struct
       let ht2 = Hashtbl.copy ht2 in
       poly_add_ht ht1 ht2;
       Many ht2
+(*
+  let poly_update_ht (ht:'a poly_ht) (k:int) (f:'b -> 'a) : unit =
+    update_ht ht k (function | Some v -> f v | None -> f N.zero)
 
+  let poly_add_ht (src:poly_ht) (dst:poly_ht) : unit =
+    Hashtbl.iter (fun i n ->
+      poly_update_ht dst i (N.plus n)
+    ) src
+*)
 
-  let map (f:N.t -> int -> N.t) : t -> t =
+  let to_seq : t -> (N.t*int) Seq.t =
     function
-    | Exp0 n -> Exp0 (f n 0)
-    | Exp1 {constant=n0; coefficient=n1} ->
-      Exp1 {constant=f n0 0; coefficient=f n1 1}
+    | Exp0 x -> Seq.return (x, 0)
+    | Exp1 {constant=n1; coefficient=n2} -> [n1, 0; n2, 1] |> List.to_seq
     | Many ht ->
-      let ht' = Hashtbl.copy ht in
-      Hashtbl.filter_map_inplace (fun expi coef ->
-        Some (f coef expi)
-      ) ht';
-      Many ht'
+      Common.hashtbl_elements ht
+      |> List.to_seq
+      |> Seq.map (fun (x, y) -> (y, x))
 
-  let map1 (f:N.t -> N.t) : t -> t =
-    map (fun e _ -> f e)
+  (* Given an exponent, return the coefficient *)
+  let get (exponent:int) : t -> 'a =
+    function
+    | Exp0 n
+    | Exp1 {constant=n; _} -> n
+    | Many ht ->
+      Option.value (Hashtbl.find_opt ht exponent) ~default:N.zero
+
+  let to_seq_ord : t -> (N.t*int) Seq.t =
+    function
+    | Exp0 x -> Seq.return (x, 0)
+    | Exp1 {constant=n1; coefficient=n2} -> [n1, 0; n2, 1] |> List.to_seq
+    | Many ht ->
+      Common.range (Hashtbl.length ht)
+      |> List.to_seq
+      |> Seq.map (fun i -> (get i (Many ht), i))
 
   let uminus : t -> t =
     map (fun e _ -> N.uminus e)
 
   let rec mult (e1:t) (e2:t) : t =
-    let mult_ht (src:poly_ht) ((i1,n1):int*N.t) : poly_ht =
+    let mult_ht (src:N.t poly_ht) ((i1,n1):int*N.t) : N.t poly_ht =
       (* z * x * (a + b*x + c*x^2) = a * z * x + z * b * x ^ 2 ... *)
       let dst = Hashtbl.create (Hashtbl.length src) in
       Hashtbl.iter (fun i2 n2 ->
@@ -105,7 +155,7 @@ module Make(N:Num) = struct
       ) src;
       dst
     in
-    let mk_poly_ht (n1:N.t) (n2:N.t) : poly_ht =
+    let mk_poly_ht (n1:N.t) (n2:N.t) : N.t poly_ht =
       let ht = Hashtbl.create 2 in
       Hashtbl.add ht 0 n1;
       Hashtbl.add ht 1 n2;
@@ -171,42 +221,6 @@ module Make(N:Num) = struct
     else
       pow exponent
 
-  let to_seq : t -> (N.t*int) Seq.t =
-    function
-    | Exp0 x -> Seq.return (x, 0)
-    | Exp1 {constant=n1; coefficient=n2} -> [n1, 0; n2, 1] |> List.to_seq
-    | Many ht ->
-      Common.hashtbl_elements ht
-      |> List.to_seq
-      |> Seq.map (fun (x, y) -> (y, x))
-
-  let to_seq_ord : t -> (N.t*int) Seq.t =
-    function
-    | Exp0 x -> Seq.return (x, 0)
-    | Exp1 {constant=n1; coefficient=n2} -> [n1, 0; n2, 1] |> List.to_seq
-    | Many ht ->
-      Common.range (Hashtbl.length ht)
-      |> List.to_seq
-      |> Seq.map (fun i -> (get i (Many ht), i))
-
-  let exponent_to_string (n:int) : string =
-    String.fold_right (fun c a ->
-      let c = match c with
-      | '0' -> "⁰"
-      | '1' -> "¹"
-      | '2' -> "²"
-      | '3' -> "³"
-      | '4' -> "⁴"
-      | '5' -> "⁵"
-      | '6' -> "⁶"
-      | '7' -> "⁷"
-      | '8' -> "⁸"
-      | '9' -> "⁹"
-      | c -> String.make 1 c
-      in
-      c ^ a
-    ) (string_of_int n) ""
-
   let to_string ?(skip_zero=true) ?(sort=true) ?(var="x") (p: t) : string =
     let result = p
     |> (if sort then to_seq_ord else to_seq)
@@ -254,7 +268,7 @@ let rec from_nexp (x:Variable.t) (n:Exp.nexp) : N.t =
   | Bin (Mult, e1, e2) ->
     N.mult (from_nexp x e1) (from_nexp x e2)
   | Bin (Div, e1, e2) ->
-    N.mult (from_nexp x e1) (from_nexp x e2 |> N.map1
+    N.mult (from_nexp x e1) (from_nexp x e2 |> map1
       (fun x -> Bin (Div, (Num 1), x))
     )
   | Var _

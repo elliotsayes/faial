@@ -26,7 +26,7 @@ let remove_offset (fvs: Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
         |> Variable.contains_tids
       )
       (* Recurse to remove any other constant factor mentioning fvs *)
-      |> Poly.N.map1 (fun n ->
+      |> Poly.map1 (fun n ->
         rm_offset n fvs
       )
       (* Now convert back to a numeric expression *)

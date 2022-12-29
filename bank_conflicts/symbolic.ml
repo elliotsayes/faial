@@ -101,16 +101,39 @@ let rec flatten : t -> Exp.nexp =
     List.map flatten l
     |> List.fold_left n_plus (Num 0)
 
+
 let simplify (s : t) : string =
   let e = flatten s in
-  let fvs = Freenames.free_names_nexp e Variable.Set.empty in
-
-  if Variable.Set.is_empty fvs then
-    Constfold.n_opt e |> Serialize.PPrint.n_to_s
-  else
-    Poly.from_nexp (Variable.Set.choose fvs) e
-    |> Poly.N.map1 Constfold.n_opt
-    |> Poly.N.to_string
+  let rec simpl e : string =
+    let fvs = Freenames.free_names_nexp e Variable.Set.empty in
+    if Variable.Set.is_empty fvs then
+      Constfold.n_opt e |> Serialize.PPrint.n_to_s
+    else
+      let x = Variable.Set.choose fvs in
+      let result = Poly.from_nexp x e
+      |> Poly.N.to_seq_ord
+      |> Seq.filter_map (fun (coef, pow) ->
+          let coef = simpl coef in
+          if coef = "0" then None
+          else Some (
+            let x = Variable.name x in
+            match pow with
+            | 0 -> coef
+            | 1 -> coef ^ "·" ^ x
+            | _ ->
+              let pow = x ^ Poly.exponent_to_string pow in
+              coef ^ "·" ^ pow
+          )
+        )
+      |> List.of_seq
+      |> Common.join " + "
+      in
+      if result = "" then
+        "0"
+      else
+        "(" ^ result ^ ")"
+  in
+  simpl e
 
 (* --------------------------------- Absynth ---------------------- *)
 
