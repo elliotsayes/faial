@@ -401,7 +401,7 @@ let main_t = Term.(
 
 let info =
   let doc = "Print the C-AST" in
-  Cmd.info "next-gen" ~version:"%%VERSION%%" ~doc
+  Cmd.info "faial-drf" ~version:"%%VERSION%%" ~doc
 
 let () =
   Cmd.v info main_t
