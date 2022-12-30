@@ -20,8 +20,10 @@ let remove_offset (fvs: Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
     | x :: fvs ->
       print_endline ("Removing offset variable '" ^ Variable.name x ^ "' from: " ^ Serialize.PPrint.n_to_s n);
       Poly.from_nexp x n
+      (* If we cannot infer a polynomial expression, it's fine, because execution will fail *)
+      |> Stage0.Ojson.unwrap_or (Poly.make n 0)
       (* We only want to keep polynomials that mention tid *)
-      |> Poly.N.filter (fun coef _ ->
+      |> Poly.filter (fun coef _ ->
         Freenames.free_names_nexp coef Variable.Set.empty
         |> Variable.contains_tids
       )

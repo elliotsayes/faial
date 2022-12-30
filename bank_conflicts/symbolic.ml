@@ -92,7 +92,8 @@ let rec flatten : t -> Exp.nexp =
   | Const k -> Num k
   | Sum (x, ub, s) ->
     Poly.from_nexp x (flatten s)
-    |> Poly.N.to_seq
+    |> Option.get (* XXX: if we cannot get a polynomial form, we abort *)
+    |> Poly.to_seq
     |> Seq.map (fun (coefficient, degree) ->
       n_mult coefficient (sum degree ub)
     )
@@ -110,23 +111,30 @@ let simplify (s : t) : string =
       Constfold.n_opt e |> Serialize.PPrint.n_to_s
     else
       let x = Variable.Set.choose fvs in
-      let result = Poly.from_nexp x e
-      |> Poly.N.to_seq_ord
-      |> Seq.filter_map (fun (coef, pow) ->
-          let coef = simpl coef in
-          if coef = "0" then None
-          else Some (
-            let x = Variable.name x in
-            match pow with
-            | 0 -> coef
-            | 1 -> coef ^ "·" ^ x
-            | _ ->
-              let pow = x ^ Poly.exponent_to_string pow in
-              coef ^ "·" ^ pow
-          )
-        )
-      |> List.of_seq
-      |> Common.join " + "
+      let result =
+        match Poly.from_nexp x e with
+        | Some p ->
+          p
+          |> Poly.to_seq_ord
+          |> Seq.filter_map (fun (coef, pow) ->
+              let coef = simpl coef in
+              if coef = "0" then None
+              else Some (
+                let x = Variable.name x in
+                match pow with
+                | 0 -> coef
+                | 1 -> coef ^ "·" ^ x
+                | _ ->
+                  let pow = x ^ Poly.exponent_to_string pow in
+                  coef ^ "·" ^ pow
+              )
+            )
+          |> List.of_seq
+          |> Common.join " + "
+        | None ->
+          prerr_endline ("Warning: Could not rewrite the expression as a polynmial in terms of " ^ Variable.name x ^ ": " ^ Serialize.PPrint.n_to_s e);
+          (* We can't make a polynomial from this expression. *)
+          Constfold.n_opt e |> Serialize.PPrint.n_to_s
       in
       if result = "" then
         "0"
