@@ -476,7 +476,7 @@ let to_koat (env:Environ.t) (s: t) : string =
     let self env : string = call idx env in
     function
     | Sum (x, ub, s) ->
-      let (idx', rest) = translate (idx + 3) s in
+      let (idx', rest) = translate (idx + 2) s in
       idx' + 1,
       [
         (* Initialize the loop *)
@@ -487,10 +487,6 @@ let to_koat (env:Environ.t) (s: t) : string =
         rule ~src:(call (idx + 1) env) ~dst:[
           call (idx + 2) (Environ.put x (Exp.n_inc (Var x)) env); (* next iter *)
         ] ~cnd:[n_lt (Var x) ub] ();
-        (* Transition of next iteration *)
-        rule ~src:(call (idx + 2) env) ~dst:[
-          call (idx + 3) env; (* next iter *)
-        ] ();
       ] @
       rest
       @ [
