@@ -18,7 +18,9 @@ let remove_offset (fvs: Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
   let rec rm_offset (n: Exp.nexp) : Variable.t list -> Exp.nexp =
     function
     | x :: fvs ->
-      print_endline ("Removing offset variable '" ^ Variable.name x ^ "' from: " ^ Serialize.PPrint.n_to_s n);
+      print_endline ("Removing offset variable '" ^
+        Variable.name x ^ "' from: " ^ Serialize.PPrint.n_to_s n
+      );
       Poly.from_nexp x n
       (* If we cannot infer a polynomial expression, it's fine, because execution will fail *)
       |> Stage0.Ojson.unwrap_or (Poly.make n 0)
