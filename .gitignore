@@ -1,7 +1,7 @@
 /faial-bin
 /faial
 /pico
-/proto-to-cuda
+/faial-gen
 /gen_kernels
 /_build
 *.cmi

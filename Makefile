@@ -5,11 +5,11 @@ GITLAB_CACHE = /tmp/gitlab-cache
 BUILD = _build/default
 BIN = $(BUILD)/bin
 TEST = _build/test
-all: c-ast faial-bc faial-drf proto-to-cuda data-dep faial-bc-dyn
+all: c-ast faial-bc faial-drf faial-gen data-dep faial-bc-dyn
 
 clean:
 	$(DUNE) clean
-	rm -f faial-bin gen_kernels pico proto-to-cuda
+	rm -f faial-bin gen_kernels pico faial-gen
 
 c-ast:
 	$(DUNE) build inference/bin/c_ast.exe
@@ -34,13 +34,13 @@ faial-bc:
 	$(DUNE) build bank_conflicts/pico.exe
 	cp -f $(BUILD)/bank_conflicts/pico.exe faial-bc
 
-proto-to-cuda:
-	$(DUNE) build proto_to_cuda/prototocuda.exe
-	cp -f $(BUILD)/proto_to_cuda/prototocuda.exe proto-to-cuda
+faial-gen:
+	$(DUNE) build codegen/corvo.exe
+	cp -f $(BUILD)/codegen/corvo.exe faial-gen
 
 gen_kernels:
-	$(DUNE) build proto_to_cuda/gen_kernels.exe
-	cp -f $(BUILD)/proto_to_cuda/gen_kernels.exe gen_kernels
+	$(DUNE) build codegen/gen_kernels.exe
+	cp -f $(BUILD)/codegen/gen_kernels.exe gen_kernels
 
 test: build-test
 	$(DUNE) runtest
@@ -57,4 +57,4 @@ gitlab-bin:
 gitlab: gitlab-test gitlab-bin
 
 
-.PHONY: all clean faial-bc faial-bc-dyn faial-drf proto-to-cuda gen_kernels build-test test sys-test gitlab gitlab-bin gitlab-test c-ast data-dep
+.PHONY: all clean faial-bc faial-bc-dyn faial-drf faial-gen gen_kernels build-test test sys-test gitlab gitlab-bin gitlab-test c-ast data-dep

@@ -5,9 +5,9 @@
  (libraries inference stage0 protocols otoml))
 
 (executable
- (public_name proto-to-cuda)
- (name prototocuda)
- (modules prototocuda)
+ (public_name faial-gen)
+ (name corvo)
+ (modules corvo)
  (libraries cgen cmdliner))
 
 (executable
