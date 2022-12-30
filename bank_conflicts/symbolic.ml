@@ -205,7 +205,7 @@ let to_absynth : t -> string =
     | Const k -> indent depth ^ "tick " ^ string_of_int k ^ "\n"
     | Sum (x, ub, s) ->
       indent depth ^ Variable.name x ^ " = 0\n" ^
-      indent depth ^ "while " ^ Variable.name x ^ " < " ^ n_to_s ub ^ ":\n" ^
+      indent depth ^ "while " ^ Variable.name x ^ " < (" ^ n_to_s ub ^ "):\n" ^
       indent (depth + 1) ^ Variable.name x ^ " = " ^ Variable.name x ^ " + 1\n" ^
       translate (depth + 1) s
     | Add l -> List.map (translate depth) l |> Common.join ""
