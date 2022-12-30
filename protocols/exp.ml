@@ -138,6 +138,8 @@ let n_rel o n1 n2 =
   | Num n1, Num n2 -> Bool (eval_nrel o n1 n2)
   | _, _ -> NRel (o, n1, n2)
 
+let n_zero = Num 0
+
 let n_lt = n_rel NLt
 
 let n_gt = n_rel NGt
@@ -186,6 +188,8 @@ let rec n_mult n1 n2 =
     Bin (Mult, Num (n1 * n2), e)
   | _, Num _ -> Bin (Mult, n2, n1)
   | _, _ -> Bin (Mult, n1, n2)
+
+let n_uminus n = n_mult (Num (-1)) n
 
 let n_div n1 n2 =
   match n1, n2 with
