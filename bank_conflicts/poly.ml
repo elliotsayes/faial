@@ -250,15 +250,9 @@ let rec from_nexp (x:Variable.t) (n:Exp.nexp) : t option =
     Some (mult e1 (e2 |> map1
       (fun x -> Bin (Div, (Num 1), x))
     ))
-  | Num n -> Some (Exp0 (Num n))
-  | Var _
+  | Num _
+  | Var _ -> Some (Exp0 n)
   | Bin _
   | Proj _
   | NCall _
   | NIf _ -> None
-(*
-let faulty_from_nexp (x:Variable.t) (n:Exp.nexp) : t =
-  match from_nexp x n with
-  | Some n -> n
-  | None -> Exp0 n
-*)

@@ -87,24 +87,36 @@ let sum power e : Exp.nexp =
     ]
   | _ -> failwith ("S_" ^ string_of_int power ^ " not implemented")
 
-let rec flatten : t -> Exp.nexp =
+let rec flatten : t -> (Exp.nexp, string) Result.t =
+  let (let*) = Result.bind in
   function
-  | Const k -> Num k
+  | Const k -> Ok (Num k)
   | Sum (x, ub, s) ->
-    Poly.from_nexp x (flatten s)
-    |> Option.get (* XXX: if we cannot get a polynomial form, we abort *)
-    |> Poly.to_seq
-    |> Seq.map (fun (coefficient, degree) ->
-      n_mult coefficient (sum degree ub)
-    )
-    |> Seq.fold_left n_plus (Num 0)
+    let* n = flatten s in
+    (match Poly.from_nexp x n with
+    | Some p ->
+      Ok (
+        p
+        |> Poly.to_seq
+        |> Seq.map (fun (coefficient, degree) ->
+          n_mult coefficient (sum degree ub)
+        )
+        |> Seq.fold_left n_plus (Num 0)
+      )
+    | None -> Error ("Cannot convert to a polynomial of '" ^
+      Variable.name x ^ "': "^
+      Serialize.PPrint.n_to_s n))
   | Add l ->
-    List.map flatten l
-    |> List.fold_left n_plus (Num 0)
-
+    let l = List.map flatten l in
+    (match List.find_opt Result.is_error l with
+    | Some r -> r
+    | None ->
+      Ok (
+        List.map Result.get_ok l
+        |> List.fold_left n_plus (Num 0)
+      ))
 
 let simplify (s : t) : string =
-  let e = flatten s in
   let rec simpl e : string =
     let fvs = Freenames.free_names_nexp e Variable.Set.empty in
     if Variable.Set.is_empty fvs then
@@ -132,7 +144,7 @@ let simplify (s : t) : string =
           |> List.of_seq
           |> Common.join " + "
         | None ->
-          prerr_endline ("Warning: Could not rewrite the expression as a polynmial in terms of " ^ Variable.name x ^ ": " ^ Serialize.PPrint.n_to_s e);
+          prerr_endline ("WARNING: Could not rewrite the expression as a polynmial in terms of " ^ Variable.name x ^ ": " ^ Serialize.PPrint.n_to_s e);
           (* We can't make a polynomial from this expression. *)
           Constfold.n_opt e |> Serialize.PPrint.n_to_s
       in
@@ -141,7 +153,11 @@ let simplify (s : t) : string =
       else
         "(" ^ result ^ ")"
   in
-  simpl e
+  match flatten s with
+  | Ok e -> simpl e
+  | Error m ->
+    prerr_endline ("WARNING: simplify: " ^ m ^ ": " ^ to_string s);
+    to_string s
 
 (* --------------------------------- Absynth ---------------------- *)
 
