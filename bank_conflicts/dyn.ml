@@ -1,7 +1,7 @@
 open Stage0
 open Protocols
 open Inference
-open Bc
+open Bank_conflicts
 
 let load_data (fname : string) : (string * int) list =
   try

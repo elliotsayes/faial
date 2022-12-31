@@ -1,6 +1,6 @@
 open Stage0
 open Inference
-open Bc
+open Bank_conflicts
 open Protocols
 
 (* Main function *)
