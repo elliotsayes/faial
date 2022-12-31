@@ -207,7 +207,10 @@ let to_string ?(skip_zero=true) ?(sort=true) ?(var="x") (p: t) : string =
   |> (if sort then to_seq_ord else to_seq)
   |> Seq.filter (fun (coef, _) -> not skip_zero || coef <> Exp.Num 0)
   |> Seq.map (fun (coef, pow) ->
-    Serialize.PPrint.n_to_s coef ^ "·" ^ var ^ exponent_to_string pow
+    if pow = 0 then
+      Serialize.PPrint.n_to_s coef
+    else
+      "(" ^ Serialize.PPrint.n_to_s coef ^ ")·" ^ var ^ exponent_to_string pow
   )
   |> List.of_seq
   |> Common.join " + "
@@ -248,7 +251,8 @@ let rec from_nexp (x:Variable.t) (n:Exp.nexp) : t option =
     let* e1 = from_nexp x e1 in
     let* e2 = from_nexp x e2 in
     Some (mult e1 (e2 |> map1
-      (fun x -> Bin (Div, (Num 1), x))
+      (fun x -> if x <> Num 0 then Bin (Div, (Num 1), x)
+      else x)
     ))
   | Num _
   | Var _ -> Some (Exp0 n)

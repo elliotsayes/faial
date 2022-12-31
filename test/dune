@@ -9,7 +9,8 @@
    test_ctype
    test_slice
    test_queries
+   test_poly
  )
- (libraries stage0 protocols drf inference oUnit)
+ (libraries stage0 protocols drf inference oUnit bank_conflicts)
 )
 

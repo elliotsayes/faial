@@ -71,7 +71,7 @@ let rec n_opt (a : nexp) : nexp =
     -> Num 0
     | Mod, _, Num 0
     | Div, _, Num 0
-    -> raise (Failure "Division by zero")
+    -> raise (Failure ("Division by zero: " ^ Serialize.PPrint.n_to_s a))
     (* Neutral *)
     | Plus, Num 0, a
     | Plus, a, Num 0
@@ -114,8 +114,21 @@ let rec n_opt (a : nexp) : nexp =
     | Mult, Num n1, Bin (Div, Num n2, e)
       ->
       n_opt (Bin (Div, Num (n1 * n2), e))
+      (*
+          n1          n1 / gcd n1 n2
+          -------- = ------------------
+          (n2 * e)   (n2 / gcd n1 n2) e
+
+       *)
+    | Div, Num n1, Bin (Mult, Num n2, e) when n2 <> 0 ->
+      let g = gcd n1 n2 in
+      Bin (Div, Num (n1/g), n_opt (Bin (Mult, Num (n2/g), e)))
+    | Div, Num n1, Bin (Mult, e, Num n2) when n2 <> 0 ->
+      let g = gcd n1 n2 in
+      Bin (Div, Num (n1/g), n_opt (Bin (Mult, Num (n2/g), e)))
     | Div, Num n1, Num n2 when Common.modulo n1 n2 = 0 -> Num (n1 / n2)
-    | Div, Num n1, Num n2 -> Bin (Div, Num (n1 / gcd n1 n2), Num (n2 / gcd n1 n2))
+    | Div, Num n1, Num n2 ->
+      Bin (Div, Num (n1 / gcd n1 n2), Num (n2 / gcd n1 n2))
     | o, Num n1, Num n2 when o <> Div -> Num ((eval_nbin b) n1 n2)
     (* Propagate *)
     | _, _, _ -> Bin (b, a1, a2)

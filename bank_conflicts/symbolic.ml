@@ -154,7 +154,11 @@ let simplify (s : t) : string =
         "(" ^ result ^ ")"
   in
   match flatten s with
-  | Ok e -> simpl e
+  | Ok e ->
+    (try simpl e with
+      Failure m ->
+      prerr_endline ("WARNING: simplify: " ^ m ^ ": " ^ to_string s);
+      to_string s)
   | Error m ->
     prerr_endline ("WARNING: simplify: " ^ m ^ ": " ^ to_string s);
     to_string s
