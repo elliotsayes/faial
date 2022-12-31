@@ -171,7 +171,11 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
     let o = Exp.eval_nbin o in
     let n1 = n_eval n1 ctx in
     let n2 = n_eval n2 ctx in
-    NMap.pointwise o n1 n2
+    (try
+      NMap.pointwise o n1 n2
+    with
+      Division_by_zero ->
+        failwith ("n_eval: division by zero: " ^ Serialize.PPrint.n_to_s n))
   | Proj _ -> failwith ("n_eval: proj")
   | NCall (x,_) -> failwith ("n_eval: call " ^ x)
   | NIf (b, n1, n2) ->
