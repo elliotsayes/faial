@@ -164,7 +164,7 @@ let m_ser m = match m with
 
 let s_ser s =
   match s with
-  | Default x -> n_ser x
+  | StepPlus x -> n_ser x
   | StepName x -> symbol x
 
 let r_ser r =
@@ -295,7 +295,7 @@ module PPrint = struct
 
   let s_to_s s =
     match s with
-    | Default x -> "+ " ^ n_to_s x
+    | StepPlus x -> "+ " ^ n_to_s x
     | StepName "pow2" -> "* 2"
     | StepName x -> x
 
@@ -304,7 +304,7 @@ module PPrint = struct
     let lb = n_to_s r.range_lower_bound in
     let ub = n_to_s r.range_upper_bound in
     let s = match r.range_step with
-    | Default (Num 1) -> ""
+    | StepPlus (Num 1) -> ""
     | _ -> "; " ^ ident r.range_var ^ " " ^ s_to_s r.range_step
     in
     let d = match r.range_dir with

@@ -264,7 +264,7 @@ let rec b_or_ex l =
   | x::l -> b_or x (b_or_ex l)
 
 
-type step_expr = Default of nexp | StepName of string
+type step_expr = StepPlus of nexp | StepName of string
 
 type direction =
   | Increase
@@ -286,14 +286,14 @@ let mk_range (x:Variable.t) (ub:nexp) =
     range_var = x;
     range_lower_bound = Num 0;
     range_upper_bound = ub;
-    range_step = Default (Num 1);
+    range_step = StepPlus (Num 1);
     range_dir = Increase;
   }
 
 let range_to_cond (r:range) : bexp =
   (match r.range_step with
-  | Default (Num 1) -> []
-  | Default n ->
+  | StepPlus (Num 1) -> []
+  | StepPlus n ->
     let lb = r.range_lower_bound in
     let ub = r.range_upper_bound in
     let x = Var r.range_var in

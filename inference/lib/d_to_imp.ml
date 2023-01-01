@@ -465,7 +465,7 @@ let infer_range (r:D_lang.Stmt.d_for) : Exp.range option d_result =
     in
     let* step = match r.inc with
     | {op=Plus; arg=a}
-    | {op=Minus; arg=a} -> Some (Default a)
+    | {op=Minus; arg=a} -> Some (StepPlus a)
     | {op=Mult; arg=Num a}
     | {op=Div; arg=Num a} ->
       Some (StepName (Printf.sprintf "pow%d" a))
@@ -519,7 +519,7 @@ let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
     range_var = x;
     range_lower_bound = Var lb;
     range_upper_bound = Var ub;
-    range_step = Default (Num 1);
+    range_step = StepPlus (Num 1);
     range_dir = Increase;
   } in
   let vars = Variable.Set.of_list [lb; ub] in

@@ -603,12 +603,12 @@ let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) :
     | {
         range_var=x;
         range_lower_bound=Num 0;
-        range_step = Default (Num 1);
+        range_step = StepPlus (Num 1);
         range_upper_bound=ub;
         _
       } ->
       Sum (x, ub, from_slice num_banks thread_count locs p)
-    | {range_step = Default k; _} ->
+    | {range_step = StepPlus k; _} ->
       let open Exp in
       (* iters = ub - lb *)
       let iters = n_minus r.range_upper_bound r.range_lower_bound in

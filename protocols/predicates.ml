@@ -198,7 +198,7 @@ let get_step_handler (pred_name:string) : step_handler =
 
 let step_inc (s:step_expr) : nexp -> nexp =
   match s with
-  | Default n -> n_plus n
+  | StepPlus n -> n_plus n
   | StepName pred_name -> (get_step_handler pred_name).step_handler_inc
 
 let range_next (r:range) : range =
@@ -206,19 +206,19 @@ let range_next (r:range) : range =
 
 let step_dec (s:step_expr) : nexp -> nexp =
   match s with
-  | Default n -> fun m -> n_minus m n
+  | StepPlus n -> fun m -> n_minus m n
   | StepName pred_name -> (get_step_handler pred_name).step_handler_dec
 
 let step_trunc (s:step_expr) : nexp -> nexp =
   match s with
-  | Default divisor -> fun n -> n_minus n (n_mod n divisor)
+  | StepPlus divisor -> fun n -> n_minus n (n_mod n divisor)
   | StepName pred_name -> (get_step_handler pred_name).step_handler_trunc
 
 let range_last (r:range) : nexp =
   let ub = r.range_upper_bound in
   let lb = r.range_lower_bound in
   match r.range_step with
-  | Default s ->
+  | StepPlus s ->
     n_plus
       (n_minus ub s)
       (n_mod (n_minus lb ub) s)

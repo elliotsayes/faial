@@ -71,7 +71,7 @@ module Make (S:SUBST) = struct
 
   let s_subst (s:S.t) (se:step_expr) : step_expr =
     match se with
-    | Default n -> Default (n_subst s n)
+    | StepPlus n -> StepPlus (n_subst s n)
     | StepName _ -> se
 
   let r_subst (s:S.t) (r:range) : range =
