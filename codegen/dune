@@ -2,7 +2,7 @@
  (name cgen)
  (modules cgen)
  (wrapped false)
- (libraries inference stage0 protocols otoml))
+ (libraries inference stage0 protocols otoml bc))
 
 (executable
  (public_name faial-gen)

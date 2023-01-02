@@ -1,5 +1,6 @@
 open Stage0
 open Protocols
+open Bc
 
 open Exp
 open Proto
@@ -182,6 +183,27 @@ and r_to_vars (r : range) : Variable.t list =
 let variables_used (l : inst list) : VarSet.t =
   List.map inst_to_vars l |> List.flatten |> VarSet.of_list
 
+(* Flattens a multi-dimensional array into a 1D product of its dimensions *)
+let flatten_multi_dim (arr : array_t) : array_t =
+  match arr.array_size with
+  | [] -> arr
+  | size -> {arr with array_size = [List.fold_left ( * ) 1 size]}
+
+(* Converts a shared access to a protocol instruction *)
+let rec shared_access_to_inst : Shared_access.t -> inst = function
+  | Loop (r, acc) -> Loop (r, [shared_access_to_inst acc])
+  | Cond (b, acc) -> Cond (b, [shared_access_to_inst acc])
+  (* Assume the access is a read *)
+  | Index a -> Acc (a.shared_array, {access_index=[a.index]; access_mode=Exp.R})
+
+(* Makes a kernel RaCUDA-friendly via protocol slicing *)
+let mk_racuda_friendly (k : prog kernel) =
+  let arrays = VarMap.mapi (fun _ -> flatten_multi_dim) k.kernel_arrays in
+  let code = Shared_access.from_kernel (Vec3.make ~x:1024 ~y:1 ~z:1) k
+             |> Seq.map shared_access_to_inst
+             |> List.of_seq in
+  {k with kernel_arrays = arrays; kernel_code = code}
+
 (* Gets the type of an array, defaulting to int if it is unknown *)
 let arr_type (arr : array_t) (strip_const : bool) : string =
   if arr.array_type = [] then "int"
@@ -328,6 +350,7 @@ let prog_to_s (racuda : bool) (p : prog) : PPrint.t list =
   p_opt p |> List.map (inst_to_s racuda) |> List.flatten
 
 let print_k (k : prog kernel) (racuda : bool) : unit =
+  let k = if racuda then mk_racuda_friendly k else k in
   PPrint.print_doc (kernel_to_s (prog_to_s racuda) k racuda)
 
 (* Kernel to TOML conversion *)
