@@ -175,7 +175,7 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
       NMap.pointwise o n1 n2
     with
       Division_by_zero ->
-        failwith ("n_eval: division by zero: " ^ Serialize.PPrint.n_to_s n))
+        failwith ("n_eval: division by zero: " ^ Exp.n_to_string n))
   | Proj _ -> failwith ("n_eval: proj")
   | NCall (x,_) -> failwith ("n_eval: call " ^ x)
   | NIf (b, n1, n2) ->
@@ -228,8 +228,8 @@ let access ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
   let tsx = Array.map IntSet.cardinal tsx |> NMap.from_array in
   (if verbose then (
       let msg =
-        Serialize.PPrint.n_to_s index ^ " " ^
-        "if (" ^ Serialize.PPrint.b_to_s ctx.cond ^ ")"
+        Exp.n_to_string index ^ " " ^
+        "if (" ^ Exp.b_to_string ctx.cond ^ ")"
       in
       print_endline (
         msg ^ " " ^
@@ -245,7 +245,7 @@ let add = NMap.pointwise (+)
 let rec eval ?(verbose=true) (p: Proto.prog) (ctx:t) : NMap.t =
   List.fold_left (fun cost (i:Proto.inst) ->
     let new_cost = match i with
-      | Acc (x, {access_index=[n]; _}) ->
+      | Acc (x, {index=[n]; _}) ->
         if ctx.use_array x then
           access ~verbose n ctx
         else
@@ -257,15 +257,15 @@ let rec eval ?(verbose=true) (p: Proto.prog) (ctx:t) : NMap.t =
       | Cond (b, p) ->
         restrict b ctx |> eval p
       | Loop (r, body) ->
-        let has_next = Exp.range_has_next r in
+        let has_next = Range.has_next r in
         if b_eval has_next ctx |> BMap.some_true then
-          let lo = n_eval r.range_lower_bound ctx in
-          let r = Predicates.range_next r in
+          let lo = n_eval r.lower_bound ctx in
+          let r = Range.next r in
           add (
             eval body (
               ctx
               |> restrict has_next
-              |> put r.range_var lo
+              |> put r.var lo
             )
           )
           (eval [Loop (r, body)] ctx)

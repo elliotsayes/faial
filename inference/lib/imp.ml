@@ -5,26 +5,25 @@ let (@) = Common.append_tr
 
 open Exp
 open Proto
-open Serialize
 open Subst
 
 type var_type = Location | Index
 
 type locality = Global | Local
 
-type access_expr = {access_index: nexp list; access_mode: mode}
+type access_expr = {access_index: nexp list; access_mode: Access.Mode.t}
 
 type alias_expr = {alias_source: Variable.t; alias_target: Variable.t; alias_offset: nexp}
 
 type stmt =
 | Sync
 | Assert of bexp
-| Acc of acc_expr
+| Acc of (Variable.t * Access.t)
 | Block of (stmt list)
 | LocationAlias of alias_expr
 | Decl of (Variable.t * locality * nexp option) list
 | If of (bexp * stmt * stmt)
-| For of (range * stmt)
+| For of (Range.t * stmt)
 
 type prog = stmt list
 
@@ -33,26 +32,25 @@ module Post = struct
   type inst =
   | Skip
   | Sync
-  | Acc of acc_expr
+  | Acc of (Variable.t * Access.t)
   | If of (bexp * inst list * inst list)
-  | For of (range * inst list)
+  | For of (Range.t * inst list)
   | Decl of (Variable.t * locality * nexp option * inst list)
 
   type prog = inst list
 
 
   let prog_to_s: prog -> string =
-    let open PPrint in
-    let rec stmt_to_s : inst -> PPrint.t list =
+    let rec stmt_to_s : inst -> Indent.t list =
       function
       | Skip -> []
       | Sync -> [Line "sync;"]
-      | Acc e -> acc_expr_to_s e
+      | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
       | Decl (x, l, n, p) ->
         let entry =
           (match l with | Global -> "global" | Local ->  "local") ^ " " ^
           Variable.name x ^
-          (match n with | Some n -> " = " ^ n_to_s n | None -> "")
+          (match n with | Some n -> " = " ^ n_to_string n | None -> "")
         in
         [
           Line ("decl " ^ entry ^ " {");
@@ -61,7 +59,7 @@ module Post = struct
         ]
 
       | If (b, s1, s2) -> [
-          Line ("if (" ^ b_to_s b ^ ") {");
+          Line ("if (" ^ b_to_string b ^ ") {");
           Block (prog_to_s s1);
           Line "} else {";
           Block (prog_to_s s2);
@@ -69,25 +67,25 @@ module Post = struct
         ]
 
       | For (r, s) -> [
-          Line ("foreach (" ^ r_to_s r ^ ") {");
+          Line ("foreach (" ^ Range.to_string r ^ ") {");
           Block (prog_to_s s);
           Line ("}")
         ]
-    and prog_to_s : prog -> PPrint.t list =
+    and prog_to_s : prog -> Indent.t list =
       fun p -> List.map stmt_to_s p |> List.flatten
     in
-    fun p -> prog_to_s p |> doc_to_string
+    fun p -> prog_to_s p |> Indent.to_string
 
   let rec loc_subst_i (alias:alias_expr) (i:inst) : inst =
     match i with
     | Acc (x, a) ->
       if Variable.equal x alias.alias_target
       then (
-        match a.access_index with
+        match a.index with
         | [n] ->
-          Acc (x, { a with access_index = [n_plus alias.alias_offset n] })
+          Acc (x, { a with index = [n_plus alias.alias_offset n] })
         | _ ->
-          let idx = List.length a.access_index |> string_of_int in
+          let idx = List.length a.index |> string_of_int in
           failwith ("Expecting an index with dimension 1, but got " ^ idx)
       )
       else i
@@ -125,7 +123,7 @@ module Post = struct
       | If (b, p1, p2) -> If (M.b_subst st b, subst_p st p1, subst_p st p2)
       | For (r, p) ->
         For (M.r_subst st r,
-          M.add st r.range_var (function
+          M.add st r.var (function
           | Some st -> subst_p st p
           | None -> p
           )
@@ -140,7 +138,7 @@ module Post = struct
   let subst_i = ReplacePair.subst_i
   let subst_p = ReplacePair.subst_p
 
-  let filter_locs (locs:array_t Variable.Map.t) : prog -> prog =
+  let filter_locs (locs:Memory.t Variable.Map.t) : prog -> prog =
     let rec filter_i (i:inst) : inst =
       match i with
       | Acc (x, _) -> if Variable.Map.mem x locs then i else Skip
@@ -183,12 +181,12 @@ module Post = struct
       then b
       else ReplaceAssoc.b_subst st b
     in
-    let a_subst (st:SubstAssoc.t) (a:access): access =
+    let a_subst (st:SubstAssoc.t) (a:Access.t): Access.t =
       if SubstAssoc.is_empty st
       then a
       else ReplaceAssoc.a_subst st a
     in
-    let r_subst (st:SubstAssoc.t) (r:range): range =
+    let r_subst (st:SubstAssoc.t) (r:Range.t): Range.t =
       if SubstAssoc.is_empty st
       then r
       else ReplaceAssoc.r_subst st r
@@ -221,8 +219,8 @@ module Post = struct
         [Decl (x, h, None, inline_p known st p)]
       | For (r, p) ->
         let r = r_subst st r in
-        let (x, known, st) = add_var r.range_var in
-        [For ({r with range_var = x}, inline_p known st p)]
+        let (x, known, st) = add_var r.var in
+        [For ({r with var = x}, inline_p known st p)]
     and inline_p (known:Variable.Set.t) (st:SubstAssoc.t): prog -> prog =
       List.concat_map (inline_i known st)
     in
@@ -313,7 +311,7 @@ let s_block l =
     ) l
   )
 
-let s_for (r:range) (s:stmt) =
+let s_for (r:Range.t) (s:stmt) =
   match s with
   | Block [] -> Block []
   | Decl [] -> Decl []
@@ -333,77 +331,75 @@ type p_kernel = {
   (* A kernel precondition of every phase. *)
   p_kernel_pre: bexp;
   (* The shared locations that can be accessed in the kernel. *)
-  p_kernel_arrays: array_t Variable.Map.t;
+  p_kernel_arrays: Memory.t Variable.Map.t;
   (* The internal variables are used in the code of the kernel.  *)
   p_kernel_params: Variable.Set.t;
   (* The code of a kernel performs the actual memory accesses. *)
   p_kernel_code: stmt;
 }
 
-let stmt_to_s: stmt -> PPrint.t list =
-  let open PPrint in
-  let rec stmt_to_s : stmt -> PPrint.t list =
+let stmt_to_s: stmt -> Indent.t list =
+  let rec stmt_to_s : stmt -> Indent.t list =
     function
     | Sync -> [Line "sync;"]
-    | Assert b -> [Line ("assert (" ^ (b_to_s b) ^ ");")]
-    | Acc e -> acc_expr_to_s e
+    | Assert b -> [Line ("assert (" ^ b_to_string b ^ ");")]
+    | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
     | Block [] -> []
     | Block l -> [Line "{"; Block (List.map stmt_to_s l |> List.flatten); Line "}"]
     | LocationAlias l ->
       [Line ("alias " ^
         Variable.name l.alias_target ^ " = " ^
         Variable.name l.alias_source ^ " + " ^
-        n_to_s l.alias_offset ^ ";"
+        n_to_string l.alias_offset ^ ";"
       )]
     | Decl [] -> []
     | Decl l ->
       let entry (x, l, n) =
         (match l with | Global -> "global" | Local ->  "local") ^ " " ^
         Variable.name x ^
-        (match n with | Some n -> " = " ^ n_to_s n | None -> "")
+        (match n with | Some n -> " = " ^ n_to_string n | None -> "")
       in
       let entries = Common.join "," (List.map entry l) in
       [Line ("decl " ^ entries ^ ";")]
 
     | If (b, s1, Block []) -> [
-        Line ("if (" ^ b_to_s b ^ ") {");
+        Line ("if (" ^ b_to_string b ^ ") {");
         Block (stmt_to_s s1);
         Line "}";
       ]
     
     | If (b, s1, s2) -> [
-        Line ("if (" ^ b_to_s b ^ ") {");
+        Line ("if (" ^ b_to_string b ^ ") {");
         Block (stmt_to_s s1);
         Line "} else {";
         Block (stmt_to_s s2);
         Line "}"
       ]
     | For (r, s) -> [
-        Line ("foreach (" ^ r_to_s r ^ ") {");
+        Line ("foreach (" ^ Range.to_string r ^ ") {");
         Block (stmt_to_s s);
         Line ("}")
       ]
   in
   stmt_to_s
 
-let kernel_to_s (k:p_kernel) : PPrint.t list =
-  let open PPrint in
+let kernel_to_s (k:p_kernel) : Indent.t list =
   let pre = match k.p_kernel_pre with
   | Bool true -> ""
-  | _ -> " if (" ^ b_to_s k.p_kernel_pre ^ ")"
+  | _ -> " if (" ^ b_to_string k.p_kernel_pre ^ ")"
   in
   [
     Line (
       k.p_kernel_name ^
-      " (" ^ array_map_to_s k.p_kernel_arrays ^ ", " ^
-      var_set_to_s k.p_kernel_params ^ ")" ^
+      " (" ^ Memory.map_to_string k.p_kernel_arrays ^ ", " ^
+      Variable.set_to_string k.p_kernel_params ^ ")" ^
       pre ^ " {");
     Block (stmt_to_s k.p_kernel_code);
     Line "}"
   ]
 
 let print_kernel (k: p_kernel) : unit =
-  PPrint.print_doc (kernel_to_s k)
+  Indent.print (kernel_to_s k)
 
 let compile (k:p_kernel) : Proto.prog kernel =
   let p : Post.prog = imp_to_post k.p_kernel_code

@@ -13,7 +13,7 @@ type t =
 let rec to_string : t -> string =
   function
   | Const x -> string_of_int x
-  | Sum (x, n, s) -> "Σ_{1 ≤ " ^ Variable.name x ^ " ≤ " ^ Serialize.PPrint.n_to_s n ^ "} " ^ to_string s
+  | Sum (x, n, s) -> "Σ_{1 ≤ " ^ Variable.name x ^ " ≤ " ^ Exp.n_to_string n ^ "} " ^ to_string s
   | Add l -> List.map to_string l |> Common.join " + "
 
 let add (l:t list) : t = Add l
@@ -105,7 +105,7 @@ let rec flatten : t -> (Exp.nexp, string) Result.t =
       )
     | None -> Error ("Cannot convert to a polynomial of '" ^
       Variable.name x ^ "': "^
-      Serialize.PPrint.n_to_s n))
+      Exp.n_to_string n))
   | Add l ->
     let l = List.map flatten l in
     (match List.find_opt Result.is_error l with
@@ -120,7 +120,7 @@ let simplify (s : t) : string =
   let rec simpl e : string =
     let fvs = Freenames.free_names_nexp e Variable.Set.empty in
     if Variable.Set.is_empty fvs then
-      Constfold.n_opt e |> Serialize.PPrint.n_to_s
+      Constfold.n_opt e |> Exp.n_to_string
     else
       let x = Variable.Set.choose fvs in
       let result =
@@ -144,9 +144,13 @@ let simplify (s : t) : string =
           |> List.of_seq
           |> Common.join " + "
         | None ->
-          prerr_endline ("WARNING: Could not rewrite the expression as a polynmial in terms of " ^ Variable.name x ^ ": " ^ Serialize.PPrint.n_to_s e);
+          prerr_endline (
+            "WARNING: Could not rewrite the expression as a " ^
+            "polynomial in terms of " ^ Variable.name x ^
+            ": " ^ Exp.n_to_string e
+          );
           (* We can't make a polynomial from this expression. *)
-          Constfold.n_opt e |> Serialize.PPrint.n_to_s
+          Constfold.n_opt e |> Exp.n_to_string
       in
       if result = "" then
         "0"
@@ -168,7 +172,7 @@ let simplify (s : t) : string =
 let rec to_maxima : t -> string =
   function
   | Const k -> string_of_int k
-  | Sum (x, ub, s) -> "sum(" ^ to_maxima s ^ ", " ^ Variable.name x ^ ", 1, " ^ Serialize.PPrint.n_to_s ub ^ ")"
+  | Sum (x, ub, s) -> "sum(" ^ to_maxima s ^ ", " ^ Variable.name x ^ ", 1, " ^ Exp.n_to_string ub ^ ")"
   | Add l -> List.map to_maxima l |> Common.join " + "
 
 let cleanup_maxima_output (x:string) : string =
@@ -219,7 +223,7 @@ let run_maxima ?(verbose=false) ?(exe="maxima") (x:t) : string =
 
 let to_absynth : t -> string =
   let indent (depth:int) : string = String.make depth '\t' in
-  let n_to_s = Serialize.PPrint.n_to_s in
+  let n_to_s = Exp.n_to_string in
   let rec translate (depth:int) : t -> string =
     function
     | Const k -> indent depth ^ "tick " ^ string_of_int k ^ "\n"
@@ -355,10 +359,10 @@ module Environ = struct
     ) fvs e
 
   let n_to_s (e:Exp.nexp) (env:t) : string =
-    n_normalize e env |> Serialize.PPrint.n_to_s
+    n_normalize e env |> Exp.n_to_string
 
   let b_to_s (e:Exp.bexp) (env:t) : string =
-    b_normalize e env |> Serialize.PPrint.b_to_s
+    b_normalize e env |> Exp.b_to_string
 
   let decode (data:string) (env:t) : string =
     Fvs.to_array env.ctx
@@ -578,19 +582,19 @@ let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) :
   | Loop (r, p) ->
     match r with
     | {
-        range_var=x;
-        range_step = StepName "pow2";
+        var=x;
+        step = Mult (Num 2);
         _
       } ->
         let l =
-          Predicates.r_eval_opt r
+          Range.eval_opt r
           |> (function
             | Some l -> l
             | None ->
-              let x = Variable.name r.range_var in
+              let x = Variable.name r.var in
               prerr_endline (
                 "Warning: approximated loop (" ^
-                Serialize.PPrint.r_to_s r ^
+                Range.to_string r ^
                 ") 🡆 (" ^ x ^ " in 1 .. MAX_INT; " ^ x ^ " * 2)");
               Common.range 64 |> List.map (Common.pow ~base:2)
             )
@@ -601,20 +605,20 @@ let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) :
         in
         Add l
     | {
-        range_var=x;
-        range_lower_bound=Num 0;
-        range_step = StepPlus (Num 1);
-        range_upper_bound=ub;
+        var=x;
+        lower_bound=Num 0;
+        step = Plus (Num 1);
+        upper_bound=ub;
         _
       } ->
       Sum (x, ub, from_slice num_banks thread_count locs p)
-    | {range_step = StepPlus k; _} ->
+    | {step = Plus k; _} ->
       let open Exp in
       (* iters = ub - lb *)
-      let iters = n_minus r.range_upper_bound r.range_lower_bound in
+      let iters = n_minus r.upper_bound r.lower_bound in
       (* x := k (x + lb + 1) *)
-      let new_range_var = n_mult (n_plus (Var r.range_var) (n_inc r.range_lower_bound)) k in
-      let p = Shared_access.subst (r.range_var, new_range_var) p in
+      let new_range_var = n_mult (n_plus (Var r.var) (n_inc r.lower_bound)) k in
+      let p = Shared_access.subst (r.var, new_range_var) p in
       (*  (ub-lb)/k *)
-      Sum (r.range_var, n_div iters k, from_slice num_banks thread_count locs p)
-    | _ -> failwith ("Unsupported range: " ^ Serialize.PPrint.r_to_s r)
+      Sum (r.var, n_div iters k, from_slice num_banks thread_count locs p)
+    | _ -> failwith ("Unsupported range: " ^ Range.to_string r)

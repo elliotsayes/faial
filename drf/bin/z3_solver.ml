@@ -140,7 +140,7 @@ module CodeGen (N:NUMERIC_OPS) = struct
 	let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr = match n with
 		| Var x -> Variable.name x |> N.mk_var ctx
 		| Proj _ ->
-		    let n : string = Serialize.PPrint.n_to_s n in
+		    let n : string = Exp.n_to_string n in
 		    raise (Not_implemented ("n_to_expr: not implemented for Proj of " ^ n))
 		| NCall _ ->
 				failwith "b_to_expr: invoke Predicates.inline to remove predicates"
@@ -263,7 +263,7 @@ module Task = struct
 	type t = {
 		thread_idx: Vec3.t;
 		locals: Environ.t;
-		mode: Exp.mode;
+		mode: Access.Mode.t;
 		location: Location.t option;
 	}
 
@@ -274,7 +274,7 @@ module Task = struct
 		`Assoc [
 			"threadIdx", Vec3.to_json x.thread_idx;
 			"locals", Environ.to_json x.locals;
-			"mode", `String (match x.mode with R -> "rw" | W -> "rd");
+			"mode", `String (Access.Mode.to_string x.mode);
 			"location", `String (
         x.location
         |> Option.map Location.repr
@@ -368,11 +368,12 @@ module Witness = struct
 		(* And look them up using parse_idx *)
 		|> List.map parse_idx 
 
-	let parse_mode (kvs:Environ.t) : Exp.mode * Exp.mode =
+	let parse_mode (kvs:Environ.t) : Access.Mode.t * Access.Mode.t =
 		let parse (x:string) =
+      let open Access.Mode in
 			match List.assoc ("$T" ^ x ^ "$mode") kvs with
-			| "1" -> Exp.W
-			| "0" -> Exp.R
+			| "1" -> Wr
+			| "0" -> Rd
 			| _ -> failwith ("Unknown mode: " ^ x)
 		in
 		try
@@ -382,7 +383,7 @@ module Witness = struct
 				List.iter (fun (k,v) -> print_endline (k ^ ": " ^ v)) kvs;
 				failwith e
 
-	let parse_meta (env:Environ.t) : (Environ.t * (string list * Exp.mode * Exp.mode)) =
+	let parse_meta (env:Environ.t) : (Environ.t * (string list * Access.Mode.t * Access.Mode.t)) =
 		let (kvs, env) = List.partition (fun (k, _) ->
 				String.starts_with ~prefix:"$" k
 		) env
@@ -482,6 +483,7 @@ module Solution = struct
 	let solve
     ?(timeout=None)
     ?(show_proofs=false)
+    ?(logic=None)
     ~block_dim
     ~grid_dim
     (ps:Symbexp.Proof.t Streamutil.stream)
@@ -490,6 +492,21 @@ module Solution = struct
   =
     let b_to_expr = ref IntGen.b_to_expr in
     let parse_num = ref IntGen.parse_num in
+    logic |> Option.iter (fun l ->
+      if String.ends_with ~suffix:"BV" l then (
+        prerr_endline ("WARNING: user set bit-vector logic " ^ l);
+        b_to_expr := BvGen.b_to_expr;
+        parse_num := BvGen.parse_num;
+      ) else ()
+    );
+    let logic = ref logic in
+    let set_bv () : unit =
+      prerr_endline ("WARNING: using bit-vector logic.");
+      b_to_expr := BvGen.b_to_expr;
+      parse_num := BvGen.parse_num;
+      logic := None;
+    in
+    (* Logic is bit-vector based *)
     Streamutil.map (fun p ->
       let options = [
       ("model", "true");
@@ -500,22 +517,27 @@ module Solution = struct
         | None -> []
       end
       in
-      let ctx = Z3.mk_context options in
-			let s =
-				(* Create a solver and try to solve, might fail with Not_Implemented *)
-				let solve b_to_expr =
-					let s = Solver.mk_simple_solver ctx in
-					add ~add_block_dim:(Option.is_none block_dim) b_to_expr s ctx p;
-					s
-				in
-				try
-          solve !b_to_expr
-				with
-					Not_implemented x ->
-						prerr_endline ("WARNING: arithmetic solver cannot handle operator '" ^ x ^ "', trying bit-vector arithmetic instead.");
-						b_to_expr := BvGen.b_to_expr;
-						parse_num := BvGen.parse_num;
-						solve !b_to_expr
+      let s =
+        (* Create a solver and try to solve, might fail with Not_Implemented *)
+        let solve () =
+          let ctx = Z3.mk_context options in
+          let s =
+            match !logic with
+              | None ->
+                Solver.mk_simple_solver ctx
+              | Some logic ->
+                Solver.mk_solver_s ctx logic
+          in
+          add ~add_block_dim:(Option.is_none block_dim) !b_to_expr s ctx p;
+          s
+        in
+        try
+          solve ()
+        with
+          Not_implemented x ->
+            prerr_endline ("WARNING: arithmetic solver cannot handle operator '" ^ x ^ "', trying bit-vector arithmetic instead.");
+            set_bv ();
+            solve ()
 			in
 			(if show_proofs then (
         let title = "proof #" ^ string_of_int p.id in

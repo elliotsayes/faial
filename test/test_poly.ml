@@ -3,7 +3,7 @@ open Protocols
 open Bank_conflicts
 
 let assert_n_equal (e1:Exp.nexp) (e2:Exp.nexp) : unit =
-  assert_equal e1 e2 ~printer:Serialize.PPrint.n_to_s
+  assert_equal e1 e2 ~printer:Exp.n_to_string
 (*
 let assert_outputs (expected:string) (given:Exp.nexp) : unit =
   assert_equal expected (Serialize.PPrint.n_to_s given)

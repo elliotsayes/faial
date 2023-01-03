@@ -4,10 +4,9 @@ open Protocols
 open OUnit2
 open Exp
 open Imp
-open Serialize
 
 let assert_nexp (expected:nexp) (given:nexp) =
-  let msg = "Expected: " ^ PPrint.n_to_s expected ^ "\nGiven: " ^ PPrint.n_to_s given in
+  let msg = "Expected: " ^ Exp.n_to_string expected ^ "\nGiven: " ^ Exp.n_to_string given in
   assert_equal expected given ~msg
 
 let assert_post (expected:Post.prog) (given:Post.prog) =
@@ -21,7 +20,7 @@ let tests = "test_predicates" >::: [
       *)
     let id = Variable.from_name "id" in
     let sq = Variable.from_name "s_Q" in
-    let mk_acc e : Exp.access = {access_index = [Var e]; access_mode = W} in
+    let mk_acc e = Access.{index = [Var e]; mode = Mode.Wr} in
     let wr = Acc (sq, mk_acc id) in
     let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
@@ -35,7 +34,7 @@ let tests = "test_predicates" >::: [
     (match p with
     | [
         Decl (_, Local, Some e1,[ (* local id = 32 + id; *)
-          Acc (_, {access_index=[e2]; _}) (* rw s_Q[id]; *)
+          Acc (_, {index=[e2]; _}) (* rw s_Q[id]; *)
         ])
       ]
       ->
@@ -56,12 +55,12 @@ let tests = "test_predicates" >::: [
     let p : Post.prog = [
       let open Post in
       Decl (id, Local, Some (n_plus (Num 32) (Var id)),[ (* local id = 32 + id; *)
-        Acc (sq, {access_index=[Var id]; access_mode = W}) (* rw s_Q[id]; *)
+        Acc (sq, {index=[Var id]; mode = Wr}) (* rw s_Q[id]; *)
       ])
     ] in
     let p : Post.prog = Post.inline_decls Variable.Set.empty p in
     match p with
-    | [Post.Acc (_, {access_index=[e]; access_mode = W}) (* rw s_Q[32 + id]; *)
+    | [Post.Acc (_, {index=[e]; mode = Wr}) (* rw s_Q[32 + id]; *)
       ] ->
       assert_nexp (n_plus (Num 32) (Var id)) e;
       ()
@@ -78,7 +77,7 @@ let tests = "test_predicates" >::: [
     let id = Variable.from_name "id" in
     let tid = Variable.from_name "threadIdx.x" in
     let sq = Variable.from_name "s_Q" in
-    let mk_acc e : Exp.access = {access_index = [Var e]; access_mode = W} in
+    let mk_acc e = Access.{index = [Var e]; mode = Wr} in
     let wr = Acc (sq, mk_acc id) in
     let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
@@ -97,9 +96,9 @@ let tests = "test_predicates" >::: [
         Decl (v1, Local, None,[ (*  local threadIdx.x; *)
           Decl (v2, Local, Some v2_e, (* local id = threadIdx.x; *)
             [
-              Acc (_, {access_index=[e1]; _}); (* rw s_Q[id]; *)
+              Acc (_, {index=[e1]; _}); (* rw s_Q[id]; *)
               Decl (v3, Local, Some v3_e, [(* local id = 32 + id; *)
-                Acc (_, {access_index=[e2]; _}) (* rw s_Q[id]; *)
+                Acc (_, {index=[e2]; _}) (* rw s_Q[id]; *)
               ])
             ]
           )
@@ -127,7 +126,7 @@ let tests = "test_predicates" >::: [
       *)
     let id = Variable.from_name "id" in
     let tid = Variable.from_name "threadIdx.x" in
-    let wr = Acc (Variable.from_name "s_Q", {access_index = [Var id]; access_mode = W}) in
+    let wr = Acc (Variable.from_name "s_Q", {index = [Var id]; mode = Wr}) in
     let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
       Decl[(tid, Local, None)];
@@ -147,8 +146,8 @@ let tests = "test_predicates" >::: [
       let open Proto in
       match p with
       | [
-          Acc (_, {access_index=[e1]; _});
-          Acc (_, {access_index=[e2]; _})] ->
+          Acc (_, {index=[e1]; _});
+          Acc (_, {index=[e2]; _})] ->
         let inc e = n_plus (Num 32) e in
         let tid = Var tid in
         assert_nexp tid e1;
@@ -177,7 +176,7 @@ let tests = "test_predicates" >::: [
     let m = Variable.from_name "m" in
     let k = Variable.from_name "k" in
     let id = Variable.from_name "id" in
-    let wr = Acc (Variable.from_name "s_Q", {access_index = [Var id]; access_mode = W}) in
+    let wr = Acc (Variable.from_name "s_Q", {index = [Var id]; mode = Wr}) in
     let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
       Decl[(Variable.from_name "threadIdx.x", Local, None)];
@@ -205,9 +204,9 @@ let tests = "test_predicates" >::: [
       let open Proto in
       match p with
       | [
-          Acc (_, {access_index=[e1]; _});
-          Acc (_, {access_index=[e2]; _});
-          Acc (_, {access_index=[e3]; _})] ->
+          Acc (_, {index=[e1]; _});
+          Acc (_, {index=[e2]; _});
+          Acc (_, {index=[e3]; _})] ->
         let tid = Var (Variable.from_name "threadIdx.x") in
         let inc e = n_plus (Num 32) e in
         assert_nexp tid e1;
@@ -232,7 +231,7 @@ let tests = "test_predicates" >::: [
         x, Local, None;
         b, Local, Some (Var x);
       ];
-      Acc (Variable.from_name "A", {access_index = [Var a; Var b]; access_mode = W})
+      Acc (Variable.from_name "A", Access.write [Var a; Var b])
     ] in
     let p1 =
       let open Post in
@@ -240,7 +239,7 @@ let tests = "test_predicates" >::: [
         [Decl (a, Local, Some (Var x),
           [Decl (x, Local, None,
             [Decl (b, Local, Some (Var x),
-              [Acc (Variable.from_name "A", {access_index = [Var a; Var b]; access_mode = W})]
+              [Acc (Variable.from_name "A", Access.write [Var a; Var b])]
             )]
           )]
         )]
@@ -253,7 +252,7 @@ let tests = "test_predicates" >::: [
         [Decl (a, Local, Some (Var x),
           [Decl (x, Local, None,
             [Decl (b, Local, Some (Var x),
-              [Acc (Variable.from_name "A", {access_index = [Var a; Var b]; access_mode = W})]
+              [Acc (Variable.from_name "A", Access.write [Var a; Var b])]
             )]
           )]
         )]
@@ -264,7 +263,7 @@ let tests = "test_predicates" >::: [
       let open Post in
       [Post.Decl (x, Local, None,
         [Decl (x1, Local, None,
-          [Acc (Variable.from_name "A", {access_index = [Var x; Var x1]; access_mode = W})]
+          [Acc (Variable.from_name "A", Access.write [Var x; Var x1])]
         )]
       )]
     in
@@ -277,7 +276,7 @@ let tests = "test_predicates" >::: [
     in
     let open Proto in
     match p with
-    | [Acc (_, {access_index=[x1; x2]; _})] ->
+    | [Acc (_, {index=[x1; x2]; _})] ->
       assert_nexp (Var (Variable.from_name "x")) x1;
       assert_nexp (Var (Variable.from_name "x1")) x2;
     | _ -> assert false

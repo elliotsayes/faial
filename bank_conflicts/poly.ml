@@ -208,9 +208,9 @@ let to_string ?(skip_zero=true) ?(sort=true) ?(var="x") (p: t) : string =
   |> Seq.filter (fun (coef, _) -> not skip_zero || coef <> Exp.Num 0)
   |> Seq.map (fun (coef, pow) ->
     if pow = 0 then
-      Serialize.PPrint.n_to_s coef
+      Exp.n_to_string coef
     else
-      "(" ^ Serialize.PPrint.n_to_s coef ^ ")·" ^ var ^ exponent_to_string pow
+      "(" ^ Exp.n_to_string coef ^ ")·" ^ var ^ exponent_to_string pow
   )
   |> List.of_seq
   |> Common.join " + "

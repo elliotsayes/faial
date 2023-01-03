@@ -55,6 +55,14 @@ module Map = Map.Make(OT)
 module MapUtil = Common.MapUtil(Map)
 module MapSetUtil = Common.MapSetUtil (Set) (Map)
 
+let list_to_string (vs: t list) : string =
+  vs
+  |> List.map name
+  |> Common.join ", "
+
+let set_to_string (vs:Set.t) : string =
+  Set.elements vs |> list_to_string
+
 (** Given a variable and a set of known variables, returns
     a fresh variable name. *)
 

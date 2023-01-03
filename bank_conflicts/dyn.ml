@@ -19,10 +19,9 @@ let load_data (fname : string) : (string * int) list =
 
 let shared_arrays (k:Proto.prog Proto.kernel) : Variable.Set.t =
   let open Proto in
-  let open Exp in
   Variable.Map.bindings k.kernel_arrays
   |> List.filter_map (fun (k, a) ->
-    if a.array_hierarchy = SharedMemory then
+    if Memory.is_shared a then
       Some k
     else
       None

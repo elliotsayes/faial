@@ -9,16 +9,16 @@ open Exp
 let x = (Variable.from_name "x")
 let y = (Variable.from_name "y")
 let b = Bool true
-let r = {
-  range_var = Variable.from_name "z";
-  range_lower_bound = Num 1;
-  range_upper_bound = Num 2;
-  range_step = Default (Num 1);
-  range_dir = Increase;
+let r = Range.{
+  var = Variable.from_name "z";
+  lower_bound = Num 1;
+  upper_bound = Num 2;
+  step = Plus (Num 1);
+  dir = Increase;
 }
-let write = {
-  access_index = [];
-  access_mode = W;
+let write = Access.{
+  index = [];
+  mode = Mode.Wr;
 }
 let x_acc = UAcc (x, write)
 let y_acc = UAcc (y, write)

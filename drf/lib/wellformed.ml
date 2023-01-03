@@ -6,22 +6,21 @@ let (@) = Common.append_tr
 open Exp
 open Proto
 open Common
-open Serialize
 open Subst
 open Streamutil
 
 type u_inst =
   | UAssert of bexp
-  | UAcc of acc_expr
+  | UAcc of (Variable.t * Access.t)
   | UCond of bexp * u_inst list
-  | ULoop of range * u_inst list
+  | ULoop of Range.t * u_inst list
 
 
 type u_prog = u_inst list
 
 type w_inst =
   | SSync of u_prog
-  | SLoop of u_prog * range * w_inst list * u_prog
+  | SLoop of u_prog * Range.t * w_inst list * u_prog
 
 type w_prog = w_inst list
 
@@ -38,13 +37,13 @@ module Make (S:SUBST) = struct
     let rec i_subst (s:S.t) (i:u_inst) : u_inst =
       match i with
       | UAssert b -> UAssert (M.b_subst s b)
-      | UAcc e -> UAcc (M.acc_expr_subst s e)
+      | UAcc (x, e) -> UAcc (x, M.a_subst s e)
       | UCond (b, p) -> UCond (
           M.b_subst s b,
           p_subst s p
         )
       | ULoop (r, p) ->
-        let p = M.add s r.range_var (function
+        let p = M.add s r.var (function
           | Some s -> p_subst s p
           | None -> p
         ) in
@@ -59,7 +58,7 @@ module Make (S:SUBST) = struct
       match i with
       | SSync c -> SSync (u_subst s c)
       | SLoop (c1, r, p, c2) ->
-        let (p, c2) = M.add s r.range_var (function
+        let (p, c2) = M.add s r.var (function
           | Some s -> p_subst s p, u_subst s c2
           | None -> p, c2
         ) in
@@ -175,44 +174,44 @@ let translate (k: Proto.prog kernel) : w_prog kernel Streamutil.stream =
 let rec get_locs (p:u_prog) (known:Variable.Set.t) =
   match p with
   | UAssert _ :: l -> get_locs l known
-  | UAcc (x,a) :: l -> get_locs l (if a.access_mode = Exp.W then Variable.Set.add x known else known)
+  | UAcc (x,a) :: l -> get_locs l (if Access.is_write a then Variable.Set.add x known else known)
   | ULoop (_, l1)::l2
   | UCond (_, l1)::l2
     -> get_locs l1 known |> get_locs l2
   | [] -> known
 
-let rec u_inst_to_s (i: u_inst): PPrint.t list =
-  let open PPrint in
+let rec u_inst_to_s (i: u_inst): Indent.t list =
+  let open Indent in
   match i with
-  | UAssert b -> [Line ("assert " ^ b_to_s b ^ ";")]
-  | UAcc e -> acc_expr_to_s e
+  | UAssert b -> [Line ("assert " ^ Exp.b_to_string b ^ ";")]
+  | UAcc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
   | UCond (b, p1) -> [
-      Line ("if (" ^ b_to_s b ^ ") {");
+      Line ("if (" ^ Exp.b_to_string b ^ ") {");
       Block (u_prog_to_s p1);
       Line "}"
     ]
   | ULoop (r, p) ->
     [
-      Line ("foreach (" ^ r_to_s r ^ ") {");
+      Line ("foreach (" ^ Range.to_string r ^ ") {");
       Block (u_prog_to_s p);
       Line "}"
     ]
-and u_prog_to_s (p: u_prog) : PPrint.t list =
+and u_prog_to_s (p: u_prog) : Indent.t list =
   List.map u_inst_to_s p |> List.flatten
 
 let u_prog_to_string (p:u_prog) : string =
-  u_prog_to_s p |> PPrint.doc_to_string
+  u_prog_to_s p |> Indent.to_string
 
-let w_prog_to_s: w_prog -> PPrint.t list =
-  let open PPrint in
-  let rec inst_to_s : w_inst -> PPrint.t list =
+let w_prog_to_s: w_prog -> Indent.t list =
+  let open Indent in
+  let rec inst_to_s : w_inst -> Indent.t list =
     function
     | SSync e -> u_prog_to_s e @ [Line "sync;"]
     | SLoop (c1, r, p, c2) ->
       u_prog_to_s c1
       @
       [
-        Line ("foreach* (" ^ r_to_s r ^ ") {");
+        Line ("foreach* (" ^ Range.to_string r ^ ") {");
         Block (
           (List.map inst_to_s p |> List.flatten)
           @

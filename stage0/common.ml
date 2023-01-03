@@ -232,6 +232,11 @@ let pow ~base exponent : int =
     | e -> aux (base * accumulator) (base * base) ((e - 1) / 2) in
   aux 1 base exponent
 
+let highest_power ~base (n:int) : int =
+  let exponent : float = Float.log(Float.of_int n)
+    /. Float.log(Float.of_int base) in
+  pow ~base (Float.to_int exponent)
+
 (*
   Takes an ok_handler and an error_handler.
   Applies ok_handler to v and if there's an error, route it to

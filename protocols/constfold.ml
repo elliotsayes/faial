@@ -37,18 +37,7 @@ let rec n_opt (a : nexp) : nexp =
   | Num _ -> a
     (* if n < 0 then raise (Failure "Negative number") else a *)
   | Proj (t, n) -> Proj(t, n)
-  | NCall (x, e) ->
-    begin match n_opt e with
-    | Num _ as n ->
-      (* Try to evaluate the predicate *)
-      begin match Predicates.func_call_opt x n with
-      | Some n ->  (* We found the predicate; call it and optimize the result *)
-        n_opt n
-      | None -> (* Otherwise, leave the predicate unchanged *)
-        NCall (x, n)
-      end
-    | v -> NCall (x, v)
-    end
+  | NCall (x, e) -> NCall (x, n_opt e)
   | NIf (b, n1, n2) ->
     let b = b_opt b in
     let n1 = n_opt n1 in
@@ -71,7 +60,7 @@ let rec n_opt (a : nexp) : nexp =
     -> Num 0
     | Mod, _, Num 0
     | Div, _, Num 0
-    -> raise (Failure ("Division by zero: " ^ Serialize.PPrint.n_to_s a))
+    -> raise (Failure ("Division by zero: " ^ n_to_string a))
     (* Neutral *)
     | Plus, Num 0, a
     | Plus, a, Num 0
@@ -180,15 +169,15 @@ and b_opt (e : bexp) : bexp =
     | Some b -> Bool (not b)
     | _ -> BNot b
 
-let r_opt (r:range) : range =
+let r_opt (r:Range.t) : Range.t =
   {
     r with
-    range_lower_bound = n_opt r.range_lower_bound;
-    range_upper_bound = n_opt r.range_upper_bound;
+    lower_bound = n_opt r.lower_bound;
+    upper_bound = n_opt r.upper_bound;
   }
 
-let a_opt a =
+let a_opt (a:Access.t) : Access.t =
   {
-    access_mode = a.access_mode;
-    access_index = List.map n_opt a.access_index;
+    mode = a.mode;
+    index = List.map n_opt a.index;
   }

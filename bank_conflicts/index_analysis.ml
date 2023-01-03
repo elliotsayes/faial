@@ -19,7 +19,7 @@ let remove_offset (fvs: Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
     function
     | x :: fvs ->
       print_endline ("Removing offset variable '" ^
-        Variable.name x ^ "' from: " ^ Serialize.PPrint.n_to_s n
+        Variable.name x ^ "' from: " ^ Exp.n_to_string n
       );
       Poly.from_nexp x n
       (* If we cannot infer a polynomial expression, it's fine, because execution will fail *)
@@ -40,7 +40,7 @@ let remove_offset (fvs: Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
   in
   if Variable.Set.cardinal fvs > 0 then
     let n = rm_offset n (Variable.Set.elements fvs) in
-    print_endline ("Expression without offsets: " ^ Serialize.PPrint.n_to_s n);
+    print_endline ("Expression without offsets: " ^ Exp.n_to_string n);
     n
   else n
 
@@ -56,7 +56,7 @@ let analyze (num_banks:int) (thread_count:Vec3.t) (thread_locals : Variable.Set.
   let bc_fail (reason : string) : int =
     Printf.eprintf
       "WARNING: %s: %s\n"
-      reason (Serialize.PPrint.n_to_s n);
+      reason (Exp.n_to_string n);
     num_banks
   in
   let thread_locals = Variable.Set.diff thread_locals Variable.tid_var_set in

@@ -3,15 +3,13 @@ open Protocols
 
 let (@) = Common.append_tr
 
-open Exp
 open Proto
-open Serialize
 open Subst
 open Wellformed
 
 type a_inst =
   | ASync of u_prog
-  | ALoop of a_inst list * range * a_inst list
+  | ALoop of a_inst list * Range.t * a_inst list
 
 type a_prog = a_inst list
 
@@ -24,7 +22,7 @@ module Make (S:SUBST) = struct
       match i with
       | ASync c -> ASync (N.u_subst s c)
       | ALoop (p, r, q) ->
-        let q = M.add s r.range_var (function
+        let q = M.add s r.var (function
           | Some s -> p_subst s q
           | None -> q
         ) in
@@ -51,13 +49,13 @@ let align (w:w_prog) : a_prog =
     | SSync c -> (ASync c, [])
     | SLoop (c1, r, p, c2) ->
       let (q, c3) = p_align p in
-      let q1 = seq c1 (a_subst (r.range_var, r.range_lower_bound) q) in
+      let q1 = seq c1 (a_subst (r.var, r.lower_bound) q) in
       let c = u_seq c3 c2 in
-      let r' = Predicates.range_inc r in
-      let x = r.range_var in
-      let x_dec = Predicates.step_dec r.range_step (Var r.range_var) in
+      let r' = Range.next r in
+      let x = r.var in
+      let x_dec = Range.dec r in
       (ALoop (q1, r', seq (u_subst (x, x_dec) c) q),
-        u_subst (x, Predicates.range_last r) c)
+        u_subst (x, Range.lossy_last r) c)
   and p_align (p:w_prog) : a_prog * u_prog =
     match p with
     | [i] ->
@@ -77,16 +75,16 @@ let translate (ks: w_prog kernel Streamutil.stream) : a_prog kernel Streamutil.s
   ks
   |> map (fun k -> { k with kernel_code = align k.kernel_code })
 
-let a_prog_to_s: a_prog -> PPrint.t list =
-  let open PPrint in
-  let rec inst_to_s : a_inst -> PPrint.t list =
+let a_prog_to_s: a_prog -> Indent.t list =
+  let open Indent in
+  let rec inst_to_s : a_inst -> Indent.t list =
     function
     | ASync e -> u_prog_to_s e @ [Line "sync;"]
     | ALoop (p, r, q) ->
       (List.map inst_to_s p |> List.flatten)
       @
       [
-        Line ("foreach* (" ^ r_to_s r ^ ") {");
+        Line ("foreach* (" ^ Range.to_string r ^ ") {");
         Block (
           List.map inst_to_s q |> List.flatten
         );

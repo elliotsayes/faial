@@ -238,6 +238,7 @@ let main
   (show_loc_split:bool)
   (show_flat_acc:bool)
   (show_symbexp:bool)
+  (logic:string option)
 : unit =
   let gv = GvParser.parse fname in
   (match gv with
@@ -292,6 +293,7 @@ let main
           ~block_dim
           ~timeout:timeout
           ~show_proofs
+          ~logic
       |> Streamutil.map_opt (
         function
         | Drf -> None
@@ -353,6 +355,10 @@ let get_timeout =
   let doc = "Sets a timeout in millisecs. Default: $(docv)" in
   Arg.(value & opt (some int) None & info ["t"; "timeout"] ~docv:"MILISECS" ~doc)
 
+let logic =
+  let doc = "Set the logic used by the Z3 solver." in
+  Arg.(value & opt (some string) None & info ["logic"] ~doc)
+
 let show_proofs =
   let doc = "Show the Z3 proofs being generated." in
   Arg.(value & flag & info ["show-proofs"] ~doc)
@@ -397,6 +403,7 @@ let main_t = Term.(
   $ show_loc_split
   $ show_flat_acc
   $ show_symbexp
+  $ logic
 )
 
 let info =

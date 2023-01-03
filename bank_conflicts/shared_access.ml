@@ -15,7 +15,7 @@ let word_size = 4
 type shared_access = {shared_array: Variable.t; index: Exp.nexp}
 
 type t =
-  | Loop of Exp.range * t
+  | Loop of Range.t * t
   | Cond of Exp.bexp * t
   | Index of shared_access
 
@@ -37,11 +37,11 @@ let subst = S1.subst
 let rec to_string : t -> string =
   function
   | Loop (r, acc) ->
-      "for (" ^ Serialize.PPrint.r_to_s r ^ ") " ^ to_string acc
+      "for (" ^ Range.to_string r ^ ") " ^ to_string acc
   | Cond (b, acc) ->
-      "if (" ^ Serialize.PPrint.b_to_s b ^ ") " ^ to_string acc
+      "if (" ^ Exp.b_to_string b ^ ") " ^ to_string acc
   | Index a ->
-      "acc(" ^ Serialize.PPrint.n_to_s a.index ^ ")"
+      "acc(" ^ Exp.n_to_string a.index ^ ")"
 
 let rec shared_array : t -> Variable.t =
   function
@@ -131,26 +131,26 @@ let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * E
   ) with
   | Some l -> l
   | None ->
-      (print_endline ("ERROR: could not maximize expression: " ^ Serialize.PPrint.n_to_s n);
+      (print_endline ("ERROR: could not maximize expression: " ^ Exp.n_to_string n);
       [
         Variable.tidx, Num 0;
         Variable.tidy, Num 0;
         Variable.tidz, Num 0
       ])
 
-let uniform (thread_count:Vec3.t) (r:Exp.range) : Exp.range option =
+let uniform (thread_count:Vec3.t) (r:Range.t) : Range.t option =
   let open Exp in
   let fvs = Freenames.free_names_range r Variable.Set.empty in
   if Variable.contains_tids fvs then
     Some (
-      let r_subst (r:range) : (Variable.t * Exp.nexp) list -> range =
+      let r_subst (r:Range.t) : (Variable.t * Exp.nexp) list -> Range.t =
         List.fold_left (fun r (k,v) -> Subst.ReplacePair.r_subst (k, v) r) r
       in
       let r' =
-        maximize thread_count (n_minus r.range_upper_bound r.range_lower_bound)
+        maximize thread_count (n_minus r.upper_bound r.lower_bound)
         |> r_subst r
       in
-      print_endline ("Making range uniform: for (" ^ Serialize.PPrint.r_to_s r ^ ") 🡆 for (" ^ Serialize.PPrint.r_to_s r' ^ ")");
+      print_endline ("Making range uniform: for (" ^ Range.to_string r ^ ") 🡆 for (" ^ Range.to_string r' ^ ")");
       r'
     )
   else None
@@ -160,7 +160,7 @@ let byte_count_multiplier (byte_count:int) (l:Exp.nexp list) : Exp.nexp list =
     l
   else (
     let open Exp in
-    let n_s = Serialize.PPrint.n_to_s in
+    let n_s = Exp.n_to_string in
     let bs = string_of_int byte_count ^  "/" ^ string_of_int word_size in
     let arr l = List.map n_s l |> Common.join ", " in
     let l' = List.map (fun n ->
@@ -194,19 +194,19 @@ let flatten_multi_dim (dim:int list) (l:Exp.nexp list) : Exp.nexp =
 let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
   let open Exp in
   let shared : array_size Variable.Map.t = Variable.Map.filter_map (fun _ v ->
-    if v.array_hierarchy = SharedMemory then
+    if Memory.is_shared v then
       let open Inference in
-      let ty = Common.join " " v.array_type |> C_type.make in
+      let ty = Common.join " " v.data_type |> C_type.make in
       match C_type.sizeof ty with
-      | Some n -> Some {byte_count=n; dim=v.array_size}
-      | None -> Some {byte_count=word_size; dim=v.array_size}
+      | Some n -> Some {byte_count=n; dim=v.size}
+      | None -> Some {byte_count=word_size; dim=v.size}
     else
       None
     ) k.kernel_arrays
   in
   let rec on_i : Proto.inst -> t Seq.t =
     function
-    | Proto.Acc (x, {access_index=l; _}) ->
+    | Proto.Acc (x, {index=l; _}) ->
       (* Flatten n-dimensional array and apply word size *)
       (match Variable.Map.find_opt x shared with
       | Some a ->
@@ -229,8 +229,8 @@ let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
         | Some r' ->
           let cnd =
             b_and
-              (n_ge (Var r.range_var) r.range_lower_bound)
-              (n_lt (Var r.range_var) r.range_upper_bound)
+              (n_ge (Var r.var) r.lower_bound)
+              (n_lt (Var r.var) r.upper_bound)
           in
           Loop (r', Cond(cnd, i))
         | None ->

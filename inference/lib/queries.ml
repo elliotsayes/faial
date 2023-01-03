@@ -398,8 +398,7 @@ module Loops = struct
     to_seq
 
   let to_string (s: t) : string =
-    let open Serialize in
-    let rec stmt_to_s : loop -> PPrint.t list =
+    let rec stmt_to_s : loop -> Indent.t list =
       function
       | For f -> [
           Line ("@for (" ^
@@ -421,7 +420,7 @@ module Loops = struct
         Line ("@do (" ^ Expr.to_string b ^ ") {");
       ]
     in
-    List.concat_map stmt_to_s s |> PPrint.doc_to_string
+    List.concat_map stmt_to_s s |> Indent.to_string
 
   let max_depth: t -> int =
     let rec depth1 (x: loop) : int =
@@ -762,7 +761,7 @@ module ForEach = struct
       List.to_seq l
       |> Seq.concat_map to_seq
 
-  let infer (s: Stmt.t) : (t * Exp.range option) Seq.t =
+  let infer (s: Stmt.t) : (t * Range.t option) Seq.t =
     to_seq s
     |> Seq.map (function
       | For r ->
