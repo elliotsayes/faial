@@ -78,14 +78,13 @@ let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * E
       None
   in
   let open Z3 in
-  let open Z3expr in
   let ctx = mk_context ["timeout", string_of_int timeout] in
-  let n_expr = n_to_expr ctx n in
+  let n_expr = Gen_z3.IntGen.n_to_expr ctx n in
   let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
   let restrict tid tid_count =
     let lhs = n_ge (Var tid) (Num 0) in
     let rhs = n_lt (Var tid) (Num tid_count) in
-    b_to_expr ctx (b_and lhs rhs)
+    Gen_z3.IntGen.b_to_expr ctx (b_and lhs rhs)
   in
   let opt = Optimize.mk_opt ctx in
   Optimize.add opt [

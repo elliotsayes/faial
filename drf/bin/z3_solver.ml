@@ -1,8 +1,9 @@
 open Stage0
 open Protocols
 open Drf
-
+open Gen_z3
 open Exp
+
 module Solver = Z3.Solver
 module Expr = Z3.Expr
 module Boolean = Z3.Boolean
@@ -15,153 +16,6 @@ module BitVector = Z3.BitVector
 
 module StringMap = Common.StringMap
 type json = Yojson.Basic.t
-
-exception Not_implemented of string
-
-module type GEN = sig
-	val n_to_expr: Z3.context -> nexp -> Expr.expr
-	val b_to_expr: Z3.context -> bexp -> Expr.expr
-end
-
-type binop = Z3.context -> Expr.expr -> Expr.expr -> Expr.expr
-type unop = Z3.context -> Expr.expr -> Expr.expr
-
-(* We define an abstract module to handle numeric operations
-	 so that we can support arbitrary backends. *)
-module type NUMERIC_OPS = sig
-	val mk_var: Z3.context -> string -> Expr.expr
-	val mk_num: Z3.context -> int -> Expr.expr
-	val mk_bit_and: binop
-	val mk_bit_or: binop
-	val mk_bit_xor: binop
-	val mk_left_shift: binop
-	val mk_right_shift: binop
-	val mk_plus: binop
-	val mk_minus: binop
-	val mk_mult: binop
-	val mk_div: binop
-	val mk_mod: binop
-	val mk_le: binop
-	val mk_ge: binop
-	val mk_gt: binop
-	val mk_lt: binop
-  val parse_num: string -> string
-end
-
-module ArithmeticOps : NUMERIC_OPS = struct
-	let missing (name:string) : binop = fun _ _ _ -> raise (Not_implemented name)
-	let mk_var = Integer.mk_const_s
-	let mk_num = Arithmetic.Integer.mk_numeral_i
-	let mk_bit_and = missing "&"
-	let mk_bit_or = missing "|"
-	let mk_bit_xor =  missing "^"
-	let mk_left_shift = missing "<<"
-	let mk_right_shift = missing ">>"
-	let mk_plus ctx n1 n2 = Arithmetic.mk_add ctx [n1; n2]
-	let mk_minus ctx n1 n2 = Arithmetic.mk_sub ctx [n1; n2]
-	let mk_mult ctx n1 n2 = Arithmetic.mk_mul ctx [n1; n2]
-	let mk_div = Arithmetic.mk_div
-	let mk_mod = Arithmetic.Integer.mk_mod
-	let mk_le = Arithmetic.mk_le
-	let mk_ge = Arithmetic.mk_ge
-	let mk_gt = Arithmetic.mk_gt
-	let mk_lt = Arithmetic.mk_lt
-	let parse_num (x:string) = x
-end
-
-
-module BitVectorOps : NUMERIC_OPS = struct
-	let word_size = 32
-	let mk_var ctx x = BitVector.mk_const_s ctx x word_size
-	let mk_num ctx n = BitVector.mk_numeral ctx (string_of_int n) word_size
-	let mk_bit_and = BitVector.mk_and
-	let mk_bit_or = BitVector.mk_or
-	let mk_bit_xor =  BitVector.mk_xor
-	let mk_left_shift = BitVector.mk_shl
-	let mk_right_shift = BitVector.mk_ashr
-	let mk_minus = BitVector.mk_sub
-	let mk_plus = BitVector.mk_add
-	let mk_mult = BitVector.mk_mul
-	let mk_div = BitVector.mk_sdiv
-	let mk_mod = BitVector.mk_smod
-	let mk_le = BitVector.mk_sle
-	let mk_ge = BitVector.mk_sge
-	let mk_gt = BitVector.mk_sgt
-	let mk_lt = BitVector.mk_slt
-	let parse_num x =
-		(* Input is: #x0000004000000000 *)
-		let offset n x = String.sub x n (String.length x - n) in
-		(* We need to remove the prefix #x *)
-		let x = offset 2 x in (* Removes the prefix: #x *)
-		(* Then we need to remove the prefix 0s,
-		   otherwise Int32.of_string doesn't like it *)
-		let rec trim_0 x =
-			if String.length x > 0 && String.get x 0 = '0'
-			then trim_0 (offset 1 x)
-			else x
-		in
-		(* Prefix it with a 0x so that Int64.of_string knows it's an hex *)
-    let x = "0x" ^ trim_0 x in
-		(* Finally, convert it into an int64 (signed),
-	     and then render it back to a string, as this is for display only *)
-    if x = "0x"
-    then "0"
-    else Int32.of_string x |> Int32.to_string
-end
-
-
-module CodeGen (N:NUMERIC_OPS) = struct 
-	let parse_num = N.parse_num
-
-	let nbin_to_expr (op:nbin) : Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = match op with
-		| BitAnd -> N.mk_bit_and
-		| BitOr -> N.mk_bit_or
-		| BitXOr -> N.mk_bit_xor
-		| LeftShift -> N.mk_left_shift
-		| RightShift -> N.mk_right_shift
-		| Plus -> N.mk_plus
-		| Minus -> N.mk_minus
-		| Mult -> N.mk_mult
-		| Div -> N.mk_div
-		| Mod -> N.mk_mod
-
-	let nrel_to_expr : nrel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
-		| NEq -> Boolean.mk_eq
-		| NNeq -> fun ctx n1 n2 -> Boolean.mk_not ctx (Boolean.mk_eq ctx n1 n2)
-		| NLe -> N.mk_le
-		| NGe -> N.mk_ge
-		| NLt -> N.mk_lt
-		| NGt -> N.mk_gt
-
-	let brel_to_expr : brel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
-		| BOr -> fun ctx b1 b2 -> Boolean.mk_or ctx [b1; b2]
-		| BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
-
-	let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr = match n with
-		| Var x -> Variable.name x |> N.mk_var ctx
-		| Proj _ ->
-		    let n : string = Exp.n_to_string n in
-		    raise (Not_implemented ("n_to_expr: not implemented for Proj of " ^ n))
-		| NCall _ ->
-				failwith "b_to_expr: invoke Predicates.inline to remove predicates"
-		| Num (n:int) -> N.mk_num ctx n
-		| Bin (op, n1, n2) ->
-		    (nbin_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
-		| NIf (b, n1, n2) -> Boolean.mk_ite ctx
-		    (b_to_expr ctx b) (n_to_expr ctx n1) (n_to_expr ctx n2)
-
-	and b_to_expr (ctx:Z3.context) (b:bexp) : Expr.expr = match b with
-		| Bool (b:bool) -> Boolean.mk_val ctx b
-		| NRel (op, n1, n2) ->
-		    (nrel_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
-		| BRel (op, b1, b2) ->
-		    (brel_to_expr op) ctx (b_to_expr ctx b1) (b_to_expr ctx b2)
-		| BNot (b:bexp) -> Boolean.mk_not ctx (b_to_expr ctx b)
-		| Pred _ -> failwith "b_to_expr: invoke Predicates.inline to remove predicates"
-end
-
-module IntGen = CodeGen (ArithmeticOps)
-module BvGen = CodeGen (BitVectorOps)
 
 let add
   ?(add_block_dim=false)
