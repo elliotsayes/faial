@@ -3,7 +3,7 @@ params=("$@")
 arg=0
 steps=2
 
-# Parse the number of times to run proto-to-cuda, if given.
+# Parse the number of times to run faial-gen, if given.
 while getopts "s:" opt; do
     case ${opt} in
     s)
@@ -32,32 +32,32 @@ tmp2=$(mktemp /tmp/kernel2.XXXXXX)
 input_file=${params[$arg]}
 
 # Generate the first kernel.
-"${SCRIPT_DIR}/proto-to-cuda" $input_file >"$tmp1"
+"${SCRIPT_DIR}/faial-gen" $input_file >"$tmp1"
 
 case $? in
 0) ;;
 124) # If the input file was not found, exit immediately.
     exit 124 ;;
 *) # For all other errors, exit with an error message.
-    echo "$input_file could not be parsed by proto-to-cuda (1)."
+    echo "$input_file could not be parsed by faial-gen (1)."
     exit 4
     ;;
 esac
 
 # Generate the second kernel.
-if ! "${SCRIPT_DIR}/proto-to-cuda" "$tmp1" >"$tmp2"; then
-    echo "$input_file could not be parsed by proto-to-cuda (2)."
+if ! "${SCRIPT_DIR}/faial-gen" "$tmp1" >"$tmp2"; then
+    echo "$input_file could not be parsed by faial-gen (2)."
     exit 5
 # A kernel reaches a fixed point if both generated kernels have the same code.
 elif cmp -s "$tmp1" "$tmp2"; then
     echo "$input_file reaches a fixed point."
     exit 0
 else
-    # Tests whether an additional proto-to-cuda run
+    # Tests whether an additional faial-gen run
     # will cause the kernel to reach a fixed point.
     fixpoint() {
-        if ! "${SCRIPT_DIR}/proto-to-cuda" "$1" >"$2"; then
-            echo "$input_file could not be parsed by proto-to-cuda ($4)."
+        if ! "${SCRIPT_DIR}/faial-gen" "$1" >"$2"; then
+            echo "$input_file could not be parsed by faial-gen ($4)."
             echo "Printing previous diff."
             echo "$input_file does not reach a fixed point:"
             diff -u "$3" "$2"
