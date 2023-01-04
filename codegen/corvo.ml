@@ -19,15 +19,15 @@ let read_kernels (fname : string) =
 (* Command-line interface *)
 let p2c_t =
   let get_fname =
-    let doc = "The path $(docv) of the GPU contract." in
+    let doc = "The path $(docv) of the GPU program." in
     Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
   in
   let racuda =
-    let doc = "Generate a RaCUDA-friendly kernel" in
+    let doc = "Generate a RaCUDA-friendly kernel." in
     Arg.(value & flag & info ["r"; "racuda"] ~doc)
   in
   let output_toml =
-    let doc = "Output a TOML file" in
+    let doc = "Output a TOML file." in
     Arg.(value & flag & info ["t"; "toml"] ~doc)
   in
   let do_p2c
