@@ -656,7 +656,9 @@ let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) :
       (* In summations we start with base 1; we decrement 1 so that we start in base 2^0 *)
       let new_range_var = n_mult (r.lower_bound) (n_pow ~base:k (n_dec (Var r.var))) in
       let p = Shared_access.subst (r.var, new_range_var) p in
-      Sum (x, iters, from_slice num_banks thread_count locs p)
+      (match from_slice num_banks thread_count locs p with
+      | Const 0 -> Const 0
+      | s -> Sum (x, iters, s))
     | {step = Plus k; _} ->
       let open Exp in
       (*
@@ -669,5 +671,7 @@ let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) :
       let new_range_var = n_mult (n_plus (Var r.var) (n_inc r.lower_bound)) k in
       let p = Shared_access.subst (r.var, new_range_var) p in
       (*  (ub-lb)/k *)
-      Sum (r.var, iters, from_slice num_banks thread_count locs p)
+      (match from_slice num_banks thread_count locs p with
+      | Const 0 -> Const 0
+      | s -> Sum (r.var, iters, s))
     | _ -> failwith ("Unsupported range: " ^ Range.to_string r)
