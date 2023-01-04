@@ -176,6 +176,9 @@ let n_minus n1 n2 =
   | Num n1, Num n2 -> Num (n1 - n2)
   | _, _ -> Bin (Minus, n1, n2)
 
+let n_dec (n:nexp) : nexp =
+  n_minus n (Num 1)
+
 let rec n_mult n1 n2 =
   match n1, n2 with
   | Num 1, n | n, Num 1 -> n

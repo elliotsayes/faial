@@ -5,6 +5,7 @@ open Stage0
   2. Flattens a summation expression as a single numeric expression.
   *)
 open Exp
+
 type t =
   | Const of int
   | Sum of Variable.t * Exp.nexp * t
@@ -87,25 +88,62 @@ let sum power e : Exp.nexp =
     ]
   | _ -> failwith ("S_" ^ string_of_int power ^ " not implemented")
 
+let n_fact (e:Exp.nexp) : Exp.nexp =
+  NCall ("!", e)
+
 let rec flatten : t -> (Exp.nexp, string) Result.t =
   let (let*) = Result.bind in
   function
   | Const k -> Ok (Num k)
   | Sum (x, ub, s) ->
     let* n = flatten s in
-    (match Poly.from_nexp x n with
-    | Some p ->
-      Ok (
-        p
-        |> Poly.to_seq
-        |> Seq.map (fun (coefficient, degree) ->
-          n_mult coefficient (sum degree ub)
+    (* When we give up, we convert our expr into a polynomial *)
+    let handle_poly (n:Exp.nexp) : (Exp.nexp, string) Result.t =
+      match Poly.from_nexp x n with
+      | Some p ->
+        Ok (
+          p
+          |> Poly.to_seq
+          |> Seq.map (fun (coefficient, degree) ->
+            n_mult coefficient (sum degree ub)
+          )
+          |> Seq.fold_left n_plus (Num 0)
         )
-        |> Seq.fold_left n_plus (Num 0)
-      )
-    | None -> Error ("Cannot convert to a polynomial of '" ^
-      Variable.name x ^ "': "^
-      Exp.n_to_string n))
+      | None ->
+        Error ("Cannot convert to a polynomial of '" ^
+          Variable.name x ^ "': "^
+          Exp.n_to_string n)
+    in
+    (* Try to handle the easy cases: *)
+    let rec handle_expr (e: Exp.nexp) : (Exp.nexp, string) Result.t =
+      let open Exp in
+      match e with
+      | Bin (Plus, e1, e2) ->
+        let* e1 = handle_expr e1 in
+        let* e2 = handle_expr e2 in
+        Ok (n_plus e1 e2)
+      | Bin (Minus, e1, e2) ->
+        let* e1 = handle_expr e1 in
+        let* e2 = handle_expr e2 in
+        Ok (n_minus e1 e2)
+      | Bin (Mult, Num n, e)
+      | Bin (Mult, e, Num n) ->
+        let* e = handle_expr e in
+        Ok (n_mult e (Num n))
+      | Bin (Div, Num n, e) ->
+        let* e = handle_expr e in
+        Ok (Bin (Div, Num n, e))
+      | Bin (Div, e, Num n) ->
+        let* e = handle_expr e in
+        Ok (Bin (Div, e, Num n))
+      | NCall (f, Var y) when Variable.equal y x && String.starts_with ~prefix:"log" f ->
+        Ok (NCall (f, n_fact (Var x)))
+      | NCall (f, e) when String.starts_with ~prefix:"log" f && not (Freenames.mem_nexp x e) ->
+        Ok (n_mult ub (NCall (f, e)))
+      | e -> handle_poly e
+    in
+    handle_expr n
+
   | Add l ->
     let l = List.map flatten l in
     (match List.find_opt Result.is_error l with
@@ -575,6 +613,17 @@ let run_koat ?(exe="koat2") ?(verbose=false) (s:t) : string =
 
 (* ---------------------------- end of solvers ------------------------ *)
 
+let n_log ~base (e:Exp.nexp) : Exp.nexp =
+  match e with
+  | Num n when (n >= 1 && base = 2) -> Num (n |> float_of_int |> Float.log2 |> Float.ceil |> int_of_float)
+  | _ ->
+    NCall ("log" ^ string_of_int base, e)
+
+let n_pow ~base (e:Exp.nexp) : Exp.nexp =
+  match e with
+  | Num n -> Num (Common.pow ~base n)
+  | _ -> NCall ("pow" ^ string_of_int base, e)
+
 let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) : Shared_access.t -> t =
   function
   | Index a -> Const (Index_analysis.analyze num_banks thread_count locs a.index)
@@ -583,42 +632,42 @@ let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) :
     match r with
     | {
         var=x;
-        step = Mult (Num 2);
+        step = Mult (Num k);
         _
-      } ->
-        let l =
-          Range.eval_opt r
-          |> (function
-            | Some l -> l
-            | None ->
-              let x = Variable.name r.var in
-              prerr_endline (
-                "Warning: approximated loop (" ^
-                Range.to_string r ^
-                ") 🡆 (" ^ x ^ " in 1 .. MAX_INT; " ^ x ^ " * 2)");
-              Common.range 64 |> List.map (Common.pow ~base:2)
-            )
-          |> List.map (fun i ->
-            let p = Shared_access.subst (x, Num i) p in
-            from_slice num_banks thread_count locs p
-          )
-        in
-        Add l
-    | {
-        var=x;
-        lower_bound=Num 0;
-        step = Plus (Num 1);
-        upper_bound=ub;
-        _
-      } ->
-      Sum (x, ub, from_slice num_banks thread_count locs p)
+      } when k >= 2 ->
+        let open Exp in
+        (*
+          log_k (ub - lb)
+
+          For instance,
+            for (x = 3; x < 100; x *= 2) ->
+              3, 6, 12, 24, 48, 96 <- log2 (100 / 3)
+              3*2^0, 3*2^1, 3*2^2, ...
+
+            for (x = 25; x < 100; x *= 2) ->
+              25, 50 <- log2 (100 / 3) = log2(100) - log2(3)
+              25*2^0, 25*2^1
+         *)
+      let iters =
+        (* we use subtraction of logs, rather than division of args of logs
+           because ultimately we want to simplify the logs. *)
+        n_minus (n_log ~base:k r.upper_bound) (n_log ~base:k r.lower_bound)
+      in
+      (* In summations we start with base 1; we decrement 1 so that we start in base 2^0 *)
+      let new_range_var = n_mult (r.lower_bound) (n_pow ~base:k (n_dec (Var r.var))) in
+      let p = Shared_access.subst (r.var, new_range_var) p in
+      Sum (x, iters, from_slice num_banks thread_count locs p)
     | {step = Plus k; _} ->
       let open Exp in
-      (* iters = ub - lb *)
-      let iters = n_minus r.upper_bound r.lower_bound in
+      (*
+                ub - lb
+        iters = -------
+                   k
+      *)
+      let iters = n_div (n_minus r.upper_bound r.lower_bound) k in
       (* x := k (x + lb + 1) *)
       let new_range_var = n_mult (n_plus (Var r.var) (n_inc r.lower_bound)) k in
       let p = Shared_access.subst (r.var, new_range_var) p in
       (*  (ub-lb)/k *)
-      Sum (r.var, n_div iters k, from_slice num_banks thread_count locs p)
+      Sum (r.var, iters, from_slice num_banks thread_count locs p)
     | _ -> failwith ("Unsupported range: " ^ Range.to_string r)

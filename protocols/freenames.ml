@@ -23,6 +23,10 @@ let is_closed_nexp e : bool =
   free_names_nexp e Variable.Set.empty
   |> Variable.Set.is_empty
 
+let mem_nexp (x:Variable.t) (e:nexp) : bool =
+  free_names_nexp e Variable.Set.empty
+  |> Variable.Set.mem x
+
 let free_names_bexp e fns = fold_bexp Variable.Set.add e fns
 
 let free_names_range (r:Range.t) (fns:Variable.Set.t) : Variable.Set.t =
