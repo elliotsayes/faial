@@ -137,7 +137,9 @@ let rec flatten : t -> (Exp.nexp, string) Result.t =
         let* e = handle_expr e in
         Ok (Bin (Div, e, Num n))
       | NCall (f, Var y) when Variable.equal y x && String.starts_with ~prefix:"log" f ->
-        Ok (NCall (f, n_fact (Var x)))
+        let e = n_minus (n_mult ub (NCall (f, ub))) ub in
+        prerr_endline ("WARNING:  Σ" ^ f ^ "(!" ^ Variable.name x ^ ") ≈ " ^ Exp.n_to_string e);
+        Ok e
       | NCall (f, e) when String.starts_with ~prefix:"log" f && not (Freenames.mem_nexp x e) ->
         Ok (n_mult ub (NCall (f, e)))
       | e -> handle_poly e
@@ -613,15 +615,42 @@ let run_koat ?(exe="koat2") ?(verbose=false) (s:t) : string =
 
 (* ---------------------------- end of solvers ------------------------ *)
 
-let n_log ~base (e:Exp.nexp) : Exp.nexp =
+let pow_base (name:string) : int option =
+  match Common.split 'w' name with
+  | Some (_, k) -> int_of_string_opt k
+  | None -> None
+
+let log_base (name:string) : int option =
+  match Common.split 'g' name with
+  | Some (_, k) -> int_of_string_opt k
+  | None -> None
+
+let rec n_log ~base (e:Exp.nexp) : Exp.nexp =
   match e with
+  | NCall (f, e) when pow_base f = Some base ->
+    e
   | Num n when (n >= 1 && base = 2) -> Num (n |> float_of_int |> Float.log2 |> Float.ceil |> int_of_float)
+  | Bin (RightShift, e', Num k) when base = 2 ->
+    Bin (Minus, n_log ~base e', Num k)
+  | Bin (Mult, e1, e2) ->
+    n_plus (n_log ~base e1) (n_log ~base e2)
+  | Bin (Div, e1, e2) ->
+    n_minus (n_log ~base e1) (n_log ~base e2)
+  | Bin (Plus, e', Num 1)
+  | Bin (Minus, e', Num 1)
+  | Bin (Minus, Num 1, e')
+  | Bin (Plus, Num 1, e') ->
+    let x = "log" ^ string_of_int base in
+    prerr_endline ("WARNING: " ^ x ^ "(" ^ Exp.n_to_string e ^ ") ≈ " ^ x ^ "(" ^ Exp.n_to_string e' ^ ")");
+    n_log ~base e'
   | _ ->
     NCall ("log" ^ string_of_int base, e)
 
-let n_pow ~base (e:Exp.nexp) : Exp.nexp =
+let rec n_pow ~base (e:Exp.nexp) : Exp.nexp =
   match e with
   | Num n -> Num (Common.pow ~base n)
+  | Bin (Plus, e1, e2) -> n_mult (n_pow ~base e1) (n_pow ~base e2)
+  | Bin (Minus, e1, e2) -> n_div (n_pow ~base e1) (n_pow ~base e2)
   | _ -> NCall ("pow" ^ string_of_int base, e)
 
 let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) : Shared_access.t -> t =
