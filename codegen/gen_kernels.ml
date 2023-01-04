@@ -11,21 +11,21 @@ let ub = Variable.from_name "n"
 let tid = Variable.from_name "threadIdx.x"
 
 let write (p : prog) : prog =
-  p @ [Acc (arr, {access_index = [Var tid]; access_mode = W})]
+  p @ [Acc (arr, {index = [Var tid]; mode = Wr})]
 
 let read (p : prog) : prog =
-  p @ [Acc (arr, {access_index = [Var tid]; access_mode = R})]
+  p @ [Acc (arr, {index = [Var tid]; mode = Rd})]
 
 let sync (p : prog) : prog =
   p @ [Sync]
 
 (* Inner loop *)
 let loop1 (p : prog) : prog =
-  [Loop (mk_range (Variable.from_name "x") (Var ub), p)]
+  [Loop (Range.make (Variable.from_name "x") (Var ub), p)]
 
 (* Outer loop *)
 let loop2 (p : prog) : prog =
-  p @ [Loop (mk_range (Variable.from_name "x") (Var ub), [])]
+  p @ [Loop (Range.make (Variable.from_name "x") (Var ub), [])]
 
 (* Inner conditional *)
 let cond1 (p : prog) : prog =
@@ -53,7 +53,7 @@ let kernel (p : prog) : prog kernel =
   {kernel_name = "kernel";
    kernel_global_variables = VarSet.of_list [ub];
    kernel_local_variables = VarSet.of_list [tid];
-   kernel_arrays = mk_array_map GlobalMemory [arr];
+   kernel_arrays = Memory.make_map GlobalMemory [arr];
    kernel_pre = distinct [tid];
    kernel_code = p}
 
