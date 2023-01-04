@@ -23,13 +23,18 @@ let is_closed_nexp e : bool =
   free_names_nexp e Variable.Set.empty
   |> Variable.Set.is_empty
 
+let mem_nexp (x:Variable.t) (e:nexp) : bool =
+  free_names_nexp e Variable.Set.empty
+  |> Variable.Set.mem x
+
 let free_names_bexp e fns = fold_bexp Variable.Set.add e fns
 
-let free_names_range (r:range) (fns:Variable.Set.t) : Variable.Set.t =
-  free_names_nexp r.range_lower_bound fns |> free_names_nexp r.range_upper_bound
+let free_names_range (r:Range.t) (fns:Variable.Set.t) : Variable.Set.t =
+  free_names_nexp r.lower_bound fns |> free_names_nexp r.upper_bound
 
 let free_names_access a fns =
-  List.fold_right free_names_nexp a.access_index fns
+  let open Access in
+  List.fold_right free_names_nexp a.index fns
 
 let free_names_list f l fns =
   List.fold_right f l fns
@@ -44,8 +49,8 @@ let rec free_names_inst (i:Proto.inst) (fns:Variable.Set.t) : Variable.Set.t =
     |> free_names_proto p1
   | Loop (r, p) ->
     free_names_proto p fns
-    |> Variable.Set.remove r.range_var
-    |> Variable.Set.union (free_names_nexp r.range_upper_bound fns)
+    |> Variable.Set.remove r.var
+    |> Variable.Set.union (free_names_nexp r.upper_bound fns)
 
 and free_names_proto (p:Proto.prog) (fns:Variable.Set.t) : Variable.Set.t =
   free_names_list free_names_inst p fns

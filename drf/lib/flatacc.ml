@@ -7,7 +7,7 @@ open Exp
 
 type cond_access = {
   ca_location: Location.t;
-  ca_access: access;
+  ca_access: Access.t;
   ca_cond: bexp;
 }
 
@@ -73,7 +73,7 @@ let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
     | UAssert _ -> failwith "Internall error: call rm_asserts first!"
     | UAcc (x, e) -> [{ca_location = Variable.location x; ca_access = e; ca_cond = b}]
     | UCond (b', p) -> flatten_p (b_and b' b) p
-    | ULoop (r, p) -> flatten_p (b_and (range_to_cond r) b) p
+    | ULoop (r, p) -> flatten_p (b_and (Range.to_cond r) b) p
   and flatten_p (b:bexp) (p:u_prog) : cond_access list =
     List.map (flatten_i b) p |> List.flatten
   in
@@ -82,7 +82,7 @@ let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
     | UAssert _
     | UAcc _ -> vars
     | UCond (_, p) -> loop_vars_p p vars
-    | ULoop (r, p) -> loop_vars_p p (Variable.Set.add r.range_var vars)
+    | ULoop (r, p) -> loop_vars_p p (Variable.Set.add r.var vars)
   and loop_vars_p (p:u_prog) (vars:Variable.Set.t) : Variable.Set.t =
     List.fold_right loop_vars_i p vars
   in
@@ -96,7 +96,7 @@ let l_kernel_to_h_kernel (k:l2_kernel) : f_kernel =
     f_kernel_array = k.l_kernel_array;
     f_kernel_accesses = flatten_p (Bool true) code;
     f_kernel_local_variables = loop_vars_i k.l_kernel_code k.l_kernel_local_variables;
-    f_kernel_pre = b_and_ex (List.map range_to_cond k.l_kernel_ranges);
+    f_kernel_pre = b_and_ex (List.map Range.to_cond k.l_kernel_ranges);
   }
 
 let translate (stream:l2_kernel Streamutil.stream) : f_kernel Streamutil.stream =
@@ -105,20 +105,17 @@ let translate (stream:l2_kernel Streamutil.stream) : f_kernel Streamutil.stream 
 
 (* ------------------- SERIALIZE ---------------------- *)
 
-let f_kernel_to_s (k:f_kernel) : Serialize.PPrint.t list =
-  let open Serialize in
-  let open PPrint in
-  let acc_val_to_s a : string =
-    mode_to_s a.access_mode ^ index_to_s a.access_index
-  in
+let f_kernel_to_s (k:f_kernel) : Indent.t list =
+  let open Indent in
   let acc_to_s (a:cond_access) : t =
     let lineno = (Location.line a.ca_location |> Index.to_base1 |> string_of_int) ^ ": " in
-    Line (lineno ^ acc_val_to_s a.ca_access ^ " if " ^ b_to_s a.ca_cond ^";")
+    Line (lineno ^ Access.to_string a.ca_access ^ " if " ^
+      b_to_string a.ca_cond ^";")
   in
   [
       Line ("array: " ^ k.f_kernel_array ^ ";");
-      Line ("locals: " ^ var_set_to_s k.f_kernel_local_variables ^ ";");
-      Line ("pre: " ^ b_to_s k.f_kernel_pre ^ ";");
+      Line ("locals: " ^ Variable.set_to_string k.f_kernel_local_variables ^ ";");
+      Line ("pre: " ^ b_to_string k.f_kernel_pre ^ ";");
       Line "{";
       Block (List.map acc_to_s k.f_kernel_accesses);
       Line "}"
@@ -131,6 +128,6 @@ let print_kernels (ks : f_kernel Streamutil.stream) : unit =
     let curr = !count + 1 in
     count := curr;
     print_endline ("; acc " ^ (string_of_int curr));
-    Serialize.PPrint.print_doc (f_kernel_to_s k)
+    Indent.print (f_kernel_to_s k)
   ) ks;
   print_endline "; end of flatacc"

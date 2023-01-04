@@ -21,22 +21,22 @@ end
      expression that assigns the expression to the current index.
 *)
 type assign_task = {
-  assign_mode : mode -> bexp;
+  assign_mode : Access.Mode.t -> bexp;
   assign_index: int -> nexp -> bexp;
   assign_loc: LocationIndex.t -> bexp;
 }
 
 module SymAccess = struct
-  type t = {location: LocationIndex.t; condition: bexp; access: access}
+  type t = {location: LocationIndex.t; condition: bexp; access: Access.t}
   let mk ~location ~condition ~access = {location; condition; access}
   (* Given a task generator serialize a conditional access *)
   let to_bexp (t:assign_task) (a:t) : bexp =
     let head = [
         a.condition;
-        t.assign_mode a.access.access_mode;
+        t.assign_mode a.access.mode;
     ] in
     let head = t.assign_loc a.location :: head in
-    head @ List.mapi t.assign_index a.access.access_index
+    head @ List.mapi t.assign_index a.access.index
     |> b_and_ex
 
 end
@@ -48,7 +48,6 @@ module Proof = struct
     array_name: string;
     locations: Location.t list;
     preds: Predicates.t list;
-    funcs: Predicates.step_handler list;
     decls: string list;
     goal: bexp;
   }
@@ -59,13 +58,11 @@ module Proof = struct
       |> List.map Variable.name
     in
     let preds = Predicates.get_predicates goal in
-    let funcs = Predicates.get_functions goal in
-    {id; preds; funcs; decls; goal; array_name; kernel_name; locations;}
+    {id; preds; decls; goal; array_name; kernel_name; locations;}
 
-    let to_string (p:t) : Serialize.PPrint.t list =
+    let to_string (p:t) : Indent.t list =
       let open Common in
-      let open Serialize in
-      let open PPrint in
+      let open Indent in
       let preds =
         let open Predicates in
         List.map (fun x -> x.pred_name) p.preds
@@ -76,7 +73,7 @@ module Proof = struct
           Line ("kernel: " ^ p.kernel_name);
           Line ("predicates: " ^ preds ^ ";");
           Line ("decls: " ^ (p.decls |> join ", ") ^ ";");
-          Line ("goal: " ^ b_to_s p.goal ^ ";");
+          Line ("goal: " ^ b_to_string p.goal ^ ";");
       ]
 
 end
@@ -117,21 +114,17 @@ let proj_access (locals:Variable.Set.t) (t:task) (idx:int) (ca:cond_access) : Sy
     | BRel (o, b1, b2) -> BRel (o, inline_proj_b t b1, inline_proj_b t b2)
     | NRel (o, n1, n2) -> NRel (o, inline_proj_n t n1, inline_proj_n t n2)
   in
-  let inline_acc (a:access) =
-    {
-      access_index = List.map (inline_proj_n t) a.access_index;
-      access_mode = a.access_mode
-    }
-  in
+  let inline_acc (a:Access.t) = Access.map (inline_proj_n t) a in
   let location = LocationIndex.mk idx ca.ca_location in
   SymAccess.mk ~location ~access:(inline_acc ca.ca_access) ~condition:(inline_proj_b t ca.ca_cond)
 
 let proj_accesses locals t : cond_access list -> SymAccess.t list = List.mapi (proj_access locals t)
 
-let mode_to_nexp (m:mode) : nexp =
+let mode_to_nexp (m:Access.Mode.t) : nexp =
   Num (match m with
-  | R -> 0
-  | W -> 1)
+  | Rd -> 0
+  | Wr -> 1)
+
 let mk_var (x:string) = Var (Variable.from_name x)
 let prefix (t:task) = "$" ^ task_to_string t ^ "$"
 let mk_mode (t:task) = mk_var (prefix t ^ "mode")
@@ -144,10 +137,10 @@ let mk_task_gen (t:task) : assign_task =
   let this_mode_v : nexp = mk_mode t in
   let other_mode_v : nexp = mk_mode (other_task t) in
   let idx_v : int -> nexp = mk_idx t in
-  let eq_mode (m:mode): bexp =
+  let eq_mode (m:Access.Mode.t): bexp =
     let b = n_eq this_mode_v (mode_to_nexp m) in
-    if m = R then
-      n_eq other_mode_v (mode_to_nexp W)
+    if Access.Mode.is_read m then
+      n_eq other_mode_v (mode_to_nexp Wr)
       |> b_and b
     else b
   in
@@ -198,7 +191,7 @@ let h_prog_to_bexp
   let get_dim (l:cond_access list) : int =
     match l with
     | [] -> failwith "Phase split should not generate empty phases!"
-    | c :: _ -> List.length c.ca_access.access_index
+    | c :: _ -> List.length c.ca_access.index
   in
   b_and_ex [
     task_to_bexp Task1;
@@ -239,6 +232,6 @@ let print_kernels (ks : Proof.t Streamutil.stream) : unit =
     let curr = !count + 1 in
     count := curr;
     print_endline ("; bool " ^ (string_of_int curr));
-    Proof.to_string p |> Serialize.PPrint.print_doc
+    Proof.to_string p |> Indent.print
   ) ks;
   print_endline "; end of symbexp"

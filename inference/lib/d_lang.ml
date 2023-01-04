@@ -5,12 +5,11 @@ module StackTrace = Common.StackTrace
 module KernelAttr = C_lang.KernelAttr
 module TyVariable = C_lang.TyVariable
 
-open Serialize
 type json = Yojson.Basic.t
 type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
-type array_t = Protocols.Exp.array_t
+type array_t = Protocols.Memory.t
 type d_type = json
 
 let list_to_s (f:'a -> string) (l:'a list) : string =
@@ -223,16 +222,16 @@ module Decl = struct
   let from_expr ?(attrs=[]) (ty_var:TyVariable.t) (expr:Expr.t) : t =
     from_init ~attrs ty_var (IExpr expr)
 
-  let get_shared (d:t) : array_t option =
+  let get_shared (d:t) : Memory.t option =
     if List.mem C_lang.c_attr_shared d.attrs
     then
       let ty = d.ty_var |> TyVariable.ty in
       match C_lang.parse_type ty with
       | Ok ty ->
         Some {
-          array_hierarchy = SharedMemory;
-          array_size = C_type.get_array_length ty;
-          array_type = C_type.get_array_type ty;
+          hierarchy = SharedMemory;
+          size = C_type.get_array_length ty;
+          data_type = C_type.get_array_type ty;
         }
       | Error _ -> None
     else None
@@ -325,16 +324,16 @@ module Stmt = struct
     | SExpr of Expr.t
   and d_for = {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: t}
 
-  let to_string: t -> PPrint.t list =
-    let rec stmt_to_s : t -> PPrint.t list =
-      let ret l : PPrint.t list =
-        let open PPrint in
+  let to_string: t -> Indent.t list =
+    let rec stmt_to_s : t -> Indent.t list =
+      let ret l : Indent.t list =
+        let open Indent in
         match l with
         | [] -> [Line ";"]
         | [Line "{"; Block l; Line "}"]
         | l -> [Line "{"; Block l; Line "}"]
       in
-      let block (s:t) : PPrint.t list = ret (stmt_to_s s) in
+      let block (s:t) : Indent.t list = ret (stmt_to_s s) in
       function
       | WriteAccessStmt w -> [Line ("rw " ^ subscript_to_s w.target ^ " = " ^ Expr.to_string w.source)]
       | ReadAccessStmt r -> [Line ("ro " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
@@ -343,13 +342,13 @@ module Stmt = struct
       | ContinueStmt -> [Line "continue"]
       | BreakStmt -> [Line "break"]
       | ForStmt f ->
-        let open PPrint in
+        let open Indent in
         [
           Line ("for (" ^ ForInit.opt_to_string f.init ^ "; " ^ Expr.opt_to_string f.cond ^ "; " ^ Expr.opt_to_string f.inc ^ ")");
         ]
         @ block (f.body)
       | WhileStmt {cond=b; body=s} ->
-        let open PPrint in
+        let open Indent in
         [ Line ("while (" ^ Expr.to_string b ^ ")"); ] @
         block s
       | DoStmt {cond=b; body=s} ->
@@ -366,7 +365,7 @@ module Stmt = struct
       | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
         let s1 = stmt_to_s s1 in
         let s2 = stmt_to_s s2 in
-        let open PPrint in
+        let open Indent in
         if s1 = [] && s2 = [] then []
         else
           [Line ("if (" ^ Expr.to_string b ^ ")")] @
@@ -378,7 +377,7 @@ module Stmt = struct
       | DeclStmt [] -> []
       | DeclStmt [d] -> [Line ("decl " ^ Decl.to_string d)]
       | DeclStmt d ->
-        let open PPrint in
+        let open Indent in
         [Line "decl {"; Block (List.map (fun e -> Line (Decl.to_string e)) d); Line "}"]
       | SExpr e -> [Line (Expr.to_string e)]
     in
@@ -776,12 +775,12 @@ let rewrite_program: C_lang.c_program -> d_program =
 
 (* ------------------------------------------------------------------------ *)
 
-let kernel_to_s (k:Kernel.t) : PPrint.t list =
+let kernel_to_s (k:Kernel.t) : Indent.t list =
   let tps = let open C_lang in if k.type_params <> [] then "[" ^
       list_to_s type_param_to_s k.type_params ^
     "]" else ""
   in
-  let open PPrint in
+  let open Indent in
   [
     let open C_lang in
     Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^ " " ^ tps ^
@@ -790,15 +789,15 @@ let kernel_to_s (k:Kernel.t) : PPrint.t list =
   @
   Stmt.to_string k.code
 
-let def_to_s (d:d_def) : PPrint.t list =
-  let open PPrint in
+let def_to_s (d:d_def) : Indent.t list =
+  let open Indent in
   match d with
   | Declaration d -> [Line (Decl.to_string d ^ ";")]
   | Kernel k -> kernel_to_s k
 
-let program_to_s (p:d_program) : PPrint.t list =
+let program_to_s (p:d_program) : Indent.t list =
   List.concat_map (fun k -> def_to_s k @ [Line ""]) p
 
 let print_program (p:d_program) : unit =
-  PPrint.print_doc (program_to_s p)
+  Indent.print (program_to_s p)
 

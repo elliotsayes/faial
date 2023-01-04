@@ -220,6 +220,23 @@ module StackTrace = struct
 
 end
 
+let is_even n =
+  n mod 2 = 0
+
+let pow ~base exponent : int =
+  if exponent < 0 then invalid_arg "exponent can not be negative" else
+  let rec aux accumulator base = function
+    | 0 -> accumulator
+    | 1 -> base * accumulator
+    | e when is_even e -> aux accumulator (base * base) (e / 2)
+    | e -> aux (base * accumulator) (base * base) ((e - 1) / 2) in
+  aux 1 base exponent
+
+let highest_power ~base (n:int) : int =
+  let exponent : float = Float.log(Float.of_int n)
+    /. Float.log(Float.of_int base) in
+  pow ~base (Float.to_int exponent)
+
 (*
   Takes an ok_handler and an error_handler.
   Applies ok_handler to v and if there's an error, route it to

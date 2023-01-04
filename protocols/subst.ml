@@ -1,6 +1,5 @@
 open Stage0
 open Exp
-open Serialize
 
 module type SUBST =
   sig
@@ -43,7 +42,7 @@ module Make (S:SUBST) = struct
         match S.find s x with
         | Some (Var y) -> Proj (t, y)
         | Some _ ->
-          let exp = PPrint.n_to_s n in
+          let exp = n_to_string n in
           let repl = S.to_string s in
           failwith (
             "Error: cannot replace thread-local variable " ^ Variable.name x ^
@@ -64,26 +63,17 @@ module Make (S:SUBST) = struct
     | BRel (o, b1, b2) -> b_rel o (b_subst s b1) (b_subst s b2)
     | BNot b -> b_not (b_subst s b)
 
-  let a_subst (s:S.t) (a:access) : access =
+  let a_subst (s:S.t) (a:Access.t) : Access.t =
     { a with
-      access_index = List.map (n_subst s) a.access_index
+      index = List.map (n_subst s) a.index
     }
 
-  let s_subst (s:S.t) (se:step_expr) : step_expr =
-    match se with
-    | Default n -> Default (n_subst s n)
-    | StepName _ -> se
-
-  let r_subst (s:S.t) (r:range) : range =
-    { r with
-      range_step = s_subst s r.range_step;
-      range_lower_bound = n_subst s r.range_lower_bound;
-      range_upper_bound = n_subst s r.range_upper_bound
-    }
-
+  let r_subst (s:S.t) : Range.t -> Range.t =
+    Range.map (n_subst s)
+(*
   let acc_expr_subst (s:S.t) ((x,e):acc_expr) : acc_expr =
     (x, a_subst s e)
-
+*)
 end
 
 module SubstPair =
@@ -92,7 +82,7 @@ module SubstPair =
     let make (x, v) : t = (x, v)
     let find (x, v) y = if Variable.equal x y then Some v else None
     let remove (x, v) y = if Variable.equal x y then None else Some (x, v)
-    let to_string (x, v) = "[" ^ Variable.name x ^ "=" ^ PPrint.n_to_s v ^ "]"
+    let to_string (x, v) = "[" ^ Variable.name x ^ "=" ^ n_to_string v ^ "]"
     let is_empty (_, _) = false
   end
 
@@ -130,7 +120,7 @@ module SubstAssoc =
 
     let to_string ht =
       Common.hashtbl_elements ht
-      |> List.map (fun (k, v) -> k ^ "=" ^ PPrint.n_to_s v)
+      |> List.map (fun (k, v) -> k ^ "=" ^ n_to_string v)
       |> Common.join ", "
       |> fun x -> "[" ^ x ^ "]"
   end

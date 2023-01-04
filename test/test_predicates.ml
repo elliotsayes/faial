@@ -2,7 +2,6 @@ open Stage0
 open Protocols
 
 open OUnit2
-open Predicates
 
 type vrange = {
   vr_lower_bound: int;
@@ -33,20 +32,20 @@ let first (l:'a list) : 'a =
   | [] -> failwith "first: empty list"
   | x :: _ -> x
 
-let mk_range (r:vrange) : Exp.range =
+let mk_range (r:vrange) : Range.t =
   let open Exp in
-  {
-    range_var = Variable.from_name "x";
-    range_lower_bound = Num r.vr_lower_bound;
-    range_upper_bound = Num r.vr_upper_bound;
-    range_step = Default (Num r.vr_step);
-    range_dir = Increase;
+  Range.{
+    var = Variable.from_name "x";
+    lower_bound = Num r.vr_lower_bound;
+    upper_bound = Num r.vr_upper_bound;
+    step = Plus (Num r.vr_step);
+    dir = Increase;
   }
 
 let r_last (r:vrange) : int =
   let r = mk_range r in
   let open Exp in
-  n_eval (range_last r)
+  n_eval (Range.lossy_last r)
 
 let v_last (r:vrange) : int =
   vrange_to_list r |> last
@@ -62,7 +61,7 @@ let assert_last (r:vrange) =
     ", ub=" ^ (string_of_int r.vr_upper_bound) ^
     ", step=" ^ (string_of_int r.vr_step) ^")"
   in
-  let expr = range_last (mk_range r) |> Serialize.PPrint.n_to_s in
+  let expr = Range.lossy_last (mk_range r) |> Exp.n_to_string in
   let expr = "given expr '" ^ expr ^ "'" in
   let exp = "expected " ^ (string_of_int (v_last r)) in
   let msg =

@@ -3,7 +3,6 @@ open Protocols
 
 open Wellformed
 open Phasesplit
-open Exp
 
 type l2_kernel = {
   (* The kernel name *)
@@ -13,7 +12,7 @@ type l2_kernel = {
   (* The internal variables are used in the code of the kernel.  *)
   l_kernel_local_variables: Variable.Set.t;
   (* Global ranges *)
-  l_kernel_ranges: range list;
+  l_kernel_ranges: Range.t list;
   (* The code of a kernel performs the actual memory accesses. *)
   l_kernel_code: u_inst;
   (* A thread-local pre-condition that is true on all phases. *)
@@ -97,15 +96,15 @@ let translate (stream:u_kernel Streamutil.stream) : l2_kernel Streamutil.stream 
 
 (* ------------------- SERIALIZE ---------------------- *)
 
-let l_kernel_to_s (k:l2_kernel) : Serialize.PPrint.t list =
-  let open Serialize.PPrint in
+let l_kernel_to_s (k:l2_kernel) : Indent.t list =
+  let open Indent in
   let ranges =
-    List.map r_to_s k.l_kernel_ranges
+    List.map Range.to_string k.l_kernel_ranges
     |> Common.join "; "
   in
   [
       Line ("array: " ^ k.l_kernel_array ^ ";");
-      Line ("locals: " ^ var_set_to_s k.l_kernel_local_variables ^ ";");
+      Line ("locals: " ^ Variable.set_to_string k.l_kernel_local_variables ^ ";");
       Line ("ranges: " ^ ranges ^ ";");
       Line "{";
       Block (u_inst_to_s k.l_kernel_code);
@@ -119,6 +118,6 @@ let print_kernels (ks : l2_kernel Streamutil.stream) : unit =
     let curr = !count + 1 in
     count := curr;
     print_endline ("; loc " ^ (string_of_int curr));
-    Serialize.PPrint.print_doc (l_kernel_to_s k)
+    Indent.print (l_kernel_to_s k)
   ) ks;
   print_endline "; end of locsplit"

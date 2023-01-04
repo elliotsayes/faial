@@ -4,7 +4,6 @@ open Protocols
 open Exp
 open Proto
 open Common
-open Serialize
 open Streamutil
 open Wellformed
 open Phasealign
@@ -19,7 +18,7 @@ type u_kernel = {
   (* The internal variables are used in the code of the kernel.  *)
   u_kernel_local_variables: Variable.Set.t;
   (* Global ranges *)
-  u_kernel_ranges: range list;
+  u_kernel_ranges: Range.t list;
   (* The code of a kernel performs the actual memory accesses. *)
   u_kernel_code: u_inst;
   (* A thread-local pre-condition that is true on all phases. *)
@@ -29,11 +28,11 @@ type u_kernel = {
 
 type barrier_interval = {
     bi_code: u_inst;
-    bi_ranges: range list;
+    bi_ranges: Range.t list;
   }
 
 
-let bi_add (bi:barrier_interval) (r:range) : barrier_interval =
+let bi_add (bi:barrier_interval) (r:Range.t) : barrier_interval =
   { bi with bi_ranges = r :: bi.bi_ranges }
 
 (* Implements |> *)
@@ -100,7 +99,7 @@ let translate (ks: a_prog kernel stream) (_:bool) : u_kernel stream =
       (* Check for undefs *)
       (* 1. compute all globals *)
       let globals =
-        List.map (fun r -> r.range_var) bi.bi_ranges
+        List.map (fun r -> let open Range in r.var) bi.bi_ranges
         |> Variable.Set.of_list
         |> Variable.Set.union k.kernel_global_variables
       in
@@ -141,16 +140,16 @@ let translate (ks: a_prog kernel stream) (_:bool) : u_kernel stream =
 
 (* ---------------------- SERIALIZATION ------------------------ *)
 
-let u_kernel_to_s (k:u_kernel) : PPrint.t list =
-  let open PPrint in
+let u_kernel_to_s (k:u_kernel) : Indent.t list =
+  let open Indent in
   let ranges =
-    List.map r_to_s k.u_kernel_ranges
+    List.map Range.to_string k.u_kernel_ranges
     |> join "; "
   in
   [
-      Line ("arrays: " ^ var_set_to_s k.u_kernel_arrays ^ ";");
-      Line ("globals: " ^ var_set_to_s k.u_kernel_global_variables ^ ";");
-      Line ("locals: " ^ var_set_to_s k.u_kernel_local_variables ^ ";");
+      Line ("arrays: " ^ Variable.set_to_string k.u_kernel_arrays ^ ";");
+      Line ("globals: " ^ Variable.set_to_string k.u_kernel_global_variables ^ ";");
+      Line ("locals: " ^ Variable.set_to_string k.u_kernel_local_variables ^ ";");
       Line ("ranges: " ^ ranges ^ ";");
       Line "{";
       Block (u_inst_to_s k.u_kernel_code);
@@ -165,6 +164,6 @@ let print_kernels (ks : u_kernel Streamutil.stream) : unit =
     let curr = !count + 1 in
     count := curr;
     print_endline ("; phase " ^ (string_of_int curr));
-    PPrint.print_doc (u_kernel_to_s k)
+    Indent.print (u_kernel_to_s k)
   ) ks;
   print_endline "; end of conc"

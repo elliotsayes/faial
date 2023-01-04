@@ -4,7 +4,6 @@ open Protocols
 module StackTrace = Common.StackTrace
 
 open Exp
-open Serialize
 type json = Yojson.Basic.t
 type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
@@ -465,24 +464,24 @@ module Stmt = struct
     | CaseStmt of {case: Expr.t; body: t}
     | SExpr of Expr.t
 
-  let to_string : t -> PPrint.t list
+  let to_string : t -> Indent.t list
   =
-    let ret l : PPrint.t list =
-      let open PPrint in
+    let ret l : Indent.t list =
+      let open Indent in
       match l with
       | [] -> [Line ";"]
       | [Line "{"; Block l; Line "}"]
       | l -> [Line "{"; Block l; Line "}"]
     in
-    let rec stmt_to_s : t -> PPrint.t list =
-      let block (s:t) : PPrint.t list = ret (stmt_to_s s) in
+    let rec stmt_to_s : t -> Indent.t list =
+      let block (s:t) : Indent.t list = ret (stmt_to_s s) in
       function
       | ReturnStmt -> [Line "return"]
       | GotoStmt -> [Line "goto"]
       | BreakStmt -> [Line "break"]
       | ContinueStmt -> [Line "continue"]
       | ForStmt f ->
-        let open PPrint in
+        let open Indent in
         [
           Line ("for (" ^ ForInit.opt_to_string f.init ^ "; " ^ Expr.opt_to_string f.cond ^ "; " ^ Expr.opt_to_string f.inc ^ ")");
         ]
@@ -509,7 +508,7 @@ module Stmt = struct
       | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
         let s1 = stmt_to_s s1 in
         let s2 = stmt_to_s s2 in
-        let open PPrint in
+        let open Indent in
         if s1 = [] && s2 = [] then []
         else
           [Line ("if (" ^ Expr.to_string b ^ ")")] @
@@ -522,7 +521,7 @@ module Stmt = struct
       | DeclStmt [] -> []
       | DeclStmt [d] -> [Line ("decl " ^ Decl.to_string d)]
       | DeclStmt d ->
-        let open PPrint in
+        let open Indent in
         [Line "decl {"; Block (List.map (fun e -> Line (Decl.to_string e)) d); Line "}"]
       | SExpr e -> [Line (Expr.to_string e)]
     in
@@ -1506,12 +1505,12 @@ let type_param_to_s (p:c_type_param) : string =
   in
   Variable.name name
 
-let kernel_to_s (k:Kernel.t) : PPrint.t list =
+let kernel_to_s (k:Kernel.t) : Indent.t list =
   let tps = if k.type_params <> [] then "[" ^
       list_to_s type_param_to_s k.type_params ^
     "]" else ""
   in
-  let open PPrint in
+  let open Indent in
   [
     Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^
       " " ^ tps ^ "(" ^ list_to_s Param.to_string k.params ^ ")");
@@ -1519,15 +1518,15 @@ let kernel_to_s (k:Kernel.t) : PPrint.t list =
   @
   Stmt.to_string k.code
 
-let def_to_s (d:c_def) : PPrint.t list =
-  let open PPrint in
+let def_to_s (d:c_def) : Indent.t list =
+  let open Indent in
   match d with
   | Declaration d -> [Line (Decl.to_string d ^ ";")]
   | Kernel k -> kernel_to_s k
 
-let program_to_s (p:c_program) : PPrint.t list =
+let program_to_s (p:c_program) : Indent.t list =
   List.concat_map (fun k -> def_to_s k @ [Line ""]) p
 
 let print_program (p:c_program) : unit =
-  PPrint.print_doc (program_to_s p)
+  Indent.print (program_to_s p)
 

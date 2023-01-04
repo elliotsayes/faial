@@ -1,6 +1,6 @@
 open Stage0
 open Inference
-open Bc
+open Bank_conflicts
 open Protocols
 
 (* Main function *)
@@ -16,6 +16,7 @@ let cost
   ?(absynth_exe="absynth")
   ?(cofloco_exe="cofloco")
   ?(koat_exe="koat2")
+  ?(show_code=false)
   (thread_count:Vec3.t)
   (k : Proto.prog Proto.kernel)
 :
@@ -29,15 +30,15 @@ let cost
     |> subst "blockDim.y" thread_count.y
     |> subst "blockDim.z" thread_count.z
   in
-  let render_s (s: Symbolic.t) : string =
+  let render_s ?(show_code=false) (s: Symbolic.t) : string =
     if use_maxima then
-      Symbolic.run_maxima s
+      Symbolic.run_maxima ~verbose:show_code s
     else if use_absynth then
-      Symbolic.run_absynth ~exe:absynth_exe s
+      Symbolic.run_absynth ~verbose:show_code ~exe:absynth_exe s
     else if use_cofloco then
-      Symbolic.run_cofloco ~exe:cofloco_exe s
+      Symbolic.run_cofloco ~verbose:show_code ~exe:cofloco_exe s
     else if use_koat then
-      Symbolic.run_koat ~exe:koat_exe s
+      Symbolic.run_koat ~verbose:show_code ~exe:koat_exe s
     else
       Symbolic.simplify s
   in
@@ -80,7 +81,7 @@ let cost
     |> List.of_seq
     |> Symbolic.add
   in
-  let total = render_s total in
+  let total = render_s ~show_code total in
   PrintBox.(
     text total
     |> hpad 1
@@ -98,6 +99,7 @@ let pico
   (use_koat:bool)
   (show_all:bool)
   (explain:bool)
+  (show_code:bool)
   (absynth_exe:string)
   (cofloco_exe:string)
   (koat_exe:string)
@@ -116,6 +118,7 @@ let pico
           ~use_absynth
           ~use_cofloco
           ~use_koat
+          ~show_code
           ~skip_zero:(not show_all)
           ~absynth_exe
           ~cofloco_exe
@@ -196,6 +199,10 @@ let explain =
   let doc = "Show bank-conflicts per location." in
   Arg.(value & flag & info ["explain"] ~doc)
 
+let show_code =
+  let doc = "Show the code being sent to the solver if any." in
+  Arg.(value & flag & info ["show-code"] ~doc)
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -206,6 +213,7 @@ let pico_t = Term.(
   $ use_koat
   $ show_all
   $ explain
+  $ show_code
   $ absynth_exe
   $ cofloco_exe
   $ koat_exe

@@ -59,7 +59,7 @@ let is_variable : D_lang.Expr.t -> bool =
     -> true
   | _ -> false
 
-type d_access = {location: Variable.t; mode: mode; index: D_lang.Expr.t list }
+type d_access = {location: Variable.t; mode: Access.Mode.t; index: D_lang.Expr.t list }
 
 type d_location_alias = {
   source: D_lang.Expr.t;
@@ -436,7 +436,7 @@ let parse_unop (u:'a Loops.unop) : 'a unop option d_result =
     | Some arg -> Some {op=u.op; arg=arg}
     | None -> None)
 
-let infer_range (r:D_lang.Stmt.d_for) : Exp.range option d_result =
+let infer_range (r:D_lang.Stmt.d_for) : Range.t option d_result =
   let parse_for_range (r:Loops.d_for_range) : for_range option d_result =
     let* init = parse_exp r.init in
     let* cond = parse_unop r.cond in
@@ -445,14 +445,14 @@ let infer_range (r:D_lang.Stmt.d_for) : Exp.range option d_result =
     | Some init, Some cond, Some inc -> Some {name = r.name; init=init; cond=cond; inc=inc}
     | _, _, _ -> None)
   in
-  let infer_range (r:for_range) : Exp.range option =
+  let infer_range (r:for_range) : Range.t option =
     let open Loops in
     let open Exp in
     let (let*) = Option.bind in
     let (lb, ub, d) = match r with
     (* (int i = 0; i < 4; i++) *)
     | {init=lb; cond={op=Lt; arg=ub; _}; _} ->
-      (lb, ub, Increase)
+      (lb, ub, Range.Increase)
     (* (int i = 4; i >= 0; i--) *)
     | {init=ub; cond={op=GtEq; arg=lb; _}; _} ->
       (lb, n_plus (Num 1) ub, Decrease)
@@ -465,21 +465,21 @@ let infer_range (r:D_lang.Stmt.d_for) : Exp.range option d_result =
     in
     let* step = match r.inc with
     | {op=Plus; arg=a}
-    | {op=Minus; arg=a} -> Some (Default a)
-    | {op=Mult; arg=Num a}
-    | {op=Div; arg=Num a} ->
-      Some (StepName (Printf.sprintf "pow%d" a))
+    | {op=Minus; arg=a} -> Some (Range.Step.Plus a)
+    | {op=Mult; arg=a}
+    | {op=Div; arg=a} ->
+      Some (Range.Step.Mult a)
     | {op=LShift; arg=Num a}
     | {op=RShift; arg=Num a} ->
-      Some (StepName (Printf.sprintf "pow%d" (Predicates.pow 2 a)))
+      Some (Range.Step.Mult (Num (Common.pow ~base:2 a)))
     | _ -> None
     in
-    Some {
-      range_var=r.name;
-      range_lower_bound=lb;
-      range_upper_bound=ub;
-      range_step=step;
-      range_dir=d;
+    Some Range.{
+      var=r.name;
+      lower_bound=lb;
+      upper_bound=ub;
+      step=step;
+      dir=d;
     }
   in
   match Loops.parse_for r with
@@ -515,12 +515,12 @@ let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
   let (u, x) = Unknown.create u in
   let (u, lb) = Unknown.create u in
   let (_, ub) = Unknown.create u in
-  let r = {
-    range_var = x;
-    range_lower_bound = Var lb;
-    range_upper_bound = Var ub;
-    range_step = Default (Num 1);
-    range_dir = Increase;
+  let r = Range.{
+    var = x;
+    lower_bound = Var lb;
+    upper_bound = Var ub;
+    step = Plus (Num 1);
+    dir = Increase;
   } in
   let vars = Variable.Set.of_list [lb; ub] in
   let l = get_locality (Block b) in
@@ -554,7 +554,7 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
   | WriteAccessStmt w ->
     let x = w.target.name |> Variable.set_location w.target.location in
     let* idx = with_msg "write.idx" (cast_map parse_exp) w.target.index in
-    idx |> ret_ns (fun idx -> Imp.Acc (x, {access_index=idx; access_mode=W}))
+    idx |> ret_ns (fun idx -> Imp.Acc (x, {index=idx; mode=Wr}))
 
   | ReadAccessStmt r ->
     let x = r.source.name |> Variable.set_location r.source.location in
@@ -562,7 +562,7 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     idx
     |> ret_ns ~extra_vars:(Variable.Set.of_list [r.target]) (fun idx ->
       let open Imp in
-      Acc (x, {access_index=idx; access_mode=R})
+      Acc (x, {index=idx; mode=Rd})
     )
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 
@@ -631,28 +631,28 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
   | DefaultStmt s ->
     with_msg "default.body" parse_stmt s
 
-type param = (Variable.t, Variable.t * array_t) Either.t
+type param = (Variable.t, Variable.t * Memory.t) Either.t
 
 let from_j_error (e:Rjson.j_error) : d_error =
   RootCause (Rjson.error_to_string e)
 
 let parse_param (p:C_lang.Param.t) : param option d_result =
-  let mk_array (h:hierarchy_t) (ty:C_type.t) : array_t =
+  let mk_array (h:Memory.Hierarchy.t) (ty:C_type.t) : Memory.t =
     {
-      array_hierarchy = h;
-      array_size = C_type.get_array_length ty;
-      array_type = C_type.get_array_type ty;
+      hierarchy = h;
+      size = C_type.get_array_length ty;
+      data_type = C_type.get_array_type ty;
     }
   in
   let* ty = C_lang.parse_type p.ty_var.ty |> Result.map_error from_j_error in
   if C_type.is_int ty then
     Ok (Some (Either.Left p.ty_var.name))
   else if C_type.is_array ty then (
-    let h = if p.is_shared then Exp.SharedMemory else Exp.GlobalMemory in
+    let h = if p.is_shared then Memory.Hierarchy.SharedMemory else Memory.Hierarchy.GlobalMemory in
     Ok (Some (Either.Right (p.ty_var.name, mk_array h ty)))
   ) else Ok None
 
-let parse_params (ps:C_lang.Param.t list) : (Variable.Set.t * array_t Variable.Map.t) d_result =
+let parse_params (ps:C_lang.Param.t list) : (Variable.Set.t * Memory.t Variable.Map.t) d_result =
   let* params = Rjson.map_all parse_param
     (fun i _ e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
@@ -710,14 +710,14 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
     tail
   ]
 
-let mk_array (h:hierarchy_t) (ty:C_type.t) : array_t =
+let mk_array (h:Memory.Hierarchy.t) (ty:C_type.t) : Memory.t =
   {
-    array_hierarchy = h;
-    array_size = C_type.get_array_length ty;
-    array_type = C_type.get_array_type ty;
+    hierarchy = h;
+    size = C_type.get_array_length ty;
+    data_type = C_type.get_array_type ty;
   }
 
-let parse_shared (s:D_lang.Stmt.t) : (Variable.t * array_t) list =
+let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
   let open D_lang in
   let rec find_shared
     (arrays:(Variable.t * array_t) list)
@@ -754,7 +754,7 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * array_t) list =
   find_shared [] s
 
 let parse_kernel
-  (shared_params:(Variable.t * array_t) list)
+  (shared_params:(Variable.t * Memory.t) list)
   (globals:Variable.t list)
   (assigns:(Variable.t * nexp) list)
   (k:D_lang.Kernel.t)
@@ -796,7 +796,7 @@ let parse_kernel
 
 let parse_program (p:D_lang.d_program) : Imp.p_kernel list d_result =
   let rec parse_p
-    (arrays:(Variable.t * array_t) list)
+    (arrays:(Variable.t * Memory.t) list)
     (globals:Variable.t list)
     (assigns:(Variable.t * nexp) list)
     (p:D_lang.d_program)

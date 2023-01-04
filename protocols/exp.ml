@@ -138,6 +138,8 @@ let n_rel o n1 n2 =
   | Num n1, Num n2 -> Bool (eval_nrel o n1 n2)
   | _, _ -> NRel (o, n1, n2)
 
+let n_zero = Num 0
+
 let n_lt = n_rel NLt
 
 let n_gt = n_rel NGt
@@ -174,18 +176,23 @@ let n_minus n1 n2 =
   | Num n1, Num n2 -> Num (n1 - n2)
   | _, _ -> Bin (Minus, n1, n2)
 
+let n_dec (n:nexp) : nexp =
+  n_minus n (Num 1)
+
 let rec n_mult n1 n2 =
   match n1, n2 with
   | Num 1, n | n, Num 1 -> n
   | Num 0, _ | _, Num 0 -> Num 0
-  | Bin (Div, e, Num n2), Num n1 when n1 mod n2 = 0 -> n_mult (Num (n1 / n2)) e
-  | Num n1, Bin (Div, e, Num n2) when n1 mod n2 = 0 -> n_mult (Num (n1 / n2)) e
+  | Bin (Div, e, Num n2), Num n1 when n2 <> 0 && n1 mod n2 = 0 -> n_mult (Num (n1 / n2)) e
+  | Num n1, Bin (Div, e, Num n2) when n2 <> 0 && n1 mod n2 = 0 -> n_mult (Num (n1 / n2)) e
   | Num n1, Num n2 -> Num (n1 * n2)
   | Num n1, Bin (Mult, Num n2, e)
   | Bin (Mult, Num n1, e), Num n2 ->
     Bin (Mult, Num (n1 * n2), e)
   | _, Num _ -> Bin (Mult, n2, n1)
   | _, _ -> Bin (Mult, n1, n2)
+
+let n_uminus n = n_mult (Num (-1)) n
 
 let n_div n1 n2 =
   match n1, n2 with
@@ -259,100 +266,73 @@ let rec b_or_ex l =
   | [x] -> x
   | x::l -> b_or x (b_or_ex l)
 
-
-type step_expr = Default of nexp | StepName of string
-
-type direction =
-  | Increase
-  | Decrease
-
-type range = {
-  range_var: Variable.t;
-  range_dir: direction;
-  range_lower_bound: nexp;
-  range_upper_bound: nexp;
-  range_step: step_expr;
-}
-
-
-(* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
-
-let mk_range (x:Variable.t) (ub:nexp) =
-  {
-    range_var = x;
-    range_lower_bound = Num 0;
-    range_upper_bound = ub;
-    range_step = Default (Num 1);
-    range_dir = Increase;
-  }
-
-let range_to_cond (r:range) : bexp =
-  (match r.range_step with
-  | Default (Num 1) -> []
-  | Default n ->
-    let lb = r.range_lower_bound in
-    let ub = r.range_upper_bound in
-    let x = Var r.range_var in
-    [
-      (* lb <= x < ub *)
-      n_le lb x;
-      n_lt x ub;
-      (* (x + lb) % step  == 0 *)
-      n_eq (n_mod (n_minus x lb) n) (Num 0);
-      (* Ensure that the step is positive *)
-      n_gt n (Num 0)
-    ]
-  | StepName name -> [Pred(name, Var r.range_var)]
-  )
-  @
-  [
-    n_le r.range_lower_bound (Var r.range_var);
-    n_lt (Var r.range_var) r.range_upper_bound;
-  ]
-  |> b_and_ex
-
-let range_has_next (r:range) : bexp =
-  n_lt r.range_lower_bound r.range_upper_bound
-
-let range_is_empty (r:range) : bexp =
-  n_ge r.range_lower_bound r.range_upper_bound
-
-let range_first (r:range) : bexp =
-  n_eq (Var r.range_var) r.range_lower_bound
-
-type mode =
-  | R
-  | W
-
-(* An access pairs the index-expression with the access mode (R/W) *)
-type access = {access_index: nexp list; access_mode: mode}
-
-(* Access expression *)
-type acc_expr = Variable.t * access
-
 let distinct (idx:Variable.t list) : bexp =
   b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)
 
+let nbin_to_string : nbin -> string = function
+  | Plus -> "+"
+  | Minus -> "-"
+  | Mult -> "*"
+  | Div -> "/"
+  | Mod -> "%"
+  | LeftShift -> "<<"
+  | RightShift -> ">>"
+  | BitXOr -> "^"
+  | BitOr -> "|"
+  | BitAnd -> "&"
 
-(* ------------------------------------------- *)
+let nrel_to_string (r:nrel) : string =
+  match r with
+  | NEq -> "=="
+  | NLe -> "<="
+  | NLt -> "<"
+  | NGe -> ">="
+  | NGt -> ">"
+  | NNeq -> "!="
 
-type hierarchy_t =
-  | SharedMemory
-  | GlobalMemory
+let brel_to_string (r:brel) : string =
+  match r with
+  | BOr -> "||"
+  | BAnd -> "&&"
 
-type array_t = {
-  array_hierarchy: hierarchy_t;
-  array_size: int list; (* Empty means unknown *)
-  array_type: string list; (* Empty means unknown *)
-}
+let rec n_par (n:nexp) : string =
+  match n with
+  | Proj _
+  | Num _
+  | Var _
+  | NCall _
+    -> n_to_string n
+  | NIf _
+  | Bin _
+    -> "(" ^ n_to_string n ^ ")"
 
-let mk_array (h:hierarchy_t) : array_t = {
-  array_hierarchy = h;
-  array_size = [];
-  array_type = [];
-}
+and n_to_string : nexp -> string = function
+  | Proj (t, x) ->
+    "proj(" ^ task_to_string t ^ ", "  ^ Variable.name x ^ ")"
+  | Num n -> string_of_int n
+  | Var x -> Variable.name x
+  | Bin (b, a1, a2) ->
+    n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
+  | NCall (x, arg) ->
+    x ^ "(" ^ n_to_string arg ^ ")"
+  | NIf (b, n1, n2) ->
+    b_par b ^ " ? " ^ n_par n1 ^ " : " ^ n_par n2
 
-let mk_array_map (h:hierarchy_t) (vs:Variable.t list) : array_t Variable.Map.t =
-  vs
-  |> List.map (fun x -> (x, mk_array h))
-  |> Variable.MapUtil.from_list
+and b_to_string : bexp -> string = function
+  | Bool b -> if b then "true" else "false"
+  | NRel (b, n1, n2) ->
+    n_to_string n1 ^ " " ^ nrel_to_string b ^ " " ^ n_to_string n2
+  | BRel (b, b1, b2) ->
+    b_par b1 ^ " " ^ brel_to_string b ^ " " ^ b_par b2
+  | BNot b -> "!" ^ b_par b
+  | Pred (x, v) -> x ^ "(" ^ n_to_string v ^ ")"
+
+and b_par (b:bexp) : string =
+  match b with
+  | Pred _
+  | Bool _
+  | BNot _
+    -> b_to_string b
+  | BRel _
+  | NRel _
+    -> "("  ^ b_to_string b ^ ")"
