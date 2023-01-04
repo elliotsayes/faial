@@ -79,22 +79,31 @@ let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * E
   in
   let open Z3 in
   let ctx = mk_context ["timeout", string_of_int timeout] in
-  let n_expr = Gen_z3.IntGen.n_to_expr ctx n in
-  let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
+  let b_to_expr = Gen_z3.BvGen.b_to_expr ctx in
+  let n_to_expr = Gen_z3.BvGen.n_to_expr ctx in
+  let parse_num = Gen_z3.BvGen.parse_num in
+  let x = Var (Variable.from_name "?max") in
   let restrict tid tid_count =
     let lhs = n_ge (Var tid) (Num 0) in
     let rhs = n_lt (Var tid) (Num tid_count) in
-    Gen_z3.IntGen.b_to_expr ctx (b_and lhs rhs)
+    b_to_expr (b_and lhs rhs)
   in
   let opt = Optimize.mk_opt ctx in
   Optimize.add opt [
-      Boolean.mk_eq ctx lb n_expr;
+      (*
+        Bit-vector maximization has no notion of signedness.
+        The following constrain guarantees that the goal being maximized
+        is a signed-positive number.
+
+        https://stackoverflow.com/questions/64484347/
+      *)
+      b_to_expr (n_ge x (Num 0));
       restrict Variable.tidx thread_count.x;
       restrict Variable.tidy thread_count.y;
       restrict Variable.tidz thread_count.z;
     ]
   ;
-  match solve opt lb (fun m ->
+  match solve opt (n_to_expr x) (fun m ->
     (* Go through all declarations of the model *)
     Model.get_const_decls m
     |> List.map (fun d ->
@@ -122,7 +131,7 @@ let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * E
         (* Try to cast tid to an integer and then substitute *)
         (* Try to cast a value to a string, if we fail, return None *)
         (try
-          let tid_val = Expr.to_string tid_val |> int_of_string in
+          let tid_val : int = Expr.to_string tid_val |> parse_num |> int_of_string in
           Some (tid, Num tid_val)
         with
           Failure _ -> None)
