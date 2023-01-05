@@ -79,9 +79,9 @@ let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * E
   in
   let open Z3 in
   let ctx = mk_context ["timeout", string_of_int timeout] in
-  let b_to_expr = Gen_z3.BvGen.b_to_expr ctx in
-  let n_to_expr = Gen_z3.BvGen.n_to_expr ctx in
-  let parse_num = Gen_z3.BvGen.parse_num in
+  let b_to_expr = Gen_z3.Bv32Gen.b_to_expr ctx in
+  let n_to_expr = Gen_z3.Bv32Gen.n_to_expr ctx in
+  let parse_num = Gen_z3.Bv32Gen.parse_num in
   let x = Var (Variable.from_name "?max") in
   let restrict tid tid_count =
     let lhs = n_ge (Var tid) (Num 0) in

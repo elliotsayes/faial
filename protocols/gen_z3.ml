@@ -59,11 +59,34 @@ module ArithmeticOps : NUMERIC_OPS = struct
 	let parse_num (x:string) = x
 end
 
+module type WordSize = sig
+  val word_size : int
+  val decode_hex : string -> string
+end
 
-module BitVectorOps : NUMERIC_OPS = struct
-	let word_size = 32
-	let mk_var ctx x = BitVector.mk_const_s ctx x word_size
-	let mk_num ctx n = BitVector.mk_numeral ctx (string_of_int n) word_size
+module W32 = struct
+  let word_size = 32
+  let decode_hex x = Int32.of_string x |> Int32.to_string
+end
+
+module W64 = struct
+  let word_size = 64
+  let decode_hex x = Int64.of_string x |> Int64.to_string
+end
+
+module W16 = struct
+  let word_size = 16
+  let decode_hex x = Int32.of_string x |> Int32.to_string
+end
+
+module W8 = struct
+  let word_size = 8
+  let decode_hex x = Int32.of_string x |> Int32.to_string
+end
+
+module BitVectorOps (W:WordSize) = struct
+	let mk_var ctx x = BitVector.mk_const_s ctx x W.word_size
+	let mk_num ctx n = BitVector.mk_numeral ctx (string_of_int n) W.word_size
 	let mk_bit_and = BitVector.mk_and
 	let mk_bit_or = BitVector.mk_or
 	let mk_bit_xor =  BitVector.mk_xor
@@ -96,7 +119,7 @@ module BitVectorOps : NUMERIC_OPS = struct
 	     and then render it back to a string, as this is for display only *)
     if x = "0x"
     then "0"
-    else Int32.of_string x |> Int32.to_string
+    else W.decode_hex x
 end
 
 
@@ -151,4 +174,4 @@ module CodeGen (N:NUMERIC_OPS) = struct
 end
 
 module IntGen = CodeGen (ArithmeticOps)
-module BvGen = CodeGen (BitVectorOps)
+module Bv32Gen = CodeGen (BitVectorOps(W32))

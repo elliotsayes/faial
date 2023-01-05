@@ -349,15 +349,15 @@ module Solution = struct
     logic |> Option.iter (fun l ->
       if String.ends_with ~suffix:"BV" l then (
         prerr_endline ("WARNING: user set bit-vector logic " ^ l);
-        b_to_expr := BvGen.b_to_expr;
-        parse_num := BvGen.parse_num;
+        b_to_expr := Bv32Gen.b_to_expr;
+        parse_num := Bv32Gen.parse_num;
       ) else ()
     );
     let logic = ref logic in
     let set_bv () : unit =
       prerr_endline ("WARNING: using bit-vector logic.");
-      b_to_expr := BvGen.b_to_expr;
-      parse_num := BvGen.parse_num;
+      b_to_expr := Bv32Gen.b_to_expr;
+      parse_num := Bv32Gen.parse_num;
       logic := None;
     in
     (* Logic is bit-vector based *)
