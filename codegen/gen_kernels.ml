@@ -59,6 +59,6 @@ let kernel (p : prog) : prog kernel =
 
 (* Generate all combinations *)
 let () = 
-  List.iter (fun p -> print_newline (Cgen.print_k (kernel p) false))
+  List.iter (fun p -> Cgen.gen_cuda false (kernel p) |> print_string)
     (List.map program_k (Common.range ~from:1 (List.length program))
      |> List.concat)

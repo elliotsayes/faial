@@ -42,14 +42,14 @@ let known_types : StringSet.t =
 
 let vector_types : StringSet.t =
   ["char"; "double"; "float"; "int"; "long"; "longlong";
-   "short"; "uchar"; "uint"; "ulong"; "ulonglong"; "ushort";]
+   "short"; "uchar"; "uint"; "ulong"; "ulonglong"; "ushort"]
   |> StringSet.of_list
 
 let cuda_protos : string list =
   ["extern __device__ int __dummy_int();"]
 
 let racuda_protos : string list =
-  ["extern int __dummy_int();";]
+  ["extern int __dummy_int();"]
 
 (* ----------------- serialization -------------------- *)
 let var_name (v : Variable.t) : string = v.name
@@ -103,9 +103,7 @@ let var_to_dummy (v : Variable.t) : string =
 let acc_expr_to_dummy
     (x, a : Variable.t * Access.t)
     (racuda : bool)
-  :
-    Indent.t list
-  =
+  : Indent.t list =
   let n_to_s = if racuda then n_to_s else Exp.n_to_string in
   let var = var_name x ^ idx_to_s n_to_s a.Access.index in
   match a.Access.mode with
@@ -349,9 +347,8 @@ let kernel_to_s
 let prog_to_s (racuda : bool) (p : prog) : Indent.t list =
   p_opt p |> List.map (inst_to_s racuda) |> List.flatten
 
-let print_k (k : prog kernel) (racuda : bool) : unit =
-  let k = if racuda then mk_racuda_friendly k else k in
-  Indent.print (kernel_to_s (prog_to_s racuda) k racuda)
+let gen_cuda (racuda : bool) (k : prog kernel) : string =
+  Indent.to_string (kernel_to_s (prog_to_s racuda) k racuda)
 
 (* Kernel to TOML conversion *)
 let arrays_to_l (vm : Memory.t VarMap.t) : (string * Otoml.t) list =
@@ -362,7 +359,7 @@ let scalars_to_l (vs : VarSet.t) : (string * Otoml.t) list =
   VarSet.elements (VarSet.diff vs thread_globals)
   |> List.map (fun v -> (var_name v, Otoml.TomlString "int"))
 
-let kernel_to_toml (k : prog kernel) (racuda : bool) : Otoml.t =
+let kernel_to_table (k : prog kernel) (racuda : bool) : Otoml.t =
   let k = {k with kernel_arrays = mk_types_compatible k.kernel_arrays racuda} in
   let type_decls = if racuda then [] else decl_unknown_types k.kernel_arrays in
   let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
@@ -382,8 +379,5 @@ let kernel_to_toml (k : prog kernel) (racuda : bool) : Otoml.t =
       ("arrays", TomlTable (arrays_to_l global_arr));
     ]
 
-let print_toml (table : Otoml.t) : unit =
-  print_string (Otoml.Printer.to_string table)
-
-let print_t (k : prog kernel) (racuda : bool) : unit =
-  print_toml (kernel_to_toml k racuda)
+let gen_toml (racuda : bool) (k : prog kernel) : string =
+  kernel_to_table k racuda |> Otoml.Printer.to_string
