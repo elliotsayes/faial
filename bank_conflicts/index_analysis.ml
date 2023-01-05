@@ -6,7 +6,8 @@ open Protocols
     2. evaluate any expression with constants and tids
   *)
 
-(* Given a numeric expression try to remove any offsets in the form of
+module OffsetAnalysis = struct
+  (* Given a numeric expression try to remove any offsets in the form of
     `expression + constant` or `expression - constant`.
 
     The way we do this is by first getting all the free-names that are
@@ -14,35 +15,62 @@ open Protocols
     in terms of each free variable. Third, we only keep polynomials that
     mention a tid, otherwise we can safely discard such a polynomial.
     *)
-let remove_offset (fvs: Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
-  let rec rm_offset (n: Exp.nexp) : Variable.t list -> Exp.nexp =
-    function
-    | x :: fvs ->
-      print_endline ("Removing offset variable '" ^
-        Variable.name x ^ "' from: " ^ Exp.n_to_string n
-      );
-      Poly.from_nexp x n
-      (* If we cannot infer a polynomial expression, it's fine, because execution will fail *)
-      |> Stage0.Ojson.unwrap_or (Poly.make n 0)
-      (* We only want to keep polynomials that mention tid *)
-      |> Poly.filter (fun coef _ ->
-        Freenames.free_names_nexp coef Variable.Set.empty
-        |> Variable.contains_tids
-      )
-      (* Recurse to remove any other constant factor mentioning fvs *)
-      |> Poly.map1 (fun n ->
-        rm_offset n fvs
-      )
-      (* Now convert back to a numeric expression *)
-      |> Poly.to_nexp x
+  open Exp
+  type t =
+    | Offset of nexp
+    | Index of nexp
 
-    | [] -> n
-  in
-  if Variable.Set.cardinal fvs > 0 then
-    let n = rm_offset n (Variable.Set.elements fvs) in
-    print_endline ("Expression without offsets: " ^ Exp.n_to_string n);
-    n
-  else n
+  let map (f:nexp -> nexp) : t -> t =
+    function
+    | Offset e -> Offset (f e)
+    | Index e -> Index (f e)
+
+  let index_or (f:nexp -> nexp -> nexp) (e1: t) (e2: t) : t =
+    match e1, e2 with
+    | Index e, Offset _
+    | Offset _, Index e -> Index e
+    | Offset e1, Offset e2 -> Offset (f e1 e2)
+    | Index e1, Index e2 -> Index (f e1 e2)
+
+  let index_and (f:nexp -> nexp -> nexp) (e1: t) (e2: t) : t =
+    match e1, e2 with
+    | Index e1, Offset e2
+    | Offset e1, Index e2
+    | Index e1, Index e2 -> Index (f e1 e2)
+    | Offset e1, Offset e2 -> Offset (f e1 e2)
+
+  let rec from_nexp : Exp.nexp -> t =
+    function
+    | Num n -> Offset (Num n)
+    | Var x when Variable.is_tid x -> Index (Var x)
+    | Var x -> Offset (Var x)
+    | Bin (o, e1, e2) when o = Plus || o = Minus ->
+      index_or (fun e1 e2 -> Bin (o, e1, e2)) (from_nexp e1) (from_nexp e2)
+    | Bin (o, e1, e2) ->
+      index_and (fun e1 e2 -> Bin (o, e1, e2)) (from_nexp e1) (from_nexp e2)
+    | Proj (p, e) -> Offset (Proj (p, e))
+    | NCall (f, e) -> map (fun e -> NCall (f, e)) (from_nexp e)
+    | NIf (c, n1, n2) ->
+      if Freenames.contains_tid_bexp c then
+        Index (NIf (c, n1, n2))
+      else
+        index_and (fun n1 n2 -> NIf (c, n1, n2)) (from_nexp n1) (from_nexp n2)
+
+  let to_string : t -> string =
+    function
+    | Index e -> "index " ^ Exp.n_to_string e
+    | Offset e -> "offset " ^ Exp.n_to_string e
+
+  let remove_offset (n: Exp.nexp) : Exp.nexp =
+    let after = match from_nexp n with
+    | Offset _ -> Num 0
+    | Index e -> e
+    in
+    (if n = after then () else
+      prerr_endline ("WARNING: removed offset: " ^ Exp.n_to_string n ^ " 🡆 " ^ Exp.n_to_string after)
+    );
+    after
+end
 
 (*
   1. If the expressions contains any thread-local variable, return the max
@@ -75,8 +103,7 @@ let analyze (num_banks:int) (thread_count:Vec3.t) (thread_locals : Variable.Set.
         ~use_array:(fun _ -> true)
       |> put_tids thread_count
     in
-    let fvs_minus_tids = Variable.Set.diff fvs Variable.tid_var_set in
-    let n = remove_offset fvs_minus_tids n in
+    let n = OffsetAnalysis.remove_offset n in
     try
       (Vectorized.access n ctx |> Vectorized.NMap.max).value - 1
     with

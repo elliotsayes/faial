@@ -19,6 +19,7 @@ and fold_bexp f e a =
 
 let free_names_nexp e (fns:Variable.Set.t) = fold_nexp Variable.Set.add e fns
 
+
 let is_closed_nexp e : bool =
   free_names_nexp e Variable.Set.empty
   |> Variable.Set.is_empty
@@ -28,6 +29,14 @@ let mem_nexp (x:Variable.t) (e:nexp) : bool =
   |> Variable.Set.mem x
 
 let free_names_bexp e fns = fold_bexp Variable.Set.add e fns
+
+let contains_tid_bexp e : bool =
+  free_names_bexp e Variable.Set.empty
+  |> Variable.contains_tids
+
+let contains_tid_nexp e : bool =
+  free_names_nexp e Variable.Set.empty
+  |> Variable.contains_tids
 
 let free_names_range (r:Range.t) (fns:Variable.Set.t) : Variable.Set.t =
   free_names_nexp r.lower_bound fns |> free_names_nexp r.upper_bound

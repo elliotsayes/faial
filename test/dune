@@ -10,6 +10,7 @@
    test_slice
    test_queries
    test_poly
+   test_index_analysis
  )
  (libraries stage0 protocols drf inference oUnit bank_conflicts)
 )
