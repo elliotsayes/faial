@@ -116,6 +116,7 @@ let slice_protocol (thread_count : Vec3.t) (k : prog kernel) : prog kernel =
              |> List.of_seq
   in
   {k with kernel_arrays = arrays; kernel_code = code}
+  |> Shared_access.simplify_kernel thread_count
 
 (* Prepare the kernel for serialization *)
 let prepare_kernel
