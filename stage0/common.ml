@@ -348,3 +348,19 @@ let ic_to_string ?(chunk_size=1024) (ic:in_channel) : string =
       Buffer.contents buffer
   in
   loop ()
+
+
+(*
+  Runs a program with a string given as an input
+  *)
+let run ?(stdin="") ~exe args : (Unix.process_status * string) =
+  let cmd = Filename.quote_command exe args in
+  Unix.open_process cmd
+  |> with_process_in_out (fun (ic, oc) ->
+    (* Send the expression to be processed *)
+    output_string oc stdin;
+    (* Close output to ensure it is processed *)
+    close_out oc;
+    (* Receive the output *)
+    ic_to_string ic
+  )

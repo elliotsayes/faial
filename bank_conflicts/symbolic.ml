@@ -207,7 +207,15 @@ let simplify (s : t) : string =
     prerr_endline ("WARNING: simplify: " ^ m ^ ": " ^ to_string s);
     to_string s
 
-(* --------------------------------- Absynth ---------------------- *)
+let rec to_ra : t -> Ra.t =
+  function
+  | Const k -> Tick k
+  | Sum (x, ub, s) ->
+    Loop (Range.make ~lower_bound:(Num 1) x (Exp.n_inc ub), to_ra s)
+  | Add l ->
+    List.fold_right (fun i r -> Ra.Seq (to_ra i, r)) l Skip
+
+(* --------------------------------- Maxima ---------------------- *)
 
 let rec to_maxima : t -> string =
   function
@@ -236,95 +244,16 @@ let cleanup_maxima_output (x:string) : string =
   )
   |> Common.join "\n"
 
-let run_prog ~out ~exe args =
-  let (_, txt) =
-    let cmd = Filename.quote_command exe args in
-    Unix.open_process cmd
-    |> Common.with_process_in_out (fun (ic, oc) ->
-      (* Send the expression to be processed *)
-      output_string oc out;
-      (* Close output to ensure it is processed *)
-      close_out oc;
-      (* Receive the output *)
-      Common.ic_to_string ic
-    )
-  in
-  txt
-
 let run_maxima ?(verbose=false) ?(exe="maxima") (x:t) : string =
   let expr = to_maxima x ^ ",simpsum;" in
   (if verbose
     then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
     else ());
-  run_prog ~out:expr ~exe ["--very-quiet"; "--disable-readline"]
+  Common.run ~stdin:expr ~exe ["--very-quiet"; "--disable-readline"]
+  |> snd
   |> cleanup_maxima_output
 
 (* --------------------------------- Absynth ---------------------- *)
-
-let to_absynth : t -> string =
-  let indent (depth:int) : string = String.make depth '\t' in
-  let n_to_s = Exp.n_to_string in
-  let rec translate (depth:int) : t -> string =
-    function
-    | Const k -> indent depth ^ "tick " ^ string_of_int k ^ "\n"
-    | Sum (x, ub, s) ->
-      indent depth ^ Variable.name x ^ " = 0\n" ^
-      indent depth ^ "while " ^ Variable.name x ^ " < (" ^ n_to_s ub ^ "):\n" ^
-      indent (depth + 1) ^ Variable.name x ^ " = " ^ Variable.name x ^ " + 1\n" ^
-      translate (depth + 1) s
-    | Add l -> List.map (translate depth) l |> Common.join ""
-  in
-  fun x ->
-    "def f():\n" ^
-    translate 1 x
-
-let with_tmp ~prefix ~suffix (f:string -> 'a) : 'a =
-  let fname = Filename.temp_file prefix suffix in
-  try
-      let res = f fname in
-      Sys.remove fname;
-      res
-  with ex ->
-      Sys.remove fname;
-      raise ex
-
-let write_string ~filename ~data : unit =
-  let oc = open_out filename in
-  try
-    output_string oc data;
-    close_out oc
-  with ex ->
-    close_out oc;
-    raise ex
-
-let cleanup_absynth (x:string) : string option =
-  let (let*) = Option.bind in
-  let* x =
-    String.split_on_char '\n' x
-    |> List.find_opt (String.starts_with ~prefix:"    Bound:")
-  in
-  let* (_, x) = Common.split ':' x in
-  Some (String.trim x)
-
-let run_absynth ?(verbose=false) ?(exe="absynth") (x:t) : string =
-  let out = to_absynth x in
-  (if verbose
-    then prerr_endline ("Absynth output:\n" ^ out ^ "\n")
-    else ());
-  let data = with_tmp ~prefix:"absynth_" ~suffix:".imp" (fun filename ->
-      write_string ~filename ~data:out;
-      run_prog ~out ~exe [filename]
-    )
-  in
-  match cleanup_absynth data with
-  | Some x -> x
-  | None ->
-    if Common.contains ~substring:"Sorry, I could not find a bound" data then
-      "No bound found."
-    else (
-      print_endline data;
-      "???"
-    )
 
 (* --------------------------------- CoFloCo ---------------------- *)
 
@@ -515,7 +444,10 @@ let run_cofloco ?(verbose=false) ?(exe="cofloco") (s:t) : string =
   (if verbose
     then prerr_endline ("CoFloCo output:\n" ^ expr ^ "\n")
     else ());
-  let data = run_prog ~out:expr ~exe ["-v"; "0"; "-i"; "/dev/stdin"] in
+  let data =
+    Common.run ~stdin:expr ~exe ["-v"; "0"; "-i"; "/dev/stdin"]
+    |> snd
+  in
   match data |> cleanup_cofloco env with
   | Some x -> x
   | None ->
@@ -607,7 +539,7 @@ let run_koat ?(exe="koat2") ?(verbose=false) (s:t) : string =
   (if verbose
     then prerr_endline ("KoAT output:\n" ^ expr ^ "\n")
     else ());
-  let data = run_prog ~out:expr ~exe ["analyse"; "-i"; "/dev/stdin"] in
+  let data = Common.run ~stdin:expr ~exe ["analyse"; "-i"; "/dev/stdin"] |> snd in
   match data |> cleanup_koat env with
   | Some x -> x
   | None ->

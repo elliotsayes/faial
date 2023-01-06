@@ -2,6 +2,7 @@
   (name bank_conflicts)
   (modules
     vec3 vectorized poly shared_access index_analysis ra
+    absynth
     symbolic)
   (libraries
     ; 3rd-pary

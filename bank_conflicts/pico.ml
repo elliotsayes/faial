@@ -34,7 +34,7 @@ let cost
     if use_maxima then
       Symbolic.run_maxima ~verbose:show_code s
     else if use_absynth then
-      Symbolic.run_absynth ~verbose:show_code ~exe:absynth_exe s
+      Absynth.run_symbolic ~verbose:show_code ~exe:absynth_exe s
     else if use_cofloco then
       Symbolic.run_cofloco ~verbose:show_code ~exe:cofloco_exe s
     else if use_koat then
