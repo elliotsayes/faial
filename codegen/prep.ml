@@ -1,6 +1,5 @@
 open Protocols
 open Bank_conflicts
-
 open Exp
 open Proto
 

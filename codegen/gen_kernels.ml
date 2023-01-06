@@ -1,6 +1,5 @@
 open Stage0
 open Protocols
-
 open Exp
 open Proto
 
