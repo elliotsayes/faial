@@ -1,6 +1,5 @@
 open Stage0
 open Protocols
-open Bank_conflicts
 
 open Exp
 open Proto
@@ -144,99 +143,6 @@ let rec inst_to_s (racuda : bool) : inst -> Indent.t list = function
       Line "}"
     ]
 
-(* Converts source instruction to the list of variables used in it *)
-let rec inst_to_vars : inst -> Variable.t list = function
-  | Acc (_, e) -> List.map n_to_vars e.index |> List.flatten
-  | Sync -> []
-  | Cond (b, p) -> b_to_vars b :: List.map inst_to_vars p |> List.flatten
-  | Loop (r, p) -> r_to_vars r :: List.map inst_to_vars p |> List.flatten
-and n_to_vars : nexp -> Variable.t list = function
-  | Var x -> [x]
-  | Num _ -> []
-  | Bin (_, e1, e2) -> n_to_vars e1 @ n_to_vars e2
-  | Proj (_, x) -> [x]
-  | NCall (_, e) -> n_to_vars e
-  | NIf (b, e1, e2) -> b_to_vars b @ n_to_vars e1 @ n_to_vars e2
-and b_to_vars : bexp -> Variable.t list = function
-  | Bool _ -> []
-  | NRel (_, e1, e2) -> n_to_vars e1 @ n_to_vars e2
-  | BRel (_, b1, b2) -> b_to_vars b1 @ b_to_vars b2
-  | BNot b -> b_to_vars b
-  | Pred (_, e) -> n_to_vars e
-and r_to_vars (r : Range.t) : Variable.t list =
-  let step_variables = match r.step with
-    | Plus e -> n_to_vars e
-    | Mult e -> n_to_vars e
-  in
-  [[r.var]; n_to_vars r.lower_bound; n_to_vars r.upper_bound; step_variables]
-  |> List.flatten
-
-(* Gets the set of variables used in a list of instructions *)
-let variables_used (l : inst list) : VarSet.t =
-  List.map inst_to_vars l |> List.flatten |> VarSet.of_list
-
-(* Flattens a multi-dimensional array into a 1D product of its dimensions *)
-let flatten_multi_dim (arr : Memory.t) : Memory.t =
-  match arr.size with
-  | [] -> arr
-  | size -> {arr with size = [List.fold_left ( * ) 1 size]}
-
-(* Converts a shared access to a protocol instruction *)
-let rec shared_access_to_inst : Shared_access.t -> inst = function
-  | Loop (r, acc) -> Loop (r, [shared_access_to_inst acc])
-  | Cond (b, acc) -> Cond (b, [shared_access_to_inst acc])
-  (* Assume the access is a read *)
-  | Index a -> Acc (a.shared_array, {index=[a.index]; mode=Rd})
-
-(* Makes a kernel RaCUDA-friendly via protocol slicing *)
-let mk_racuda_friendly (k : prog kernel) =
-  let arrays = VarMap.mapi (fun _ -> flatten_multi_dim) k.kernel_arrays in
-  let code = Shared_access.from_kernel (Vec3.make ~x:1024 ~y:1 ~z:1) k
-             |> Seq.map shared_access_to_inst
-             |> List.of_seq in
-  {k with kernel_arrays = arrays; kernel_code = code}
-
-(* Gets the type of an array, defaulting to int if it is unknown *)
-let arr_type (arr : Memory.t) (strip_const : bool) : string =
-  if arr.data_type = [] then "int"
-  else if strip_const then List.filter (fun x -> x <> "const") arr.data_type
-                           |> Common.join " "
-  else Common.join " " arr.data_type  
-
-(* Removes template parameters from a CUDA type *)
-let remove_template (s : string) : string =
-  match String.index_opt s '<' with
-  | None -> s
-  | Some t_index -> String.sub s 0 t_index
-
-(* Replaces the type of each array with a compatible alternative *)
-let mk_types_compatible
-    (arrays : Memory.t VarMap.t)
-    (racuda : bool)
-  : Memory.t VarMap.t =
-  let rec convert_type (racuda_shared : bool) : string list -> string list =
-    function
-    | [] -> []
-    (* Unknown/incompatible types are converted to int in RaCUDA output *)
-    | [last_type] -> if racuda then
-        match last_type with
-        | "char" | "double" | "float" | "int" | "void" -> [last_type]
-        | "long" | "short" -> if racuda_shared then ["int"] else [last_type]
-        | _ -> ["int"]
-      else [remove_template last_type]
-    (* Remove unsigned modifier to make shared arrays RaCUDA-friendly *)
-    | modifier :: types -> if racuda_shared && modifier = "unsigned"
-      then convert_type racuda_shared types
-      else modifier :: convert_type racuda_shared types
-  in
-  let mk_array_compatible (arr : Memory.t) : Memory.t =
-    { arr with
-      data_type = arr.data_type
-                  |> convert_type (racuda && arr.hierarchy = SharedMemory)
-    }
-  in
-  VarMap.mapi (fun _ -> fun v -> mk_array_compatible v) arrays
-
 (* Checks if a string is a known CUDA type *)
 let is_known_type (s : string) : bool =
   if StringSet.mem s known_types then true
@@ -263,9 +169,16 @@ let decl_unknown_types (vm : Memory.t VarMap.t) : string list =
   |> StringSet.of_list
   |> StringSet.elements
 
-(* Include prototypes for bitwise operators in RaCUDA-friendly kernels *)
+(* Strip the __device__ modifier to make kernels RaCUDA-friendly *)
 let base_protos (racuda : bool) : string list =
   if racuda then racuda_protos else cuda_protos
+
+(* Gets the type of an array, defaulting to int if it is unknown *)
+let arr_type (arr : Memory.t) (strip_const : bool) : string =
+  if arr.data_type = [] then "int"
+  else if strip_const then List.filter (fun x -> x <> "const") arr.data_type
+                           |> Common.join " "
+  else Common.join " " arr.data_type
 
 (* Create external function prototypes for writing to each array *)
 let arr_to_proto (vm : Memory.t VarMap.t) (racuda : bool) : string list =
@@ -311,11 +224,7 @@ let body_to_s (f : prog -> Indent.t list) (k : prog kernel) : Indent.t =
                    |> VarMap.filter (fun _ -> fun v -> Memory.is_shared v)
                    |> arr_to_shared
   in
-  (* Remove unused local variables *)
-  let used_var = variables_used k.kernel_code in
-  let local_var = VarSet.inter used_var k.kernel_local_variables
-                  |> local_var_to_l
-  in
+  let local_var = local_var_to_l k.kernel_local_variables in
   let dummy_var = arr_to_dummy k.kernel_arrays in
   Indent.Block (shared_arr @ local_var @ dummy_var @ (f k.kernel_code))
 
@@ -326,26 +235,24 @@ let kernel_to_s
     (racuda : bool)
   : Indent.t list =
   let open Indent in
-  let k = {k with kernel_arrays = mk_types_compatible k.kernel_arrays racuda} in
   let type_decls = if racuda then [] else decl_unknown_types k.kernel_arrays in
   let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
-  let k_name = if k.kernel_name = "main" then "kernel" else k.kernel_name in
   let global_arr = k.kernel_arrays
                    |> VarMap.filter (fun _ -> fun v -> Memory.is_global v)
                    |> global_arr_to_l
   in
   let global_var = global_var_to_l k.kernel_global_variables in
-  let params = global_arr @ global_var in
+  let params = global_arr @ global_var |> Common.join ", " in
   [
-    Line (Common.join "\n" (type_decls @ funct_protos));
-    Line ("__global__ void " ^ k_name ^ "(" ^ Common.join ", " params ^ ")");
+    Line (type_decls @ funct_protos |> Common.join "\n");
+    Line ("__global__ void " ^ k.kernel_name ^ "(" ^ params ^ ")");
     Line "{";
     (body_to_s f k);
     Line "}"
   ]
 
 let prog_to_s (racuda : bool) (p : prog) : Indent.t list =
-  p_opt p |> List.map (inst_to_s racuda) |> List.flatten
+  List.map (inst_to_s racuda) p |> List.flatten
 
 let gen_cuda (racuda : bool) (k : prog kernel) : string =
   Indent.to_string (kernel_to_s (prog_to_s racuda) k racuda)
@@ -360,7 +267,6 @@ let scalars_to_l (vs : VarSet.t) : (string * Otoml.t) list =
   |> List.map (fun v -> (var_name v, Otoml.TomlString "int"))
 
 let kernel_to_table (k : prog kernel) (racuda : bool) : Otoml.t =
-  let k = {k with kernel_arrays = mk_types_compatible k.kernel_arrays racuda} in
   let type_decls = if racuda then [] else decl_unknown_types k.kernel_arrays in
   let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
   let header = (type_decls @ funct_protos |> Common.join "\n") ^ "\n" in

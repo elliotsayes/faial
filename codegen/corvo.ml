@@ -31,12 +31,10 @@ let corvo
     (racuda : bool)
     (toml : bool)
   : unit =
-  let open Cgen in
-  let kernels = match read_kernels input_file, racuda with
-    | kernels, true -> List.map mk_racuda_friendly kernels
-    | kernels, false -> kernels
+  let kernels = read_kernels input_file
+                |> List.map (Prep.prepare_kernel racuda)
   in
-  let generator = if toml then gen_toml racuda else gen_cuda racuda in
+  let generator = if toml then Cgen.gen_toml racuda else Cgen.gen_cuda racuda in
   List.map generator kernels |> Common.join "\n" |> write_string output_file
 
 open Cmdliner
