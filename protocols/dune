@@ -1,1 +1,1 @@
-(library (name protocols) (libraries stage0 ANSITerminal))
+(library (name protocols) (libraries stage0 ANSITerminal z3))

@@ -78,24 +78,32 @@ let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * E
       None
   in
   let open Z3 in
-  let open Z3expr in
   let ctx = mk_context ["timeout", string_of_int timeout] in
-  let n_expr = n_to_expr ctx n in
-  let lb = Arithmetic.Integer.mk_const ctx (Symbol.mk_string ctx "?lb") in
+  let b_to_expr = Gen_z3.Bv32Gen.b_to_expr ctx in
+  let n_to_expr = Gen_z3.Bv32Gen.n_to_expr ctx in
+  let parse_num = Gen_z3.Bv32Gen.parse_num in
+  let x = Var (Variable.from_name "?max") in
   let restrict tid tid_count =
     let lhs = n_ge (Var tid) (Num 0) in
     let rhs = n_lt (Var tid) (Num tid_count) in
-    b_to_expr ctx (b_and lhs rhs)
+    b_to_expr (b_and lhs rhs)
   in
   let opt = Optimize.mk_opt ctx in
   Optimize.add opt [
-      Boolean.mk_eq ctx lb n_expr;
+      (*
+        Bit-vector maximization has no notion of signedness.
+        The following constrain guarantees that the goal being maximized
+        is a signed-positive number.
+
+        https://stackoverflow.com/questions/64484347/
+      *)
+      b_to_expr (n_ge x (Num 0));
       restrict Variable.tidx thread_count.x;
       restrict Variable.tidy thread_count.y;
       restrict Variable.tidz thread_count.z;
     ]
   ;
-  match solve opt lb (fun m ->
+  match solve opt (n_to_expr x) (fun m ->
     (* Go through all declarations of the model *)
     Model.get_const_decls m
     |> List.map (fun d ->
@@ -123,7 +131,7 @@ let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * E
         (* Try to cast tid to an integer and then substitute *)
         (* Try to cast a value to a string, if we fail, return None *)
         (try
-          let tid_val = Expr.to_string tid_val |> int_of_string in
+          let tid_val : int = Expr.to_string tid_val |> parse_num |> int_of_string in
           Some (tid, Num tid_val)
         with
           Failure _ -> None)
@@ -191,19 +199,66 @@ let flatten_multi_dim (dim:int list) (l:Exp.nexp list) : Exp.nexp =
       n_plus (n_mult n (Num offset)) accum
     ) (Common.zip l dim) (Num 0)
 
+let shared_memory (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t = Variable.Map.filter_map (fun _ v ->
+  if Memory.is_shared v then
+    let open Inference in
+    let ty = Common.join " " v.data_type |> C_type.make in
+    match C_type.sizeof ty with
+    | Some n -> Some {byte_count=n; dim=v.size}
+    | None -> Some {byte_count=word_size; dim=v.size}
+  else
+    None
+  ) mem
+
+let simplify_kernel
+  (thread_count : Vec3.t)
+  (k : Proto.prog Proto.kernel)
+:
+  Proto.prog Proto.kernel
+=
+  let open Proto in
+  let rec simpl_i : Proto.inst -> Proto.inst =
+    let shared = shared_memory k.kernel_arrays in
+    function
+    | Acc (x, ({index=l; _} as a)) ->
+      (* Flatten n-dimensional array and apply word size *)
+      let a =
+        match Variable.Map.find_opt x shared with
+        | Some v ->
+          let e =
+            l
+            |> byte_count_multiplier v.byte_count
+            |> flatten_multi_dim v.dim
+          in
+          { a with index=[e] }
+        | None -> a
+      in
+      Acc (x, a)
+    | Sync -> Sync
+    | Cond (b, p) -> Cond (b, simpl_p p)
+    | Loop (r, p) ->
+      let p = simpl_p p in
+      (match uniform thread_count r with
+      | Some r' ->
+        let cnd =
+          let open Exp in
+          b_and
+            (n_ge (Var r.var) r.lower_bound)
+            (n_lt (Var r.var) r.upper_bound)
+        in
+        Loop (r', [Cond(cnd, p)])
+      | None ->
+        Loop (r, p)
+      )
+
+  and simpl_p (l: Proto.prog) : Proto.prog =
+    List.map simpl_i l
+  in
+  { k with kernel_code = simpl_p k.kernel_code }
+
 let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
   let open Exp in
-  let shared : array_size Variable.Map.t = Variable.Map.filter_map (fun _ v ->
-    if Memory.is_shared v then
-      let open Inference in
-      let ty = Common.join " " v.data_type |> C_type.make in
-      match C_type.sizeof ty with
-      | Some n -> Some {byte_count=n; dim=v.size}
-      | None -> Some {byte_count=word_size; dim=v.size}
-    else
-      None
-    ) k.kernel_arrays
-  in
+  let shared = shared_memory k.kernel_arrays in
   let rec on_i : Proto.inst -> t Seq.t =
     function
     | Proto.Acc (x, {index=l; _}) ->
