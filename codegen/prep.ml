@@ -100,8 +100,8 @@ let rec shared_access_to_inst : Shared_access.t -> inst = function
   | Index a -> Acc (a.shared_array, {index=[a.index]; mode=Rd})
 
 (* Slice a protocol into independently-analyzable shared accesses *)
-let slice_protocol (k : prog kernel) (thread_count : Vec3.t) : prog kernel =
-  let subst (x : string) (n : int) (p : prog) =
+let slice_protocol (thread_count : Vec3.t) (k : prog kernel) : prog kernel =
+  let subst (x : string) (n : int) (p : prog) : prog =
     Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p
   in
   let code = k.kernel_code
@@ -123,9 +123,10 @@ let prepare_kernel
     (thread_count : Vec3.t)
     (k : prog kernel)
   : prog kernel =
-  let k = if racuda then slice_protocol k thread_count else k in
-  k
-  |> rename_kernel
-  |> constant_folding
-  |> remove_unused_variables
-  |> mk_types_compatible racuda
+  let k = k
+          |> rename_kernel
+          |> constant_folding
+          |> remove_unused_variables
+          |> mk_types_compatible racuda
+  in
+  if racuda then slice_protocol thread_count k else k
