@@ -1,7 +1,7 @@
 (library
   (name bank_conflicts)
   (modules
-    vec3 vectorized poly shared_access index_analysis
+    vec3 vectorized poly shared_access index_analysis ra
     symbolic)
   (libraries
     ; 3rd-pary

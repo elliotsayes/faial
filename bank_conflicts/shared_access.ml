@@ -217,8 +217,8 @@ let simplify_kernel
   Proto.prog Proto.kernel
 =
   let open Proto in
+  let shared = shared_memory k.kernel_arrays in
   let rec simpl_i : Proto.inst -> Proto.inst =
-    let shared = shared_memory k.kernel_arrays in
     function
     | Acc (x, ({index=l; _} as a)) ->
       (* Flatten n-dimensional array and apply word size *)
