@@ -199,19 +199,66 @@ let flatten_multi_dim (dim:int list) (l:Exp.nexp list) : Exp.nexp =
       n_plus (n_mult n (Num offset)) accum
     ) (Common.zip l dim) (Num 0)
 
+let shared_memory (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t = Variable.Map.filter_map (fun _ v ->
+  if Memory.is_shared v then
+    let open Inference in
+    let ty = Common.join " " v.data_type |> C_type.make in
+    match C_type.sizeof ty with
+    | Some n -> Some {byte_count=n; dim=v.size}
+    | None -> Some {byte_count=word_size; dim=v.size}
+  else
+    None
+  ) mem
+
+let simplify_kernel
+  (thread_count : Vec3.t)
+  (k : Proto.prog Proto.kernel)
+:
+  Proto.prog Proto.kernel
+=
+  let open Proto in
+  let rec simpl_i : Proto.inst -> Proto.inst =
+    let shared = shared_memory k.kernel_arrays in
+    function
+    | Acc (x, ({index=l; _} as a)) ->
+      (* Flatten n-dimensional array and apply word size *)
+      let a =
+        match Variable.Map.find_opt x shared with
+        | Some v ->
+          let e =
+            l
+            |> byte_count_multiplier v.byte_count
+            |> flatten_multi_dim v.dim
+          in
+          { a with index=[e] }
+        | None -> a
+      in
+      Acc (x, a)
+    | Sync -> Sync
+    | Cond (b, p) -> Cond (b, simpl_p p)
+    | Loop (r, p) ->
+      let p = simpl_p p in
+      (match uniform thread_count r with
+      | Some r' ->
+        let cnd =
+          let open Exp in
+          b_and
+            (n_ge (Var r.var) r.lower_bound)
+            (n_lt (Var r.var) r.upper_bound)
+        in
+        Loop (r', [Cond(cnd, p)])
+      | None ->
+        Loop (r, p)
+      )
+
+  and simpl_p (l: Proto.prog) : Proto.prog =
+    List.map simpl_i l
+  in
+  { k with kernel_code = simpl_p k.kernel_code }
+
 let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
   let open Exp in
-  let shared : array_size Variable.Map.t = Variable.Map.filter_map (fun _ v ->
-    if Memory.is_shared v then
-      let open Inference in
-      let ty = Common.join " " v.data_type |> C_type.make in
-      match C_type.sizeof ty with
-      | Some n -> Some {byte_count=n; dim=v.size}
-      | None -> Some {byte_count=word_size; dim=v.size}
-    else
-      None
-    ) k.kernel_arrays
-  in
+  let shared = shared_memory k.kernel_arrays in
   let rec on_i : Proto.inst -> t Seq.t =
     function
     | Proto.Acc (x, {index=l; _}) ->
