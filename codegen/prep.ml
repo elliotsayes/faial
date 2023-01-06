@@ -43,8 +43,8 @@ and r_to_vars (r : Range.t) : Variable.t list =
   |> List.flatten
 
 (* Get the set of variables used in the code *)
-let variables_used (l : prog) : VarSet.t =
-  List.map inst_to_vars l |> List.flatten |> VarSet.of_list
+let variables_used (p : prog) : VarSet.t =
+  List.map inst_to_vars p |> List.flatten |> VarSet.of_list
 
 (* Remove unused local variables from the kernel  *)
 let remove_unused_variables (k : prog kernel) : prog kernel =
@@ -100,16 +100,30 @@ let rec shared_access_to_inst : Shared_access.t -> inst = function
   | Index a -> Acc (a.shared_array, {index=[a.index]; mode=Rd})
 
 (* Slice a protocol into independently-analyzable shared accesses *)
-let slice_protocol (k : prog kernel) =
+let slice_protocol (k : prog kernel) (thread_count : Vec3.t) : prog kernel =
+  let subst (x : string) (n : int) (p : prog) =
+    Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p
+  in
+  let code = k.kernel_code
+             |> subst "blockDim.x" thread_count.x
+             |> subst "blockDim.y" thread_count.y
+             |> subst "blockDim.z" thread_count.z
+  in
+  let k = {k with kernel_code = code} in
   let arrays = VarMap.mapi (fun _ -> flatten_multi_dim) k.kernel_arrays in
-  let code = Shared_access.from_kernel (Vec3.make ~x:1024 ~y:1 ~z:1) k
+  let code = Shared_access.from_kernel thread_count k
              |> Seq.map shared_access_to_inst
-             |> List.of_seq in
+             |> List.of_seq
+  in
   {k with kernel_arrays = arrays; kernel_code = code}
 
 (* Prepare the kernel for serialization *)
-let prepare_kernel (racuda : bool) (k : prog kernel) : prog kernel =
-  let k = if racuda then slice_protocol k else k in
+let prepare_kernel
+    (racuda : bool)
+    (thread_count : Vec3.t)
+    (k : prog kernel)
+  : prog kernel =
+  let k = if racuda then slice_protocol k thread_count else k in
   k
   |> rename_kernel
   |> constant_folding
