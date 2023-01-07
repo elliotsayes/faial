@@ -86,21 +86,8 @@ let mk_types_compatible (racuda : bool) (k : prog kernel) : prog kernel =
   in
   {k with kernel_arrays = arrays}
 
-(* Flatten a multi-dimensional array into a 1D product of its dimensions *)
-let flatten_multi_dim (arr : Memory.t) : Memory.t =
-  match arr.size with
-  | [] -> arr
-  | size -> {arr with size = [List.fold_left ( * ) 1 size]}
-
-(* Convert a shared access to a protocol instruction *)
-let rec shared_access_to_inst : Shared_access.t -> inst = function
-  | Loop (r, acc) -> Loop (r, [shared_access_to_inst acc])
-  | Cond (b, acc) -> Cond (b, [shared_access_to_inst acc])
-  (* Assume the access is a read *)
-  | Index a -> Acc (a.shared_array, {index=[a.index]; mode=Rd})
-
-(* Slice a protocol into independently-analyzable shared accesses *)
-let slice_protocol (thread_count : Vec3.t) (k : prog kernel) : prog kernel =
+(* Set the number of threads per block *)
+let set_block_dim (thread_count : Vec3.t) (k : prog kernel) : prog kernel =
   let subst (x : string) (n : int) (p : prog) : prog =
     Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p
   in
@@ -109,14 +96,17 @@ let slice_protocol (thread_count : Vec3.t) (k : prog kernel) : prog kernel =
              |> subst "blockDim.y" thread_count.y
              |> subst "blockDim.z" thread_count.z
   in
-  let k = {k with kernel_code = code} in
-  let arrays = VarMap.mapi (fun _ -> flatten_multi_dim) k.kernel_arrays in
-  let code = Shared_access.from_kernel thread_count k
-             |> Seq.map shared_access_to_inst
-             |> List.of_seq
+  {k with kernel_code = code}
+
+(* Flatten multi-dimensional arrays into 1D products of their dimensions *)
+let flatten_multi_dim (k : prog kernel) : prog kernel =
+  let flatten_array (arr : Memory.t) : Memory.t =
+    match arr.size with
+    | [] -> arr
+    | size -> {arr with size = [List.fold_left ( * ) 1 size]}
   in
-  {k with kernel_arrays = arrays; kernel_code = code}
-  |> Shared_access.simplify_kernel thread_count
+  let arrays = VarMap.mapi (fun _ -> flatten_array) k.kernel_arrays in
+  {k with kernel_arrays = arrays}
 
 (* Prepare the kernel for serialization *)
 let prepare_kernel
@@ -130,4 +120,8 @@ let prepare_kernel
           |> remove_unused_variables
           |> mk_types_compatible racuda
   in
-  if racuda then slice_protocol thread_count k else k
+  if racuda then k
+                 |> set_block_dim thread_count
+                 |> Shared_access.simplify_kernel thread_count
+                 |> flatten_multi_dim
+  else k
