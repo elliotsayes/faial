@@ -36,9 +36,9 @@ let cost
     else if use_absynth then
       Absynth.run_symbolic ~verbose:show_code ~exe:absynth_exe s
     else if use_cofloco then
-      Symbolic.run_cofloco ~verbose:show_code ~exe:cofloco_exe s
+      Cofloco.run_symbolic ~verbose:show_code ~exe:cofloco_exe s
     else if use_koat then
-      Symbolic.run_koat ~verbose:show_code ~exe:koat_exe s
+      Koat.run_symbolic ~verbose:show_code ~exe:koat_exe s
     else
       Symbolic.simplify s
   in

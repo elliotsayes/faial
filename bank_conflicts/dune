@@ -3,6 +3,9 @@
   (modules
     vec3 vectorized poly shared_access index_analysis ra
     absynth
+    cofloco
+    koat
+    environ
     symbolic)
   (libraries
     ; 3rd-pary

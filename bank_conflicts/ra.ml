@@ -7,6 +7,23 @@ type t =
   | Loop of Range.t * t
   | Seq of t * t
 
+let to_environ (s:t) : Environ.t =
+  let rec fvs (s:t) (env:Environ.Fvs.t) : Environ.Fvs.t =
+    match s with
+    | Skip
+    | Tick _ -> env
+    | Loop (r, p) ->
+      env
+      |> fvs p
+      |> Environ.Fvs.add_var r.var
+      |> Environ.Fvs.add_exp r.lower_bound
+      |> Environ.Fvs.add_exp r.upper_bound
+      |> Environ.Fvs.add_exp (Range.stride r)
+    | Seq (p, q) ->
+      fvs p env
+      |> fvs q
+  in
+  Environ.Fvs.empty |> fvs s |> Environ.from_fvs
 
 module Make (S:Subst.SUBST) = struct
   module M = Subst.Make(S)

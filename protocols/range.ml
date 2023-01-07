@@ -23,6 +23,11 @@ module Step = struct
     | Mult n -> fun m -> n_div m n
     | Plus n -> fun m -> n_minus m n
 
+  let stride : t -> nexp =
+    function
+    | Plus e -> e
+    | Mult e -> e
+
   let is_valid : t -> bexp =
     function
     | Plus e -> n_gt e (Num 0)
@@ -200,6 +205,9 @@ let lossy_last (r:t) : nexp =
       ~lower_bound:r.lower_bound
       ~upper_bound:r.upper_bound
       (Num 1)
+
+let stride (r:t) : nexp =
+  Step.stride r.step
 
 (* The first element in a while loop *)
 let while_init (r:t) : nexp =
