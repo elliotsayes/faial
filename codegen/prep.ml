@@ -98,6 +98,21 @@ let set_block_dim (thread_count : Vec3.t) (k : prog kernel) : prog kernel =
   in
   {k with kernel_code = code}
 
+(* Convert a shared access to a protocol instruction *)
+let rec shared_access_to_inst : Shared_access.t -> inst = function
+  | Loop (r, acc) -> Loop (r, [shared_access_to_inst acc])
+  | Cond (b, acc) -> Cond (b, [shared_access_to_inst acc])
+  (* Assume the access is a read *)
+  | Index a -> Acc (a.shared_array, {index=[a.index]; mode=Rd})
+
+(* Slice a protocol into independently-analyzable shared accesses *)
+let slice_protocol (thread_count : Vec3.t) (k : prog kernel) : prog kernel =
+  let code = Shared_access.from_kernel thread_count k
+             |> Seq.map shared_access_to_inst
+             |> List.of_seq
+  in
+  {k with kernel_code = code}
+
 (* Flatten multi-dimensional arrays into 1D products of their dimensions *)
 let flatten_multi_dim (k : prog kernel) : prog kernel =
   let flatten_array (arr : Memory.t) : Memory.t =
@@ -122,6 +137,6 @@ let prepare_kernel
   in
   if racuda then k
                  |> set_block_dim thread_count
-                 |> Shared_access.simplify_kernel thread_count
+                 |> slice_protocol thread_count
                  |> flatten_multi_dim
   else k
