@@ -30,6 +30,7 @@ let cost
     |> subst "blockDim.y" thread_count.y
     |> subst "blockDim.z" thread_count.z
   in
+  let k = { k with kernel_code = p } in
   let render_s ?(show_code=false) (s: Symbolic.t) : string =
     if use_maxima then
       Symbolic.run_maxima ~verbose:show_code s
@@ -75,13 +76,22 @@ let cost
     else
       Seq.map (Symbolic.from_slice num_banks thread_count k.kernel_local_variables)
   in
+  let ra = Ra.from_kernel num_banks thread_count in
   (* 1. break a kernel into slices *)
-  let total = Shared_access.from_kernel thread_count { k with kernel_code = p }
-    |> handle_slice
-    |> List.of_seq
-    |> Symbolic.add
+  let total =
+    if use_absynth then
+      ra k |> Absynth.run_ra ~verbose:show_code ~exe:absynth_exe
+    else if use_cofloco then
+      ra k |> Cofloco.run_ra ~verbose:show_code ~exe:cofloco_exe
+    else if use_koat then
+      ra k |> Koat.run_ra ~verbose:show_code ~exe:koat_exe
+    else
+      Shared_access.from_kernel thread_count { k with kernel_code = p }
+      |> handle_slice
+      |> List.of_seq
+      |> Symbolic.add
+      |> render_s ~show_code
   in
-  let total = render_s ~show_code total in
   PrintBox.(
     text total
     |> hpad 1
