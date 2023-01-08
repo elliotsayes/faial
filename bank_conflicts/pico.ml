@@ -5,7 +5,7 @@ open Protocols
 
 (* Main function *)
 
-let cost
+let print_cost
   ?(skip_zero=true)
   ?(use_maxima=false)
   ?(use_absynth=false)
@@ -20,7 +20,7 @@ let cost
   (thread_count:Vec3.t)
   (k : Proto.prog Proto.kernel)
 :
-  string
+  unit
 =
   let subst x n p =
     Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p in
@@ -31,73 +31,77 @@ let cost
     |> subst "blockDim.z" thread_count.z
   in
   let k = { k with kernel_code = p } in
-  let render_s ?(show_code=false) (s: Symbolic.t) : string =
-    if use_maxima then
-      Symbolic.run_maxima ~verbose:show_code s
-    else if use_absynth then
-      Absynth.run_symbolic ~verbose:show_code ~exe:absynth_exe s
-    else if use_cofloco then
-      Cofloco.run_symbolic ~verbose:show_code ~exe:cofloco_exe s
-    else if use_koat then
-      Koat.run_symbolic ~verbose:show_code ~exe:koat_exe s
-    else
-      Symbolic.simplify s
+  let with_ra (k:Proto.prog Proto.kernel) : unit =
+    let r = Ra.from_kernel num_banks thread_count k in
+    let cost =
+      if use_absynth then
+        r |> Absynth.run_ra ~verbose:show_code ~exe:absynth_exe
+      else if use_cofloco then
+        r |> Cofloco.run_ra ~verbose:show_code ~exe:cofloco_exe
+      else if use_koat then
+        r |> Koat.run_ra ~verbose:show_code ~exe:koat_exe
+      else (
+        (if show_code then (Ra.to_string r |> print_endline) else ());
+        Symbolic.from_ra r |> Symbolic.simplify
+      )
+    in
+    print_string (k.kernel_name ^ ":\n");
+    PrintBox.(
+      cost
+      |> text
+      |> hpad 1
+      |> frame
+    )
+    |> PrintBox_text.to_string
+    |> print_endline
   in
-  let handle_slice =
-    if explain then
-      Seq.filter_map (fun s ->
-        (* Convert a slice into an expression *)
-        let s1 = Symbolic.from_slice num_banks thread_count k.kernel_local_variables s in
-        if skip_zero && Symbolic.is_zero s1 then
-          None
-        else Some (
-          (* Flatten the expression *)
-          let simplified_cost = render_s s1 in
-          ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
-          s |> Shared_access.location |> Tui.LocationUI.print;
-          print_endline "";
-          let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
-          PrintBox.(
-            tree (s |> Shared_access.to_string |> String.cat "▶ Context: " |> text)
+  let with_slices (k:Proto.prog Proto.kernel) : unit =
+    let render_s ?(show_code=false) (s: Symbolic.t) : string =
+      if use_maxima then
+        Symbolic.run_maxima ~verbose:show_code s
+      else if use_absynth then
+        Absynth.run_symbolic ~verbose:show_code ~exe:absynth_exe s
+      else if use_cofloco then
+        Cofloco.run_symbolic ~verbose:show_code ~exe:cofloco_exe s
+      else if use_koat then
+        Koat.run_symbolic ~verbose:show_code ~exe:koat_exe s
+      else
+        Symbolic.simplify s
+    in
+    Shared_access.from_kernel thread_count { k with kernel_code = p }
+    |> Seq.iter (fun s ->
+      (* Convert a slice into an expression *)
+      let s1 = Symbolic.from_slice num_banks thread_count k.kernel_local_variables s in
+      if skip_zero && Symbolic.is_zero s1 then
+        ()
+      else
+        (* Flatten the expression *)
+        let simplified_cost = render_s s1 in
+        ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
+        s |> Shared_access.location |> Tui.LocationUI.print;
+        print_endline "";
+        let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
+        PrintBox.(
+          tree (s |> Shared_access.to_string |> String.cat "▶ Context: " |> text)
+          [
+            tree ("▶ Cost: "  ^ Symbolic.to_string s1 |> text)
             [
-              tree ("▶ Cost: "  ^ Symbolic.to_string s1 |> text)
+              tree ("▶ Cost (simplified):" |> text_with_style blue)
               [
-                tree ("▶ Cost (simplified):" |> text_with_style blue)
-                [
-                  text_with_style blue simplified_cost |> hpad 1
-                ]
+                text_with_style blue simplified_cost |> hpad 1
               ]
             ]
-          ) |> PrintBox_text.output stdout;
-          print_endline "\n";
-          s1
-        )
-      )
-    else
-      Seq.map (Symbolic.from_slice num_banks thread_count k.kernel_local_variables)
+          ]
+        ) |> PrintBox_text.output stdout;
+        print_endline "\n";
+    );
   in
-  let ra = Ra.from_kernel num_banks thread_count in
   (* 1. break a kernel into slices *)
-  let total =
-    if use_absynth then
-      ra k |> Absynth.run_ra ~verbose:show_code ~exe:absynth_exe
-    else if use_cofloco then
-      ra k |> Cofloco.run_ra ~verbose:show_code ~exe:cofloco_exe
-    else if use_koat then
-      ra k |> Koat.run_ra ~verbose:show_code ~exe:koat_exe
-    else
-      Shared_access.from_kernel thread_count { k with kernel_code = p }
-      |> handle_slice
-      |> List.of_seq
-      |> Symbolic.add
-      |> render_s ~show_code
-  in
-  PrintBox.(
-    text total
-    |> hpad 1
-    |> frame
+  if explain then (
+    with_slices k
+  ) else (
+    with_ra k
   )
-  |> PrintBox_text.to_string
 
 
 let pico
@@ -121,23 +125,19 @@ let pico
     let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
     let proto = imp |> List.map Imp.compile in
     List.iter (fun k ->
-      let cost_of_proto =
-        cost
-          ~explain
-          ~use_maxima
-          ~use_absynth
-          ~use_cofloco
-          ~use_koat
-          ~show_code
-          ~skip_zero:(not show_all)
-          ~absynth_exe
-          ~cofloco_exe
-          ~koat_exe
-          thread_count
-          k
-      in
-      print_string (k.kernel_name ^ ":\n");
-      cost_of_proto |> print_endline
+      print_cost
+        ~explain
+        ~use_maxima
+        ~use_absynth
+        ~use_cofloco
+        ~use_koat
+        ~show_code
+        ~skip_zero:(not show_all)
+        ~absynth_exe
+        ~cofloco_exe
+        ~koat_exe
+        thread_count
+        k
     ) proto
   with
   | Common.ParseError b ->

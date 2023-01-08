@@ -17,6 +17,27 @@ let rec to_string : t -> string =
   | Sum (x, n, s) -> "Σ_{1 ≤ " ^ Variable.name x ^ " ≤ " ^ Exp.n_to_string n ^ "} " ^ to_string s
   | Add l -> List.map to_string l |> Common.join " + "
 
+module Make (S:Subst.SUBST) = struct
+  module M = Subst.Make(S)
+  let rec subst (s: S.t) : t -> t =
+    function
+    | Const k -> Const k
+    | Add l -> Add (List.map (subst s) l)
+    | Sum (x, ub, p) ->
+      let ub = M.n_subst s ub in
+      let p = M.add s x (function
+        | Some s -> subst s p
+        | None -> p
+      )
+      in
+      Sum (x, ub, p)
+end
+
+module PSubstAssoc = Make(Subst.SubstAssoc)
+module PSubstPair = Make(Subst.SubstPair)
+
+let subst : (Variable.t * Exp.nexp) -> t -> t = PSubstPair.subst
+
 let add (l:t list) : t = Add l
 
 type factor = { power: int; divisor: int }
@@ -309,12 +330,24 @@ let rec n_pow ~base (e:Exp.nexp) : Exp.nexp =
   | Bin (Minus, e1, e2) -> n_div (n_pow ~base e1) (n_pow ~base e2)
   | _ -> NCall ("pow" ^ string_of_int base, e)
 
-let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) : Shared_access.t -> t =
-  function
-  | Index a -> Const (Index_analysis.analyze num_banks thread_count locs a.index)
-  | Cond (_, p) -> from_slice num_banks thread_count locs p
-  | Loop (r, p) ->
+(* Given a range, try to build a Sum *)
+let sum (r:Range.t) (s:t) : t option =
+  if s = Const 0 then Some (Const 0)
+  else
     match r with
+    | {step = Plus k; _} ->
+      let open Exp in
+      (*
+                ub - lb
+        iters = -------
+                    k
+      *)
+      let iters = n_div (n_minus r.upper_bound r.lower_bound) k in
+      (* x := k (x + lb + 1) *)
+      let new_range_var = n_mult (n_plus (Var r.var) (n_inc r.lower_bound)) k in
+      let s = subst (r.var, new_range_var) s in
+      Some (Sum (r.var, iters, s))
+
     | {
         var=x;
         step = Mult (Num k);
@@ -332,31 +365,34 @@ let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) :
             for (x = 25; x < 100; x *= 2) ->
               25, 50 <- log2 (100 / 3) = log2(100) - log2(3)
               25*2^0, 25*2^1
-         *)
+          *)
       let iters =
         (* we use subtraction of logs, rather than division of args of logs
-           because ultimately we want to simplify the logs. *)
+            because ultimately we want to simplify the logs. *)
         n_minus (n_log ~base:k r.upper_bound) (n_log ~base:k r.lower_bound)
       in
       (* In summations we start with base 1; we decrement 1 so that we start in base 2^0 *)
       let new_range_var = n_mult (r.lower_bound) (n_pow ~base:k (n_dec (Var r.var))) in
-      let p = Shared_access.subst (r.var, new_range_var) p in
-      (match from_slice num_banks thread_count locs p with
-      | Const 0 -> Const 0
-      | s -> Sum (x, iters, s))
-    | {step = Plus k; _} ->
-      let open Exp in
-      (*
-                ub - lb
-        iters = -------
-                   k
-      *)
-      let iters = n_div (n_minus r.upper_bound r.lower_bound) k in
-      (* x := k (x + lb + 1) *)
-      let new_range_var = n_mult (n_plus (Var r.var) (n_inc r.lower_bound)) k in
-      let p = Shared_access.subst (r.var, new_range_var) p in
-      (*  (ub-lb)/k *)
-      (match from_slice num_banks thread_count locs p with
-      | Const 0 -> Const 0
-      | s -> Sum (r.var, iters, s))
-    | _ -> failwith ("Unsupported range: " ^ Range.to_string r)
+      let s = subst (r.var, new_range_var) s in
+      Some (Sum (x, iters, s))
+  | _ -> None
+
+
+let rec from_ra : Ra.t -> t =
+  function
+  | Ra.Tick k -> Const k
+  | Ra.Skip -> Const 0
+  | Ra.Seq (p, q) -> Add [from_ra p; from_ra q]
+  | Ra.Loop (r, p) ->
+    match sum r (from_ra p) with
+    | Some s -> s
+    | None -> failwith ("Unsupported range: " ^ Range.to_string r)
+
+let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) : Shared_access.t -> t =
+  function
+  | Index a -> Const (Index_analysis.analyze num_banks thread_count locs a.index)
+  | Cond (_, p) -> from_slice num_banks thread_count locs p
+  | Loop (r, p) ->
+    match sum r (from_slice num_banks thread_count locs p) with
+    | Some s -> s
+    | None -> failwith ("Unsupported range: " ^ Range.to_string r)
