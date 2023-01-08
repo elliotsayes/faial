@@ -87,7 +87,13 @@ let from_ra (env:Environ.t) (s:Ra.t) : prog =
   (* Compute a map from variable to its identifier *)
   let rec translate (idx:int) : Ra.t -> int * inst list =
     function
-    | Skip -> idx, []
+    | Skip ->
+      idx + 1,
+      [
+        rule idx
+          ~cost:0
+          ~dst:[{id=idx+1;args=[]}] ();
+      ]
     | Tick k ->
       idx + 1,
       [
@@ -151,22 +157,29 @@ let cleanup_koat (env:Environ.t) (x:string) : string option =
   let x = Environ.decode (String.trim x) env |> Str.global_replace r_id "\\1" in
   Some x
 
-let run ?(exe="koat2") ?(verbose=false) (env:Environ.t) (expr:string) : string =
+let run ?(exe="koat2") ?(verbose=false) (env:Environ.t) (expr:string) : (string, string) Result.t =
   (if verbose
     then prerr_endline ("KoAT output:\n" ^ expr ^ "\n")
     else ());
-  let data = Common.run ~stdin:expr ~exe ["analyse"; "-i"; "/dev/stdin"] |> snd in
-  match data |> cleanup_koat env with
-  | Some x -> x
-  | None ->
-    data
+  let (r, data) = Common.run ~stdin:expr ~exe ["analyse"; "-i"; "/dev/stdin"] in
+  if r = Unix.WEXITED 0 then
+    match data |> cleanup_koat env with
+    | Some data -> Ok data
+    | None -> Error ("Could not parse output of koat:\n" ^ data)
+  else
+    Error (Common.process_status_to_string r ^ "\n" ^ expr)
+
+let to_str : (string, string) Result.t -> string =
+  function
+  | Ok x -> x
+  | Error x -> prerr_endline x; "???"
 
 let run_symbolic ?(exe="koat2") ?(verbose=false) (s:Symbolic.t) : string =
   let env = Symbolic.to_environ s in
   let expr = from_symbolic env s |> to_string in
-  run ~exe ~verbose env expr
+  run ~exe ~verbose env expr |> to_str
 
 let run_ra ?(exe="koat2") ?(verbose=false) (s:Ra.t) : string =
   let env = Ra.to_environ s in
   let expr = from_ra env s |> to_string in
-  run ~exe ~verbose env expr
+  run ~exe ~verbose env expr |> to_str

@@ -75,9 +75,11 @@ let from_ra (s: Ra.t) : t list =
     let open Ra in
     function
     | Skip ->
-      idx,
+      idx + 1,
       [
-        Comment "skip";
+        rule idx
+          ~cost:0
+          ~dst:[{id=idx+1;args=[]}] ();
       ]
     | Tick k ->
       idx + 1,

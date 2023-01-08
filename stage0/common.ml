@@ -349,6 +349,11 @@ let ic_to_string ?(chunk_size=1024) (ic:in_channel) : string =
   in
   loop ()
 
+let process_status_to_string : Unix.process_status -> string =
+  function
+  | WEXITED n -> "Process exited with return code: " ^ string_of_int n
+  | WSIGNALED n -> "Process was killed by a signal: " ^ string_of_int n
+  | WSTOPPED n -> "Process was stopped by a signal: " ^ string_of_int n
 
 (*
   Runs a program with a string given as an input
