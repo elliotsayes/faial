@@ -120,7 +120,7 @@ let hashtbl_elements (t: ('a, 'b) Hashtbl.t) : ('a * 'b) list =
   ) t []
 
 let hashtbl_update (ht: ('a, 'b) Hashtbl.t) (kvs:('a * 'b) list) : unit =
-  List.iter (fun (k,v) -> Hashtbl.add ht k v) kvs
+  List.iter (fun (k,v) -> Hashtbl.replace ht k v) kvs
 
 let hashtbl_from_list (kvs: ('a * 'b) list) : ('a, 'b) Hashtbl.t =
   let ht = Hashtbl.create (List.length kvs) in
