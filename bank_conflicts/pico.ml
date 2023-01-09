@@ -17,6 +17,7 @@ let print_cost
   ?(cofloco_exe="cofloco")
   ?(koat_exe="koat2")
   ?(show_code=false)
+  ~maxima_exe
   (thread_count:Vec3.t)
   (k : Proto.prog Proto.kernel)
 :
@@ -33,7 +34,7 @@ let print_cost
   let k = { k with kernel_code = p } in
   let with_ra (k:Proto.prog Proto.kernel) : unit =
     let r = Ra.from_kernel num_banks thread_count k in
-    let cost =
+    match
       if use_absynth then
         r |> Absynth.run_ra ~verbose:show_code ~exe:absynth_exe
       else if use_cofloco then
@@ -42,23 +43,27 @@ let print_cost
         r |> Koat.run_ra ~verbose:show_code ~exe:koat_exe
       else (
         (if show_code then (Ra.to_string r |> print_endline) else ());
-        Symbolic.from_ra r |> Symbolic.simplify
+        Ok (Symbolic.from_ra r |> Symbolic.simplify)
       )
-    in
-    print_string (k.kernel_name ^ ":\n");
-    PrintBox.(
-      cost
-      |> text
-      |> hpad 1
-      |> frame
-    )
-    |> PrintBox_text.to_string
-    |> print_endline
+    with
+    | Ok cost ->
+      print_string (k.kernel_name ^ ":\n");
+      PrintBox.(
+        cost
+        |> text
+        |> hpad 1
+        |> frame
+      )
+      |> PrintBox_text.to_string
+      |> print_endline
+    | Error e ->
+      prerr_endline (Errors.to_string e);
+      exit (-1)
   in
   let with_slices (k:Proto.prog Proto.kernel) : unit =
-    let render_s ?(show_code=false) (s: Symbolic.t) : string =
+    let render_s ?(show_code=false) (s: Symbolic.t) : (string, Errors.t) Result.t =
       if use_maxima then
-        Symbolic.run_maxima ~verbose:show_code s
+        Maxima.run_symbolic ~verbose:show_code ~exe:maxima_exe s
       else if use_absynth then
         Absynth.run_symbolic ~verbose:show_code ~exe:absynth_exe s
       else if use_cofloco then
@@ -66,7 +71,7 @@ let print_cost
       else if use_koat then
         Koat.run_symbolic ~verbose:show_code ~exe:koat_exe s
       else
-        Symbolic.simplify s
+        Ok (Symbolic.simplify s)
     in
     Shared_access.from_kernel thread_count { k with kernel_code = p }
     |> Seq.iter (fun s ->
@@ -76,7 +81,12 @@ let print_cost
         ()
       else
         (* Flatten the expression *)
-        let simplified_cost = render_s s1 in
+        let simplified_cost = match render_s ~show_code s1 with
+          | Ok s -> s
+          | Error e ->
+            prerr_endline (Errors.to_string e);
+            "???"
+        in
         ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
         s |> Shared_access.location |> Tui.LocationUI.print;
         print_endline "";
@@ -117,6 +127,7 @@ let pico
   (absynth_exe:string)
   (cofloco_exe:string)
   (koat_exe:string)
+  (maxima_exe:string)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
@@ -134,6 +145,7 @@ let pico
         ~show_code
         ~skip_zero:(not show_all)
         ~absynth_exe
+        ~maxima_exe
         ~cofloco_exe
         ~koat_exe
         thread_count
@@ -185,6 +197,10 @@ let koat_exe =
   let doc = "Sets the path to the KoAT2 executable." in
   Arg.(value & opt string "koat2" & info ["koat-exe"] ~doc)
 
+let maxima_exe =
+  let doc = "Sets the path to the Maxima executable." in
+  Arg.(value & opt string "maxima" & info ["maxima-exe"] ~doc)
+
 let use_maxima =
   let doc = "Uses maxima to simplify the cost of each access." in
   Arg.(value & flag & info ["maxima"] ~doc)
@@ -227,6 +243,7 @@ let pico_t = Term.(
   $ absynth_exe
   $ cofloco_exe
   $ koat_exe
+  $ maxima_exe
 )
 
 let info =

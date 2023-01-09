@@ -133,7 +133,7 @@ let to_string (env:Environ.t) (x:t list) : string =
   )
   |> String.concat "\n"
 
-let cleanup_cofloco (env:Environ.t) (x:string) : string option =
+let parse_cofloco (env:Environ.t) (x:string) : string option =
   let (let*) = Option.bind in
   let* x =
     String.split_on_char '\n' x
@@ -144,25 +144,26 @@ let cleanup_cofloco (env:Environ.t) (x:string) : string option =
   Some (String.trim x)
 
 
-let run ?(verbose=false) ?(exe="cofloco") (env:Environ.t) (expr:string) : string =
+let run
+  ?(verbose=false)
+  ?(exe="cofloco")
+  (env:Environ.t)
+  (expr:string)
+:
+  (string, Errors.t) Result.t
+=
   (if verbose
     then prerr_endline ("CoFloCo output:\n" ^ expr ^ "\n")
     else ());
-  let data =
-    Common.run ~stdin:expr ~exe ["-v"; "0"; "-i"; "/dev/stdin"]
-    |> snd
-  in
-  match data |> cleanup_cofloco env with
-  | Some x -> x
-  | None ->
-    data
+  Common.run ~stdin:expr ~exe ["-v"; "0"; "-i"; "/dev/stdin"]
+  |> Errors.handle_result (parse_cofloco env)
 
-let run_symbolic ?(verbose=false) ?(exe="cofloco") (s:Symbolic.t) : string =
+let run_symbolic ?(verbose=false) ?(exe="cofloco") (s:Symbolic.t) : (string, Errors.t) Result.t =
   let env = Symbolic.to_environ s in
   let expr = from_symbolic s |> to_string env in
   run ~verbose ~exe env expr
 
-let run_ra ?(verbose=false) ?(exe="cofloco") (s:Ra.t) : string =
+let run_ra ?(verbose=false) ?(exe="cofloco") (s:Ra.t) : (string, Errors.t) Result.t =
   let env = Ra.to_environ s in
   let expr = from_ra s |> to_string env in
   run ~verbose ~exe env expr

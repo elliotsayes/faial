@@ -236,44 +236,6 @@ let rec to_ra : t -> Ra.t =
   | Add l ->
     List.fold_right (fun i r -> Ra.Seq (to_ra i, r)) l Skip
 
-(* --------------------------------- Maxima ---------------------- *)
-
-let rec to_maxima : t -> string =
-  function
-  | Const k -> string_of_int k
-  | Sum (x, ub, s) -> "sum(" ^ to_maxima s ^ ", " ^ Variable.name x ^ ", 1, " ^ Exp.n_to_string ub ^ ")"
-  | Add l -> List.map to_maxima l |> Common.join " + "
-
-let cleanup_maxima_output (x:string) : string =
-  let lines = String.split_on_char '\n' x in
-  let max_len = List.map String.length lines
-    |> List.fold_left max 0
-  in
-  let offsets =
-    lines
-    |> List.filter_map (fun line ->
-      String.to_seqi line
-      |> Seq.find (fun (_, a) -> a <> ' ')
-      |> Option.map fst
-    )
-  in
-  let min_offset = List.fold_left min max_len offsets in
-  lines
-  |> List.map (fun line ->
-    Slice.from_start min_offset
-    |> Slice.substring line
-  )
-  |> Common.join "\n"
-
-let run_maxima ?(verbose=false) ?(exe="maxima") (x:t) : string =
-  let expr = to_maxima x ^ ",simpsum;" in
-  (if verbose
-    then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
-    else ());
-  Common.run ~stdin:expr ~exe ["--very-quiet"; "--disable-readline"]
-  |> snd
-  |> cleanup_maxima_output
-
 let to_environ (s:t) : Environ.t =
   let rec fvs (env:Environ.Fvs.t) : t -> Environ.Fvs.t =
     function
@@ -286,11 +248,6 @@ let to_environ (s:t) : Environ.t =
       List.fold_left fvs env l
   in
   fvs Environ.Fvs.empty s |> Environ.from_fvs
-
-(* ---------------------------------------------------------- *)
-
-
-(* ---------------------------- end of solvers ------------------------ *)
 
 let pow_base (name:string) : int option =
   match Common.split 'w' name with
@@ -376,7 +333,6 @@ let sum (r:Range.t) (s:t) : t option =
       let s = subst (r.var, new_range_var) s in
       Some (Sum (x, iters, s))
   | _ -> None
-
 
 let rec from_ra : Ra.t -> t =
   function

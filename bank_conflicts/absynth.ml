@@ -55,7 +55,7 @@ let write_string ~filename ~data : unit =
     close_out oc;
     raise ex
 
-let cleanup_absynth (x:string) : string option =
+let parse_absynth (x:string) : string option =
   let (let*) = Option.bind in
   let* x =
     String.split_on_char '\n' x
@@ -64,27 +64,18 @@ let cleanup_absynth (x:string) : string option =
   let* (_, x) = Common.split ':' x in
   Some (String.trim x)
 
-let run ?(verbose=false) ?(exe="absynth") (data:string) : string =
+let run ?(verbose=false) ?(exe="absynth") (data:string) : (string, Errors.t) Result.t =
   (if verbose
     then prerr_endline ("Absynth output:\n" ^ data ^ "\n")
     else ());
-  let data = with_tmp ~prefix:"absynth_" ~suffix:".imp" (fun filename ->
-      write_string ~filename ~data;
-      Common.run ~exe [filename] |> snd
-    )
-  in
-  match cleanup_absynth data with
-  | Some x -> x
-  | None ->
-    if Common.contains ~substring:"Sorry, I could not find a bound" data then
-      "No bound found."
-    else (
-      print_endline data;
-      "???"
-    )
+  with_tmp ~prefix:"absynth_" ~suffix:".imp" (fun filename ->
+    write_string ~filename ~data;
+    Common.run ~exe [filename]
+  )
+  |> Errors.handle_result parse_absynth
 
-let run_symbolic ?(verbose=false) ?(exe="absynth") (x:Symbolic.t) : string =
+let run_symbolic ?(verbose=false) ?(exe="absynth") (x:Symbolic.t) : (string, Errors.t) Result.t =
   run ~verbose ~exe (from_symbolic x)
 
-let run_ra ?(verbose=false) ?(exe="absynth") (x:Ra.t) : string =
+let run_ra ?(verbose=false) ?(exe="absynth") (x:Ra.t) : (string, Errors.t) Result.t =
   run ~verbose ~exe (from_ra x)
