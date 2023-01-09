@@ -1,11 +1,15 @@
 open Stage0
 open Protocols
 
-let rec to_maxima : Symbolic.t -> string =
+let rec from_symbolic : Symbolic.t -> string =
   function
   | Const k -> string_of_int k
-  | Sum (x, ub, s) -> "sum(" ^ to_maxima s ^ ", " ^ Variable.name x ^ ", 1, " ^ Exp.n_to_string ub ^ ")"
-  | Add l -> List.map to_maxima l |> Common.join " + "
+  | Sum (x, ub, s) -> "sum(" ^ from_symbolic s ^ ", " ^ Variable.name x ^ ", 1, " ^ Exp.n_to_string ub ^ ")"
+  | Add l -> List.map from_symbolic l |> Common.join " + "
+
+let from_ra (r: Ra.t) : string =
+  Symbolic.from_ra r
+  |> from_symbolic
 
 let parse_maxima (x:string) : string option =
   if Common.contains ~substring:"incorrect syntax" x then None
@@ -31,10 +35,16 @@ let parse_maxima (x:string) : string option =
     |> Common.join "\n"
   )
 
-let run_symbolic ?(verbose=false) ?(exe="maxima") (x:Symbolic.t) : (string, Errors.t) Result.t =
-  let expr = to_maxima x ^ ",simpsum;" in
+let run ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Result.t =
+  let expr = expr ^ ",simpsum;" in
   (if verbose
     then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
     else ());
   Common.run ~stdin:expr ~exe ["--very-quiet"; "--disable-readline"]
   |> Errors.handle_result parse_maxima
+
+let run_symbolic ?(verbose=false) ?(exe="maxima") (x:Symbolic.t) : (string, Errors.t) Result.t =
+  run ~verbose ~exe (from_symbolic x)
+
+let run_ra ?(verbose=false) ?(exe="maxima") (x:Ra.t) : (string, Errors.t) Result.t =
+  run ~verbose ~exe (from_ra x)

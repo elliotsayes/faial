@@ -17,7 +17,8 @@ let print_cost
   ?(cofloco_exe="cofloco")
   ?(koat_exe="koat2")
   ?(show_code=false)
-  ~maxima_exe
+  ?(maxima_exe="maxima")
+  ?(show_ra=false)
   (thread_count:Vec3.t)
   (k : Proto.prog Proto.kernel)
 :
@@ -34,6 +35,7 @@ let print_cost
   let k = { k with kernel_code = p } in
   let with_ra (k:Proto.prog Proto.kernel) : unit =
     let r = Ra.from_kernel num_banks thread_count k in
+    (if show_ra then (Ra.to_string r |> print_endline) else ());
     match
       if use_absynth then
         r |> Absynth.run_ra ~verbose:show_code ~exe:absynth_exe
@@ -41,6 +43,8 @@ let print_cost
         r |> Cofloco.run_ra ~verbose:show_code ~exe:cofloco_exe
       else if use_koat then
         r |> Koat.run_ra ~verbose:show_code ~exe:koat_exe
+      else if use_maxima then
+        r |> Maxima.run_ra ~verbose:show_code ~exe:maxima_exe
       else (
         (if show_code then (Ra.to_string r |> print_endline) else ());
         Ok (Symbolic.from_ra r |> Symbolic.simplify)
@@ -122,6 +126,7 @@ let pico
   (use_cofloco:bool)
   (use_koat:bool)
   (show_all:bool)
+  (show_ra:bool)
   (explain:bool)
   (show_code:bool)
   (absynth_exe:string)
@@ -143,6 +148,7 @@ let pico
         ~use_cofloco
         ~use_koat
         ~show_code
+        ~show_ra
         ~skip_zero:(not show_all)
         ~absynth_exe
         ~maxima_exe
@@ -221,6 +227,10 @@ let show_all =
   let doc = "By default we skip accesses that yield 0 bank-conflicts." in
   Arg.(value & flag & info ["show-all"] ~doc)
 
+let show_ra =
+  let doc = "Print out the resource-analysis problem that represents the bank conflicts." in
+  Arg.(value & flag & info ["show-ra"] ~doc)
+
 let explain =
   let doc = "Show bank-conflicts per location." in
   Arg.(value & flag & info ["explain"] ~doc)
@@ -238,6 +248,7 @@ let pico_t = Term.(
   $ use_cofloco
   $ use_koat
   $ show_all
+  $ show_ra
   $ explain
   $ show_code
   $ absynth_exe
