@@ -27,20 +27,21 @@ let rule (src:int) ?(cost=0) ?(dst=[]) ?(cnd=[]) () : t =
 let from_symbolic (s: Symbolic.t) : t list =
   let rec translate (idx:int) : Symbolic.t -> int * t list =
     function
-    | Sum (x, ub, s) ->
+    | Sum (b, s) ->
+      let x = b.var in
       let (idx', rest) = translate (idx + 2) s in
       idx' + 1,
       [
         (* Initialize the loop *)
-        Comment ("init loop, " ^ Variable.name x ^ " = 0");
-        rule idx ~dst:[{id=idx + 1;args=[(x, Num 0)]}] ();
+        Comment ("init loop, " ^ Variable.name x ^ " = " ^ Exp.n_to_string b.first_elem);
+        rule idx ~dst:[{id=idx + 1;args=[(x, b.first_elem)]}] ();
         Comment ("next iter: inst_" ^ string_of_int (idx + 1));
         Comment ("loop_body: inst_" ^ string_of_int (idx + 2));
         (* Transition of next iteration *)
         rule (idx + 1) ~dst:[
           {id=idx + 1; args=[(x, Exp.n_inc (Var x))]}; (* next iter *)
           {id=idx + 2; args=[]}; (* loop body *)
-        ] ~cnd:[Exp.n_lt (Var x) ub] ();
+        ] ~cnd:[Exp.n_le (Var x) b.last_elem] ();
         Comment ("loop body: inst_" ^ string_of_int (idx + 2));
       ] @
       rest
@@ -49,7 +50,7 @@ let from_symbolic (s: Symbolic.t) : t list =
         rule idx' ();
         (* Transition of end of loop: *)
         Comment ("end of loop inst_" ^ string_of_int (idx + 1));
-        rule (idx + 1) ~cnd:[Exp.n_ge (Var x) ub] ~dst:[{id=idx' + 1;args=[]}] ();
+        rule (idx + 1) ~cnd:[Exp.n_gt (Var x) b.last_elem] ~dst:[{id=idx' + 1;args=[]}] ();
       ]
     | Add l ->
       List.fold_right (fun (s:Symbolic.t) ((idx:int), l1) ->

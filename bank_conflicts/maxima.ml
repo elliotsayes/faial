@@ -4,7 +4,13 @@ open Protocols
 let rec from_symbolic : Symbolic.t -> string =
   function
   | Const k -> string_of_int k
-  | Sum (x, ub, s) -> "sum(" ^ from_symbolic s ^ ", " ^ Variable.name x ^ ", 1, " ^ Exp.n_to_string ub ^ ")"
+  | Sum (b, s) ->
+    "sum(" ^
+      from_symbolic s ^ ", " ^
+      Variable.name b.var ^ ", " ^
+      Exp.n_to_string b.first_elem ^ ", " ^
+      Exp.n_to_string b.last_elem ^
+    ")"
   | Add l -> List.map from_symbolic l |> Common.join " + "
 
 let from_ra (r: Ra.t) : string =

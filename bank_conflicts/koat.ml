@@ -42,18 +42,19 @@ let from_symbolic (env:Environ.t) (s: Symbolic.t) : prog =
   (* Compute a map from variable to its identifier *)
   let rec translate (idx:int) : Symbolic.t -> int * inst list =
     function
-    | Sum (x, ub, s) ->
+    | Sum (b, s) ->
+      let x = b.var in
       let (idx', rest) = translate (idx + 2) s in
       idx' + 1,
       [
         (* Initialize the loop *)
         rule
           idx
-          ~dst:[{id=idx + 1; args=[(x, Num 0)]}] ();
+          ~dst:[{id=idx + 1; args=[(x, b.first_elem)]}] ();
         (* Transition of next iteration *)
         rule (idx + 1) ~dst:[
           {id=idx + 2; args=[(x, Exp.n_inc (Var x))]}; (* next iter *)
-        ] ~cnd:[n_lt (Var x) ub] ();
+        ] ~cnd:[n_le (Var x) b.last_elem] ();
       ] @
       rest
       @ [
@@ -61,7 +62,7 @@ let from_symbolic (env:Environ.t) (s: Symbolic.t) : prog =
           ~dst:[{id=idx + 1; args=[]}]
         ();
         (* Transition of end of loop: *)
-        rule (idx + 1) ~cnd:[n_ge (Var x) ub]
+        rule (idx + 1) ~cnd:[n_gt (Var x) b.last_elem]
             ~dst:[{id=idx' + 1; args=[]}] ();
       ]
     | Add l ->

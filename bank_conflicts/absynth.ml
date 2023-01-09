@@ -3,15 +3,15 @@ open Protocols
 
 let from_symbolic : Symbolic.t -> string =
   let indent (depth:int) : string = String.make depth '\t' in
-  let n_to_s = Exp.n_to_string in
   let rec translate (depth:int) : Symbolic.t -> string =
     function
     | Const k -> indent depth ^ "tick " ^ string_of_int k ^ "\n"
-    | Sum (x, ub, s) ->
-      indent depth ^ Variable.name x ^ " = 0\n" ^
-      indent depth ^ "while " ^ Variable.name x ^ " < (" ^ n_to_s ub ^ "):\n" ^
-      indent (depth + 1) ^ Variable.name x ^ " = " ^ Variable.name x ^ " + 1\n" ^
-      translate (depth + 1) s
+    | Sum (b, s) ->
+      let x = Variable.name b.var in
+      indent depth ^ x ^ " = " ^ Exp.n_to_string b.first_elem ^ "\n" ^
+      indent depth ^ "while " ^ x ^ " <= (" ^ Exp.n_to_string b.last_elem ^ "):\n" ^
+      translate (depth + 1) s ^
+      indent (depth + 1) ^ x ^ " = " ^ x ^ " + 1\n"
     | Add l -> List.map (translate depth) l |> String.concat ""
   in
   fun x ->

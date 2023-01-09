@@ -6,31 +6,68 @@ open Stage0
   *)
 open Exp
 
+module Interval = struct
+  type t = { var: Variable.t; first_elem: Exp.nexp; last_elem: Exp.nexp}
+  let to_string (b:t) : string =
+    "{" ^
+      Exp.n_to_string b.first_elem ^ " ≤ " ^
+      Variable.name b.var ^ " ≤ " ^
+      Exp.n_to_string b.last_elem ^
+    "}"
+
+  let map (f:Exp.nexp -> Exp.nexp) (b:t) : t =
+    { b with
+      first_elem = f b.first_elem;
+      last_elem = f b.last_elem;}
+
+  module Make (S:Subst.SUBST) = struct
+    module M = Subst.Make(S)
+    let subst (s: S.t) : t -> t =
+      map (M.n_subst s)
+  end
+
+  module PSubstAssoc = Make(Subst.SubstAssoc)
+  module PSubstPair = Make(Subst.SubstPair)
+
+  let subst : (Variable.t * Exp.nexp) -> t -> t = PSubstPair.subst
+
+  let to_range (b:t) : Range.t =
+    {
+      var = b.var;
+      lower_bound = b.first_elem;
+      upper_bound = Exp.n_inc b.last_elem;
+      step = Plus (Num 1);
+      dir = Range.Increase;
+    }
+end
+
 type t =
   | Const of int
-  | Sum of Variable.t * Exp.nexp * t
+  | Sum of Interval.t * t
   | Add of t list
 
 let rec to_string : t -> string =
   function
   | Const x -> string_of_int x
-  | Sum (x, n, s) -> "Σ_{1 ≤ " ^ Variable.name x ^ " ≤ " ^ Exp.n_to_string n ^ "} " ^ to_string s
+  | Sum (b, s) -> "Σ_" ^ Interval.to_string b ^ " " ^ to_string s
   | Add l -> List.map to_string l |> Common.join " + "
 
 module Make (S:Subst.SUBST) = struct
   module M = Subst.Make(S)
+  module B = Interval.Make(S)
+
   let rec subst (s: S.t) : t -> t =
     function
     | Const k -> Const k
     | Add l -> Add (List.map (subst s) l)
-    | Sum (x, ub, p) ->
-      let ub = M.n_subst s ub in
-      let p = M.add s x (function
+    | Sum (b, p) ->
+      let b = B.subst s b in
+      let p = M.add s b.var (function
         | Some s -> subst s p
         | None -> p
       )
       in
-      Sum (x, ub, p)
+      Sum (b, p)
 end
 
 module PSubstAssoc = Make(Subst.SubstAssoc)
@@ -46,7 +83,7 @@ let rec is_zero : t -> bool =
   function
   | Const 0 -> true
   | Const _ -> false
-  | Sum (_, _, s) -> is_zero s
+  | Sum (_, s) -> is_zero s
   | Add l -> List.for_all is_zero l
 
 let factor_to_n (e:nexp) (i: factor) : nexp =
@@ -116,7 +153,16 @@ let rec flatten : t -> (Exp.nexp, string) Result.t =
   let (let*) = Result.bind in
   function
   | Const k -> Ok (Num k)
-  | Sum (x, ub, s) ->
+  | Sum (b, s) ->
+    let x = b.var in
+    let (ub, s) =
+      if b.first_elem = Num 1 then
+        (b.last_elem, s)
+      else
+        let ub = n_inc (n_minus b.last_elem b.first_elem) in
+        let s = subst (b.var, n_plus (n_dec (Var b.var)) b.first_elem) s in
+        (ub, s)
+    in
     let* n = flatten s in
     (* When we give up, we convert our expr into a polynomial *)
     let handle_poly (n:Exp.nexp) : (Exp.nexp, string) Result.t =
@@ -231,8 +277,8 @@ let simplify (s : t) : string =
 let rec to_ra : t -> Ra.t =
   function
   | Const k -> Tick k
-  | Sum (x, ub, s) ->
-    Loop (Range.make ~lower_bound:(Num 1) x (Exp.n_inc ub), to_ra s)
+  | Sum (b, s) ->
+    Loop (Interval.to_range b, to_ra s)
   | Add l ->
     List.fold_right (fun i r -> Ra.Seq (to_ra i, r)) l Skip
 
@@ -240,10 +286,11 @@ let to_environ (s:t) : Environ.t =
   let rec fvs (env:Environ.Fvs.t) : t -> Environ.Fvs.t =
     function
     | Const _ -> env
-    | Sum (x, ub, s) ->
+    | Sum (b, s) ->
       fvs env s
-      |> Environ.Fvs.add_var x
-      |> Environ.Fvs.add_exp ub
+      |> Environ.Fvs.add_var b.var
+      |> Environ.Fvs.add_exp b.first_elem
+      |> Environ.Fvs.add_exp b.last_elem
     | Add l ->
       List.fold_left fvs env l
   in
@@ -292,6 +339,14 @@ let sum (r:Range.t) (s:t) : t option =
   if s = Const 0 then Some (Const 0)
   else
     match r with
+    | {step = Plus (Num 1); _} ->
+      let b : Interval.t = {
+        var = r.var;
+        first_elem = r.lower_bound;
+        last_elem = n_dec r.upper_bound;
+      } in
+      Some (Sum (b, s))
+
     | {step = Plus k; _} ->
       let open Exp in
       (*
@@ -303,10 +358,14 @@ let sum (r:Range.t) (s:t) : t option =
       (* x := k (x + lb + 1) *)
       let new_range_var = n_mult (n_plus (Var r.var) (n_inc r.lower_bound)) k in
       let s = subst (r.var, new_range_var) s in
-      Some (Sum (r.var, iters, s))
+      let b : Interval.t = {
+        var = r.var;
+        first_elem = Num 1;
+        last_elem = iters;
+      } in
+      Some (Sum (b, s))
 
     | {
-        var=x;
         step = Mult (Num k);
         _
       } when k >= 2 ->
@@ -331,7 +390,12 @@ let sum (r:Range.t) (s:t) : t option =
       (* In summations we start with base 1; we decrement 1 so that we start in base 2^0 *)
       let new_range_var = n_mult (r.lower_bound) (n_pow ~base:k (n_dec (Var r.var))) in
       let s = subst (r.var, new_range_var) s in
-      Some (Sum (x, iters, s))
+      let b : Interval.t = {
+        var = r.var;
+        first_elem = Num 1;
+        last_elem = iters;
+      } in
+      Some (Sum (b, s))
   | _ -> None
 
 let rec from_ra : Ra.t -> t =
