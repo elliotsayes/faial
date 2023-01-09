@@ -19,6 +19,7 @@ let print_cost
   ?(show_code=false)
   ?(maxima_exe="maxima")
   ?(show_ra=false)
+  ?(skip_simpl_ra=true)
   (thread_count:Vec3.t)
   (k : Proto.prog Proto.kernel)
 :
@@ -35,6 +36,7 @@ let print_cost
   let k = { k with kernel_code = p } in
   let with_ra (k:Proto.prog Proto.kernel) : unit =
     let r = Ra.from_kernel num_banks thread_count k in
+    let r = if skip_simpl_ra then r else Ra.simplify r in
     (if show_ra then (Ra.to_string r |> print_endline) else ());
     match
       if use_absynth then
@@ -133,6 +135,7 @@ let pico
   (cofloco_exe:string)
   (koat_exe:string)
   (maxima_exe:string)
+  (skip_simpl_ra:bool)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
@@ -154,6 +157,7 @@ let pico
         ~maxima_exe
         ~cofloco_exe
         ~koat_exe
+        ~skip_simpl_ra
         thread_count
         k
     ) proto
@@ -223,6 +227,10 @@ let use_koat =
   let doc = "Uses KoAT2 to simplify the cost of each access." in
   Arg.(value & flag & info ["koat"] ~doc)
 
+let skip_simpl_ra =
+  let doc = "By default we simplify the RA to improve performance of solvers." in
+  Arg.(value & flag & info ["skip-simpl-ra"] ~doc)
+
 let show_all =
   let doc = "By default we skip accesses that yield 0 bank-conflicts." in
   Arg.(value & flag & info ["show-all"] ~doc)
@@ -255,6 +263,7 @@ let pico_t = Term.(
   $ cofloco_exe
   $ koat_exe
   $ maxima_exe
+  $ skip_simpl_ra
 )
 
 let info =

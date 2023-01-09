@@ -58,6 +58,21 @@ let rec indent : t -> Indent.t list =
       Line "}"
     ]
 
+let rec simplify : t -> t =
+  function
+  | Skip -> Skip
+  | Tick 0 -> Skip
+  | Tick k -> Tick k
+  | Loop (r,p) ->
+    (match simplify p with
+    | Skip -> Skip
+    | p -> Loop (Constfold.r_opt r, simplify p))
+  | Seq (p, q) ->
+    match simplify p, simplify q with
+    | Skip, p
+    | p, Skip -> p
+    | p, q -> Seq (p, q)
+
 let seq (p:t) (q:t) : t =
   match p, q with
   | Skip, p
