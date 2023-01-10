@@ -220,7 +220,7 @@ let arr_to_dummy (vm : Memory.t VarMap.t) : Indent.t list =
 (* Serialization of the kernel body *)
 let body_to_s (f : prog -> Indent.t list) (k : prog kernel) : Indent.t =
   let shared_arr = k.kernel_arrays
-                   |> VarMap.filter (fun _ -> fun v -> Memory.is_shared v)
+                   |> VarMap.filter (fun _ -> Memory.is_shared)
                    |> arr_to_shared
   in
   let local_var = local_var_to_l k.kernel_local_variables in
@@ -237,7 +237,7 @@ let kernel_to_s
   let type_decls = if racuda then [] else decl_unknown_types k.kernel_arrays in
   let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
   let global_arr = k.kernel_arrays
-                   |> VarMap.filter (fun _ -> fun v -> Memory.is_global v)
+                   |> VarMap.filter (fun _ -> Memory.is_global)
                    |> global_arr_to_l
   in
   let global_var = global_var_to_l k.kernel_global_variables in

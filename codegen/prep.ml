@@ -60,30 +60,25 @@ let remove_template (s : string) : string =
 
 (* Replace the type of each array with a compatible alternative *)
 let mk_types_compatible (racuda : bool) (k : prog kernel) : prog kernel =
-  let rec convert_type (racuda_shared : bool) : string list -> string list =
+  let rec convert_type (shared : bool) : string list -> string list =
     function
     | [] -> []
     (* Unknown/incompatible types are converted to int in RaCUDA output *)
     | [last_type] -> if racuda then
         match last_type with
         | "char" | "double" | "float" | "int" | "void" -> [last_type]
-        | "long" | "short" -> if racuda_shared then ["int"] else [last_type]
+        | "long" | "short" -> if shared then ["int"] else [last_type]
         | _ -> ["int"]
       else [remove_template last_type]
     (* Remove unsigned modifier to make shared arrays RaCUDA-friendly *)
-    | modifier :: types -> if racuda_shared && modifier = "unsigned"
-      then convert_type racuda_shared types
-      else modifier :: convert_type racuda_shared types
+    | modifier :: types -> if racuda && shared && modifier = "unsigned"
+      then convert_type shared types
+      else modifier :: convert_type shared types
   in
   let mk_array_compatible (arr : Memory.t) : Memory.t =
-    { arr with
-      data_type = arr.data_type
-                  |> convert_type (racuda && arr.hierarchy = SharedMemory)
-    }
+    {arr with data_type = convert_type (Memory.is_shared arr) arr.data_type}
   in
-  let arrays = k.kernel_arrays
-               |> VarMap.mapi (fun _ -> fun v -> mk_array_compatible v)
-  in
+  let arrays = VarMap.mapi (fun _ -> mk_array_compatible) k.kernel_arrays in
   {k with kernel_arrays = arrays}
 
 (* Set the number of threads per block *)

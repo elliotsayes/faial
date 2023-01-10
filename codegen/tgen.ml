@@ -21,7 +21,7 @@ let kernel_to_table (k : prog kernel) (racuda : bool) : Otoml.t =
   let header = (type_decls @ funct_protos |> Common.join "\n") ^ "\n" in
   let body = Indent.to_string [body_to_s (prog_to_s racuda) k] in
   let global_arr = k.kernel_arrays
-                   |> VarMap.filter (fun _ -> fun v -> Memory.is_global v)
+                   |> VarMap.filter (fun _ -> Memory.is_global)
   in
   let open Otoml in
   TomlTable
