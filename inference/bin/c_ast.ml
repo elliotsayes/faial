@@ -45,6 +45,7 @@ let main
       (decls, `Assoc [
         "name", `String k.name;
         "function calls", Calls.summarize decls k;
+        "nested loops", NestedLoops.summarize k.code;
         "loops", Loops.summarize k.code;
         "loop inference", ForEach.summarize k2.code;
         "mutated vars", MutatedVar.summarize k.code;

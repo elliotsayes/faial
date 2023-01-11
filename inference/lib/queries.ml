@@ -341,7 +341,7 @@ module Calls = struct
 end
 
 (* Performs loop analysis. *)
-module Loops = struct
+module NestedLoops = struct
   open C_lang
   (* Represents a nesting of loops within other loops *)
   type loop =
@@ -710,6 +710,79 @@ module Conditionals = struct
     `Assoc [
       "# of ifs", `Int (to_seq s |> Seq.length);
       "# of synchronized ifs", `Int count;
+    ]
+end
+
+
+module Loops = struct
+  open C_lang
+  type t =
+    | While of {cond: Expr.t; body: Stmt.t}
+    | For of {
+        init: ForInit.t option;
+        cond: Expr.t option;
+        inc: Expr.t option;
+        body: Stmt.t;
+      }
+    | Do of {
+        cond: Expr.t;
+        body: Stmt.t;
+      }
+
+  let body : t -> Stmt.t =
+    function
+    | While x -> x.body
+    | For x -> x.body
+    | Do x -> x.body
+
+  let rec from_stmt : Stmt.t -> t Seq.t =
+    function
+    | WhileStmt w ->
+      Seq.cons
+        (While {cond=w.cond; body=w.body})
+        (from_stmt w.body)
+
+    | ForStmt f ->
+      Seq.cons
+        (For {init=f.init; cond=f.cond; inc=f.inc; body=f.body})
+        (from_stmt f.body)
+
+    | DoStmt d ->
+      Seq.cons
+        (Do {cond=d.cond; body=d.body})
+        (from_stmt d.body)
+
+    | IfStmt {then_stmt=s1; else_stmt=s2; _} ->
+      Seq.append (from_stmt s1) (from_stmt s2)
+
+    | DeclStmt _
+    | BreakStmt
+    | GotoStmt
+    | ReturnStmt
+    | ContinueStmt
+    | SExpr _
+      ->
+      Seq.empty
+
+    | CompoundStmt l -> List.to_seq l |> Seq.concat_map from_stmt
+
+    | SwitchStmt {body=s; _}
+    | DefaultStmt s
+    | CaseStmt {body=s; _}
+      ->
+      from_stmt s
+
+  let summarize (s:Stmt.t) : json =
+    let count =
+      from_stmt s
+      |> Seq.filter (fun x ->
+        x |> body |> Calls.has_sync
+      )
+      |> Seq.length
+    in
+    `Assoc [
+      "# of loops", `Int (from_stmt s |> Seq.length);
+      "# of synchronized loops", `Int count;
     ]
 end
 
