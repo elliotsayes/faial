@@ -818,7 +818,7 @@ end
 module Accesses = struct
   open Imp
 
-  type t = Access.t
+  type t = Variable.t * Access.t
   let cond_accesses (s: stmt) : t Seq.t =
     let rec cond_accesses (in_cond:bool) (s: stmt) : t Seq.t =
       match s with
@@ -827,7 +827,7 @@ module Accesses = struct
       | Assert _
       | LocationAlias _ ->
         Seq.empty
-      | Acc (_, a) ->
+      | Acc a ->
         if in_cond then (Seq.return a) else Seq.empty
       | Block l ->
         Seq.concat_map (cond_accesses in_cond) (List.to_seq l)
@@ -842,7 +842,7 @@ module Accesses = struct
   let all_accesses: stmt -> t Seq.t =
     let f (s:stmt) =
       match s with
-      | Acc (_, a) -> Some a
+      | Acc a -> Some a
       | _ -> None
     in
     find_all_map f
@@ -850,14 +850,21 @@ module Accesses = struct
   let summarize (s:stmt) : json =
     let elems = all_accesses s |> List.of_seq in
     let cond_elems = cond_accesses s |> List.of_seq in
-    let reads = List.length (List.filter Access.is_read elems) in
-    let writes = List.length (List.filter Access.is_write elems) in
-    let c_reads = List.length (List.filter Access.is_read cond_elems) in
-    let c_writes = List.length (List.filter Access.is_write cond_elems) in
+    let get_vars (x, y) = List.map fst x, List.map fst y in
+    let reads, writes =
+      elems
+      |> List.partition (fun (_, a) -> Access.is_read a)
+      |> get_vars
+    in
+    let c_reads, c_writes =
+      cond_elems
+      |> List.partition (fun (_, a) -> Access.is_read a)
+      |> get_vars
+    in
     `Assoc [
-      "conditional reads", `Int c_reads;
-      "conditional writes", `Int c_writes;
-      "writes", `Int reads;
-      "reads", `Int writes;
+      "conditional reads", var_list_to_json c_reads;
+      "conditional writes", var_list_to_json c_writes;
+      "writes", var_list_to_json reads;
+      "reads", var_list_to_json writes;
     ]
 end
