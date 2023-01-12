@@ -25,6 +25,16 @@ type stmt =
   | If of (bexp * stmt * stmt)
   | For of (Range.t * stmt)
 
+let is_for : stmt -> bool =
+  function
+  | For _ -> true
+  | _ -> false
+
+let is_if : stmt -> bool =
+  function
+  | If _ -> true
+  | _ -> false
+
 type prog = stmt list
 
 let fold : 'a. (stmt -> 'a -> 'a) -> stmt -> 'a -> 'a =

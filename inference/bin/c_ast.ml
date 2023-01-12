@@ -71,6 +71,7 @@ let main
         "params", Params.summarize k;
         "accesses", Accesses.summarize k3.p_kernel_code;
         "global decls", GlobalDeclArrays.summarize decls;
+        "divergence", Divergence.summarize k3.p_kernel_code;
       ] :: js)
     | Declaration d ->
       let decls =

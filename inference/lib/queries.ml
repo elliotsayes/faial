@@ -886,3 +886,37 @@ module Accesses = struct
       "reads", var_list_to_json writes;
     ]
 end
+
+
+module Divergence = struct
+  open Imp
+
+  type t = stmt
+
+  (* Search for all loops available *)
+  let branch_with_tids: stmt -> t Seq.t =
+    let f (s:stmt) =
+      match s with
+      | If (c, _, _) -> Freenames.contains_tid_bexp c
+      | For (r, _) -> Freenames.contains_tid_range r
+      | _ -> false
+    in
+    find_all f
+
+  let summarize (s:stmt) : json =
+    let elems = branch_with_tids s |> List.of_seq in
+    let for_count =
+      elems
+      |> List.filter is_for
+      |> List.length
+    in
+    let if_count =
+      elems
+      |> List.filter is_if
+      |> List.length
+    in
+    `Assoc [
+      "# loops with tids", `Int for_count;
+      "# ifs with tids", `Int if_count;
+    ]
+end
