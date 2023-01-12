@@ -673,36 +673,20 @@ end
 
 module Conditionals = struct
   open C_lang
-  type t = {cond: Expr.t; then_stmt: Stmt.t; else_stmt: Stmt.t}
-  let rec to_seq : Stmt.t -> t Seq.t =
-    function
-    | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
-      Seq.return {cond=c; then_stmt=s1; else_stmt=s2}
-
-    | DeclStmt _
-    | BreakStmt
-    | GotoStmt
-    | ReturnStmt
-    | ContinueStmt
-    | SExpr _
-      ->
-      Seq.empty
-
-    | CompoundStmt l -> List.to_seq l |> Seq.concat_map to_seq
-
-    | WhileStmt {body=s; _}
-    | ForStmt {body=s; _}
-    | DoStmt {body=s; _}
-    | SwitchStmt {body=s; _}
-    | DefaultStmt s
-    | CaseStmt {body=s; _}
-      ->
-      to_seq s
+  type t = Stmt.if_stmt
+  let to_seq : Stmt.t -> t Seq.t =
+    let f : Stmt.t -> t option =
+      function
+      | IfStmt i -> Some i
+      | _ -> None
+    in
+    Stmt.find_all_map f
 
   let summarize (s:Stmt.t) : json =
     let count =
       to_seq s
       |> Seq.filter (fun x ->
+        let open Stmt in
         Calls.has_sync x.then_stmt || Calls.has_sync x.else_stmt
       )
       |> Seq.length
@@ -717,60 +701,25 @@ end
 module Loops = struct
   open C_lang
   type t =
-    | While of {cond: Expr.t; body: Stmt.t}
-    | For of {
-        init: ForInit.t option;
-        cond: Expr.t option;
-        inc: Expr.t option;
-        body: Stmt.t;
-      }
-    | Do of {
-        cond: Expr.t;
-        body: Stmt.t;
-      }
+    | Do of Stmt.cond_stmt
+    | While of Stmt.cond_stmt
+    | For of Stmt.for_stmt
 
   let body : t -> Stmt.t =
     function
+    | Do x -> x.body
     | While x -> x.body
     | For x -> x.body
-    | Do x -> x.body
 
-  let rec from_stmt : Stmt.t -> t Seq.t =
-    function
-    | WhileStmt w ->
-      Seq.cons
-        (While {cond=w.cond; body=w.body})
-        (from_stmt w.body)
-
-    | ForStmt f ->
-      Seq.cons
-        (For {init=f.init; cond=f.cond; inc=f.inc; body=f.body})
-        (from_stmt f.body)
-
-    | DoStmt d ->
-      Seq.cons
-        (Do {cond=d.cond; body=d.body})
-        (from_stmt d.body)
-
-    | IfStmt {then_stmt=s1; else_stmt=s2; _} ->
-      Seq.append (from_stmt s1) (from_stmt s2)
-
-    | DeclStmt _
-    | BreakStmt
-    | GotoStmt
-    | ReturnStmt
-    | ContinueStmt
-    | SExpr _
-      ->
-      Seq.empty
-
-    | CompoundStmt l -> List.to_seq l |> Seq.concat_map from_stmt
-
-    | SwitchStmt {body=s; _}
-    | DefaultStmt s
-    | CaseStmt {body=s; _}
-      ->
-      from_stmt s
+  let from_stmt : Stmt.t -> t Seq.t =
+    let f : Stmt.t -> t option =
+      function
+      | DoStmt d -> Some (Do d)
+      | WhileStmt w -> Some (While w)
+      | ForStmt f -> Some (For f)
+      | _ -> None
+    in
+    Stmt.find_all_map f
 
   let summarize (s:Stmt.t) : json =
     let count =
@@ -788,6 +737,85 @@ end
 
 module ForEach = struct
   (* Loop inference *)
+  open D_lang
+
+  type t =
+    | For of Stmt.d_for
+    | While of {cond: Expr.t; body: Stmt.t}
+    | Do of {cond: Expr.t; body: Stmt.t}
+
+  let to_string : t -> string =
+    function
+    | For f ->
+      "for (" ^
+      ForInit.opt_to_string f.init ^ "; " ^
+      Expr.opt_to_string f.cond ^ "; " ^
+      Expr.opt_to_string f.inc ^
+      ")"
+    | While {cond=b; _} -> "while (" ^ Expr.to_string b ^ ")"
+    | Do {cond=b; _} -> "do (" ^ Expr.to_string b ^ ")"
+
+  (* Search for all loops available *)
+  let rec to_seq: Stmt.t -> t Seq.t =
+    function
+    | ForStmt d ->
+      Seq.return (For d)
+    | WhileStmt {body=s; cond=c} ->
+      Seq.return (While {body=s; cond=c})
+    | DoStmt {body=s; cond=c} ->
+      Seq.return (Do {body=s; cond=c})
+    | WriteAccessStmt _
+    | ReadAccessStmt _
+    | BreakStmt
+    | GotoStmt
+    | ContinueStmt
+    | ReturnStmt
+    | DeclStmt _
+    | SExpr _
+      -> Seq.empty
+    | IfStmt {then_stmt=s1; else_stmt=s2; _}
+      -> to_seq s1 |> Seq.append (to_seq s2)
+    | SwitchStmt {body=s; _}
+    | DefaultStmt s
+    | CaseStmt {body=s; _}
+      -> to_seq s
+    | CompoundStmt l ->
+      List.to_seq l
+      |> Seq.concat_map to_seq
+
+  let infer (s: Stmt.t) : (t * Range.t option) Seq.t =
+    to_seq s
+    |> Seq.map (function
+      | For r ->
+        let o = match D_to_imp.Default.infer_range r with
+        | Ok (Some r) -> Some r
+        | _ -> None
+        in
+        (For r, o)
+      | l -> (l, None)
+    )
+
+  let summarize (s:Stmt.t) : json =
+    let elems = infer s |> List.of_seq in
+    let count = List.length elems in
+    let found =
+      elems
+      |> List.filter (fun (_, o) -> Option.is_some o)
+      |> List.length
+    in
+    let missing = elems |> List.filter_map (function
+      | (x, None) -> Some (`String (to_string x))
+      | (_, Some _) -> None
+    ) in
+    `Assoc [
+      "total", `Int count;
+      "inferred", `Int found;
+      "missing", `List missing;
+    ]
+end
+
+
+module Accesses = struct
   open D_lang
 
   type t =

@@ -448,21 +448,30 @@ module ForInit = struct
 end
 
 module Stmt = struct
+  type 'a if_t = {cond: Expr.t; then_stmt: 'a; else_stmt: 'a}
+  type 'a cond_t = {cond: Expr.t; body: 'a}
+  type 'a for_t = {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: 'a}
+  type 'a case_t = {case: Expr.t; body: 'a}
   type t =
     | BreakStmt
     | GotoStmt
     | ReturnStmt
     | ContinueStmt
-    | IfStmt of {cond: Expr.t; then_stmt: t; else_stmt: t}
+    | IfStmt of t if_t
     | CompoundStmt of t list
     | DeclStmt of Decl.t list
-    | WhileStmt of {cond: Expr.t; body: t}
-    | ForStmt of {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: t}
-    | DoStmt of {cond: Expr.t; body: t}
-    | SwitchStmt of {cond: Expr.t; body: t}
+    | WhileStmt of t cond_t
+    | ForStmt of t for_t
+    | DoStmt of t cond_t
+    | SwitchStmt of t cond_t
     | DefaultStmt of t
-    | CaseStmt of {case: Expr.t; body: t}
+    | CaseStmt of t case_t
     | SExpr of Expr.t
+
+  type if_stmt = t if_t
+  type cond_stmt = t cond_t
+  type for_stmt = t for_t
+  type case_stmt = t for_t
 
   let to_string : t -> Indent.t list
   =
@@ -535,15 +544,15 @@ module Stmt = struct
       | Goto
       | Return
       | Continue
-      | If of {cond: Expr.t; then_stmt: 'a; else_stmt: 'a}
+      | If of 'a if_t
       | Compound of 'a list
       | Decl of Decl.t list
-      | While of {cond: Expr.t; body: 'a}
-      | For of {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: 'a}
-      | Do of {cond: Expr.t; body: 'a}
-      | Switch of {cond: Expr.t; body: 'a}
+      | While of 'a cond_t
+      | For of 'a for_t
+      | Do of 'a cond_t
+      | Switch of 'a cond_t
       | Default of 'a
-      | Case of {case: Expr.t; body: 'a}
+      | Case of 'a case_t
       | SExpr of Expr.t
 
     let rec fold (f: 'a t -> 'a) : c_stmt -> 'a =
@@ -609,6 +618,44 @@ module Stmt = struct
       )
 
   end
+
+  let rec fold : 'a. (t -> 'a -> 'a) -> 'a ->  t -> 'a =
+    fun f (init:'a) (s:t) ->
+    let init : 'a = f s init in
+    match s with
+    | BreakStmt
+    | GotoStmt
+    | ReturnStmt
+    | ContinueStmt
+    | DeclStmt _
+    | SExpr _ ->
+      init
+    | IfStmt {then_stmt=s1; else_stmt=s2; _} ->
+      let init : 'a = fold f init s1 in
+      fold f init s2
+    | CompoundStmt l ->
+      List.fold_right f l init
+    | WhileStmt {body= s; _}
+    | DoStmt {body = s; _}
+    | SwitchStmt {body= s; _}
+    | CaseStmt {body= s; _}
+    | DefaultStmt s
+    | ForStmt {body= s; _} ->
+      f s init
+
+  (* Returns all elements that match a given predicate *)
+  let find_all_map (f: t -> 'a option) (s: t) : 'a Seq.t =
+    let g (e:t) (r:'a Seq.t) : 'a Seq.t =
+      match f e with
+      | Some x -> Seq.cons x r
+      | None -> r
+    in
+    fold g Seq.empty s
+
+
+  let find_all (f: t -> bool) : t -> t Seq.t =
+    find_all_map (fun x -> if f x then Some x else None)
+
 end
 
 module Param = struct
