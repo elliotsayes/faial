@@ -816,79 +816,25 @@ end
 
 
 module Accesses = struct
-  open D_lang
+  open Imp
 
-  type t =
-    | For of Stmt.d_for
-    | While of {cond: Expr.t; body: Stmt.t}
-    | Do of {cond: Expr.t; body: Stmt.t}
-
-  let to_string : t -> string =
-    function
-    | For f ->
-      "for (" ^
-      ForInit.opt_to_string f.init ^ "; " ^
-      Expr.opt_to_string f.cond ^ "; " ^
-      Expr.opt_to_string f.inc ^
-      ")"
-    | While {cond=b; _} -> "while (" ^ Expr.to_string b ^ ")"
-    | Do {cond=b; _} -> "do (" ^ Expr.to_string b ^ ")"
+  type t = Access.t
 
   (* Search for all loops available *)
-  let rec to_seq: Stmt.t -> t Seq.t =
-    function
-    | ForStmt d ->
-      Seq.return (For d)
-    | WhileStmt {body=s; cond=c} ->
-      Seq.return (While {body=s; cond=c})
-    | DoStmt {body=s; cond=c} ->
-      Seq.return (Do {body=s; cond=c})
-    | WriteAccessStmt _
-    | ReadAccessStmt _
-    | BreakStmt
-    | GotoStmt
-    | ContinueStmt
-    | ReturnStmt
-    | DeclStmt _
-    | SExpr _
-      -> Seq.empty
-    | IfStmt {then_stmt=s1; else_stmt=s2; _}
-      -> to_seq s1 |> Seq.append (to_seq s2)
-    | SwitchStmt {body=s; _}
-    | DefaultStmt s
-    | CaseStmt {body=s; _}
-      -> to_seq s
-    | CompoundStmt l ->
-      List.to_seq l
-      |> Seq.concat_map to_seq
-
-  let infer (s: Stmt.t) : (t * Range.t option) Seq.t =
-    to_seq s
-    |> Seq.map (function
-      | For r ->
-        let o = match D_to_imp.Default.infer_range r with
-        | Ok (Some r) -> Some r
-        | _ -> None
-        in
-        (For r, o)
-      | l -> (l, None)
-    )
-
-  let summarize (s:Stmt.t) : json =
-    let elems = infer s |> List.of_seq in
-    let count = List.length elems in
-    let found =
-      elems
-      |> List.filter (fun (_, o) -> Option.is_some o)
-      |> List.length
+  let from_prog: prog -> t Seq.t =
+    let f (s:stmt) =
+      match s with
+      | Acc (_, a) -> Some a
+      | _ -> None
     in
-    let missing = elems |> List.filter_map (function
-      | (x, None) -> Some (`String (to_string x))
-      | (_, Some _) -> None
-    ) in
+    find_all_map f
+
+  let summarize (s:prog) : json =
+    let elems = from_prog s |> List.of_seq in
+    let reads = List.length (List.filter Access.is_read elems) in
+    let writes = List.length (List.filter Access.is_write elems) in
     `Assoc [
-      "total", `Int count;
-      "inferred", `Int found;
-      "missing", `List missing;
+      "writes", `Int reads;
+      "reads", `Int writes;
     ]
 end
