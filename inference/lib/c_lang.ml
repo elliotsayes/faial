@@ -619,8 +619,8 @@ module Stmt = struct
 
   end
 
-  let rec fold : 'a. (t -> 'a -> 'a) -> 'a ->  t -> 'a =
-    fun f (init:'a) (s:t) ->
+  let rec fold : 'a. (t -> 'a -> 'a) -> t -> 'a -> 'a =
+    fun f (s:t) (init:'a) ->
     let init : 'a = f s init in
     match s with
     | BreakStmt
@@ -631,17 +631,17 @@ module Stmt = struct
     | SExpr _ ->
       init
     | IfStmt {then_stmt=s1; else_stmt=s2; _} ->
-      let init : 'a = fold f init s1 in
-      fold f init s2
+      let init : 'a = fold f s1 init in
+      fold f s2 init
     | CompoundStmt l ->
-      List.fold_right f l init
+      List.fold_right (fold f) l init
     | WhileStmt {body= s; _}
     | DoStmt {body = s; _}
     | SwitchStmt {body= s; _}
     | CaseStmt {body= s; _}
     | DefaultStmt s
     | ForStmt {body= s; _} ->
-      f s init
+      fold f s init
 
   (* Returns all elements that match a given predicate *)
   let find_all_map (f: t -> 'a option) (s: t) : 'a Seq.t =
@@ -650,7 +650,7 @@ module Stmt = struct
       | Some x -> Seq.cons x r
       | None -> r
     in
-    fold g Seq.empty s
+    fold g s Seq.empty
 
 
   let find_all (f: t -> bool) : t -> t Seq.t =
