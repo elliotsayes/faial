@@ -711,6 +711,21 @@ module Loops = struct
     | While x -> x.body
     | For x -> x.body
 
+  let is_for : t -> bool =
+    function
+    | For _ -> true
+    | _ -> false
+
+  let is_do : t -> bool =
+    function
+    | For _ -> true
+    | _ -> false
+
+  let is_while : t -> bool =
+    function
+    | For _ -> true
+    | _ -> false
+
   let from_stmt : Stmt.t -> t Seq.t =
     let f : Stmt.t -> t option =
       function
@@ -722,6 +737,7 @@ module Loops = struct
     Stmt.find_all_map f
 
   let summarize (s:Stmt.t) : json =
+    let l = from_stmt s |> List.of_seq in
     let count =
       from_stmt s
       |> Seq.filter (fun x ->
@@ -730,7 +746,9 @@ module Loops = struct
       |> Seq.length
     in
     `Assoc [
-      "# of loops", `Int (from_stmt s |> Seq.length);
+      "# of for's", `Int (l |> List.filter is_for |> List.length);
+      "# of while's", `Int (l |> List.filter is_while |> List.length);
+      "# of do's", `Int (l |> List.filter is_do |> List.length);
       "# of synchronized loops", `Int count;
     ]
 end
