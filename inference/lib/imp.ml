@@ -27,8 +27,8 @@ type stmt =
 
 type prog = stmt list
 
-let fold : 'a. (stmt -> 'a -> 'a) -> prog -> 'a -> 'a =
-  fun (f: stmt -> 'a -> 'a) (p:prog) (init:'a) ->
+let fold : 'a. (stmt -> 'a -> 'a) -> stmt -> 'a -> 'a =
+  fun (f: stmt -> 'a -> 'a) (p:stmt) (init:'a) ->
     let rec fold_i (s:stmt) (init:'a) : 'a =
       let init : 'a = f s init in
       match s with
@@ -44,14 +44,14 @@ let fold : 'a. (stmt -> 'a -> 'a) -> prog -> 'a -> 'a =
         let init = fold_i s1 init in
         fold_i s2 init
       | For (_, s) ->
-        f s init
+        fold_i s init
 
     and fold_p (l:prog) (init:'a) : 'a =
       List.fold_right fold_i l init
     in
-    fold_p p init
+    fold_i p init
 
-let find_all_map (f: stmt -> 'a option) (s: prog) : 'a Seq.t =
+let find_all_map (f: stmt -> 'a option) (s: stmt) : 'a Seq.t =
   let g (e:stmt) (r:'a Seq.t) : 'a Seq.t =
     match f e with
     | Some x -> Seq.cons x r
@@ -59,7 +59,7 @@ let find_all_map (f: stmt -> 'a option) (s: prog) : 'a Seq.t =
   in
   fold g s Seq.empty
 
-let find_all (f: stmt -> bool) : prog -> stmt Seq.t =
+let find_all (f: stmt -> bool) : stmt -> stmt Seq.t =
   find_all_map (fun x -> if f x then Some x else None)
 
 module Post = struct

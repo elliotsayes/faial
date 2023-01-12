@@ -821,7 +821,7 @@ module Accesses = struct
   type t = Access.t
 
   (* Search for all loops available *)
-  let from_prog: prog -> t Seq.t =
+  let from_stmt: stmt -> t Seq.t =
     let f (s:stmt) =
       match s with
       | Acc (_, a) -> Some a
@@ -829,8 +829,8 @@ module Accesses = struct
     in
     find_all_map f
 
-  let summarize (s:prog) : json =
-    let elems = from_prog s |> List.of_seq in
+  let summarize (s:stmt) : json =
+    let elems = from_stmt s |> List.of_seq in
     let reads = List.length (List.filter Access.is_read elems) in
     let writes = List.length (List.filter Access.is_write elems) in
     `Assoc [

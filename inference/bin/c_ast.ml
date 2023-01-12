@@ -37,11 +37,27 @@ let main
     List.iter Imp.print_kernel k3;
     print_endline "==================== STAGE 4: stats\n";
   );
+  let k1_len = List.length k1 in
+  let k2_ht = Hashtbl.create k1_len in
+  let k3_ht = Hashtbl.create k1_len in
+  k2 |> List.iter (
+    let open D_lang in
+    function
+    | Kernel k ->
+      Hashtbl.add k2_ht k.name k
+    | Declaration _ -> ()
+  );
+  k3 |> List.iter (fun k ->
+    let open Imp in
+    Hashtbl.add k3_ht k.p_kernel_name k
+  );
   let l = List.fold_left (fun ((decls:Decl.t list), js) ->
     let open C_lang in
     function
     | Kernel k ->
-      let k2 = D_lang.rewrite_kernel k in
+      let open Imp in
+      let k2 = Hashtbl.find k2_ht k.name in
+      let k3 = Hashtbl.find k3_ht k.name in
       (decls, `Assoc [
         "name", `String k.name;
         "function calls", Calls.summarize decls k;
@@ -53,6 +69,7 @@ let main
         "conditionals", Conditionals.summarize k.code;
         "variables", Variables.summarize k.code;
         "params", Params.summarize k;
+        "accesses", Accesses.summarize k3.p_kernel_code;
         "global decls", GlobalDeclArrays.summarize decls;
       ] :: js)
     | Declaration d ->
