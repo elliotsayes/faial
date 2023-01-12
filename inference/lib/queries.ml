@@ -819,9 +819,27 @@ module Accesses = struct
   open Imp
 
   type t = Access.t
+  let cond_accesses (s: stmt) : t Seq.t =
+    let rec cond_accesses (in_cond:bool) (s: stmt) : t Seq.t =
+      match s with
+      | Decl _
+      | Sync
+      | Assert _
+      | LocationAlias _ ->
+        Seq.empty
+      | Acc (_, a) ->
+        if in_cond then (Seq.return a) else Seq.empty
+      | Block l ->
+        Seq.concat_map (cond_accesses in_cond) (List.to_seq l)
+      | If (_, s1, s2) ->
+        Seq.append (cond_accesses true s1) (cond_accesses true s2)
+      | For (_, s) ->
+        cond_accesses in_cond s
+    in
+    cond_accesses false s
 
   (* Search for all loops available *)
-  let from_stmt: stmt -> t Seq.t =
+  let all_accesses: stmt -> t Seq.t =
     let f (s:stmt) =
       match s with
       | Acc (_, a) -> Some a
@@ -830,10 +848,15 @@ module Accesses = struct
     find_all_map f
 
   let summarize (s:stmt) : json =
-    let elems = from_stmt s |> List.of_seq in
+    let elems = all_accesses s |> List.of_seq in
+    let cond_elems = cond_accesses s |> List.of_seq in
     let reads = List.length (List.filter Access.is_read elems) in
     let writes = List.length (List.filter Access.is_write elems) in
+    let c_reads = List.length (List.filter Access.is_read cond_elems) in
+    let c_writes = List.length (List.filter Access.is_write cond_elems) in
     `Assoc [
+      "conditional reads", `Int c_reads;
+      "conditional writes", `Int c_writes;
       "writes", `Int reads;
       "reads", `Int writes;
     ]
