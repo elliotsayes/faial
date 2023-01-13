@@ -593,6 +593,25 @@ module Stmt = struct
       | CaseStmt s -> f (Case {case=s.case; body=fold f s.body})
       | SExpr e -> f (SExpr e)
 
+    let map (f: c_stmt -> c_stmt) : c_stmt -> c_stmt =
+      fold (
+        function
+        | Break -> f BreakStmt
+        | Goto -> f GotoStmt
+        | Return -> f ReturnStmt
+        | Continue -> f ContinueStmt
+        | If c -> f (IfStmt c)
+        | Compound l -> f (CompoundStmt l)
+        | Decl l -> f (DeclStmt l)
+        | While c -> f (WhileStmt c)
+        | For c -> f (ForStmt c)
+        | Do c -> f (DoStmt c)
+        | Switch c -> f (SwitchStmt c)
+        | Default c -> f (DefaultStmt c)
+        | Case c -> f (CaseStmt c)
+        | SExpr e -> f (SExpr e)
+      )
+
     let to_expr_seq: c_stmt -> Expr.t Seq.t =
       fold (function
         | Break | Goto | Return | Continue -> Seq.empty
@@ -621,6 +640,42 @@ module Stmt = struct
       )
 
   end
+
+  let rec find (f:t -> bool) (s:t) : t option =
+    if f s then Some s
+    else
+    match s with
+    | BreakStmt
+    | GotoStmt
+    | ReturnStmt
+    | ContinueStmt
+    | DeclStmt _
+    | SExpr _ ->
+      None
+    | IfStmt {then_stmt=s1; else_stmt=s2; _} ->
+      (match find f s1 with
+      | Some s -> Some s
+      | None -> find f s2)
+    | CompoundStmt l ->
+      let rec find_l : t list -> t option =
+        function
+        | [] -> None
+        | s :: l ->
+          if f s
+          then Some s
+          else find_l l
+      in
+      find_l l
+    | WhileStmt {body= s; _}
+    | DoStmt {body = s; _}
+    | SwitchStmt {body= s; _}
+    | CaseStmt {body= s; _}
+    | DefaultStmt s
+    | ForStmt {body= s; _} ->
+      find f s
+
+  let member (f:t -> bool) (s:t) : bool =
+    find f s |> Option.is_some
 
   let rec fold : 'a. (t -> 'a -> 'a) -> t -> 'a -> 'a =
     fun f (s:t) (init:'a) ->

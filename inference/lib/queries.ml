@@ -690,7 +690,6 @@ module Conditionals = struct
     ]
 end
 
-
 module Loops = struct
   open C_lang
   type t =
@@ -719,6 +718,28 @@ module Loops = struct
     | For _ -> true
     | _ -> false
 
+  let has_early_exit (s: t) : bool =
+    s
+    |> body
+    |> Stmt.Visit.map (
+      (* Trim nested loops *)
+      function
+      | DoStmt _
+      | ForStmt _
+      | WhileStmt _ -> CompoundStmt []
+      | s -> s
+    )
+    |> Stmt.member (
+      function
+      | BreakStmt
+      | GotoStmt
+      | ReturnStmt
+      | ContinueStmt ->
+        true
+      | _ ->
+        false
+    )
+
   let from_stmt : Stmt.t -> t Seq.t =
     let f : Stmt.t -> t option =
       function
@@ -743,6 +764,7 @@ module Loops = struct
       "# of while's", `Int (l |> List.filter is_while |> List.length);
       "# of do's", `Int (l |> List.filter is_do |> List.length);
       "# of synchronized loops", `Int count;
+      "# of loops with early return", `Int (l |> List.filter has_early_exit |> List.length);
     ]
 end
 
