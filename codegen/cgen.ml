@@ -230,8 +230,8 @@ let body_to_s (f : prog -> Indent.t list) (k : prog kernel) : Indent.t =
 (* Serialization of the kernel *)
 let kernel_to_s
     (f : prog -> Indent.t list)
-    (k : prog kernel)
     (racuda : bool)
+    (k : prog kernel)
   : Indent.t list =
   let open Indent in
   let type_decls = if racuda then [] else decl_unknown_types k.kernel_arrays in
@@ -254,4 +254,4 @@ let prog_to_s (racuda : bool) (p : prog) : Indent.t list =
   List.map (inst_to_s racuda) p |> List.flatten
 
 let gen_cuda (racuda : bool) (k : prog kernel) : string =
-  Indent.to_string (kernel_to_s (prog_to_s racuda) k racuda)
+  kernel_to_s (prog_to_s racuda) racuda k |> Indent.to_string
