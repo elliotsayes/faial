@@ -13,7 +13,8 @@ let rename_kernel (k : prog kernel) : prog kernel =
 
 (* Use constant folding to simplify the code *)
 let constant_folding (k : prog kernel) : prog kernel =
-  {k with kernel_code = p_opt k.kernel_code}
+  let code = p_opt k.kernel_code in
+  {k with kernel_code = code}
 
 (* Convert source instruction to the list of variables used in it *)
 let rec inst_to_vars : inst -> Variable.t list = function
@@ -78,7 +79,7 @@ let mk_types_compatible (racuda : bool) (k : prog kernel) : prog kernel =
   let mk_array_compatible (arr : Memory.t) : Memory.t =
     {arr with data_type = convert_type (Memory.is_shared arr) arr.data_type}
   in
-  let arrays = VarMap.mapi (fun _ -> mk_array_compatible) k.kernel_arrays in
+  let arrays = VarMap.map mk_array_compatible k.kernel_arrays in
   {k with kernel_arrays = arrays}
 
 (* Set the number of threads per block *)
@@ -115,7 +116,7 @@ let flatten_multi_dim (k : prog kernel) : prog kernel =
     | [] -> arr
     | size -> {arr with size = [List.fold_left ( * ) 1 size]}
   in
-  let arrays = VarMap.mapi (fun _ -> flatten_array) k.kernel_arrays in
+  let arrays = VarMap.map flatten_array k.kernel_arrays in
   {k with kernel_arrays = arrays}
 
 (* Prepare the kernel for serialization *)
