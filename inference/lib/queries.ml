@@ -56,13 +56,6 @@ module Variables = struct
       | e' -> e'
     )
 
-  let is_thread_idx (v:TyVariable.t) : bool =
-    let v : string =
-      v.name
-      |> Variable.name
-    in
-    v = "threadIdx.x" || v = "threadIdx.y" || v = "threadIdx.z"
-
   (* Returns all variables present in an expression *)
   let from_expr (e:Expr.t) : TyVariable.t Seq.t =
     let open Expr.Visit in
@@ -126,7 +119,7 @@ module Variables = struct
       (* Get all variables *)
       |> Seq.concat_map from_expr
       (* Keep threadIdx.x *)
-      |> Seq.filter is_thread_idx
+      |> Seq.filter TyVariable.is_tid
       |> to_set
       |> var_set_to_json
     in

@@ -28,6 +28,9 @@ module TyVariable = struct
 
   let name (x:t) : Variable.t = x.name
 
+  let is_tid (x:t) : bool =
+    x.name |> Variable.is_tid
+
   let ty (x:t) : c_type = x.ty
 
   let to_string (x:t) : string =
