@@ -913,3 +913,27 @@ module Divergence = struct
       "# ifs with tids", `Int if_count;
     ]
 end
+
+
+module Kernel = struct
+  open Imp
+
+  let summarize (k:p_kernel) : json =
+    let arrays =
+      k.p_kernel_arrays
+      |> Variable.Map.bindings
+      |> List.map (fun ((k:Variable.t), a) ->
+        let open Memory in
+        `Assoc [
+          "name", `String (Variable.name k);
+          "hierarchy", `String (a.hierarchy |> Hierarchy.to_string);
+          "size", `List (List.map (fun x -> `Int x) a.size);
+          "data_type", `List (List.map (fun x -> `String x) a.data_type);
+        ]
+      )
+    in
+    `Assoc [
+      "name", `String k.p_kernel_name;
+      "arrays", `List arrays;
+    ]
+end

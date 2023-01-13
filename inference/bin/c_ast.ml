@@ -59,7 +59,6 @@ let main
       let k2 = Hashtbl.find k2_ht k.name in
       let k3 = Hashtbl.find k3_ht k.name in
       (decls, `Assoc [
-        "name", `String k.name;
         "function calls", Calls.summarize decls k;
         "nested loops", NestedLoops.summarize k.code;
         "loops", Loops.summarize k.code;
@@ -72,6 +71,7 @@ let main
         "accesses", Accesses.summarize k3.p_kernel_code;
         "global decls", GlobalDeclArrays.summarize decls;
         "divergence", Divergence.summarize k3.p_kernel_code;
+        "kernel", Queries.Kernel.summarize k3;
       ] :: js)
     | Declaration d ->
       let decls =
