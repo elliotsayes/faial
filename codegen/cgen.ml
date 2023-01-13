@@ -173,7 +173,7 @@ let base_protos (racuda : bool) : string list =
   if racuda then racuda_protos else cuda_protos
 
 (* Gets the type of an array, defaulting to int if it is unknown *)
-let arr_type (arr : Memory.t) (strip_const : bool) : string =
+let arr_type ?(strip_const=false) (arr : Memory.t) : string =
   if arr.data_type = [] then "int"
   else if strip_const then List.filter (fun x -> x <> "const") arr.data_type
                            |> Common.join " "
@@ -183,13 +183,13 @@ let arr_type (arr : Memory.t) (strip_const : bool) : string =
 let arr_to_proto (vm : Memory.t VarMap.t) (racuda : bool) : string list =
   let modifiers = if racuda then "extern " else "extern __device__ " in
   VarMap.bindings vm 
-  |> List.map (fun (k, v) -> modifiers ^ arr_type v true ^ " "
-                             ^ var_to_dummy k ^ "_w();")
+  |> List.map (fun (k, v) -> modifiers ^ arr_type v ~strip_const:true
+                             ^ " " ^ var_to_dummy k ^ "_w();")
 
 (* Helper functions for making kernel parameters *)
 let global_arr_to_l (vm : Memory.t VarMap.t) : string list =
   VarMap.bindings vm
-  |> List.map (fun (k, v) -> arr_type v false ^ " *" ^ var_name k)
+  |> List.map (fun (k, v) -> arr_type v ^ " *" ^ var_name k)
 
 let global_var_to_l (vs : VarSet.t) : string list =
   VarSet.elements (VarSet.diff vs thread_globals)
@@ -200,7 +200,7 @@ let arr_to_shared (vm : Memory.t VarMap.t) : Indent.t list =
   VarMap.bindings vm
   |> List.map (fun (k, v) -> 
       Indent.Line ((if v.Memory.size = [] then "extern " else "") 
-                   ^ "__shared__ " ^ arr_type v false ^ " " ^ var_name k
+                   ^ "__shared__ " ^ arr_type v ^ " " ^ var_name k
                    ^ idx_to_s string_of_int v.Memory.size ^ ";"))
 
 let local_var_to_l (vs : VarSet.t) : Indent.t list =
@@ -215,7 +215,7 @@ let local_var_to_l (vs : VarSet.t) : Indent.t list =
 let arr_to_dummy (vm : Memory.t VarMap.t) : Indent.t list =
   VarMap.bindings vm
   |> List.map (fun (k, v) -> 
-      Indent.Line (arr_type v true ^ " " ^ var_to_dummy k ^ ";"))
+      Indent.Line (arr_type v ~strip_const:true ^ " " ^ var_to_dummy k ^ ";"))
 
 (* Serialization of the kernel body *)
 let body_to_s (f : prog -> Indent.t list) (k : prog kernel) : Indent.t =

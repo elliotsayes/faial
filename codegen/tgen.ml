@@ -9,7 +9,7 @@ module VarMap = Variable.Map
 (* Kernel to TOML conversion *)
 let arrays_to_l (vm : Memory.t VarMap.t) : (string * Otoml.t) list =
   VarMap.bindings vm
-  |> List.map (fun (k, v) -> (var_name k, Otoml.TomlString (arr_type v false)))
+  |> List.map (fun (k, v) -> (var_name k, Otoml.TomlString (arr_type v)))
 
 let scalars_to_l (vs : VarSet.t) : (string * Otoml.t) list =
   VarSet.elements (VarSet.diff vs thread_globals)
