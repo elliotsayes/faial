@@ -120,7 +120,7 @@ let hashtbl_elements (t: ('a, 'b) Hashtbl.t) : ('a * 'b) list =
   ) t []
 
 let hashtbl_update (ht: ('a, 'b) Hashtbl.t) (kvs:('a * 'b) list) : unit =
-  List.iter (fun (k,v) -> Hashtbl.add ht k v) kvs
+  List.iter (fun (k,v) -> Hashtbl.replace ht k v) kvs
 
 let hashtbl_from_list (kvs: ('a * 'b) list) : ('a, 'b) Hashtbl.t =
   let ht = Hashtbl.create (List.length kvs) in
@@ -348,3 +348,24 @@ let ic_to_string ?(chunk_size=1024) (ic:in_channel) : string =
       Buffer.contents buffer
   in
   loop ()
+
+let process_status_to_string : Unix.process_status -> string =
+  function
+  | WEXITED n -> "Process exited with return code: " ^ string_of_int n
+  | WSIGNALED n -> "Process was killed by a signal: " ^ string_of_int n
+  | WSTOPPED n -> "Process was stopped by a signal: " ^ string_of_int n
+
+(*
+  Runs a program with a string given as an input
+  *)
+let run ?(stdin="") ~exe args : (Unix.process_status * string) =
+  let cmd = Filename.quote_command exe args in
+  Unix.open_process cmd
+  |> with_process_in_out (fun (ic, oc) ->
+    (* Send the expression to be processed *)
+    output_string oc stdin;
+    (* Close output to ensure it is processed *)
+    close_out oc;
+    (* Receive the output *)
+    ic_to_string ic
+  )

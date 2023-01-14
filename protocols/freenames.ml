@@ -41,6 +41,10 @@ let contains_tid_nexp e : bool =
 let free_names_range (r:Range.t) (fns:Variable.Set.t) : Variable.Set.t =
   free_names_nexp r.lower_bound fns |> free_names_nexp r.upper_bound
 
+let contains_tid_range e : bool =
+  free_names_range e Variable.Set.empty
+  |> Variable.contains_tids
+
 let free_names_access a fns =
   let open Access in
   List.fold_right free_names_nexp a.index fns

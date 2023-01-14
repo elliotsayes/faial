@@ -23,6 +23,11 @@ module Step = struct
     | Mult n -> fun m -> n_div m n
     | Plus n -> fun m -> n_minus m n
 
+  let stride : t -> nexp =
+    function
+    | Plus e -> e
+    | Mult e -> e
+
   let is_valid : t -> bexp =
     function
     | Plus e -> n_gt e (Num 0)
@@ -67,13 +72,19 @@ let map (f: nexp -> nexp) (r: t) : t =
     step = Step.map f r.step;
   }
 
-let make (x:Variable.t) (ub:nexp) =
+
+let make
+  ?(lower_bound=Num 0)
+  ?(step:Step.t=Plus (Num 1))
+  ?(dir = Increase)
+  (x:Variable.t)
+  (ub:nexp) =
   {
     var = x;
-    lower_bound = Num 0;
+    lower_bound = lower_bound;
     upper_bound = ub;
-    step = Plus (Num 1);
-    dir = Increase;
+    step = step;
+    dir = dir;
   }
 
 let eq_nums x l : bexp =
@@ -194,6 +205,32 @@ let lossy_last (r:t) : nexp =
       ~lower_bound:r.lower_bound
       ~upper_bound:r.upper_bound
       (Num 1)
+
+let stride (r:t) : nexp =
+  Step.stride r.step
+
+(* The first element in a while loop *)
+let while_init (r:t) : nexp =
+  match r.dir with
+  | Increase -> r.lower_bound
+  | Decrease -> r.upper_bound
+
+(* The condition in a while loop *)
+let while_cond (r:t) : bexp =
+  match r.dir with
+  | Increase -> n_lt (Var r.var) r.upper_bound
+  | Decrease -> n_ge (Var r.var) r.lower_bound
+
+(* An increment of a while loop *)
+let while_inc (r:t) : nexp =
+  let x = Var r.var in
+  let o, e1, e2 = match r.dir, r.step with
+    | Increase, Step.Plus e -> Plus, x, e
+    | Decrease, Step.Plus e -> Minus, x, e
+    | Increase, Step.Mult e -> Mult, x, e
+    | Decrease, Step.Mult e -> Div, x, e
+  in
+  Bin (o, e1, e2)
 
 let next (r:t) : t =
   { r with lower_bound = Step.inc r.step r.lower_bound }

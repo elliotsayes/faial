@@ -1,7 +1,13 @@
 (library
   (name bank_conflicts)
   (modules
-    vec3 vectorized poly shared_access index_analysis
+    vec3 vectorized poly shared_access index_analysis ra
+    absynth
+    maxima
+    cofloco
+    koat
+    errors
+    environ
     symbolic)
   (libraries
     ; 3rd-pary

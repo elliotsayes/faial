@@ -14,10 +14,10 @@ let rec norm (b:bexp) : bexp list =
   | BNot (BRel (BOr, b1, b2)) -> norm (b_and (b_not b1) (b_not b2))
   | BNot (NRel (NEq, n1, n2)) -> norm (n_neq n1 n2)
   | BNot (NRel (NNeq, n1, n2)) -> norm (n_eq n1 n2)
-  | BNot (NRel (NGt, n1, n2)) -> norm (n_ge n1 n2)
-  | BNot (NRel (NLt, n1, n2)) -> norm (n_le n1 n2)
-  | BNot (NRel (NLe, n1, n2)) -> norm (n_lt n1 n2)
-  | BNot (NRel (NGe, n1, n2)) -> norm (n_gt n1 n2)
+  | BNot (NRel (NGt, n1, n2)) -> norm (n_le n1 n2)
+  | BNot (NRel (NLt, n1, n2)) -> norm (n_ge n1 n2)
+  | BNot (NRel (NLe, n1, n2)) -> norm (n_gt n1 n2)
+  | BNot (NRel (NGe, n1, n2)) -> norm (n_lt n1 n2)
   | BNot (BNot b) -> norm b
 
 let bexp_to_bool b =
@@ -164,10 +164,17 @@ and b_opt (e : bexp) : bexp =
       | _, _ -> NRel (o, a1, a2)
     end
   | BNot b ->
-    let b = b_opt b in
-    match bexp_to_bool b with
-    | Some b -> Bool (not b)
+    begin match b_opt b with
+    | BNot b -> b
+    | Bool b -> Bool (not b)
+    | NRel (NEq, n1, n2) -> n_neq n1 n2
+    | NRel (NNeq, n1, n2) -> n_eq n1 n2
+    | NRel (NGt, n1, n2) -> n_le n1 n2
+    | NRel (NLt, n1, n2) -> n_ge n1 n2
+    | NRel (NLe, n1, n2) -> n_gt n1 n2
+    | NRel (NGe, n1, n2) -> n_lt n1 n2
     | _ -> BNot b
+    end
 
 let r_opt (r:Range.t) : Range.t =
   {

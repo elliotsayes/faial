@@ -217,8 +217,8 @@ let simplify_kernel
   Proto.prog Proto.kernel
 =
   let open Proto in
+  let shared = shared_memory k.kernel_arrays in
   let rec simpl_i : Proto.inst -> Proto.inst =
-    let shared = shared_memory k.kernel_arrays in
     function
     | Acc (x, ({index=l; _} as a)) ->
       (* Flatten n-dimensional array and apply word size *)
@@ -254,7 +254,20 @@ let simplify_kernel
   and simpl_p (l: Proto.prog) : Proto.prog =
     List.map simpl_i l
   in
-  { k with kernel_code = simpl_p k.kernel_code }
+  let arrays =
+    k.kernel_arrays
+    |> Variable.Map.map (fun m ->
+      if Memory.is_shared m && List.length m.size > 0 then (
+        let open Memory in
+        { m with size = [ List.fold_left ( * ) 1 m.size ] }
+      ) else
+        m
+    )
+  in
+  { k with
+    kernel_code = simpl_p k.kernel_code;
+    kernel_arrays = arrays;
+  }
 
 let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
   let open Exp in

@@ -50,8 +50,8 @@ let tests = "tests" >::: [
         ty=C_type.j_int_type;
     } |> assert_vars ["x"; "y"];
   );
-  "Loops.make" >:: (fun _ ->
-    let open Loops in
+  "NestedLoops.make" >:: (fun _ ->
+    let open NestedLoops in
     let assert_make expected given =
       assert_equal
         ~printer:to_string
@@ -87,8 +87,8 @@ let tests = "tests" >::: [
       ] 0
     )
   );
-  "Loops.filter_using_loop_vars" >:: (fun _ ->
-    let open Loops in
+  "NestedLoops.filter_using_loop_vars" >:: (fun _ ->
+    let open NestedLoops in
     let given = [
       For {
         init=None;

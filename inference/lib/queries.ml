@@ -56,13 +56,6 @@ module Variables = struct
       | e' -> e'
     )
 
-  let is_thread_idx (v:TyVariable.t) : bool =
-    let v : string =
-      v.name
-      |> Variable.name
-    in
-    v = "threadIdx.x" || v = "threadIdx.y" || v = "threadIdx.z"
-
   (* Returns all variables present in an expression *)
   let from_expr (e:Expr.t) : TyVariable.t Seq.t =
     let open Expr.Visit in
@@ -126,7 +119,7 @@ module Variables = struct
       (* Get all variables *)
       |> Seq.concat_map from_expr
       (* Keep threadIdx.x *)
-      |> Seq.filter is_thread_idx
+      |> Seq.filter TyVariable.is_tid
       |> to_set
       |> var_set_to_json
     in
@@ -341,7 +334,7 @@ module Calls = struct
 end
 
 (* Performs loop analysis. *)
-module Loops = struct
+module NestedLoops = struct
   open C_lang
   (* Represents a nesting of loops within other loops *)
   type loop =
@@ -673,36 +666,20 @@ end
 
 module Conditionals = struct
   open C_lang
-  type t = {cond: Expr.t; then_stmt: Stmt.t; else_stmt: Stmt.t}
-  let rec to_seq : Stmt.t -> t Seq.t =
-    function
-    | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
-      Seq.return {cond=c; then_stmt=s1; else_stmt=s2}
-
-    | DeclStmt _
-    | BreakStmt
-    | GotoStmt
-    | ReturnStmt
-    | ContinueStmt
-    | SExpr _
-      ->
-      Seq.empty
-
-    | CompoundStmt l -> List.to_seq l |> Seq.concat_map to_seq
-
-    | WhileStmt {body=s; _}
-    | ForStmt {body=s; _}
-    | DoStmt {body=s; _}
-    | SwitchStmt {body=s; _}
-    | DefaultStmt s
-    | CaseStmt {body=s; _}
-      ->
-      to_seq s
+  type t = Stmt.if_stmt
+  let to_seq : Stmt.t -> t Seq.t =
+    let f : Stmt.t -> t option =
+      function
+      | IfStmt i -> Some i
+      | _ -> None
+    in
+    Stmt.find_all_map f
 
   let summarize (s:Stmt.t) : json =
     let count =
       to_seq s
       |> Seq.filter (fun x ->
+        let open Stmt in
         Calls.has_sync x.then_stmt || Calls.has_sync x.else_stmt
       )
       |> Seq.length
@@ -710,6 +687,84 @@ module Conditionals = struct
     `Assoc [
       "# of ifs", `Int (to_seq s |> Seq.length);
       "# of synchronized ifs", `Int count;
+    ]
+end
+
+module Loops = struct
+  open C_lang
+  type t =
+    | Do of Stmt.cond_stmt
+    | While of Stmt.cond_stmt
+    | For of Stmt.for_stmt
+
+  let body : t -> Stmt.t =
+    function
+    | Do x -> x.body
+    | While x -> x.body
+    | For x -> x.body
+
+  let is_for : t -> bool =
+    function
+    | For _ -> true
+    | _ -> false
+
+  let is_do : t -> bool =
+    function
+    | For _ -> true
+    | _ -> false
+
+  let is_while : t -> bool =
+    function
+    | For _ -> true
+    | _ -> false
+
+  let has_early_exit (s: t) : bool =
+    s
+    |> body
+    |> Stmt.Visit.map (
+      (* Trim nested loops *)
+      function
+      | DoStmt _
+      | ForStmt _
+      | WhileStmt _ -> CompoundStmt []
+      | s -> s
+    )
+    |> Stmt.member (
+      function
+      | BreakStmt
+      | GotoStmt
+      | ReturnStmt
+      | ContinueStmt ->
+        true
+      | _ ->
+        false
+    )
+
+  let from_stmt : Stmt.t -> t Seq.t =
+    let f : Stmt.t -> t option =
+      function
+      | DoStmt d -> Some (Do d)
+      | WhileStmt w -> Some (While w)
+      | ForStmt f -> Some (For f)
+      | _ -> None
+    in
+    Stmt.find_all_map f
+
+  let summarize (s:Stmt.t) : json =
+    let l = from_stmt s |> List.of_seq in
+    let count =
+      from_stmt s
+      |> Seq.filter (fun x ->
+        x |> body |> Calls.has_sync
+      )
+      |> Seq.length
+    in
+    `Assoc [
+      "# of for's", `Int (l |> List.filter is_for |> List.length);
+      "# of while's", `Int (l |> List.filter is_while |> List.length);
+      "# of do's", `Int (l |> List.filter is_do |> List.length);
+      "# of synchronized loops", `Int count;
+      "# of loops with early return", `Int (l |> List.filter has_early_exit |> List.length);
     ]
 end
 
@@ -789,5 +844,118 @@ module ForEach = struct
       "total", `Int count;
       "inferred", `Int found;
       "missing", `List missing;
+    ]
+end
+
+
+module Accesses = struct
+  open Imp
+
+  type t = Variable.t * Access.t
+  let cond_accesses (s: stmt) : t Seq.t =
+    let rec cond_accesses (in_cond:bool) (s: stmt) : t Seq.t =
+      match s with
+      | Decl _
+      | Sync
+      | Assert _
+      | LocationAlias _ ->
+        Seq.empty
+      | Acc a ->
+        if in_cond then (Seq.return a) else Seq.empty
+      | Block l ->
+        Seq.concat_map (cond_accesses in_cond) (List.to_seq l)
+      | If (_, s1, s2) ->
+        Seq.append (cond_accesses true s1) (cond_accesses true s2)
+      | For (_, s) ->
+        cond_accesses in_cond s
+    in
+    cond_accesses false s
+
+  (* Search for all loops available *)
+  let all_accesses: stmt -> t Seq.t =
+    let f (s:stmt) =
+      match s with
+      | Acc a -> Some a
+      | _ -> None
+    in
+    find_all_map f
+
+  let summarize (s:stmt) : json =
+    let elems = all_accesses s |> List.of_seq in
+    let cond_elems = cond_accesses s |> List.of_seq in
+    let get_vars (x, y) = List.map fst x, List.map fst y in
+    let reads, writes =
+      elems
+      |> List.partition (fun (_, a) -> Access.is_read a)
+      |> get_vars
+    in
+    let c_reads, c_writes =
+      cond_elems
+      |> List.partition (fun (_, a) -> Access.is_read a)
+      |> get_vars
+    in
+    `Assoc [
+      "conditional reads", var_list_to_json c_reads;
+      "conditional writes", var_list_to_json c_writes;
+      "writes", var_list_to_json reads;
+      "reads", var_list_to_json writes;
+    ]
+end
+
+
+module Divergence = struct
+  open Imp
+
+  type t = stmt
+
+  (* Search for all loops available *)
+  let branch_with_tids: stmt -> t Seq.t =
+    let f (s:stmt) =
+      match s with
+      | If (c, _, _) -> Freenames.contains_tid_bexp c
+      | For (r, _) -> Freenames.contains_tid_range r
+      | _ -> false
+    in
+    find_all f
+
+  let summarize (s:stmt) : json =
+    let elems = branch_with_tids s |> List.of_seq in
+    let for_count =
+      elems
+      |> List.filter is_for
+      |> List.length
+    in
+    let if_count =
+      elems
+      |> List.filter is_if
+      |> List.length
+    in
+    `Assoc [
+      "# loops with tids", `Int for_count;
+      "# ifs with tids", `Int if_count;
+    ]
+end
+
+
+module Kernel = struct
+  open Imp
+
+  let summarize (k:p_kernel) : json =
+    let arrays =
+      k.p_kernel_arrays
+      |> Variable.Map.bindings
+      |> List.map (fun ((k:Variable.t), a) ->
+        let open Memory in
+        `Assoc [
+          "name", `String (Variable.name k);
+          "hierarchy", `String (a.hierarchy |> Hierarchy.to_string);
+          "size", `List (List.map (fun x -> `Int x) a.size);
+          "data_type", `List (List.map (fun x -> `String x) a.data_type);
+        ]
+      )
+    in
+    `Assoc [
+      "name", `String k.p_kernel_name;
+      "arrays", `List arrays;
     ]
 end

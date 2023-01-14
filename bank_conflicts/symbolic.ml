@@ -6,16 +6,74 @@ open Stage0
   *)
 open Exp
 
+module Interval = struct
+  type t = { var: Variable.t; first_elem: Exp.nexp; last_elem: Exp.nexp}
+  let to_string (b:t) : string =
+    "{" ^
+      Exp.n_to_string b.first_elem ^ " ≤ " ^
+      Variable.name b.var ^ " ≤ " ^
+      Exp.n_to_string b.last_elem ^
+    "}"
+
+  let map (f:Exp.nexp -> Exp.nexp) (b:t) : t =
+    { b with
+      first_elem = f b.first_elem;
+      last_elem = f b.last_elem;}
+
+  module Make (S:Subst.SUBST) = struct
+    module M = Subst.Make(S)
+    let subst (s: S.t) : t -> t =
+      map (M.n_subst s)
+  end
+
+  module PSubstAssoc = Make(Subst.SubstAssoc)
+  module PSubstPair = Make(Subst.SubstPair)
+
+  let subst : (Variable.t * Exp.nexp) -> t -> t = PSubstPair.subst
+
+  let to_range (b:t) : Range.t =
+    {
+      var = b.var;
+      lower_bound = b.first_elem;
+      upper_bound = Exp.n_inc b.last_elem;
+      step = Plus (Num 1);
+      dir = Range.Increase;
+    }
+end
+
 type t =
   | Const of int
-  | Sum of Variable.t * Exp.nexp * t
+  | Sum of Interval.t * t
   | Add of t list
 
 let rec to_string : t -> string =
   function
   | Const x -> string_of_int x
-  | Sum (x, n, s) -> "Σ_{1 ≤ " ^ Variable.name x ^ " ≤ " ^ Exp.n_to_string n ^ "} " ^ to_string s
+  | Sum (b, s) -> "Σ_" ^ Interval.to_string b ^ " " ^ to_string s
   | Add l -> List.map to_string l |> Common.join " + "
+
+module Make (S:Subst.SUBST) = struct
+  module M = Subst.Make(S)
+  module B = Interval.Make(S)
+
+  let rec subst (s: S.t) : t -> t =
+    function
+    | Const k -> Const k
+    | Add l -> Add (List.map (subst s) l)
+    | Sum (b, p) ->
+      let b = B.subst s b in
+      let p = M.add s b.var (function
+        | Some s -> subst s p
+        | None -> p
+      )
+      in
+      Sum (b, p)
+end
+
+module PSubstAssoc = Make(Subst.SubstAssoc)
+module PSubstPair = Make(Subst.SubstPair)
+
+let subst : (Variable.t * Exp.nexp) -> t -> t = PSubstPair.subst
 
 let add (l:t list) : t = Add l
 
@@ -25,7 +83,7 @@ let rec is_zero : t -> bool =
   function
   | Const 0 -> true
   | Const _ -> false
-  | Sum (_, _, s) -> is_zero s
+  | Sum (_, s) -> is_zero s
   | Add l -> List.for_all is_zero l
 
 let factor_to_n (e:nexp) (i: factor) : nexp =
@@ -95,7 +153,16 @@ let rec flatten : t -> (Exp.nexp, string) Result.t =
   let (let*) = Result.bind in
   function
   | Const k -> Ok (Num k)
-  | Sum (x, ub, s) ->
+  | Sum (b, s) ->
+    let x = b.var in
+    let (ub, s) =
+      if b.first_elem = Num 1 then
+        (b.last_elem, s)
+      else
+        let ub = n_inc (n_minus b.last_elem b.first_elem) in
+        let s = subst (b.var, n_plus (n_dec (Var b.var)) b.first_elem) s in
+        (ub, s)
+    in
     let* n = flatten s in
     (* When we give up, we convert our expr into a polynomial *)
     let handle_poly (n:Exp.nexp) : (Exp.nexp, string) Result.t =
@@ -207,413 +274,27 @@ let simplify (s : t) : string =
     prerr_endline ("WARNING: simplify: " ^ m ^ ": " ^ to_string s);
     to_string s
 
-(* --------------------------------- Absynth ---------------------- *)
-
-let rec to_maxima : t -> string =
+let rec to_ra : t -> Ra.t =
   function
-  | Const k -> string_of_int k
-  | Sum (x, ub, s) -> "sum(" ^ to_maxima s ^ ", " ^ Variable.name x ^ ", 1, " ^ Exp.n_to_string ub ^ ")"
-  | Add l -> List.map to_maxima l |> Common.join " + "
-
-let cleanup_maxima_output (x:string) : string =
-  let lines = String.split_on_char '\n' x in
-  let max_len = List.map String.length lines
-    |> List.fold_left max 0
-  in
-  let offsets =
-    lines
-    |> List.filter_map (fun line ->
-      String.to_seqi line
-      |> Seq.find (fun (_, a) -> a <> ' ')
-      |> Option.map fst
-    )
-  in
-  let min_offset = List.fold_left min max_len offsets in
-  lines
-  |> List.map (fun line ->
-    Slice.from_start min_offset
-    |> Slice.substring line
-  )
-  |> Common.join "\n"
-
-let run_prog ~out ~exe args =
-  let (_, txt) =
-    let cmd = Filename.quote_command exe args in
-    Unix.open_process cmd
-    |> Common.with_process_in_out (fun (ic, oc) ->
-      (* Send the expression to be processed *)
-      output_string oc out;
-      (* Close output to ensure it is processed *)
-      close_out oc;
-      (* Receive the output *)
-      Common.ic_to_string ic
-    )
-  in
-  txt
-
-let run_maxima ?(verbose=false) ?(exe="maxima") (x:t) : string =
-  let expr = to_maxima x ^ ",simpsum;" in
-  (if verbose
-    then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
-    else ());
-  run_prog ~out:expr ~exe ["--very-quiet"; "--disable-readline"]
-  |> cleanup_maxima_output
-
-(* --------------------------------- Absynth ---------------------- *)
-
-let to_absynth : t -> string =
-  let indent (depth:int) : string = String.make depth '\t' in
-  let n_to_s = Exp.n_to_string in
-  let rec translate (depth:int) : t -> string =
-    function
-    | Const k -> indent depth ^ "tick " ^ string_of_int k ^ "\n"
-    | Sum (x, ub, s) ->
-      indent depth ^ Variable.name x ^ " = 0\n" ^
-      indent depth ^ "while " ^ Variable.name x ^ " < (" ^ n_to_s ub ^ "):\n" ^
-      indent (depth + 1) ^ Variable.name x ^ " = " ^ Variable.name x ^ " + 1\n" ^
-      translate (depth + 1) s
-    | Add l -> List.map (translate depth) l |> Common.join ""
-  in
-  fun x ->
-    "def f():\n" ^
-    translate 1 x
-
-let with_tmp ~prefix ~suffix (f:string -> 'a) : 'a =
-  let fname = Filename.temp_file prefix suffix in
-  try
-      let res = f fname in
-      Sys.remove fname;
-      res
-  with ex ->
-      Sys.remove fname;
-      raise ex
-
-let write_string ~filename ~data : unit =
-  let oc = open_out filename in
-  try
-    output_string oc data;
-    close_out oc
-  with ex ->
-    close_out oc;
-    raise ex
-
-let cleanup_absynth (x:string) : string option =
-  let (let*) = Option.bind in
-  let* x =
-    String.split_on_char '\n' x
-    |> List.find_opt (String.starts_with ~prefix:"    Bound:")
-  in
-  let* (_, x) = Common.split ':' x in
-  Some (String.trim x)
-
-let run_absynth ?(verbose=false) ?(exe="absynth") (x:t) : string =
-  let out = to_absynth x in
-  (if verbose
-    then prerr_endline ("Absynth output:\n" ^ out ^ "\n")
-    else ());
-  let data = with_tmp ~prefix:"absynth_" ~suffix:".imp" (fun filename ->
-      write_string ~filename ~data:out;
-      run_prog ~out ~exe [filename]
-    )
-  in
-  match cleanup_absynth data with
-  | Some x -> x
-  | None ->
-    if Common.contains ~substring:"Sorry, I could not find a bound" data then
-      "No bound found."
-    else (
-      print_endline data;
-      "???"
-    )
-
-(* --------------------------------- CoFloCo ---------------------- *)
-
-
-module Fvs = struct
-  type t = int Variable.Map.t
-
-  let empty : t = Variable.Map.empty
-
-  let get (x:Variable.t) (fvs:t) : int =
-    Variable.Map.find x fvs
-
-  let size (env:t) = Variable.Map.cardinal env
-
-  let to_array (fvs:t) : Variable.t array =
-    let vars : Variable.t option array = Array.make (size fvs) None in
-    Variable.Map.to_seq fvs
-    |> Seq.iter (fun (v, idx) ->
-      Array.set vars idx (Some v)
-    );
-    vars |> Array.map Option.get
-
-  let add_var (x:Variable.t) (env:t) : t =
-    if Variable.Map.mem x env then
-      env
-    else
-      let next_idx = Variable.Map.cardinal env in
-      Variable.Map.add x next_idx env
-
-  let add_exp (e:Exp.nexp) (env:t) : t =
-    let fvs = Freenames.free_names_nexp e Variable.Set.empty in
-    Variable.Set.fold add_var fvs env
-
-end
-
-module Environ = struct
-  type t = {ctx: Fvs.t; data: string array}
-
-  let var (idx:int) : string =
-    "Arg_" ^ string_of_int idx
-
-  let from_fvs (ctx:Fvs.t) : t =
-    let data =
-      Common.range (Fvs.size ctx)
-      |> List.map var
-      |> Array.of_list
-    in
-    let data =
-      if Array.length data = 0 then
-        (* CoFloCo does support empty environments. *)
-        Array.of_list [var 0]
-      else
-        data
-    in
-    {ctx; data}
-
-  let get (x:Variable.t) (env:t) : string =
-    Fvs.get x env.ctx |> var
-
-  let n_normalize (e:Exp.nexp) (env:t) : Exp.nexp =
-    let fvs = Freenames.free_names_nexp e Variable.Set.empty in
-    Variable.Set.fold (fun x e ->
-      let new_x = Var (Variable.from_name (get x env)) in
-      Subst.ReplacePair.n_subst (x, new_x) e
-    ) fvs e
-
-  let b_normalize (e:Exp.bexp) (env:t) : Exp.bexp =
-    let fvs = Freenames.free_names_bexp e Variable.Set.empty in
-    Variable.Set.fold (fun x e ->
-      let new_x = Var (Variable.from_name (get x env)) in
-      Subst.ReplacePair.b_subst (x, new_x) e
-    ) fvs e
-
-  let n_to_s (e:Exp.nexp) (env:t) : string =
-    n_normalize e env |> Exp.n_to_string
-
-  let b_to_s (e:Exp.bexp) (env:t) : string =
-    b_normalize e env |> Exp.b_to_string
-
-  let decode (data:string) (env:t) : string =
-    Fvs.to_array env.ctx
-    |> Array.to_seqi
-    |> Seq.fold_left (fun data (idx, x) ->
-      let substring = var idx in
-      Common.replace ~substring ~by:(Variable.name x) data
-    ) data
-
-  let put (x:Variable.t) (e:Exp.nexp) (env:t) : t =
-    let d = Array.copy env.data in
-    let idx = Fvs.get x env.ctx in
-    let e = n_to_s e env in
-    Array.set d idx e;
-    { env with data = d }
-
-  let to_list (x:t) : string list =
-    x.data
-    |> Array.to_list
-end
-
-
-let rec fvs (s:t) (env:Fvs.t) : Fvs.t =
-  match s with
-  | Const _ -> env
-  | Sum (x, ub, s) ->
-    env
-    |> fvs s
-    |> Fvs.add_var x
-    |> Fvs.add_exp ub
+  | Const k -> Tick k
+  | Sum (b, s) ->
+    Loop (Interval.to_range b, to_ra s)
   | Add l ->
-    List.fold_left (fun (env:Fvs.t) (e:t) ->
-      fvs e env
-    ) env l
+    List.fold_right (fun i r -> Ra.Seq (to_ra i, r)) l Skip
 
-let to_cofloco (env:Environ.t) (s: t) : string =
-  (* Compute a map from variable to its identifier *)
-  let call (x:int) (env:Environ.t) : string =
-    let env = Environ.to_list env |> Common.join ", " in
-    "inst_" ^ string_of_int x ^ "(" ^ env ^ ")"
-  in
-  let rule ~src ?(cost="0") ?(dst=[]) ?(cnd=[]) () : string =
-    let b_to_s n = Environ.b_to_s n env in
-    let cnd = List.map b_to_s cnd in
-    let arr l = "[" ^ Common.join "," l ^ "]" in
-    "eq(" ^ src ^ ", " ^ cost ^ ", " ^ arr dst ^ ", " ^ arr cnd ^ ")."
-  in
-  let rec translate (idx:int) : t -> int * string list =
-    let self env : string = call idx env in
+let to_environ (s:t) : Environ.t =
+  let rec fvs (env:Environ.Fvs.t) : t -> Environ.Fvs.t =
     function
-    | Sum (x, ub, s) ->
-      let (idx', rest) = translate (idx + 2) s in
-      idx' + 1,
-      [
-        (* Initialize the loop *)
-        "% init loop";
-        rule
-          ~src:(self env)
-          ~dst:[call (idx + 1) (Environ.put x (Num 0) env)] ();
-        "% next iter";
-        (* Transition of next iteration *)
-        rule ~src:(call (idx + 1) env) ~dst:[
-          call (idx + 1) (Environ.put x (Exp.n_inc (Var x)) env); (* next iter *)
-          call (idx + 2) env (* loop body *)
-        ] ~cnd:[Exp.n_lt (Var x) ub] ();
-        "% loop body";
-      ] @
-      rest
-      @ [
-        "% end of loop body";
-        rule ~src:(call idx' env) ();
-        (* Transition of end of loop: *)
-        "% end loop";
-        rule ~src:(call (idx + 1) env) ~cnd:[n_ge (Var x) ub]
-            ~dst:[call (idx' + 1) env] ();
-      ]
+    | Const _ -> env
+    | Sum (b, s) ->
+      fvs env s
+      |> Environ.Fvs.add_var b.var
+      |> Environ.Fvs.add_exp b.first_elem
+      |> Environ.Fvs.add_exp b.last_elem
     | Add l ->
-      List.fold_right (fun (s:t) ((idx:int), l1) ->
-        let (idx, l2) = translate idx s in
-        (idx, l1 @ l2)
-      ) l (idx, [])
-    | Const k ->
-      idx + 1,
-      [
-        rule
-          ~src:(self env)
-          ~cost:(string_of_int k)
-          ~dst:[call (idx+1) env] ();
-      ]
+      List.fold_left fvs env l
   in
-  let (idx, l) = translate 0 s in
-  (l @ [rule ~src:(call idx env) ()])
-  |> Common.join "\n"
-
-let r_id = Str.regexp {|nat(\([A-Za-z_0-9-]+\))|}
-
-let cleanup_cofloco (env:Environ.t) (x:string) : string option =
-  let (let*) = Option.bind in
-  let* x =
-    String.split_on_char '\n' x
-    |> List.find_opt (String.starts_with ~prefix:"###")
-  in
-  let* (_, x) = Common.split ':' x in
-  let x = Environ.decode x env in
-  Some (String.trim x)
-
-let run_cofloco ?(verbose=false) ?(exe="cofloco") (s:t) : string =
-  let env = fvs s Fvs.empty |> Environ.from_fvs in
-  let expr = to_cofloco env s in
-  (if verbose
-    then prerr_endline ("CoFloCo output:\n" ^ expr ^ "\n")
-    else ());
-  let data = run_prog ~out:expr ~exe ["-v"; "0"; "-i"; "/dev/stdin"] in
-  match data |> cleanup_cofloco env with
-  | Some x -> x
-  | None ->
-    data
-
-(* ---------------------------------------------------------- *)
-
-
-let to_koat (env:Environ.t) (s: t) : string =
-  let call (x:int) (env:Environ.t) : string =
-    let env = Environ.to_list env |> Common.join ", " in
-    "inst_" ^ string_of_int x ^ "(" ^ env ^ ")"
-  in
-  let open Exp in
-  (* Compute a map from variable to its identifier *)
-  let rule ~src ?(cost="0") ?(dst=[]) ?(cnd=[]) () : string =
-    let arr l = "(" ^ Common.join "," l ^ ")" in
-    let b_to_s e = Environ.b_to_s e env in
-    let cnd = List.map b_to_s cnd in
-    let cnd = if List.length cnd = 0 then "" else
-      " :|: " ^ Common.join " && " cnd
-    in
-    if List.length dst = 0 then
-      ""
-    else
-      Printf.sprintf "%s -{%s}> Com_%d%s %s"
-        src cost (List.length dst) (arr dst) cnd
-  in
-  let rec translate (idx:int) : t -> int * string list =
-    let self env : string = call idx env in
-    function
-    | Sum (x, ub, s) ->
-      let (idx', rest) = translate (idx + 2) s in
-      idx' + 1,
-      [
-        (* Initialize the loop *)
-        rule
-          ~src:(self env)
-          ~dst:[call (idx + 1) (Environ.put x (Num 0) env)] ();
-        (* Transition of next iteration *)
-        rule ~src:(call (idx + 1) env) ~dst:[
-          call (idx + 2) (Environ.put x (Exp.n_inc (Var x)) env); (* next iter *)
-        ] ~cnd:[n_lt (Var x) ub] ();
-      ] @
-      rest
-      @ [
-        rule ~src:(call idx' env)
-          ~dst:[call (idx + 1) env]
-        ();
-        (* Transition of end of loop: *)
-        rule ~src:(call (idx + 1) env) ~cnd:[n_ge (Var x) ub]
-            ~dst:[call (idx' + 1) env] ();
-      ]
-    | Add l ->
-      List.fold_right (fun (s:t) ((idx:int), l1) ->
-        let (idx, l2) = translate idx s in
-        (idx, l1 @ l2)
-      ) l (idx, [])
-    | Const k ->
-      idx + 1,
-      [
-        rule
-          ~src:(self env)
-          ~cost:(string_of_int k)
-          ~dst:[call (idx+1) env] ();
-      ]
-  in
-  let (idx, l) = translate 0 s in
-  let rules = (l @ [rule ~src:(call idx env) ()])
-  |> Common.join "\n"
-  in
-  "(GOAL COMPLEXITY)\n" ^
-  "(STARTTERM (FUNCTIONSYMBOLS inst_0))\n" ^
-  "(VAR " ^ Common.join " " (Array.to_list env.data) ^ ")\n" ^
-  "(RULES\n" ^
-  rules ^
-  "\n)"
-
-
-let cleanup_koat (env:Environ.t) (x:string) : string option =
-  let (let*) = Option.bind in
-  let* (x, _) = Common.split '{' x in
-  let x = Environ.decode (String.trim x) env |> Str.global_replace r_id "\\1" in
-  Some x
-
-let run_koat ?(exe="koat2") ?(verbose=false) (s:t) : string =
-  let env = fvs s Fvs.empty |> Environ.from_fvs in
-  let expr = to_koat env s in
-  (if verbose
-    then prerr_endline ("KoAT output:\n" ^ expr ^ "\n")
-    else ());
-  let data = run_prog ~out:expr ~exe ["analyse"; "-i"; "/dev/stdin"] in
-  match data |> cleanup_koat env with
-  | Some x -> x
-  | None ->
-    data
-
-(* ---------------------------- end of solvers ------------------------ *)
+  fvs Environ.Fvs.empty s |> Environ.from_fvs
 
 let pow_base (name:string) : int option =
   match Common.split 'w' name with
@@ -653,14 +334,38 @@ let rec n_pow ~base (e:Exp.nexp) : Exp.nexp =
   | Bin (Minus, e1, e2) -> n_div (n_pow ~base e1) (n_pow ~base e2)
   | _ -> NCall ("pow" ^ string_of_int base, e)
 
-let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) : Shared_access.t -> t =
-  function
-  | Index a -> Const (Index_analysis.analyze num_banks thread_count locs a.index)
-  | Cond (_, p) -> from_slice num_banks thread_count locs p
-  | Loop (r, p) ->
+(* Given a range, try to build a Sum *)
+let sum (r:Range.t) (s:t) : t option =
+  if s = Const 0 then Some (Const 0)
+  else
     match r with
+    | {step = Plus (Num 1); _} ->
+      let b : Interval.t = {
+        var = r.var;
+        first_elem = r.lower_bound;
+        last_elem = n_dec r.upper_bound;
+      } in
+      Some (Sum (b, s))
+
+    | {step = Plus k; _} ->
+      let open Exp in
+      (*
+                ub - lb
+        iters = -------
+                    k
+      *)
+      let iters = n_div (n_minus r.upper_bound r.lower_bound) k in
+      (* x := k (x + lb + 1) *)
+      let new_range_var = n_mult (n_plus (Var r.var) (n_inc r.lower_bound)) k in
+      let s = subst (r.var, new_range_var) s in
+      let b : Interval.t = {
+        var = r.var;
+        first_elem = Num 1;
+        last_elem = iters;
+      } in
+      Some (Sum (b, s))
+
     | {
-        var=x;
         step = Mult (Num k);
         _
       } when k >= 2 ->
@@ -676,31 +381,38 @@ let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) :
             for (x = 25; x < 100; x *= 2) ->
               25, 50 <- log2 (100 / 3) = log2(100) - log2(3)
               25*2^0, 25*2^1
-         *)
+          *)
       let iters =
         (* we use subtraction of logs, rather than division of args of logs
-           because ultimately we want to simplify the logs. *)
+            because ultimately we want to simplify the logs. *)
         n_minus (n_log ~base:k r.upper_bound) (n_log ~base:k r.lower_bound)
       in
       (* In summations we start with base 1; we decrement 1 so that we start in base 2^0 *)
       let new_range_var = n_mult (r.lower_bound) (n_pow ~base:k (n_dec (Var r.var))) in
-      let p = Shared_access.subst (r.var, new_range_var) p in
-      (match from_slice num_banks thread_count locs p with
-      | Const 0 -> Const 0
-      | s -> Sum (x, iters, s))
-    | {step = Plus k; _} ->
-      let open Exp in
-      (*
-                ub - lb
-        iters = -------
-                   k
-      *)
-      let iters = n_div (n_minus r.upper_bound r.lower_bound) k in
-      (* x := k (x + lb + 1) *)
-      let new_range_var = n_mult (n_plus (Var r.var) (n_inc r.lower_bound)) k in
-      let p = Shared_access.subst (r.var, new_range_var) p in
-      (*  (ub-lb)/k *)
-      (match from_slice num_banks thread_count locs p with
-      | Const 0 -> Const 0
-      | s -> Sum (r.var, iters, s))
-    | _ -> failwith ("Unsupported range: " ^ Range.to_string r)
+      let s = subst (r.var, new_range_var) s in
+      let b : Interval.t = {
+        var = r.var;
+        first_elem = Num 1;
+        last_elem = iters;
+      } in
+      Some (Sum (b, s))
+  | _ -> None
+
+let rec from_ra : Ra.t -> t =
+  function
+  | Ra.Tick k -> Const k
+  | Ra.Skip -> Const 0
+  | Ra.Seq (p, q) -> Add [from_ra p; from_ra q]
+  | Ra.Loop (r, p) ->
+    match sum r (from_ra p) with
+    | Some s -> s
+    | None -> failwith ("Unsupported range: " ^ Range.to_string r)
+
+let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) : Shared_access.t -> t =
+  function
+  | Index a -> Const (Index_analysis.analyze num_banks thread_count locs a.index)
+  | Cond (_, p) -> from_slice num_banks thread_count locs p
+  | Loop (r, p) ->
+    match sum r (from_slice num_banks thread_count locs p) with
+    | Some s -> s
+    | None -> failwith ("Unsupported range: " ^ Range.to_string r)
