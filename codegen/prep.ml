@@ -133,6 +133,5 @@ let prepare_kernel
   in
   if racuda then k
                  |> set_block_dim thread_count
-                 |> slice_protocol thread_count
-                 |> flatten_multi_dim
+                 |> Shared_access.simplify_kernel thread_count
   else k
