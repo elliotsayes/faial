@@ -119,7 +119,9 @@ let prepare_kernel
     (racuda : bool)
     (thread_count : Vec3.t)
     (k : prog kernel)
-  : prog kernel =
+  :
+    prog kernel
+  =
   let k = k
           |> constant_folding
           |> remove_unused_variables

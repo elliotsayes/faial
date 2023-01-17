@@ -32,7 +32,9 @@ let corvo
     (racuda : bool)
     (toml : bool)
     (thread_count : Vec3.t)
-  : unit =
+  :
+    unit
+  =
   let prepare_kernel = Prep.prepare_kernel racuda thread_count in
   let kernels = read_kernels input_file |> List.map prepare_kernel in
   let generator = if toml then Tgen.gen_toml racuda else Cgen.gen_cuda racuda in

@@ -101,7 +101,9 @@ let var_to_dummy (v : Variable.t) : string =
 let acc_expr_to_dummy
     (x, a : Variable.t * Access.t)
     (racuda : bool)
-  : Indent.t list =
+  :
+    Indent.t list
+  =
   let n_to_s = if racuda then n_to_s else Exp.n_to_string in
   let var = var_name x ^ idx_to_s n_to_s a.Access.index in
   match a.Access.mode with
@@ -217,6 +219,13 @@ let arr_to_dummy (vm : Memory.t VarMap.t) : Indent.t list =
   |> List.map (fun (k, v) -> 
       Indent.Line (arr_type v ~strip_const:true ^ " " ^ var_to_dummy k ^ ";"))
 
+(* Serialization of the kernel header *)
+let header_to_s (racuda : bool) (k : prog kernel) : Indent.t =
+  let type_decls = if racuda then [] else decl_unknown_types k.kernel_arrays in
+  let defines = if racuda then ["#define extern __device__"] else [] in
+  let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
+  Indent.Line (type_decls @ defines @ funct_protos |> Common.join "\n")
+
 (* Serialization of the kernel body *)
 let body_to_s (f : prog -> Indent.t list) (k : prog kernel) : Indent.t =
   let shared_arr = k.kernel_arrays
@@ -232,10 +241,9 @@ let kernel_to_s
     (f : prog -> Indent.t list)
     (racuda : bool)
     (k : prog kernel)
-  : Indent.t list =
-  let open Indent in
-  let type_decls = if racuda then [] else decl_unknown_types k.kernel_arrays in
-  let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
+  :
+    Indent.t list
+  =
   let global_arr = k.kernel_arrays
                    |> VarMap.filter (fun _ -> Memory.is_global)
                    |> global_arr_to_l
@@ -243,10 +251,10 @@ let kernel_to_s
   let global_var = global_var_to_l k.kernel_global_variables in
   let params = global_arr @ global_var |> Common.join ", " in
   [
-    Line (type_decls @ funct_protos |> Common.join "\n");
+    header_to_s racuda k;
     Line ("__global__ void " ^ k.kernel_name ^ "(" ^ params ^ ")");
     Line "{";
-    (body_to_s f k);
+    body_to_s f k;
     Line "}"
   ]
 
