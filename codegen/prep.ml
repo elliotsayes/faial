@@ -6,11 +6,6 @@ open Proto
 module VarSet = Variable.Set
 module VarMap = Variable.Map
 
-(* Rename the kernel to prevent parsing errors *)
-let rename_kernel (k : prog kernel) : prog kernel =
-  let name = if k.kernel_name = "main" then "kernel" else k.kernel_name in
-  {k with kernel_name = name}
-
 (* Use constant folding to simplify the code *)
 let constant_folding (k : prog kernel) : prog kernel =
   let code = p_opt k.kernel_code in
@@ -126,7 +121,6 @@ let prepare_kernel
     (k : prog kernel)
   : prog kernel =
   let k = k
-          |> rename_kernel
           |> constant_folding
           |> remove_unused_variables
           |> mk_types_compatible racuda
