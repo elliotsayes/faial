@@ -31,7 +31,7 @@ let corvo
     (output_file : string)
     (racuda : bool)
     (toml : bool)
-    (thread_count : Vec3.t)
+    (thread_count : Vec3.t option)
   :
     unit
   =
@@ -59,31 +59,32 @@ let toml =
   let doc = "Generate a TOML file." in
   Arg.(value & flag & info ["t"; "toml"] ~doc)
 
-let vec3 : Vec3.t Cmdliner.Arg.conv =
+let vec3 : Vec3.t option Cmdliner.Arg.conv =
   let parse =
     fun s ->
       try
         match Yojson.Basic.from_string s with
-        | `List [`Int x; `Int y; `Int z] -> Ok (Vec3.make ~x ~y ~z)
-        | `List [`Int x; `Int y] -> Ok (Vec3.make ~x ~y ~z:1)
-        | `List [`Int x] | `Int x -> Ok (Vec3.make ~x:x ~y:1 ~z:1)
+        | `List [`Int x; `Int y; `Int z] -> Ok (Some (Vec3.make ~x ~y ~z))
+        | `List [`Int x; `Int y] -> Ok (Some (Vec3.make ~x ~y ~z:1))
+        | `List [`Int x] | `Int x -> Ok (Some (Vec3.make ~x:x ~y:1 ~z:1))
         | _ -> Error (`Msg ("Expecting a number of a list of " ^
                             " up to 3 numbers (eg, [x,y,z])"))
       with
         _ -> Error (`Msg ("Error parsing vec3"))
   in
-  let print : Vec3.t Cmdliner.Arg.printer =
-    fun ppf v -> Format.fprintf ppf "%s" (Vec3.to_string v)
+  let print : Vec3.t option Cmdliner.Arg.printer =
+    fun ppf v -> match v with
+      | Some v -> Format.fprintf ppf "%s" (Vec3.to_string v)
+      | None -> Format.fprintf ppf "%s" "[blockDim.x, blockDim.y, blockDim.z]"
   in
   Arg.conv (parse, print)
 
 let thread_count =
   let doc = "Set the number of threads per block. " ^
-            "Examples: --blockDim 1024\n--blockDim [16,16]. " ^
-            "Only used if --racuda flag is enabled."
+            "Examples: --blockDim 1024\n--blockDim [16,16]. "
   in
-  Arg.(value & opt vec3 (Vec3.make ~x:1024 ~y:1 ~z:1) &
-       info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
+  Arg.(value & opt vec3 None & info ["b"; "block-dim"; "blockDim"]
+         ~docv:"BLOCK_DIM" ~doc)
 
 let corvo_t = Term.(
     const corvo
