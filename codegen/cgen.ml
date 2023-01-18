@@ -43,11 +43,9 @@ let vector_types : StringSet.t =
    "short"; "uchar"; "uint"; "ulong"; "ulonglong"; "ushort"]
   |> StringSet.of_list
 
-let cuda_protos : string list =
-  ["extern __device__ int __dummy_int();"]
+let cuda_protos : string list = ["extern __device__ int __dummy_int();"]
 
-let racuda_protos : string list =
-  ["extern int __dummy_int();"]
+let racuda_protos : string list = ["extern int __dummy_int();"]
 
 (* ----------------- serialization -------------------- *)
 let var_name (v : Variable.t) : string = v.name
@@ -94,16 +92,11 @@ and b_par (b : bexp) : string =
   | BRel _ -> "("  ^ b_to_s b ^ ")"
 
 (* Gives the dummy variable string for any variable *)
-let var_to_dummy (v : Variable.t) : string =
-  "__dummy" ^ var_name v
+let var_to_dummy (v : Variable.t) : string = "__dummy" ^ var_name v
 
 (* Gives the dummy instruction for any array read/write *)
-let acc_expr_to_dummy
-    (x, a : Variable.t * Access.t)
-    (racuda : bool)
-  :
-    Indent.t list
-  =
+let acc_expr_to_dummy (x, a : Variable.t * Access.t) (racuda : bool)
+  : Indent.t list =
   let n_to_s = if racuda then n_to_s else Exp.n_to_string in
   let var = var_name x ^ idx_to_s n_to_s a.Access.index in
   match a.Access.mode with
@@ -132,10 +125,9 @@ let rec inst_to_s (racuda : bool) : inst -> Indent.t list = function
   | Loop (r, p) ->
     let x = var_name r.var in
     let n_to_s = if racuda then n_to_s else Exp.n_to_string in
-    let simplify = fun n -> n_plus (Num (-1)) n |> Constfold.n_opt in
     let lb, ub, op = match r.dir with
       | Increase -> r.lower_bound, r.upper_bound, " < "
-      | Decrease -> simplify r.upper_bound, simplify r.lower_bound, " > "
+      | Decrease -> n_dec r.upper_bound, n_dec r.lower_bound, " > "
     in
     [ 
       Line ("for (" ^ "int " ^ x ^ " = " ^ n_to_s lb ^ "; " ^ x
@@ -177,8 +169,8 @@ let base_protos (racuda : bool) : string list =
 (* Gets the type of an array, defaulting to int if it is unknown *)
 let arr_type ?(strip_const=false) (arr : Memory.t) : string =
   if arr.data_type = [] then "int"
-  else if strip_const then List.filter (fun x -> x <> "const") arr.data_type
-                           |> Common.join " "
+  else if strip_const then
+    List.filter (fun x -> x <> "const") arr.data_type |> Common.join " "
   else Common.join " " arr.data_type
 
 (* Create external function prototypes for writing to each array *)
@@ -190,8 +182,7 @@ let arr_to_proto (vm : Memory.t VarMap.t) (racuda : bool) : string list =
 
 (* Helper functions for making kernel parameters *)
 let global_arr_to_l (vm : Memory.t VarMap.t) : string list =
-  VarMap.bindings vm
-  |> List.map (fun (k, v) -> arr_type v ^ " *" ^ var_name k)
+  VarMap.bindings vm |> List.map (fun (k, v) -> arr_type v ^ " *" ^ var_name k)
 
 let global_var_to_l (vs : VarSet.t) : string list =
   VarSet.elements (VarSet.diff vs thread_globals)
@@ -208,8 +199,8 @@ let arr_to_shared (vm : Memory.t VarMap.t) : Indent.t list =
 let local_var_to_l (vs : VarSet.t) : Indent.t list =
   (* A local variable must not be a tid/dummy variable *)
   VarSet.diff vs thread_locals
-  |> VarSet.filter (fun v -> not
-                       (String.starts_with ~prefix:"__dummy" (var_name v)))
+  |> VarSet.filter (fun v ->
+      not (String.starts_with ~prefix:"__dummy" (var_name v)))
   |> VarSet.elements
   (* Use a single function to initialize all local variables *)
   |> List.map (fun v -> Indent.Line ("int " ^ var_name v ^ " = __dummy_int();"))
@@ -237,13 +228,8 @@ let body_to_s (f : prog -> Indent.t list) (k : prog kernel) : Indent.t =
   Indent.Block (shared_arr @ local_var @ dummy_var @ (f k.kernel_code))
 
 (* Serialization of the kernel *)
-let kernel_to_s
-    (f : prog -> Indent.t list)
-    (racuda : bool)
-    (k : prog kernel)
-  :
-    Indent.t list
-  =
+let kernel_to_s (f : prog -> Indent.t list) (racuda : bool) (k : prog kernel)
+  : Indent.t list =
   let global_arr = k.kernel_arrays
                    |> VarMap.filter (fun _ -> Memory.is_global)
                    |> global_arr_to_l

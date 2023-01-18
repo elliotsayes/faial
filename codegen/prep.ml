@@ -60,14 +60,16 @@ let mk_types_compatible (racuda : bool) (k : prog kernel) : prog kernel =
     function
     | [] -> []
     (* Unknown/incompatible types are converted to int in RaCUDA output *)
-    | [last_type] -> if racuda then
+    | [last_type] ->
+      if racuda then
         match last_type with
         | "char" | "double" | "float" | "int" | "void" -> [last_type]
         | "long" | "short" -> if shared then ["int"] else [last_type]
         | _ -> ["int"]
       else [remove_template last_type]
     (* Remove unsigned modifier to make shared arrays RaCUDA-friendly *)
-    | modifier :: types -> if racuda && shared && modifier = "unsigned"
+    | modifier :: types ->
+      if racuda && shared && modifier = "unsigned" || modifier = "typename"
       then convert_type shared types
       else modifier :: convert_type shared types
   in
@@ -97,9 +99,7 @@ let simplify_kernel
     (racuda : bool)
     (thread_count : Vec3.t option)
     (k : prog kernel)
-  :
-    prog kernel
-  =
+  : prog kernel =
   match racuda, thread_count with
   | true, Some thread_count -> Shared_access.simplify_kernel thread_count k
   | true, None -> Shared_access.simplify_kernel (Vec3.make ~x:1 ~y:1 ~z:1) k
@@ -110,9 +110,7 @@ let prepare_kernel
     (racuda : bool)
     (thread_count : Vec3.t option)
     (k : prog kernel)
-  :
-    prog kernel
-  =
+  : prog kernel =
   k
   |> set_block_dim thread_count
   |> constant_folding
