@@ -45,7 +45,8 @@ let vector_types : StringSet.t =
 
 let cuda_protos : string list = ["extern __device__ int __dummy_int();"]
 
-let racuda_protos : string list = ["extern int __dummy_int();"]
+let racuda_protos : string list =
+  ["extern __attribute__((device)) int __dummy_int();"]
 
 (* ----------------- serialization -------------------- *)
 let var_name (v : Variable.t) : string = v.name
@@ -162,7 +163,7 @@ let decl_unknown_types (vm : Memory.t VarMap.t) : string list =
   |> StringSet.of_list
   |> StringSet.elements
 
-(* Strip the __device__ modifier to make kernels RaCUDA-friendly *)
+(* Expand the __device__ modifier to make kernels RaCUDA-friendly *)
 let base_protos (racuda : bool) : string list =
   if racuda then racuda_protos else cuda_protos
 
@@ -175,7 +176,9 @@ let arr_type ?(strip_const=false) (arr : Memory.t) : string =
 
 (* Create external function prototypes for writing to each array *)
 let arr_to_proto (vm : Memory.t VarMap.t) (racuda : bool) : string list =
-  let modifiers = if racuda then "extern " else "extern __device__ " in
+  let modifiers = 
+    "extern " ^ if racuda then "__attribute__((device)) " else "__device__ "
+  in
   VarMap.bindings vm 
   |> List.map (fun (k, v) -> modifiers ^ arr_type v ~strip_const:true
                              ^ " " ^ var_to_dummy k ^ "_w();")
@@ -213,9 +216,8 @@ let arr_to_dummy (vm : Memory.t VarMap.t) : Indent.t list =
 (* Serialization of the kernel header *)
 let header_to_s (racuda : bool) (k : prog kernel) : Indent.t =
   let type_decls = if racuda then [] else decl_unknown_types k.kernel_arrays in
-  let defines = if racuda then ["#define extern __device__"] else [] in
   let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
-  Indent.Line (type_decls @ defines @ funct_protos |> Common.join "\n")
+  Indent.Line (type_decls @ funct_protos |> Common.join "\n")
 
 (* Serialization of the kernel body *)
 let body_to_s (f : prog -> Indent.t list) (k : prog kernel) : Indent.t =
