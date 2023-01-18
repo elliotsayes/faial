@@ -270,7 +270,7 @@ let simplify_kernel
     kernel_arrays = arrays;
   }
 
-let from_kernel (block_dim:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
+let from_kernel (params:Params.t) (k: Proto.prog Proto.kernel) : t Seq.t =
   let open Exp in
   let shared = shared_memory k.kernel_arrays in
   let rec on_i : Proto.inst -> t Seq.t =
@@ -294,7 +294,7 @@ let from_kernel (block_dim:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
     | Proto.Loop (r, p) ->
       on_p p
       |> Seq.map (fun i ->
-        match uniform block_dim r with
+        match uniform params.block_dim r with
         | Some r' ->
           let cnd =
             b_and
@@ -309,4 +309,7 @@ let from_kernel (block_dim:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
   and on_p (l: Proto.prog) : t Seq.t =
     List.to_seq l |> Seq.flat_map on_i
   in
-  on_p k.kernel_code
+  k.kernel_code
+  |> Proto.subst_block_dim params.block_dim
+  |> Proto.subst_grid_dim params.grid_dim
+  |> on_p

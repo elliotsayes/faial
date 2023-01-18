@@ -150,6 +150,25 @@ let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =
     }
   end
 
+
+let subst_block_dim (block_dim:Vec3.t) (p:prog) : prog =
+  let subst x n p =
+    PSubstPair.p_subst (Variable.from_name x, Num n) p
+  in
+  p
+  |> subst "blockDim.x" block_dim.x
+  |> subst "blockDim.y" block_dim.y
+  |> subst "blockDim.z" block_dim.z
+
+let subst_grid_dim (grid_dim:Vec3.t) (p:prog) : prog =
+  let subst x n p =
+    PSubstPair.p_subst (Variable.from_name x, Num n) p
+  in
+  p
+  |> subst "gridDim.x" grid_dim.x
+  |> subst "gridDim.y" grid_dim.y
+  |> subst "gridDim.z" grid_dim.z
+
 let p_cond (b:bexp) (p:prog) : prog =
   match b, p with
   | Bool true, _ -> p

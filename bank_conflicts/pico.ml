@@ -12,7 +12,6 @@ let print_cost
   ?(use_cofloco=false)
   ?(use_koat=false)
   ?(explain=true)
-  ?(num_banks=32)
   ?(absynth_exe="absynth")
   ?(cofloco_exe="cofloco")
   ?(koat_exe="koat2")
@@ -20,22 +19,13 @@ let print_cost
   ?(maxima_exe="maxima")
   ?(show_ra=false)
   ?(skip_simpl_ra=true)
-  (block_dim:Vec3.t)
+  ~params
   (k : Proto.prog Proto.kernel)
 :
   unit
 =
-  let subst x n p =
-    Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p in
-  let p =
-    k.kernel_code
-    |> subst "blockDim.x" block_dim.x
-    |> subst "blockDim.y" block_dim.y
-    |> subst "blockDim.z" block_dim.z
-  in
-  let k = { k with kernel_code = p } in
   let with_ra (k:Proto.prog Proto.kernel) : unit =
-    let r = Ra.from_kernel num_banks block_dim k in
+    let r = Ra.from_kernel params k in
     let r = if skip_simpl_ra then r else Ra.simplify r in
     (if show_ra then (Ra.to_string r |> print_endline) else ());
     match
@@ -79,10 +69,10 @@ let print_cost
       else
         Ok (Symbolic.simplify s)
     in
-    Shared_access.from_kernel block_dim { k with kernel_code = p }
+    Shared_access.from_kernel params k
     |> Seq.iter (fun s ->
       (* Convert a slice into an expression *)
-      let s1 = Symbolic.from_slice num_banks block_dim k.kernel_local_variables s in
+      let s1 = Symbolic.from_slice params k.kernel_local_variables s in
       if skip_zero && Symbolic.is_zero s1 then
         ()
       else
@@ -123,6 +113,7 @@ let print_cost
 let pico
   (fname : string)
   (block_dim:Vec3.t)
+  (grid_dim:Vec3.t)
   (use_maxima:bool)
   (use_absynth:bool)
   (use_cofloco:bool)
@@ -139,6 +130,7 @@ let pico
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
+    let params = Params.make ~block_dim ~grid_dim () in
     let c_ast = parsed_json |> C_lang.parse_program |> Result.get_ok in
     let d_ast = c_ast |> D_lang.rewrite_program in
     let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
@@ -158,7 +150,7 @@ let pico
         ~cofloco_exe
         ~koat_exe
         ~skip_simpl_ra
-        block_dim
+        ~params
         k
     ) proto
   with
@@ -194,6 +186,10 @@ let vec3 : Vec3.t Cmdliner.Arg.conv =
 let block_dim =
   let doc = "Sets the CUDA variable blockDim, the number of threads per block.\nExamples:\n--blockDim 1024\n--blockDim [16,16]." in
   Arg.(value & opt vec3 (Vec3.make ~x:1024 ~y:1 ~z:1) & info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
+
+let grid_dim =
+  let doc = "Sets the CUDA variable gridDim, the number of blocks per grid.\nExamples:\n--gridDim 1024\n--gridDim [16,16]." in
+  Arg.(value & opt vec3 (Vec3.make ~x:1 ~y:1 ~z:1) & info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
 
 let absynth_exe =
   let doc = "Sets the path to the absynth executable." in
@@ -251,6 +247,7 @@ let pico_t = Term.(
   const pico
   $ get_fname
   $ block_dim
+  $ grid_dim
   $ use_maxima
   $ use_absynth
   $ use_cofloco

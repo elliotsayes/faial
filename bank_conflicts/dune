@@ -1,7 +1,8 @@
 (library
   (name bank_conflicts)
   (modules
-    vec3 vectorized poly shared_access index_analysis ra
+    vectorized poly shared_access index_analysis ra
+    params
     absynth
     maxima
     cofloco
