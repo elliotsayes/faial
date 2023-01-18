@@ -31,7 +31,7 @@ let shared_arrays (k:Proto.prog Proto.kernel) : Variable.Set.t =
 let create_ctx ~bank_count ~env:(env:(string*int) list) ~arrays : Vectorized.t =
   let use_array x = Variable.Set.mem x arrays in
   let ctx = Vectorized.make ~bank_count ~warp_count:bank_count ~use_array
-    |> Vectorized.put_tids (Vec3.make ~x:bank_count ~y:1 ~z:1)
+    |> Vectorized.put_tids (Dim3.{x=bank_count; y=1; z=1})
   in
   List.fold_left (fun ctx ((k:string), (v:int)) ->
     print_endline (k ^ " = " ^ string_of_int v);

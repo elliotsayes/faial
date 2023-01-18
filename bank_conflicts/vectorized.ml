@@ -143,7 +143,7 @@ let put (x:Variable.t) (v:NMap.t) (ctx:t) : t =
 let zero_cost (ctx:t) : NMap.t =
   NMap.constant ~count:ctx.bank_count ~value:0
 
-let put_tids (block_dim:Vec3.t) (ctx:t) : t =
+let put_tids (block_dim:Dim3.t) (ctx:t) : t =
   let wids = NMap.make ctx.warp_count (fun x -> x) in
   let n_tidx = NMap.map (fun id ->
     id mod block_dim.x) wids

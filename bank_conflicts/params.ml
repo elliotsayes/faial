@@ -1,8 +1,8 @@
 open Protocols
 
 type t = {
-  block_dim: Vec3.t;
-  grid_dim: Vec3.t;
+  block_dim: Dim3.t;
+  grid_dim: Dim3.t;
   num_banks: int;
   warp_count: int;
 }

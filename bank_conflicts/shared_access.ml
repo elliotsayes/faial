@@ -60,7 +60,7 @@ type array_size = { byte_count: int; dim: int list}
 (*
   Maximizes the given expression, and replaces tids by concrete values.
   *)
-let maximize ?(timeout=100) (block_dim:Vec3.t) (n:Exp.nexp) : (Variable.t * Exp.nexp) list =
+let maximize ?(timeout=100) (block_dim:Dim3.t) (n:Exp.nexp) : (Variable.t * Exp.nexp) list =
   let open Exp in
   let solve
     (opt:Z3.Optimize.optimize)
@@ -146,7 +146,7 @@ let maximize ?(timeout=100) (block_dim:Vec3.t) (n:Exp.nexp) : (Variable.t * Exp.
         Variable.tidz, Num 0
       ])
 
-let uniform (block_dim:Vec3.t) (r:Range.t) : Range.t option =
+let uniform (block_dim:Dim3.t) (r:Range.t) : Range.t option =
   let open Exp in
   let fvs = Freenames.free_names_range r Variable.Set.empty in
   if Variable.contains_tids fvs then
@@ -211,7 +211,7 @@ let shared_memory (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t = V
   ) mem
 
 let simplify_kernel
-  (block_dim : Vec3.t)
+  (block_dim : Dim3.t)
   (k : Proto.prog Proto.kernel)
 :
   Proto.prog Proto.kernel

@@ -112,8 +112,8 @@ let print_cost
 
 let pico
   (fname : string)
-  (block_dim:Vec3.t)
-  (grid_dim:Vec3.t)
+  (block_dim:Dim3.t option)
+  (grid_dim:Dim3.t option)
   (use_maxima:bool)
   (use_absynth:bool)
   (use_cofloco:bool)
@@ -130,11 +130,19 @@ let pico
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
+    let gv = Gv_parser.parse fname |> Option.value ~default:Gv_parser.default in
+    let kvs = Gv_parser.to_assoc gv in
+    let block_dim = block_dim |> Option.value ~default:gv.block_dim in
+    let grid_dim = grid_dim |> Option.value ~default:gv.grid_dim in
     let params = Params.make ~block_dim ~grid_dim () in
     let c_ast = parsed_json |> C_lang.parse_program |> Result.get_ok in
     let d_ast = c_ast |> D_lang.rewrite_program in
     let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
-    let proto = imp |> List.map Imp.compile in
+    let proto =
+      imp
+      |> List.map Imp.compile
+      |> List.map (Proto.replace_constants kvs)
+    in
     List.iter (fun k ->
       print_cost
         ~explain
@@ -162,34 +170,30 @@ let pico
 
 open Cmdliner
 
+
+let dim3 : Dim3.t Cmdliner.Arg.conv =
+  let parse =
+    fun s ->
+      match Dim3.parse s with
+      | Ok r -> Ok r
+      | Error e -> Error (`Msg e)
+  in
+  let print : Dim3.t Cmdliner.Arg.printer =
+    fun ppf v -> Format.fprintf ppf "%s" (Dim3.to_string v)
+  in
+  Arg.conv (parse, print)
+
 let get_fname = 
   let doc = "The path $(docv) of the GPU program." in
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
 
-let vec3 : Vec3.t Cmdliner.Arg.conv =
-  let parse =
-    fun s ->
-    try
-      match Yojson.Basic.from_string s with
-      | `List [`Int x; `Int y; `Int z] -> Ok (Vec3.make ~x ~y ~z)
-      | `List [`Int x; `Int y] -> Ok (Vec3.make ~x ~y ~z:1)
-      | `List [`Int x] | `Int x -> Ok (Vec3.make ~x:x ~y:1 ~z:1)
-      | _ -> Error (`Msg "Expecting a number of a list of up to 3 numbers (eg, [x,y,z])")
-    with
-      _ -> Error (`Msg ("Error parsing vec3"))
-  in
-  let print : Vec3.t Cmdliner.Arg.printer =
-    fun ppf v -> Format.fprintf ppf "%s" (Vec3.to_string v)
-  in
-  Arg.conv (parse, print)
-
 let block_dim =
   let doc = "Sets the CUDA variable blockDim, the number of threads per block.\nExamples:\n--blockDim 1024\n--blockDim [16,16]." in
-  Arg.(value & opt vec3 (Vec3.make ~x:1024 ~y:1 ~z:1) & info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
+  Arg.(value & opt (some dim3) None & info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
 
 let grid_dim =
   let doc = "Sets the CUDA variable gridDim, the number of blocks per grid.\nExamples:\n--gridDim 1024\n--gridDim [16,16]." in
-  Arg.(value & opt vec3 (Vec3.make ~x:1 ~y:1 ~z:1) & info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
+  Arg.(value & opt (some dim3) None & info ["g"; "grid-dim"; "gridDim"] ~docv:"GRID_DIM" ~doc)
 
 let absynth_exe =
   let doc = "Sets the path to the absynth executable." in
