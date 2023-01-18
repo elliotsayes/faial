@@ -85,10 +85,10 @@ let to_string (x:t) : string =
 let print (x:t) : unit =
   indent x |> Indent.print
 
-let from_kernel (num_banks:int) (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t =
+let from_kernel (num_banks:int) (block_dim:Vec3.t) (k: Proto.prog Proto.kernel) : t =
   let shared = Shared_access.shared_memory k.kernel_arrays in
   let idx_analysis : Exp.nexp -> int =
-    Index_analysis.analyze num_banks thread_count k.kernel_local_variables
+    Index_analysis.analyze num_banks block_dim k.kernel_local_variables
   in
   let rec from_i : Proto.inst -> t =
     function
@@ -106,7 +106,7 @@ let from_kernel (num_banks:int) (thread_count:Vec3.t) (k: Proto.prog Proto.kerne
     | Sync -> Skip
     | Cond (_, p) -> from_p p
     | Loop (r, p) ->
-      let r = Shared_access.uniform thread_count r |> Ojson.unwrap_or r in
+      let r = Shared_access.uniform block_dim r |> Ojson.unwrap_or r in
       Loop (r, from_p p)
 
   and from_p (l: Proto.prog) : t =

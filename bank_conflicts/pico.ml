@@ -20,7 +20,7 @@ let print_cost
   ?(maxima_exe="maxima")
   ?(show_ra=false)
   ?(skip_simpl_ra=true)
-  (thread_count:Vec3.t)
+  (block_dim:Vec3.t)
   (k : Proto.prog Proto.kernel)
 :
   unit
@@ -29,13 +29,13 @@ let print_cost
     Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p in
   let p =
     k.kernel_code
-    |> subst "blockDim.x" thread_count.x
-    |> subst "blockDim.y" thread_count.y
-    |> subst "blockDim.z" thread_count.z
+    |> subst "blockDim.x" block_dim.x
+    |> subst "blockDim.y" block_dim.y
+    |> subst "blockDim.z" block_dim.z
   in
   let k = { k with kernel_code = p } in
   let with_ra (k:Proto.prog Proto.kernel) : unit =
-    let r = Ra.from_kernel num_banks thread_count k in
+    let r = Ra.from_kernel num_banks block_dim k in
     let r = if skip_simpl_ra then r else Ra.simplify r in
     (if show_ra then (Ra.to_string r |> print_endline) else ());
     match
@@ -79,10 +79,10 @@ let print_cost
       else
         Ok (Symbolic.simplify s)
     in
-    Shared_access.from_kernel thread_count { k with kernel_code = p }
+    Shared_access.from_kernel block_dim { k with kernel_code = p }
     |> Seq.iter (fun s ->
       (* Convert a slice into an expression *)
-      let s1 = Symbolic.from_slice num_banks thread_count k.kernel_local_variables s in
+      let s1 = Symbolic.from_slice num_banks block_dim k.kernel_local_variables s in
       if skip_zero && Symbolic.is_zero s1 then
         ()
       else
@@ -122,7 +122,7 @@ let print_cost
 
 let pico
   (fname : string)
-  (thread_count:Vec3.t)
+  (block_dim:Vec3.t)
   (use_maxima:bool)
   (use_absynth:bool)
   (use_cofloco:bool)
@@ -158,7 +158,7 @@ let pico
         ~cofloco_exe
         ~koat_exe
         ~skip_simpl_ra
-        thread_count
+        block_dim
         k
     ) proto
   with
@@ -191,8 +191,8 @@ let vec3 : Vec3.t Cmdliner.Arg.conv =
   in
   Arg.conv (parse, print)
 
-let thread_count =
-  let doc = "Set the number of threads per block.\nExamples:\n--blockDim 1024\n--blockDim [16,16]." in
+let block_dim =
+  let doc = "Sets the CUDA variable blockDim, the number of threads per block.\nExamples:\n--blockDim 1024\n--blockDim [16,16]." in
   Arg.(value & opt vec3 (Vec3.make ~x:1024 ~y:1 ~z:1) & info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
 
 let absynth_exe =
@@ -250,7 +250,7 @@ let show_code =
 let pico_t = Term.(
   const pico
   $ get_fname
-  $ thread_count
+  $ block_dim
   $ use_maxima
   $ use_absynth
   $ use_cofloco

@@ -80,7 +80,7 @@ end
       does _not_ contain any variables.
   4. Otherwise, return the max number of bank conflicts.
 *)
-let analyze (num_banks:int) (thread_count:Vec3.t) (thread_locals : Variable.Set.t) (n : Exp.nexp) : int =
+let analyze (num_banks:int) (block_dim:Vec3.t) (thread_locals : Variable.Set.t) (n : Exp.nexp) : int =
   let bc_fail (reason : string) : int =
     Printf.eprintf
       "WARNING: %s: %s\n"
@@ -101,7 +101,7 @@ let analyze (num_banks:int) (thread_count:Vec3.t) (thread_locals : Variable.Set.
         ~bank_count:num_banks
         ~warp_count:num_banks
         ~use_array:(fun _ -> true)
-      |> put_tids thread_count
+      |> put_tids block_dim
     in
     let n = OffsetAnalysis.remove_offset n in
     try

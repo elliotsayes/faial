@@ -408,11 +408,11 @@ let rec from_ra : Ra.t -> t =
     | Some s -> s
     | None -> failwith ("Unsupported range: " ^ Range.to_string r)
 
-let rec from_slice (num_banks:int) (thread_count:Vec3.t) (locs:Variable.Set.t) : Shared_access.t -> t =
+let rec from_slice (num_banks:int) (block_dim:Vec3.t) (locs:Variable.Set.t) : Shared_access.t -> t =
   function
-  | Index a -> Const (Index_analysis.analyze num_banks thread_count locs a.index)
-  | Cond (_, p) -> from_slice num_banks thread_count locs p
+  | Index a -> Const (Index_analysis.analyze num_banks block_dim locs a.index)
+  | Cond (_, p) -> from_slice num_banks block_dim locs p
   | Loop (r, p) ->
-    match sum r (from_slice num_banks thread_count locs p) with
+    match sum r (from_slice num_banks block_dim locs p) with
     | Some s -> s
     | None -> failwith ("Unsupported range: " ^ Range.to_string r)
