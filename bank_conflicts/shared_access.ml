@@ -211,7 +211,7 @@ let shared_memory (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t = V
   ) mem
 
 let simplify_kernel
-  (block_dim : Dim3.t)
+  (params:Params.t)
   (k : Proto.prog Proto.kernel)
 :
   Proto.prog Proto.kernel
@@ -238,7 +238,7 @@ let simplify_kernel
     | Cond (b, p) -> Cond (b, simpl_p p)
     | Loop (r, p) ->
       let p = simpl_p p in
-      (match uniform block_dim r with
+      (match uniform params.block_dim r with
       | Some r' ->
         let cnd =
           let open Exp in
@@ -266,7 +266,11 @@ let simplify_kernel
     )
   in
   { k with
-    kernel_code = simpl_p k.kernel_code;
+    kernel_code =
+      k.kernel_code
+      |> Proto.subst_block_dim params.block_dim
+      |> Proto.subst_grid_dim params.grid_dim
+      |> simpl_p;
     kernel_arrays = arrays;
   }
 
