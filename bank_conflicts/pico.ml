@@ -19,6 +19,7 @@ let print_cost
   ?(maxima_exe="maxima")
   ?(show_ra=false)
   ?(skip_simpl_ra=true)
+  ~only_cost
   ~params
   (k : Proto.prog Proto.kernel)
 :
@@ -43,15 +44,19 @@ let print_cost
       )
     with
     | Ok cost ->
-      print_string (k.kernel_name ^ ":\n");
-      PrintBox.(
-        cost
-        |> text
-        |> hpad 1
-        |> frame
+      if only_cost then (
+        print_endline cost
+      ) else (
+        print_string (k.kernel_name ^ ":\n");
+        PrintBox.(
+          cost
+          |> text
+          |> hpad 1
+          |> frame
+        )
+        |> PrintBox_text.to_string
+        |> print_endline
       )
-      |> PrintBox_text.to_string
-      |> print_endline
     | Error e ->
       prerr_endline (Errors.to_string e);
       exit (-1)
@@ -127,6 +132,7 @@ let pico
   (koat_exe:string)
   (maxima_exe:string)
   (skip_simpl_ra:bool)
+  (only_cost:bool)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
@@ -164,6 +170,7 @@ let pico
         ~koat_exe
         ~skip_simpl_ra
         ~params
+        ~only_cost
         k
     ) proto
   with
@@ -234,6 +241,10 @@ let use_cofloco =
   let doc = "Uses CoFloCo to simplify the cost of each access." in
   Arg.(value & flag & info ["cofloco"] ~doc)
 
+let only_cost =
+  let doc = "Only prints out the cost, no kernel name, and no UI flourishes. This option is only available when computing the total cost (default option)." in
+  Arg.(value & flag & info ["only-cost"] ~doc)
+
 let use_koat =
   let doc = "Uses KoAT2 to simplify the cost of each access." in
   Arg.(value & flag & info ["koat"] ~doc)
@@ -276,6 +287,7 @@ let pico_t = Term.(
   $ koat_exe
   $ maxima_exe
   $ skip_simpl_ra
+  $ only_cost
 )
 
 let info =
