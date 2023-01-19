@@ -130,7 +130,12 @@ let pico
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
-    let gv = Gv_parser.parse fname |> Option.value ~default:Gv_parser.default in
+    let gv = match Gv_parser.parse fname with
+      | Some gv ->
+        prerr_endline ("WARNING: parsed GV args: " ^ Gv_parser.to_string gv);
+        gv
+      | None -> Gv_parser.default
+    in
     let kvs = Gv_parser.to_assoc gv in
     let block_dim = block_dim |> Option.value ~default:gv.block_dim in
     let grid_dim = grid_dim |> Option.value ~default:gv.grid_dim in
