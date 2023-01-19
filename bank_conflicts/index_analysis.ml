@@ -80,12 +80,12 @@ end
       does _not_ contain any variables.
   4. Otherwise, return the max number of bank conflicts.
 *)
-let analyze (num_banks:int) (thread_count:Vec3.t) (thread_locals : Variable.Set.t) (n : Exp.nexp) : int =
+let analyze (params:Params.t) (thread_locals : Variable.Set.t) (n : Exp.nexp) : int =
   let bc_fail (reason : string) : int =
     Printf.eprintf
       "WARNING: %s: %s\n"
       reason (Exp.n_to_string n);
-    num_banks
+    params.num_banks
   in
   let thread_locals = Variable.Set.diff thread_locals Variable.tid_var_set in
   let fvs = Freenames.free_names_nexp n Variable.Set.empty in
@@ -98,10 +98,10 @@ let analyze (num_banks:int) (thread_count:Vec3.t) (thread_locals : Variable.Set.
     let ctx =
       let open Vectorized in
         make
-        ~bank_count:num_banks
-        ~warp_count:num_banks
+        ~bank_count:params.num_banks
+        ~warp_count:params.warp_count
         ~use_array:(fun _ -> true)
-      |> put_tids thread_count
+      |> put_tids params.block_dim
     in
     let n = OffsetAnalysis.remove_offset n in
     try

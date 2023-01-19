@@ -60,7 +60,7 @@ type array_size = { byte_count: int; dim: int list}
 (*
   Maximizes the given expression, and replaces tids by concrete values.
   *)
-let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * Exp.nexp) list =
+let maximize ?(timeout=100) (block_dim:Dim3.t) (n:Exp.nexp) : (Variable.t * Exp.nexp) list =
   let open Exp in
   let solve
     (opt:Z3.Optimize.optimize)
@@ -98,9 +98,9 @@ let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * E
         https://stackoverflow.com/questions/64484347/
       *)
       b_to_expr (n_ge x (Num 0));
-      restrict Variable.tidx thread_count.x;
-      restrict Variable.tidy thread_count.y;
-      restrict Variable.tidz thread_count.z;
+      restrict Variable.tidx block_dim.x;
+      restrict Variable.tidy block_dim.y;
+      restrict Variable.tidz block_dim.z;
     ]
   ;
   match solve opt (n_to_expr x) (fun m ->
@@ -146,7 +146,7 @@ let maximize ?(timeout=100) (thread_count:Vec3.t) (n:Exp.nexp) : (Variable.t * E
         Variable.tidz, Num 0
       ])
 
-let uniform (thread_count:Vec3.t) (r:Range.t) : Range.t option =
+let uniform (block_dim:Dim3.t) (r:Range.t) : Range.t option =
   let open Exp in
   let fvs = Freenames.free_names_range r Variable.Set.empty in
   if Variable.contains_tids fvs then
@@ -155,7 +155,7 @@ let uniform (thread_count:Vec3.t) (r:Range.t) : Range.t option =
         List.fold_left (fun r (k,v) -> Subst.ReplacePair.r_subst (k, v) r) r
       in
       let r' =
-        maximize thread_count (n_minus r.upper_bound r.lower_bound)
+        maximize block_dim (n_minus r.upper_bound r.lower_bound)
         |> r_subst r
       in
       print_endline ("Making range uniform: for (" ^ Range.to_string r ^ ") 🡆 for (" ^ Range.to_string r' ^ ")");
@@ -211,7 +211,7 @@ let shared_memory (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t = V
   ) mem
 
 let simplify_kernel
-  (thread_count : Vec3.t)
+  (params:Params.t)
   (k : Proto.prog Proto.kernel)
 :
   Proto.prog Proto.kernel
@@ -238,7 +238,7 @@ let simplify_kernel
     | Cond (b, p) -> Cond (b, simpl_p p)
     | Loop (r, p) ->
       let p = simpl_p p in
-      (match uniform thread_count r with
+      (match uniform params.block_dim r with
       | Some r' ->
         let cnd =
           let open Exp in
@@ -257,19 +257,24 @@ let simplify_kernel
   let arrays =
     k.kernel_arrays
     |> Variable.Map.map (fun m ->
+      let open Memory in
+      let m = { m with data_type = ["int"] } in
       if Memory.is_shared m && List.length m.size > 0 then (
-        let open Memory in
         { m with size = [ List.fold_left ( * ) 1 m.size ] }
       ) else
         m
     )
   in
   { k with
-    kernel_code = simpl_p k.kernel_code;
+    kernel_code =
+      k.kernel_code
+      |> Proto.subst_block_dim params.block_dim
+      |> Proto.subst_grid_dim params.grid_dim
+      |> simpl_p;
     kernel_arrays = arrays;
   }
 
-let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
+let from_kernel (params:Params.t) (k: Proto.prog Proto.kernel) : t Seq.t =
   let open Exp in
   let shared = shared_memory k.kernel_arrays in
   let rec on_i : Proto.inst -> t Seq.t =
@@ -293,7 +298,7 @@ let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
     | Proto.Loop (r, p) ->
       on_p p
       |> Seq.map (fun i ->
-        match uniform thread_count r with
+        match uniform params.block_dim r with
         | Some r' ->
           let cnd =
             b_and
@@ -308,4 +313,7 @@ let from_kernel (thread_count:Vec3.t) (k: Proto.prog Proto.kernel) : t Seq.t =
   and on_p (l: Proto.prog) : t Seq.t =
     List.to_seq l |> Seq.flat_map on_i
   in
-  on_p k.kernel_code
+  k.kernel_code
+  |> Proto.subst_block_dim params.block_dim
+  |> Proto.subst_grid_dim params.grid_dim
+  |> on_p

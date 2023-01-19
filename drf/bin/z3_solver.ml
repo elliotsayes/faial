@@ -80,7 +80,7 @@ end
 
 module Vec3 = struct
 	type t = {x : string; y: string; z: string;}
-	let mk ~x:x ~y:y ~z:z : t = {x=x; y=y; z=z}
+	let make ~x:x ~y:y ~z:z : t = {x=x; y=y; z=z}
 
 	let default : t = {x="?"; y="?"; z="?"}
 
@@ -110,6 +110,12 @@ module Vec3 = struct
 			{x=parse "x"; y=parse "y"; z=parse "z"}
 		in
 		(parse_vec "1", parse_vec "2")
+
+  let from_dim3 (d:Dim3.t) : t =
+    let x = string_of_int d.x in
+    let y = string_of_int d.y in
+    let z = string_of_int d.z in
+    make ~x ~y ~z
 
 end
 
