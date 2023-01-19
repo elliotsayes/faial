@@ -18,7 +18,7 @@ let default = {
 let to_string (x:t) : string =
   "{pass=" ^ (if x.pass then "true" else "false") ^
     ", block_dim=" ^ Dim3.to_string x.block_dim ^
-    ", grid_dim=" ^ Dim3.to_string x.grid_dim ^ ", options=[" ^ String.concat ", " x.options ^ "] }"
+    ", grid_dim=" ^ Dim3.to_string x.grid_dim ^ ", options=[" ^ String.concat ", " x.options ^ "]}"
 
 let to_assoc (x:t) : (string * int) list =
   Dim3.to_assoc ~prefix:"blockDim." x.block_dim @ Dim3.to_assoc ~prefix:"gridDim." x.grid_dim
