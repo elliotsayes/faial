@@ -160,7 +160,7 @@ let run
   |> Errors.handle_result (parse_cofloco env)
 
 let run_symbolic ?(verbose=false) ?(exe="cofloco") (s:Symbolic.t) : (string, Errors.t) Result.t =
-  let env = Symbolic.to_environ s in
+  let env = Symbolic.Default.to_environ s in
   let expr = from_symbolic s |> to_string env in
   run ~verbose ~exe env expr
 

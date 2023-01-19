@@ -14,7 +14,7 @@ let rec from_symbolic : Symbolic.t -> string =
   | Add l -> List.map from_symbolic l |> Common.join " + "
 
 let from_ra (r: Ra.t) : string =
-  Symbolic.from_ra r
+  Symbolic.Default.from_ra r
   |> from_symbolic
 
 let parse_maxima (x:string) : string option =

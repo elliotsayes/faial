@@ -29,6 +29,11 @@ type 'a kernel = {
   kernel_code: 'a;
 }
 
+let has_shared_arrays (k: 'a kernel) : bool =
+  Variable.Map.exists
+    (fun _ m -> Memory.is_shared m)
+    k.kernel_arrays
+
 let kernel_shared_arrays (k:'a kernel) : Variable.Set.t =
   k.kernel_arrays
   |> Variable.Map.filter (fun _ v -> Memory.is_shared v)

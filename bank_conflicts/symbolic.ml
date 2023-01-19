@@ -52,7 +52,7 @@ let rec to_string : t -> string =
   | Sum (b, s) -> "Σ_" ^ Interval.to_string b ^ " " ^ to_string s
   | Add l -> List.map to_string l |> Common.join " + "
 
-module Make (S:Subst.SUBST) = struct
+module MakeSubst (S:Subst.SUBST) = struct
   module M = Subst.Make(S)
   module B = Interval.Make(S)
 
@@ -70,8 +70,8 @@ module Make (S:Subst.SUBST) = struct
       Sum (b, p)
 end
 
-module PSubstAssoc = Make(Subst.SubstAssoc)
-module PSubstPair = Make(Subst.SubstPair)
+module PSubstAssoc = MakeSubst(Subst.SubstAssoc)
+module PSubstPair = MakeSubst(Subst.SubstPair)
 
 let subst : (Variable.t * Exp.nexp) -> t -> t = PSubstPair.subst
 
@@ -149,6 +149,9 @@ let sum power e : Exp.nexp =
 let n_fact (e:Exp.nexp) : Exp.nexp =
   NCall ("!", e)
 
+module Make (L:Logger.Logger) = struct
+  module I = Index_analysis.Make(L)
+
 let rec flatten : t -> (Exp.nexp, string) Result.t =
   let (let*) = Result.bind in
   function
@@ -205,7 +208,7 @@ let rec flatten : t -> (Exp.nexp, string) Result.t =
         Ok (Bin (Div, e, Num n))
       | NCall (f, Var y) when Variable.equal y x && String.starts_with ~prefix:"log" f ->
         let e = n_minus (n_mult ub (NCall (f, ub))) ub in
-        prerr_endline ("WARNING:  Σ" ^ f ^ "(!" ^ Variable.name x ^ ") ≈ " ^ Exp.n_to_string e);
+        L.info ("Simplification: Σ" ^ f ^ "(!" ^ Variable.name x ^ ") ≈ " ^ Exp.n_to_string e);
         Ok e
       | NCall (f, e) when String.starts_with ~prefix:"log" f && not (Freenames.mem_nexp x e) ->
         Ok (n_mult ub (NCall (f, e)))
@@ -251,8 +254,8 @@ let simplify (s : t) : string =
           |> List.of_seq
           |> Common.join " + "
         | None ->
-          prerr_endline (
-            "WARNING: Could not rewrite the expression as a " ^
+          L.warning (
+            "could not rewrite the expression as a " ^
             "polynomial in terms of " ^ Variable.name x ^
             ": " ^ Exp.n_to_string e
           );
@@ -268,10 +271,10 @@ let simplify (s : t) : string =
   | Ok e ->
     (try simpl e with
       Failure m ->
-      prerr_endline ("WARNING: simplify: " ^ m ^ ": " ^ to_string s);
+      L.warning ("simplify: " ^ m ^ ": " ^ to_string s);
       to_string s)
   | Error m ->
-    prerr_endline ("WARNING: simplify: " ^ m ^ ": " ^ to_string s);
+    L.warning ("simplify: " ^ m ^ ": " ^ to_string s);
     to_string s
 
 let rec to_ra : t -> Ra.t =
@@ -322,7 +325,7 @@ let rec n_log ~base (e:Exp.nexp) : Exp.nexp =
   | Bin (Minus, Num 1, e')
   | Bin (Plus, Num 1, e') ->
     let x = "log" ^ string_of_int base in
-    prerr_endline ("WARNING: " ^ x ^ "(" ^ Exp.n_to_string e ^ ") ≈ " ^ x ^ "(" ^ Exp.n_to_string e' ^ ")");
+    L.info ("Simplification: " ^ x ^ "(" ^ Exp.n_to_string e ^ ") ≈ " ^ x ^ "(" ^ Exp.n_to_string e' ^ ")");
     n_log ~base e'
   | _ ->
     NCall ("log" ^ string_of_int base, e)
@@ -410,9 +413,13 @@ let rec from_ra : Ra.t -> t =
 
 let rec from_slice (params:Params.t) (locs:Variable.Set.t) : Shared_access.t -> t =
   function
-  | Index a -> Const (Index_analysis.analyze params locs a.index)
+  | Index a -> Const (I.analyze params locs a.index)
   | Cond (_, p) -> from_slice params locs p
   | Loop (r, p) ->
     match sum r (from_slice params locs p) with
     | Some s -> s
     | None -> failwith ("Unsupported range: " ^ Range.to_string r)
+end
+
+module Default = Make(Logger.Colors)
+module Silent = Make(Logger.Silent)

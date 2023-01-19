@@ -133,7 +133,6 @@ let make ~bank_count ~warp_count ~use_array : t = {
 }
 
 let restrict (b:Exp.bexp) (ctx:t) : t =
-(*   print_endline ("Restrict: " ^ Serialize.PPrint.b_to_s b); *)
   let open Exp in
   { ctx with cond = b_and ctx.cond b }
 
