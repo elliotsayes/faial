@@ -134,6 +134,7 @@ let pico
   (maxima_exe:string)
   (skip_simpl_ra:bool)
   (only_cost:bool)
+  (ignore_absent:bool)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
@@ -156,10 +157,7 @@ let pico
       |> List.map (Proto.replace_constants kvs)
       |> List.filter Proto.has_shared_arrays
     in
-    if List.length proto = 0 then (
-      Logger.Colors.error "No kernels using __shared__ arrays found.";
-      exit (-1)
-    ) else
+    if ignore_absent || List.length proto > 0 then
       List.iter (fun k ->
         print_cost
           ~explain
@@ -179,6 +177,10 @@ let pico
           ~only_cost
           k
       ) proto
+    else (
+      Logger.Colors.error "No kernels using __shared__ arrays found.";
+      exit (-1)
+    )
   with
   | Common.ParseError b ->
       Buffer.output_buffer stderr b;
@@ -255,6 +257,10 @@ let use_koat =
   let doc = "Uses KoAT2 to simplify the cost of each access." in
   Arg.(value & flag & info ["koat"] ~doc)
 
+let ignore_absent =
+  let doc = "Makes it not an error to analyze a kernel without shared errors." in
+  Arg.(value & flag & info ["ignore-absent"] ~doc)
+
 let skip_simpl_ra =
   let doc = "By default we simplify the RA to improve performance of solvers." in
   Arg.(value & flag & info ["skip-simpl-ra"] ~doc)
@@ -294,6 +300,7 @@ let pico_t = Term.(
   $ maxima_exe
   $ skip_simpl_ra
   $ only_cost
+  $ ignore_absent
 )
 
 let info =
