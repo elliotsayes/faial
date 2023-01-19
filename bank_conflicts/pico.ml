@@ -19,6 +19,7 @@ let print_cost
   ?(maxima_exe="maxima")
   ?(show_ra=false)
   ?(skip_simpl_ra=true)
+  ~only_cost
   ~params
   (k : Proto.prog Proto.kernel)
 :
@@ -43,15 +44,19 @@ let print_cost
       )
     with
     | Ok cost ->
-      print_string (k.kernel_name ^ ":\n");
-      PrintBox.(
-        cost
-        |> text
-        |> hpad 1
-        |> frame
+      if only_cost then (
+        print_endline cost
+      ) else (
+        print_string (k.kernel_name ^ ":\n");
+        PrintBox.(
+          cost
+          |> text
+          |> hpad 1
+          |> frame
+        )
+        |> PrintBox_text.to_string
+        |> print_endline
       )
-      |> PrintBox_text.to_string
-      |> print_endline
     | Error e ->
       prerr_endline (Errors.to_string e);
       exit (-1)
@@ -127,10 +132,16 @@ let pico
   (koat_exe:string)
   (maxima_exe:string)
   (skip_simpl_ra:bool)
+  (only_cost:bool)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
-    let gv = Gv_parser.parse fname |> Option.value ~default:Gv_parser.default in
+    let gv = match Gv_parser.parse fname with
+      | Some gv ->
+        prerr_endline ("WARNING: parsed GV args: " ^ Gv_parser.to_string gv);
+        gv
+      | None -> Gv_parser.default
+    in
     let kvs = Gv_parser.to_assoc gv in
     let block_dim = block_dim |> Option.value ~default:gv.block_dim in
     let grid_dim = grid_dim |> Option.value ~default:gv.grid_dim in
@@ -159,6 +170,7 @@ let pico
         ~koat_exe
         ~skip_simpl_ra
         ~params
+        ~only_cost
         k
     ) proto
   with
@@ -188,11 +200,17 @@ let get_fname =
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
 
 let block_dim =
-  let doc = "Sets the CUDA variable blockDim, the number of threads per block.\nExamples:\n--blockDim 1024\n--blockDim [16,16]." in
+  let doc = "Sets the CUDA variable blockDim, the number of threads per block.\n" ^
+  "Input is a single integer or a list of integers, signifying the x, y, and z positions.\n" ^
+  "Default: '" ^ Dim3.to_string Gv_parser.default_block_dim ^ "'\n" ^
+  "Examples: '1024' and '[16,16]'" in
   Arg.(value & opt (some dim3) None & info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
 
 let grid_dim =
-  let doc = "Sets the CUDA variable gridDim, the number of blocks per grid.\nExamples:\n--gridDim 1024\n--gridDim [16,16]." in
+  let doc = "Sets the CUDA variable gridDim, the number of blocks per grid.\n" ^
+  "Input is a single integer or a list of integers, signifying the x, y, and z positions.\n" ^
+  "Default: '" ^ Dim3.to_string Gv_parser.default_grid_dim ^ "'\n" ^
+  " Examples: '1024' and '[16,16]'" in
   Arg.(value & opt (some dim3) None & info ["g"; "grid-dim"; "gridDim"] ~docv:"GRID_DIM" ~doc)
 
 let absynth_exe =
@@ -222,6 +240,10 @@ let use_absynth =
 let use_cofloco =
   let doc = "Uses CoFloCo to simplify the cost of each access." in
   Arg.(value & flag & info ["cofloco"] ~doc)
+
+let only_cost =
+  let doc = "Only prints out the cost, no kernel name, and no UI flourishes. This option is only available when computing the total cost (default option)." in
+  Arg.(value & flag & info ["only-cost"] ~doc)
 
 let use_koat =
   let doc = "Uses KoAT2 to simplify the cost of each access." in
@@ -265,6 +287,7 @@ let pico_t = Term.(
   $ koat_exe
   $ maxima_exe
   $ skip_simpl_ra
+  $ only_cost
 )
 
 let info =

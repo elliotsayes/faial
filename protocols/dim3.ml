@@ -13,10 +13,14 @@ let parse (s:string) : (t, string) Result.t =
     _ -> Error "Error parsing dim3"
 
 let to_string (d:t) : string =
-  let x = string_of_int d.x in
-  let y = string_of_int d.y in
-  let z = string_of_int d.z in
-  "[" ^ x ^ ", " ^ y ^ ", " ^ z ^ "]"
+  match d with
+  | { x=x; y=1; z=1} -> string_of_int x
+  | { x=x; y=y; z=1} -> "[" ^ string_of_int x ^ ", " ^ string_of_int y ^ "]"
+  | _ ->
+    let x = string_of_int d.x in
+    let y = string_of_int d.y in
+    let z = string_of_int d.z in
+    "[" ^ x ^ ", " ^ y ^ ", " ^ z ^ "]"
 
 let to_assoc ?(prefix="") (d:t) : (string * int) list =
   [

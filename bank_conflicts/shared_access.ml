@@ -139,7 +139,7 @@ let maximize ?(timeout=100) (block_dim:Dim3.t) (n:Exp.nexp) : (Variable.t * Exp.
   ) with
   | Some l -> l
   | None ->
-      (print_endline ("ERROR: could not maximize expression: " ^ Exp.n_to_string n);
+      (prerr_endline ("ERROR: could not maximize expression: " ^ Exp.n_to_string n);
       [
         Variable.tidx, Num 0;
         Variable.tidy, Num 0;
@@ -158,7 +158,7 @@ let uniform (block_dim:Dim3.t) (r:Range.t) : Range.t option =
         maximize block_dim (n_minus r.upper_bound r.lower_bound)
         |> r_subst r
       in
-      print_endline ("Making range uniform: for (" ^ Range.to_string r ^ ") 🡆 for (" ^ Range.to_string r' ^ ")");
+      prerr_endline ("Making range uniform: for (" ^ Range.to_string r ^ ") 🡆 for (" ^ Range.to_string r' ^ ")");
       r'
     )
   else None
@@ -175,7 +175,7 @@ let byte_count_multiplier (byte_count:int) (l:Exp.nexp list) : Exp.nexp list =
       n_mult (Num byte_count) (n_div n (Num word_size))
       ) l
     in
-    print_endline ("Applied byte-modifier : " ^ bs ^ " " ^ arr l  ^ " -> " ^ arr l');
+    prerr_endline ("Applied byte-modifier : " ^ bs ^ " " ^ arr l  ^ " -> " ^ arr l');
     l'
   )
 
