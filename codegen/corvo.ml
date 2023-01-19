@@ -3,9 +3,14 @@ open Inference
 open Bank_conflicts
 open Protocols
 
-(* Parses source parameters from the CUDA file *)
+(* Parses GV arguments from the CUDA file *)
 let read_params (fname : string) : Params.t =
-  let gv = Gv_parser.parse fname |> Option.value ~default:Gv_parser.default in
+  let gv = match Gv_parser.parse fname with
+    | Some gv ->
+      prerr_endline ("WARNING: parsed GV args: " ^ Gv_parser.to_string gv);
+      gv
+    | None -> Gv_parser.default
+  in
   let block_dim = gv.block_dim in
   let grid_dim = gv.grid_dim in
   Params.make ~block_dim ~grid_dim ()
