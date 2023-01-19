@@ -1,9 +1,17 @@
 open Stage0
 open Inference
 open Bank_conflicts
+open Protocols
 
-(* For parsing the CUDA file *)
-let read_kernels (fname : string) =
+(* Parses source parameters from the CUDA file *)
+let read_params (fname : string) : Params.t =
+  let gv = Gv_parser.parse fname |> Option.value ~default:Gv_parser.default in
+  let block_dim = gv.block_dim in
+  let grid_dim = gv.grid_dim in
+  Params.make ~block_dim ~grid_dim ()
+
+(* Parses a list of protocols from the CUDA file *)
+let read_kernels (fname : string) : Proto.prog Proto.kernel list =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
     let c_ast = parsed_json |> C_lang.parse_program |> Result.get_ok in
@@ -15,9 +23,9 @@ let read_kernels (fname : string) =
     Buffer.output_buffer stderr b;
     exit (-1)
 
-(* For generating the output file *)
-let write_string (filename : string) (data : string) : unit =
-  let oc = open_out filename in
+(* Generates the output file *)
+let write_string (fname : string) (data : string) : unit =
+  let oc = open_out fname in
   try
     output_string oc data;
     close_out oc
@@ -31,9 +39,9 @@ let corvo
     (output_file : string)
     (racuda : bool)
     (toml : bool)
-    (thread_count : Vec3.t option)
   : unit =
-  let prepare_kernel = Prep.prepare_kernel racuda thread_count in
+  let params = read_params input_file in
+  let prepare_kernel = Prep.prepare_kernel racuda params in
   let kernels = read_kernels input_file |> List.map prepare_kernel in
   let generator = if toml then Tgen.gen_toml racuda else Cgen.gen_cuda racuda in
   List.map generator kernels |> Common.join "\n" |> write_string output_file
@@ -57,40 +65,12 @@ let toml =
   let doc = "Generate a TOML file." in
   Arg.(value & flag & info ["t"; "toml"] ~doc)
 
-let vec3 : Vec3.t option Cmdliner.Arg.conv =
-  let parse =
-    fun s ->
-      try
-        match Yojson.Basic.from_string s with
-        | `List [`Int x; `Int y; `Int z] -> Ok (Some (Vec3.make ~x ~y ~z))
-        | `List [`Int x; `Int y] -> Ok (Some (Vec3.make ~x ~y ~z:1))
-        | `List [`Int x] | `Int x -> Ok (Some (Vec3.make ~x:x ~y:1 ~z:1))
-        | _ -> Error (`Msg ("Expecting a number of a list of " ^
-                            " up to 3 numbers (eg, [x,y,z])"))
-      with
-        _ -> Error (`Msg ("Error parsing vec3"))
-  in
-  let print : Vec3.t option Cmdliner.Arg.printer =
-    fun ppf v -> match v with
-      | Some v -> Format.fprintf ppf "%s" (Vec3.to_string v)
-      | None -> Format.fprintf ppf "%s" "[blockDim.x, blockDim.y, blockDim.z]"
-  in
-  Arg.conv (parse, print)
-
-let thread_count =
-  let doc = "Set the number of threads per block. " ^
-            "Examples: --blockDim 1024\n--blockDim [16,16]. "
-  in
-  Arg.(value & opt vec3 None & info ["b"; "block-dim"; "blockDim"]
-         ~docv:"BLOCK_DIM" ~doc)
-
 let corvo_t = Term.(
     const corvo
     $ input_file
     $ output_file
     $ racuda
     $ toml
-    $ thread_count
   )
 
 let info =

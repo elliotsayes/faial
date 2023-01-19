@@ -79,41 +79,11 @@ let mk_types_compatible (racuda : bool) (k : prog kernel) : prog kernel =
   let arrays = VarMap.map mk_array_compatible k.kernel_arrays in
   {k with kernel_arrays = arrays}
 
-(* Set the number of threads per block *)
-let set_block_dim (block_dim : Vec3.t option) (k : prog kernel) : prog kernel =
-  let subst (x : string) (n : int) (p : prog) : prog =
-    Proto.PSubstPair.p_subst (Variable.from_name x, Num n) p
-  in
-  let code = match block_dim with
-    | Some block_dim -> k.kernel_code
-                        |> subst "blockDim.x" block_dim.x
-                        |> subst "blockDim.y" block_dim.y
-                        |> subst "blockDim.z" block_dim.z
-    | None -> k.kernel_code
-  in
-  {k with kernel_code = code}
-
-(* Simplify the kernel to make it RaCUDA-friendly, i.e.,
-   by flattening multi-dimensional arrays into 1D arrays *)
-let simplify_kernel
-    (racuda : bool)
-    (thread_count : Vec3.t option)
-    (k : prog kernel)
-  : prog kernel =
-  match racuda, thread_count with
-  | true, Some thread_count -> Shared_access.simplify_kernel thread_count k
-  | true, None -> Shared_access.simplify_kernel (Vec3.make ~x:1 ~y:1 ~z:1) k
-  | false, _ -> k
-
 (* Prepare the kernel for serialization *)
-let prepare_kernel
-    (racuda : bool)
-    (thread_count : Vec3.t option)
-    (k : prog kernel)
+let prepare_kernel (racuda : bool) (params : Params.t) (k : prog kernel)
   : prog kernel =
   k
-  |> set_block_dim thread_count
   |> constant_folding
   |> remove_unused_variables
   |> mk_types_compatible racuda
-  |> simplify_kernel racuda thread_count
+  |> if racuda then Shared_access.simplify_kernel params else Fun.id
