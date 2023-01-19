@@ -193,11 +193,17 @@ let get_fname =
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
 
 let block_dim =
-  let doc = "Sets the CUDA variable blockDim, the number of threads per block.\nExamples:\n--blockDim 1024\n--blockDim [16,16]." in
+  let doc = "Sets the CUDA variable blockDim, the number of threads per block.\n" ^
+  "Input is a single integer or a list of integers, signifying the x, y, and z positions.\n" ^
+  "Default: '" ^ Dim3.to_string Gv_parser.default_block_dim ^ "'\n" ^
+  "Examples: '1024' and '[16,16]'" in
   Arg.(value & opt (some dim3) None & info ["b"; "block-dim"; "blockDim"] ~docv:"BLOCK_DIM" ~doc)
 
 let grid_dim =
-  let doc = "Sets the CUDA variable gridDim, the number of blocks per grid.\nExamples:\n--gridDim 1024\n--gridDim [16,16]." in
+  let doc = "Sets the CUDA variable gridDim, the number of blocks per grid.\n" ^
+  "Input is a single integer or a list of integers, signifying the x, y, and z positions.\n" ^
+  "Default: '" ^ Dim3.to_string Gv_parser.default_grid_dim ^ "'\n" ^
+  " Examples: '1024' and '[16,16]'" in
   Arg.(value & opt (some dim3) None & info ["g"; "grid-dim"; "gridDim"] ~docv:"GRID_DIM" ~doc)
 
 let absynth_exe =
