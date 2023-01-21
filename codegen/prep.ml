@@ -86,4 +86,4 @@ let prepare_kernel (racuda : bool) (params : Params.t) (k : prog kernel)
   |> constant_folding
   |> remove_unused_variables
   |> mk_types_compatible racuda
-  |> if racuda then Shared_access.simplify_kernel params else Fun.id
+  |> if racuda then Shared_access.Silent.simplify_kernel params else Fun.id
