@@ -263,5 +263,5 @@ let gen_params (gv : Gv_parser.t) : string =
   let dim_to_s (d : Dim3.t) : string =
     string_of_int d.x ^ " " ^ string_of_int d.y ^ " " ^ string_of_int d.z ^ "\n"
   in
-  "blockDim " ^ dim_to_s gv.block_dim ^ "blockIdx 0 0 0\ngridDim "
-  ^ dim_to_s gv.grid_dim ^ "gridIdx 0 0 0\ninitThread 0 0 0\n"
+  "blockDim " ^ dim_to_s gv.block_dim ^ "blockIdx 0 0 0\n"
+  ^ "gridDim " ^ dim_to_s gv.grid_dim ^ "initThread 0 0 0\n"
