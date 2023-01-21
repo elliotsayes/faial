@@ -836,5 +836,5 @@ let parse_program (p:D_lang.d_program) : Imp.p_kernel list d_result =
   parse_p [] [] [] p
 end
 
-module Default = Make(Logger.Default)
+module Default = Make(Logger.Colors)
 module Silent = Make(Logger.Silent)

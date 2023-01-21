@@ -20,6 +20,11 @@ let to_string (x:t) : string =
     ", block_dim=" ^ Dim3.to_string x.block_dim ^
     ", grid_dim=" ^ Dim3.to_string x.grid_dim ^ ", options=[" ^ String.concat ", " x.options ^ "]}"
 
+let serialize (x:t) : string =
+  (if x.pass then "//pass\n" else "//xfail:BOOGIE_ERROR\n") ^
+  "//--blockDim=" ^ Dim3.to_string x.block_dim ^ " " ^
+  "--gridDim=" ^ Dim3.to_string x.grid_dim ^ "\n"
+
 let to_assoc (x:t) : (string * int) list =
   Dim3.to_assoc ~prefix:"blockDim." x.block_dim @ Dim3.to_assoc ~prefix:"gridDim." x.grid_dim
 

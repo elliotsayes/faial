@@ -166,7 +166,7 @@ let run ?(exe="koat2") ?(verbose=false) (env:Environ.t) (expr:string) : (string,
   |> Errors.handle_result (parse_koat env)
 
 let run_symbolic ?(exe="koat2") ?(verbose=false) (s:Symbolic.t) : (string, Errors.t) Result.t =
-  let env = Symbolic.to_environ s in
+  let env = Symbolic.Default.to_environ s in
   let expr = from_symbolic env s |> to_string in
   run ~exe ~verbose env expr
 

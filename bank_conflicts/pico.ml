@@ -26,7 +26,7 @@ let print_cost
   unit
 =
   let with_ra (k:Proto.prog Proto.kernel) : unit =
-    let r = Ra.from_kernel params k in
+    let r = Ra.Default.from_kernel params k in
     let r = if skip_simpl_ra then r else Ra.simplify r in
     (if show_ra then (Ra.to_string r |> print_endline) else ());
     match
@@ -40,10 +40,11 @@ let print_cost
         r |> Maxima.run_ra ~verbose:show_code ~exe:maxima_exe
       else (
         (if show_code then (Ra.to_string r |> print_endline) else ());
-        Ok (Symbolic.from_ra r |> Symbolic.simplify)
+        Ok (Symbolic.Default.from_ra r |> Symbolic.Default.simplify)
       )
     with
     | Ok cost ->
+      Stdlib.flush_all ();
       if only_cost then (
         print_endline cost
       ) else (
@@ -72,12 +73,12 @@ let print_cost
       else if use_koat then
         Koat.run_symbolic ~verbose:show_code ~exe:koat_exe s
       else
-        Ok (Symbolic.simplify s)
+        Ok (Symbolic.Default.simplify s)
     in
-    Shared_access.from_kernel params k
+    Shared_access.Default.from_kernel params k
     |> Seq.iter (fun s ->
       (* Convert a slice into an expression *)
-      let s1 = Symbolic.from_slice params k.kernel_local_variables s in
+      let s1 = Symbolic.Default.from_slice params k.kernel_local_variables s in
       if skip_zero && Symbolic.is_zero s1 then
         ()
       else
@@ -133,12 +134,13 @@ let pico
   (maxima_exe:string)
   (skip_simpl_ra:bool)
   (only_cost:bool)
+  (ignore_absent:bool)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
     let gv = match Gv_parser.parse fname with
       | Some gv ->
-        prerr_endline ("WARNING: parsed GV args: " ^ Gv_parser.to_string gv);
+        Logger.Colors.info ("Found GPUVerify args in source file: " ^ Gv_parser.to_string gv);
         gv
       | None -> Gv_parser.default
     in
@@ -153,26 +155,32 @@ let pico
       imp
       |> List.map Imp.compile
       |> List.map (Proto.replace_constants kvs)
+      |> List.filter Proto.has_shared_arrays
     in
-    List.iter (fun k ->
-      print_cost
-        ~explain
-        ~use_maxima
-        ~use_absynth
-        ~use_cofloco
-        ~use_koat
-        ~show_code
-        ~show_ra
-        ~skip_zero:(not show_all)
-        ~absynth_exe
-        ~maxima_exe
-        ~cofloco_exe
-        ~koat_exe
-        ~skip_simpl_ra
-        ~params
-        ~only_cost
-        k
-    ) proto
+    if ignore_absent || List.length proto > 0 then
+      List.iter (fun k ->
+        print_cost
+          ~explain
+          ~use_maxima
+          ~use_absynth
+          ~use_cofloco
+          ~use_koat
+          ~show_code
+          ~show_ra
+          ~skip_zero:(not show_all)
+          ~absynth_exe
+          ~maxima_exe
+          ~cofloco_exe
+          ~koat_exe
+          ~skip_simpl_ra
+          ~params
+          ~only_cost
+          k
+      ) proto
+    else (
+      Logger.Colors.error "No kernels using __shared__ arrays found.";
+      exit (-1)
+    )
   with
   | Common.ParseError b ->
       Buffer.output_buffer stderr b;
@@ -249,6 +257,10 @@ let use_koat =
   let doc = "Uses KoAT2 to simplify the cost of each access." in
   Arg.(value & flag & info ["koat"] ~doc)
 
+let ignore_absent =
+  let doc = "Makes it not an error to analyze a kernel without shared errors." in
+  Arg.(value & flag & info ["ignore-absent"] ~doc)
+
 let skip_simpl_ra =
   let doc = "By default we simplify the RA to improve performance of solvers." in
   Arg.(value & flag & info ["skip-simpl-ra"] ~doc)
@@ -288,6 +300,7 @@ let pico_t = Term.(
   $ maxima_exe
   $ skip_simpl_ra
   $ only_cost
+  $ ignore_absent
 )
 
 let info =

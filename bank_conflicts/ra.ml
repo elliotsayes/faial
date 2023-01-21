@@ -25,7 +25,7 @@ let to_environ (s:t) : Environ.t =
   in
   Environ.Fvs.empty |> fvs s |> Environ.from_fvs
 
-module Make (S:Subst.SUBST) = struct
+module MakeSubst (S:Subst.SUBST) = struct
   module M = Subst.Make(S)
   let rec subst (s: S.t) : t -> t =
     function
@@ -40,8 +40,8 @@ module Make (S:Subst.SUBST) = struct
       )
 end
 
-module PSubstAssoc = Make(Subst.SubstAssoc)
-module PSubstPair = Make(Subst.SubstPair)
+module PSubstAssoc = MakeSubst(Subst.SubstAssoc)
+module PSubstPair = MakeSubst(Subst.SubstPair)
 
 let subst : (Variable.t * Exp.nexp) -> t -> t = PSubstPair.subst
 
@@ -85,34 +85,42 @@ let to_string (x:t) : string =
 let print (x:t) : unit =
   indent x |> Indent.print
 
-let from_kernel (params:Params.t) (k: Proto.prog Proto.kernel) : t =
-  let shared = Shared_access.shared_memory k.kernel_arrays in
-  let idx_analysis : Exp.nexp -> int =
-    Index_analysis.analyze params k.kernel_local_variables
-  in
-  let rec from_i : Proto.inst -> t =
-    function
-    | Acc (x, {index=l; _}) ->
-      (* Flatten n-dimensional array and apply word size *)
-      (match Variable.Map.find_opt x shared with
-        | Some v ->
-          let e =
-            l
-            |> Shared_access.byte_count_multiplier v.byte_count
-            |> Shared_access.flatten_multi_dim v.dim
-          in
-          Tick (idx_analysis e)
-        | None -> Skip)
-    | Sync -> Skip
-    | Cond (_, p) -> from_p p
-    | Loop (r, p) ->
-      let r = Shared_access.uniform params.block_dim r |> Ojson.unwrap_or r in
-      Loop (r, from_p p)
+module Make (L:Logger.Logger) = struct
+  module S = Shared_access.Make(L)
+  module I = Index_analysis.Make(L)
 
-  and from_p (l: Proto.prog) : t =
-    List.fold_right (fun i p -> Seq (from_i i, p)) l Skip
-  in
-  k.kernel_code
-  |> Proto.subst_block_dim params.block_dim
-  |> Proto.subst_grid_dim params.grid_dim
-  |> from_p
+  let from_kernel (params:Params.t) (k: Proto.prog Proto.kernel) : t =
+    let shared = S.shared_memory k.kernel_arrays in
+    let idx_analysis : Exp.nexp -> int =
+      I.analyze params k.kernel_local_variables
+    in
+    let rec from_i : Proto.inst -> t =
+      function
+      | Acc (x, {index=l; _}) ->
+        (* Flatten n-dimensional array and apply word size *)
+        (match Variable.Map.find_opt x shared with
+          | Some v ->
+            let e =
+              l
+              |> S.byte_count_multiplier v.byte_count
+              |> S.flatten_multi_dim v.dim
+            in
+            Tick (idx_analysis e)
+          | None -> Skip)
+      | Sync -> Skip
+      | Cond (_, p) -> from_p p
+      | Loop (r, p) ->
+        let r = S.uniform params.block_dim r |> Ojson.unwrap_or r in
+        Loop (r, from_p p)
+
+    and from_p (l: Proto.prog) : t =
+      List.fold_right (fun i p -> Seq (from_i i, p)) l Skip
+    in
+    k.kernel_code
+    |> Proto.subst_block_dim params.block_dim
+    |> Proto.subst_grid_dim params.grid_dim
+    |> from_p
+end
+
+module Default = Make(Logger.Colors)
+module Silent = Make(Logger.Silent)
