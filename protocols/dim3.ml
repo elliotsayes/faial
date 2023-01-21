@@ -12,6 +12,9 @@ let parse (s:string) : (t, string) Result.t =
   with
     _ -> Error "Error parsing dim3"
 
+let to_list (d:t) : int list =
+  [d.x; d.y; d.z]
+
 let to_string (d:t) : string =
   match d with
   | { x=x; y=1; z=1} -> string_of_int x

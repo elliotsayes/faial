@@ -11,6 +11,7 @@
    test_queries
    test_poly
    test_index_analysis
+   test_gv_parser
  )
  (libraries stage0 protocols drf inference oUnit bank_conflicts)
 )
