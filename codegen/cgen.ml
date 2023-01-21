@@ -257,3 +257,11 @@ let prog_to_s (racuda : bool) (p : prog) : Indent.t list =
 
 let gen_cuda (racuda : bool) (gv : Gv_parser.t) (k : prog kernel) : string =
   kernel_to_s (prog_to_s racuda) racuda gv k |> Indent.to_string
+
+(* Serialization of RaCUDA parameters *)
+let gen_params (gv : Gv_parser.t) : string =
+  let dim_to_s (d : Dim3.t) : string =
+    string_of_int d.x ^ " " ^ string_of_int d.y ^ " " ^ string_of_int d.z ^ "\n"
+  in
+  "blockDim " ^ dim_to_s gv.block_dim ^ "blockIdx 0 0 0\ngridDim "
+  ^ dim_to_s gv.grid_dim ^ "gridIdx 0 0 0\ninitThread 0 0 0\n"

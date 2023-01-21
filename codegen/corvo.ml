@@ -53,7 +53,8 @@ let corvo
   let generator =
     if toml then Tgen.gen_toml racuda gv else Cgen.gen_cuda racuda gv
   in
-  List.map generator kernels |> Common.join "\n" |> write_string output_file
+  List.map generator kernels |> Common.join "\n" |> write_string output_file;
+  if racuda then Cgen.gen_params gv |> write_string (output_file ^ ".params");
 
 open Cmdliner
 
