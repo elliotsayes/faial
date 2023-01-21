@@ -4,7 +4,7 @@ open Bank_conflicts
 open Protocols
 
 (* Parses GPUVerify arguments from the CUDA file *)
-let read_params (fname : string) : Params.t =
+let read_params (fname : string) : Gv_parser.t * Params.t =
   let gv = match Gv_parser.parse fname with
     | Some gv ->
       Logger.Colors.info ("Found GPUVerify args in source file: "
@@ -15,7 +15,7 @@ let read_params (fname : string) : Params.t =
   in
   let block_dim = gv.block_dim in
   let grid_dim = gv.grid_dim in
-  Params.make ~block_dim ~grid_dim ()
+  gv, Params.make ~block_dim ~grid_dim ()
 
 (* Parses a list of protocols from the CUDA file *)
 let read_kernels (fname : string) : Proto.prog Proto.kernel list =
@@ -47,10 +47,12 @@ let corvo
     (racuda : bool)
     (toml : bool)
   : unit =
-  let params = read_params input_file in
+  let gv, params = read_params input_file in
   let prepare_kernel = Prep.prepare_kernel racuda params in
   let kernels = read_kernels input_file |> List.map prepare_kernel in
-  let generator = if toml then Tgen.gen_toml racuda else Cgen.gen_cuda racuda in
+  let generator =
+    if toml then Tgen.gen_toml racuda gv else Cgen.gen_cuda racuda gv
+  in
   List.map generator kernels |> Common.join "\n" |> write_string output_file
 
 open Cmdliner

@@ -214,10 +214,12 @@ let arr_to_dummy (vm : Memory.t VarMap.t) : Indent.t list =
       Indent.Line (arr_type v ~strip_const:true ^ " " ^ var_to_dummy k ^ ";"))
 
 (* Serialization of the kernel header *)
-let header_to_s (racuda : bool) (k : prog kernel) : Indent.t =
+let header_to_s (racuda : bool) (gv : Gv_parser.t) (k : prog kernel)
+  : Indent.t =
+  let comments = if racuda then [Gv_parser.serialize gv] else [] in
   let type_decls = if racuda then [] else decl_unknown_types k.kernel_arrays in
   let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
-  Indent.Line (type_decls @ funct_protos |> Common.join "\n")
+  Indent.Line (comments @ type_decls @ funct_protos |> Common.join "\n")
 
 (* Serialization of the kernel body *)
 let body_to_s (f : prog -> Indent.t list) (k : prog kernel) : Indent.t =
@@ -230,7 +232,11 @@ let body_to_s (f : prog -> Indent.t list) (k : prog kernel) : Indent.t =
   Indent.Block (shared_arr @ local_var @ dummy_var @ (f k.kernel_code))
 
 (* Serialization of the kernel *)
-let kernel_to_s (f : prog -> Indent.t list) (racuda : bool) (k : prog kernel)
+let kernel_to_s
+    (f : prog -> Indent.t list)
+    (racuda : bool)
+    (gv : Gv_parser.t)
+    (k : prog kernel)
   : Indent.t list =
   let global_arr = k.kernel_arrays
                    |> VarMap.filter (fun _ -> Memory.is_global)
@@ -239,7 +245,7 @@ let kernel_to_s (f : prog -> Indent.t list) (racuda : bool) (k : prog kernel)
   let global_var = global_var_to_l k.kernel_global_variables in
   let params = global_arr @ global_var |> Common.join ", " in
   [
-    header_to_s racuda k;
+    header_to_s racuda gv k;
     Line ("__global__ void " ^ k.kernel_name ^ "(" ^ params ^ ")");
     Line "{";
     body_to_s f k;
@@ -249,5 +255,5 @@ let kernel_to_s (f : prog -> Indent.t list) (racuda : bool) (k : prog kernel)
 let prog_to_s (racuda : bool) (p : prog) : Indent.t list =
   List.map (inst_to_s racuda) p |> List.flatten
 
-let gen_cuda (racuda : bool) (k : prog kernel) : string =
-  kernel_to_s (prog_to_s racuda) racuda k |> Indent.to_string
+let gen_cuda (racuda : bool) (gv : Gv_parser.t) (k : prog kernel) : string =
+  kernel_to_s (prog_to_s racuda) racuda gv k |> Indent.to_string
