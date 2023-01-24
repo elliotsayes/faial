@@ -214,9 +214,13 @@ let arr_to_dummy (vm : Memory.t VarMap.t) : Indent.t list =
       Indent.Line (arr_type v ~strip_const:true ^ " " ^ var_to_dummy k ^ ";"))
 
 (* Serialization of the kernel header *)
-let header_to_s (racuda : bool) (gv : Gv_parser.t) (k : prog kernel)
+let header_to_s
+    ?(toml=false)
+    (racuda : bool)
+    (gv : Gv_parser.t)
+    (k : prog kernel)
   : Indent.t =
-  let comments = if racuda then [Gv_parser.serialize gv] else [] in
+  let comments = if racuda && not toml then [Gv_parser.serialize gv] else [] in
   let type_decls = if racuda then [] else decl_unknown_types k.kernel_arrays in
   let funct_protos = base_protos racuda @ arr_to_proto k.kernel_arrays racuda in
   Indent.Line (comments @ type_decls @ funct_protos |> Common.join "\n")
@@ -261,7 +265,8 @@ let gen_cuda (racuda : bool) (gv : Gv_parser.t) (k : prog kernel) : string =
 (* Serialization of RaCUDA parameters *)
 let gen_params (gv : Gv_parser.t) : string =
   let dim_to_s (d : Dim3.t) : string =
-    string_of_int d.x ^ " " ^ string_of_int d.y ^ " " ^ string_of_int d.z ^ "\n"
+    let x, y, z = string_of_int d.x, string_of_int d.y, string_of_int d.z in
+    x ^ " " ^ y ^ " " ^ z ^ "\n"
   in
   "blockDim " ^ dim_to_s gv.block_dim ^ "blockIdx 0 0 0\n"
   ^ "gridDim " ^ dim_to_s gv.grid_dim ^ "initThread 0 0 0\n"

@@ -42,7 +42,7 @@ and r_to_vars (r : Range.t) : Variable.t list =
 let variables_used (p : prog) : VarSet.t =
   List.map inst_to_vars p |> List.flatten |> VarSet.of_list
 
-(* Remove unused local variables from the kernel  *)
+(* Remove unused local variables from the kernel *)
 let remove_unused_variables (k : prog kernel) : prog kernel =
   let used_variables = variables_used k.kernel_code in
   let local_variables = VarSet.inter used_variables k.kernel_local_variables in
