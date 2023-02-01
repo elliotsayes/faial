@@ -49,8 +49,7 @@ bundle:
   only:
     # Only add branches that also exist in c-to-json and faial-infer!
     # Otherwise, this will fail as wget will not find their job artifacts.
-    - master
-    - cav21
+    - main
   script:
     - cd $CI_PROJECT_DIR
     - mkdir bundle
@@ -60,7 +59,7 @@ bundle:
     - tar xf c-to-json-bin.tar.bz2
     - rm c-to-json-bin.tar.bz2
     # faial:
-    - cp ../faial-bc ../c-ast ../faial-drf bin/
+    - cp ../faial-bc-dyn ../faial-bc ../c-ast ../faial-drf bin/
     - cp ../README.md ../LICENSE  ./
     # display tree & bundle:
     - tree
