@@ -11,7 +11,7 @@
 Instructions:
 1. Extract the binary distribution of [`faial.tar.bz2`](https://gitlab.com/umb-svl/faial/-/jobs/artifacts/master/raw/bundle/faial.tar.bz2?job=bundle) and ensure that `bin` is in your `PATH`
 2. Install [`libz3.so >= 4.11.2`](https://github.com/Z3Prover/z3/releases/download/z3-4.11.2/z3-4.11.2-x64-glibc-2.31.zip); Package `libz3-4` in Debian/Ubuntu; `z3-libs` in Fedora.
-
+3. Add the `bin` directory to your `PATH`
 ```
 $ tar xvf faial.tar.bz2 
 LICENSE
