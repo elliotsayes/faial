@@ -12,6 +12,9 @@ build-ci: build-base
 build-dev:
 	$(DOCKER_COMPOSE) build dev
 
+rebuild-dev:
+	$(DOCKER_COMPOSE) build --no-cache --pull dev
+
 ci:
 	$(DOCKER_COMPOSE) run ci
 
