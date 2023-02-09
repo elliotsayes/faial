@@ -20,11 +20,11 @@ let gv_args_to_l (racuda : bool) (gv : Gv_parser.t) : (string * Otoml.t) list =
 
 let arrays_to_l (vm : Memory.t VarMap.t) : (string * Otoml.t) list =
   VarMap.bindings vm
-  |> List.map (fun (k, v) -> (var_name k, Otoml.TomlString (arr_type v)))
+  |> List.map (fun (k, v) -> (Variable.name k, Otoml.TomlString (arr_type v)))
 
 let scalars_to_l (vs : VarSet.t) : (string * Otoml.t) list =
   VarSet.elements (VarSet.diff vs thread_globals)
-  |> List.map (fun v -> (var_name v, Otoml.TomlString "int"))
+  |> List.map (fun v -> (Variable.name v, Otoml.TomlString "int"))
 
 let kernel_to_table
     (racuda : bool)

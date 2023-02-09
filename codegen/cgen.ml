@@ -16,11 +16,6 @@ let thread_globals : VarSet.t =
      "warpSize"]
   |> VarSet.of_list
 
-let thread_locals : VarSet.t =
-  List.map Variable.from_name
-    ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"]
-  |> VarSet.of_list
-
 let known_types : StringSet.t =
   ["__builtin_va_list"; "__float128"; "__int128_t"; "__uint128_t"; "bool";
    "char"; "char16_t"; "char32_t"; "cudaError_t"; "cudaStream"; "cudaStream_t";
@@ -44,7 +39,6 @@ let vector_types : StringSet.t =
   |> StringSet.of_list
 
 (* ----------------- serialization -------------------- *)
-let var_name (v : Variable.t) : string = v.name
 
 (* Converts an array index to a string *)
 let idx_to_s (f : 'a -> string) (l : 'a list) : string =
@@ -63,9 +57,9 @@ let rec n_par (n : nexp) : string =
     -> "(" ^ n_to_s n ^ ")"
 and n_to_s : nexp -> string = function
   | Proj (t, x) ->
-    "proj(" ^ task_to_string t ^ ", "  ^ var_name x ^ ")"
+    "proj(" ^ task_to_string t ^ ", "  ^ Variable.name x ^ ")"
   | Num n -> string_of_int n
-  | Var x -> var_name x
+  | Var x -> Variable.name x
   | Bin (b, a1, a2) -> n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
   | NCall (x, arg) ->
     x ^ "(" ^ n_to_s arg ^ ")"
@@ -88,20 +82,24 @@ and b_par (b : bexp) : string =
   | BRel _ -> "("  ^ b_to_s b ^ ")"
 
 (* Gives the dummy variable string for any variable *)
-let var_to_dummy (v : Variable.t) : string = "__dummy" ^ var_name v
+let var_to_dummy (v : Variable.t) : string = "__dummy" ^ Variable.name v
+
+(* Checks if a variable is a dummy variable *)
+let is_dummy_var (v : Variable.t) : bool =
+  String.starts_with ~prefix:"__dummy" (Variable.name v)
 
 (* Gives the dummy instruction for any array read/write *)
 let acc_expr_to_dummy (x, a : Variable.t * Access.t) (racuda : bool)
   : Indent.t list =
   let n_to_s = if racuda then n_to_s else Exp.n_to_string in
-  let var = var_name x ^ idx_to_s n_to_s a.Access.index in
+  let var = Variable.name x ^ idx_to_s n_to_s a.Access.index in
   match a.Access.mode with
   | Rd -> [Line (var_to_dummy x ^ " = " ^ var ^ ";")]
   | Wr -> [Line (var ^ " = " ^ var_to_dummy x ^ "_w();")]
 
 (* Converts a loop increment to a string *)
 let inc_to_s (r : Range.t) (n_to_s : nexp -> string) : string =
-  var_name r.var ^
+  Variable.name r.var ^
   match r.step, r.dir with
   | Plus step, Increase -> " += " ^ n_to_s step
   | Plus step, Decrease -> " -= " ^ n_to_s step
@@ -119,7 +117,7 @@ let rec inst_to_s (racuda : bool) : inst -> Indent.t list = function
       Line "}"
     ]
   | Loop (r, p) ->
-    let x = var_name r.var in
+    let x = Variable.name r.var in
     let n_to_s = if racuda then n_to_s else Exp.n_to_string in
     let lb, ub, op = match r.dir with
       | Increase -> r.lower_bound, r.upper_bound, " < "
@@ -176,30 +174,30 @@ let arr_to_proto (vm : Memory.t VarMap.t) (racuda : bool) : string list =
 
 (* Helper functions for making kernel parameters *)
 let global_arr_to_l (vm : Memory.t VarMap.t) : string list =
-  VarMap.bindings vm |> List.map (fun (k, v) -> arr_type v ^ " *" ^ var_name k)
+  VarMap.bindings vm
+  |> List.map (fun (k, v) -> arr_type v ^ " *" ^ Variable.name k)
 
 let global_var_to_l (vs : VarSet.t) : string list =
   VarSet.elements (VarSet.diff vs thread_globals)
-  |> List.map (fun v -> "int " ^ var_name v)
+  |> List.map (fun v -> "int " ^ Variable.name v)
 
 (* Helper functions for making kernel variable declarations *)
 let arr_to_shared (vm : Memory.t VarMap.t) : Indent.t list =
   VarMap.bindings vm
   |> List.map (fun (k, v) -> 
       Indent.Line ((if v.Memory.size = [] then "extern " else "") 
-                   ^ "__shared__ " ^ arr_type v ^ " " ^ var_name k
+                   ^ "__shared__ " ^ arr_type v ^ " " ^ Variable.name k
                    ^ idx_to_s string_of_int v.Memory.size ^ ";"))
 
 let local_var_to_l (vs : VarSet.t) (racuda : bool) : Indent.t list =
   (* Use a single dummy array/function to initialize all local variables *)
   let init_local_var (v : Variable.t) : Indent.t =
     let rhs = if racuda then "__dummy[threadIdx.x]" else "__dummy_int()" in
-    Indent.Line ("int " ^ var_name v ^ " = " ^ rhs ^ ";")
+    Indent.Line ("int " ^ Variable.name v ^ " = " ^ rhs ^ ";")
   in
   (* A local variable must not be a tid/dummy variable *)
-  VarSet.diff vs thread_locals
-  |> VarSet.filter (fun v ->
-      not (String.starts_with ~prefix:"__dummy" (var_name v)))
+  vs
+  |> VarSet.filter (fun v -> not (Variable.is_tid v || is_dummy_var v))
   |> VarSet.elements
   |> List.map init_local_var
 
