@@ -33,7 +33,8 @@ let kernel_to_table
   : Otoml.t =
   let preamble = gv_args_to_l racuda gv in
   let header = Indent.to_string [header_to_s racuda gv k ~toml:true] in
-  let body = Indent.to_string [body_to_s (prog_to_s racuda) k] in
+  let body = Indent.to_string [body_to_s (prog_to_s racuda) racuda k] in
+  let base_arr = if racuda then ["__dummy", Otoml.TomlString "int"] else [] in
   let global_arr = VarMap.filter (fun _ -> Memory.is_global) k.kernel_arrays in
   TomlTable
     (
@@ -43,7 +44,7 @@ let kernel_to_table
         ("header", TomlString header);
         ("body", TomlString body);
         ("scalars", TomlTable (scalars_to_l k.kernel_global_variables));
-        ("arrays", TomlTable (arrays_to_l global_arr));
+        ("arrays", TomlTable (base_arr @ arrays_to_l global_arr));
       ]
     )
 
