@@ -152,25 +152,33 @@ let to_string (p:prog) : string =
 
 let r_id = Str.regexp {|nat(\([A-Za-z_0-9-]+\))|}
 
-let parse_koat (env:Environ.t) (x:string) : string option =
+let parse_asympt (env:Environ.t) (x:string) : string option =
+  let (let*) = Option.bind in
+  let* (_, x) = Common.split '{' x in
+  let* (x, _) = Common.split '}' x in
+  let x = Environ.decode (String.trim x) env |> Str.global_replace r_id "\\1" in
+  Some x
+
+let parse_cost (env:Environ.t) (x:string) : string option =
   let (let*) = Option.bind in
   let* (x, _) = Common.split '{' x in
   let x = Environ.decode (String.trim x) env |> Str.global_replace r_id "\\1" in
   Some x
 
-let run ?(exe="koat2") ?(verbose=false) (env:Environ.t) (expr:string) : (string, Errors.t) Result.t =
+let run ?(asympt=false) ?(exe="koat2") ?(verbose=false) (env:Environ.t) (expr:string) : (string, Errors.t) Result.t =
   (if verbose
     then prerr_endline ("KoAT output:\n" ^ expr ^ "\n")
     else ());
+  let parse = if asympt then parse_asympt else parse_cost in
   Common.run ~stdin:expr ~exe ["analyse"; "-i"; "/dev/stdin"]
-  |> Errors.handle_result (parse_koat env)
+  |> Errors.handle_result (parse env)
 
-let run_symbolic ?(exe="koat2") ?(verbose=false) (s:Symbolic.t) : (string, Errors.t) Result.t =
+let run_symbolic ?(asympt=false) ?(exe="koat2") ?(verbose=false) (s:Symbolic.t) : (string, Errors.t) Result.t =
   let env = Symbolic.Default.to_environ s in
   let expr = from_symbolic env s |> to_string in
-  run ~exe ~verbose env expr
+  run ~asympt ~exe ~verbose env expr
 
-let run_ra ?(exe="koat2") ?(verbose=false) (s:Ra.t) : (string, Errors.t) Result.t =
+let run_ra ?(asympt=false) ?(exe="koat2") ?(verbose=false) (s:Ra.t) : (string, Errors.t) Result.t =
   let env = Ra.to_environ s in
   let expr = from_ra env s |> to_string in
-  run ~exe ~verbose env expr
+  run ~asympt ~exe ~verbose env expr

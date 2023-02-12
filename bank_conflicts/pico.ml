@@ -36,7 +36,7 @@ let print_cost
       else if use_cofloco then
         r |> Cofloco.run_ra ~verbose:show_code ~exe:cofloco_exe
       else if use_koat then
-        r |> Koat.run_ra ~verbose:show_code ~exe:koat_exe
+        r |> Koat.run_ra ~verbose:show_code ~exe:koat_exe ~asympt
       else if use_maxima then
         r |> Maxima.run_ra ~verbose:show_code ~exe:maxima_exe
       else (
