@@ -64,18 +64,19 @@ let parse_absynth (x:string) : string option =
   let* (_, x) = Common.split ':' x in
   Some (String.trim x)
 
-let run ?(verbose=false) ?(exe="absynth") (data:string) : (string, Errors.t) Result.t =
+let run ?(asympt=false) ?(verbose=false) ?(exe="absynth") (data:string) : (string, Errors.t) Result.t =
   (if verbose
     then prerr_endline ("Absynth output:\n" ^ data ^ "\n")
     else ());
+  let args = if asympt then ["-asympt"] else [] in
   with_tmp ~prefix:"absynth_" ~suffix:".imp" (fun filename ->
     write_string ~filename ~data;
-    Common.run ~exe [filename]
+    Common.run ~exe (args @ [filename])
   )
   |> Errors.handle_result parse_absynth
 
-let run_symbolic ?(verbose=false) ?(exe="absynth") (x:Symbolic.t) : (string, Errors.t) Result.t =
-  run ~verbose ~exe (from_symbolic x)
+let run_symbolic ?(asympt=false) ?(verbose=false) ?(exe="absynth") (x:Symbolic.t) : (string, Errors.t) Result.t =
+  run ~asympt ~verbose ~exe (from_symbolic x)
 
-let run_ra ?(verbose=false) ?(exe="absynth") (x:Ra.t) : (string, Errors.t) Result.t =
-  run ~verbose ~exe (from_ra x)
+let run_ra ?(asympt=false) ?(verbose=false) ?(exe="absynth") (x:Ra.t) : (string, Errors.t) Result.t =
+  run ~asympt ~verbose ~exe (from_ra x)

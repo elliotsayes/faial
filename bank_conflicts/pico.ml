@@ -19,6 +19,7 @@ let print_cost
   ?(maxima_exe="maxima")
   ?(show_ra=false)
   ?(skip_simpl_ra=true)
+  ~asympt
   ~only_cost
   ~params
   (k : Proto.prog Proto.kernel)
@@ -31,7 +32,7 @@ let print_cost
     (if show_ra then (Ra.to_string r |> print_endline) else ());
     match
       if use_absynth then
-        r |> Absynth.run_ra ~verbose:show_code ~exe:absynth_exe
+        r |> Absynth.run_ra ~verbose:show_code ~exe:absynth_exe ~asympt
       else if use_cofloco then
         r |> Cofloco.run_ra ~verbose:show_code ~exe:cofloco_exe
       else if use_koat then
@@ -135,6 +136,7 @@ let pico
   (skip_simpl_ra:bool)
   (only_cost:bool)
   (ignore_absent:bool)
+  (asympt:bool)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
@@ -175,6 +177,7 @@ let pico
           ~skip_simpl_ra
           ~params
           ~only_cost
+          ~asympt
           k
       ) proto
     else (
@@ -273,6 +276,10 @@ let show_ra =
   let doc = "Print out the resource-analysis problem that represents the bank conflicts." in
   Arg.(value & flag & info ["show-ra"] ~doc)
 
+let asympt =
+  let doc = "Calculate the asymptotic cost of bank conflicts." in
+  Arg.(value & flag & info ["asympt"] ~doc)
+
 let explain =
   let doc = "Show bank-conflicts per location." in
   Arg.(value & flag & info ["explain"] ~doc)
@@ -301,6 +308,7 @@ let pico_t = Term.(
   $ skip_simpl_ra
   $ only_cost
   $ ignore_absent
+  $ asympt
 )
 
 let info =
