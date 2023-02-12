@@ -34,7 +34,7 @@ let print_cost
       if use_absynth then
         r |> Absynth.run_ra ~verbose:show_code ~exe:absynth_exe ~asympt
       else if use_cofloco then
-        r |> Cofloco.run_ra ~verbose:show_code ~exe:cofloco_exe
+        r |> Cofloco.run_ra ~verbose:show_code ~exe:cofloco_exe ~asympt
       else if use_koat then
         r |> Koat.run_ra ~verbose:show_code ~exe:koat_exe ~asympt
       else if use_maxima then

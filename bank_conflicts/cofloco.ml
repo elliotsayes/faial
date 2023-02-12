@@ -134,7 +134,7 @@ let to_string (env:Environ.t) (x:t list) : string =
   )
   |> String.concat "\n"
 
-let parse_cofloco (env:Environ.t) (x:string) : string option =
+let parse_cost (env:Environ.t) (x:string) : string option =
   let (let*) = Option.bind in
   let* x =
     String.split_on_char '\n' x
@@ -144,8 +144,19 @@ let parse_cofloco (env:Environ.t) (x:string) : string option =
   let x = Environ.decode x env in
   Some (String.trim x)
 
+let parse_asympt (env:Environ.t) (x:string) : string option =
+  let (let*) = Option.bind in
+  let* x =
+    String.split_on_char '\n' x
+    |> List.find_opt (String.starts_with ~prefix:"Asymptotic")
+  in
+  let* (_, x) = Common.split ':' x in
+  let x = Environ.decode x env |> String.trim in
+  let x = if x = "constant" then "1" else x in
+  Some ("O(" ^ x ^ ")")
 
 let run
+  ?(asympt=false)
   ?(verbose=false)
   ?(exe="cofloco")
   (env:Environ.t)
@@ -156,15 +167,16 @@ let run
   (if verbose
     then prerr_endline ("CoFloCo output:\n" ^ expr ^ "\n")
     else ());
+  let parse = if asympt then parse_asympt else parse_cost in
   Common.run ~stdin:expr ~exe ["-v"; "0"; "-i"; "/dev/stdin"]
-  |> Errors.handle_result (parse_cofloco env)
+  |> Errors.handle_result (parse env)
 
-let run_symbolic ?(verbose=false) ?(exe="cofloco") (s:Symbolic.t) : (string, Errors.t) Result.t =
+let run_symbolic ?(asympt=false) ?(verbose=false) ?(exe="cofloco") (s:Symbolic.t) : (string, Errors.t) Result.t =
   let env = Symbolic.Default.to_environ s in
   let expr = from_symbolic s |> to_string env in
-  run ~verbose ~exe env expr
+  run ~asympt ~verbose ~exe env expr
 
-let run_ra ?(verbose=false) ?(exe="cofloco") (s:Ra.t) : (string, Errors.t) Result.t =
+let run_ra ?(asympt=false) ?(verbose=false) ?(exe="cofloco") (s:Ra.t) : (string, Errors.t) Result.t =
   let env = Ra.to_environ s in
   let expr = from_ra s |> to_string env in
-  run ~verbose ~exe env expr
+  run ~asympt ~verbose ~exe env expr
