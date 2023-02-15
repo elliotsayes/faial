@@ -1,19 +1,28 @@
 open Stage0
 
-type t =
-  | UnexpectedProcessStatus of Unix.process_status
-  | UnexpectedOutput of string
+module Reason = struct
+  type t =
+    | UnexpectedProcessStatus of Unix.process_status
+    | UnexpectedOutput
 
-let to_string : t -> string =
-  function
-  | UnexpectedProcessStatus r -> "Unexpected process status: " ^ Common.process_status_to_string r
-  | UnexpectedOutput s -> "Could not parse output:\n" ^ s
+  let to_string : t -> string =
+    function
+    | UnexpectedProcessStatus r -> "Unexpected process status: " ^ Common.process_status_to_string r
+    | UnexpectedOutput -> "Could not parse tool's output"
+
+end
+
+type t = {output: string; reason: Reason.t}
+
+let to_string (err:t) : string =
+  Reason.to_string err.reason ^
+  "Process output:\n" ^ err.output
 
 let handle_result (parse_data:string -> string option) ((r:Unix.process_status), (data:string)) : (string, t) Result.t =
   if r = Unix.WEXITED 0 then
     match parse_data data with
     | Some data -> Ok data
-    | None -> Error (UnexpectedOutput data)
+    | None -> Error {output=data; reason=UnexpectedOutput}
   else
-    Error (UnexpectedProcessStatus r)
+    Error {output=data; reason=UnexpectedProcessStatus r}
 
