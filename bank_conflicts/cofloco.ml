@@ -8,7 +8,11 @@ module Rule = struct
     {id = x.src; args =[] }
 
   let to_string (env:Environ.t) (x:t) =
-    let b_to_s = Environ.b_to_string env in
+    let b_to_s (b:Exp.bexp) =
+      b
+      |> Environ.b_to_string env
+      |> Common.replace ~substring:"<=" ~by:"=<"
+    in
     let src : string = Environ.c_to_string env (src x) in
     let cnd = List.map b_to_s x.cnd in
     let cost = string_of_int x.cost in
