@@ -1,11 +1,18 @@
 open Stage0
 open Inference
 
-let analyze (j:Yojson.Basic.t) : unit =
+let analyze ~only_global (j:Yojson.Basic.t) : unit =
   match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = D_lang.rewrite_program k1 in
-       Indexflow.types_program k2
+       k2
+       |> List.filter (
+         let open D_lang in
+         function
+         | Kernel k when Kernel.is_global k || not only_global -> true
+         | _ -> false
+       )
+       |> Indexflow.types_program
        |> List.iter (fun (name, d) ->
         print_endline (name ^ "," ^ Indexflow.Stmt.to_string d)
       )
@@ -15,18 +22,22 @@ let analyze (j:Yojson.Basic.t) : unit =
     Rjson.print_error e;
     exit(-1)
 
-let main (fname: string) : unit =
+let main (fname: string) (only_global:bool) : unit =
   fname
   |> Cu_to_json.cu_to_json ~ignore_fail:true
-  |> analyze 
+  |> analyze ~only_global
 
 open Cmdliner
 
-let get_fname = 
+let get_fname =
   let doc = "The path $(docv) of the GPU program." in
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
 
-let main_t = Term.(const main $ get_fname)
+let only_global =
+  let doc = "Only analyze kernels annotated with __global__" in
+  Arg.(value & flag & info ["only-global"] ~doc)
+
+let main_t = Term.(const main $ get_fname $ only_global)
 
 let info =
   let doc = "Data-dependency analysis for GPU programs" in
@@ -37,4 +48,3 @@ let () =
   Cmd.v info main_t
   |> Cmd.eval
   |> exit
-

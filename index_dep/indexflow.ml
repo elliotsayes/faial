@@ -66,7 +66,7 @@ let rec types_exp (env:Typing.t) (e:D_lang.Expr.t) : (Typing.t * Index.t) =
   | BinaryOperator b ->
     let x = D_lang.Expr.to_variable b.lhs in
     (match x, b.opcode = "=" with
-    | Some x, true -> 
+    | Some x, true ->
       let (env, a) = types_exp env b.rhs in
       (Typing.put x a env, a)
     | _, _ ->
@@ -83,7 +83,7 @@ let rec types_exp (env:Typing.t) (e:D_lang.Expr.t) : (Typing.t * Index.t) =
 
   | ConditionalOperator c ->
     ret [ c.cond; c.then_expr; c.else_expr ]
-  
+
   | MemberExpr {base=e; _}
   | CXXNewExpr {arg=e; _}
   | CXXDeleteExpr {arg=e; _}
@@ -147,7 +147,7 @@ module Stmt = struct
       | Dependent -> "ctrl"
       | Independent -> "ind"
       in
-      d ^ "," ^ c 
+      d ^ "," ^ c
 
 end
 
@@ -210,14 +210,14 @@ let rec types_stmt (env:Typing.t) (s:D_lang.Stmt.t) : Typing.t * Stmt.t =
   | GotoStmt
   | ContinueStmt
   | ReturnStmt -> (env, Stmt.no_access)
-  
+
 
   | CaseStmt {body=s; _}
   | SwitchStmt {body=s; _}
   | DefaultStmt s
   | WhileStmt {body=s; _}
   | DoStmt {body=s; _} -> types_stmt env s
-  
+
   | CompoundStmt s ->
     types_stmt_list env s
 
