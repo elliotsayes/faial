@@ -22,12 +22,19 @@ let print_cost
   ~asympt
   ~only_cost
   ~params
+  ~count_shared_access
   (k : Proto.prog Proto.kernel)
 :
   unit
 =
-  let with_ra (k:Proto.prog Proto.kernel) : unit =
-    let r = Ra.Default.from_kernel params k in
+  let idx_analysis : Exp.nexp -> int =
+    if count_shared_access then
+      fun _ -> 1
+    else
+      Index_analysis.Default.analyze params k.kernel_local_variables
+  in
+  let with_ra () : unit =
+    let r = Ra.Default.from_kernel idx_analysis params k in
     let r = if skip_simpl_ra then r else Ra.simplify r in
     (if show_ra then (Ra.to_string r |> print_endline) else ());
     match
@@ -63,7 +70,7 @@ let print_cost
       prerr_endline (Errors.to_string e);
       exit (-1)
   in
-  let with_slices (k:Proto.prog Proto.kernel) : unit =
+  let with_slices () : unit =
     let render_s ?(show_code=false) (s: Symbolic.t) : (string, Errors.t) Result.t =
       if use_maxima then
         Maxima.run_symbolic ~verbose:show_code ~exe:maxima_exe s
@@ -79,7 +86,7 @@ let print_cost
     Shared_access.Default.from_kernel params k
     |> Seq.iter (fun s ->
       (* Convert a slice into an expression *)
-      let s1 = Symbolic.Default.from_slice params k.kernel_local_variables s in
+      let s1 = Symbolic.Default.from_slice idx_analysis s in
       if skip_zero && Symbolic.is_zero s1 then
         ()
       else
@@ -111,9 +118,9 @@ let print_cost
   in
   (* 1. break a kernel into slices *)
   if explain then (
-    with_slices k
+    with_slices ()
   ) else (
-    with_ra k
+    with_ra ()
   )
 
 
@@ -137,6 +144,7 @@ let pico
   (only_cost:bool)
   (ignore_absent:bool)
   (asympt:bool)
+  (count_shared_access:bool)
 =
   try
     let parsed_json = Cu_to_json.cu_to_json fname in
@@ -178,6 +186,7 @@ let pico
           ~params
           ~only_cost
           ~asympt
+          ~count_shared_access
           k
       ) proto
     else (
@@ -288,6 +297,10 @@ let show_code =
   let doc = "Show the code being sent to the solver if any." in
   Arg.(value & flag & info ["show-code"] ~doc)
 
+let count_shared_accesses =
+  let doc = "Instead of counting how many bank-conflicts, count how many shared accesses occur." in
+  Arg.(value & flag & info ["count-shared"] ~doc)
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -309,6 +322,7 @@ let pico_t = Term.(
   $ only_cost
   $ ignore_absent
   $ asympt
+  $ count_shared_accesses
 )
 
 let info =

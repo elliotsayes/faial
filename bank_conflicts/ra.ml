@@ -87,13 +87,9 @@ let print (x:t) : unit =
 
 module Make (L:Logger.Logger) = struct
   module S = Shared_access.Make(L)
-  module I = Index_analysis.Make(L)
 
-  let from_kernel (params:Params.t) (k: Proto.prog Proto.kernel) : t =
+  let from_kernel (idx_analysis : Exp.nexp -> int) (params:Params.t) (k: Proto.prog Proto.kernel) : t =
     let shared = S.shared_memory k.kernel_arrays in
-    let idx_analysis : Exp.nexp -> int =
-      I.analyze params k.kernel_local_variables
-    in
     let rec from_i : Proto.inst -> t =
       function
       | Acc (x, {index=l; _}) ->

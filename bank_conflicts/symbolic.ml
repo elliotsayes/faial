@@ -411,12 +411,12 @@ let rec from_ra : Ra.t -> t =
     | Some s -> s
     | None -> failwith ("Unsupported range: " ^ Range.to_string r)
 
-let rec from_slice (params:Params.t) (locs:Variable.Set.t) : Shared_access.t -> t =
+let rec from_slice  (idx_analysis : Exp.nexp -> int) : Shared_access.t -> t =
   function
-  | Index a -> Const (I.analyze params locs a.index)
-  | Cond (_, p) -> from_slice params locs p
+  | Index a -> Const (idx_analysis a.index)
+  | Cond (_, p) -> from_slice idx_analysis p
   | Loop (r, p) ->
-    match sum r (from_slice params locs p) with
+    match sum r (from_slice idx_analysis p) with
     | Some s -> s
     | None -> failwith ("Unsupported range: " ^ Range.to_string r)
 end
