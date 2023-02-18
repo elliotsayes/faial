@@ -7,6 +7,14 @@ type t =
   | Loop of Range.t * t
   | Seq of t * t
 
+let rec is_zero : t -> bool =
+  function
+  | Skip
+  | Tick 0 -> true
+  | Tick _ -> false
+  | Loop (_, r) -> is_zero r
+  | Seq (p, q) -> is_zero p && is_zero q
+
 let to_environ (s:t) : Environ.t =
   let rec fvs (s:t) (env:Environ.Fvs.t) : Environ.Fvs.t =
     match s with

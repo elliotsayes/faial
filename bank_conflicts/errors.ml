@@ -4,11 +4,13 @@ module Reason = struct
   type t =
     | UnexpectedProcessStatus of Unix.process_status
     | UnexpectedOutput
+    | UnsupportedInput
 
   let to_string : t -> string =
     function
     | UnexpectedProcessStatus r -> "Unexpected process status: " ^ Common.process_status_to_string r
     | UnexpectedOutput -> "Could not parse tool's output"
+    | UnsupportedInput -> "Cannot handle the given RA problem"
 
 end
 

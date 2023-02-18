@@ -13,9 +13,10 @@ let rec from_symbolic : Symbolic.t -> string =
     ")"
   | Add l -> List.map from_symbolic l |> Common.join " + "
 
-let from_ra (r: Ra.t) : string =
+let from_ra (r: Ra.t) : (string, Errors.t) Result.t =
   Symbolic.Default.from_ra r
-  |> from_symbolic
+  |> Result.map from_symbolic
+  |> Symbolic.adapt_error
 
 let parse_maxima (x:string) : string option =
   if Common.contains ~substring:"incorrect syntax" x then None
@@ -50,4 +51,6 @@ let run ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Resu
   |> Errors.handle_result parse_maxima
 
 let run_ra ?(verbose=false) ?(exe="maxima") (x:Ra.t) : (string, Errors.t) Result.t =
-  run ~verbose ~exe (from_ra x)
+  let (let*) = Result.bind in
+  let* s = from_ra x in
+  run ~verbose ~exe s
