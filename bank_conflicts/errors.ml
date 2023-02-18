@@ -18,7 +18,7 @@ type t = {output: string; reason: Reason.t}
 
 let to_string (err:t) : string =
   Reason.to_string err.reason ^
-  "Process output:\n" ^ err.output
+  "\nProcess output:\n" ^ err.output
 
 let handle_result (parse_data:string -> string option) ((r:Unix.process_status), (data:string)) : (string, t) Result.t =
   if r = Unix.WEXITED 0 then
