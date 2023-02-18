@@ -146,7 +146,9 @@ module Make (L:Logger.Logger) = struct
           Variable.tidy, Num 0;
           Variable.tidz, Num 0
         ])
-
+  (*
+   Given a range, makes that range uniform according to tids.
+   *)
   let uniform (block_dim:Dim3.t) (r:Range.t) : Range.t option =
     let open Exp in
     let fvs = Freenames.free_names_range r Variable.Set.empty in
@@ -164,6 +166,7 @@ module Make (L:Logger.Logger) = struct
       )
     else None
 
+  (* Given an n-dimensional array access apply type modifiers *)
   let byte_count_multiplier (byte_count:int) (l:Exp.nexp list) : Exp.nexp list =
     if byte_count/word_size = 1 then
       l
@@ -180,6 +183,7 @@ module Make (L:Logger.Logger) = struct
       l'
     )
 
+  (* Convert an n-dimensional array access into a 1-d array access *)
   let flatten_multi_dim (dim:int list) (l:Exp.nexp list) : Exp.nexp =
     match l with
     | [e] -> e
@@ -200,17 +204,24 @@ module Make (L:Logger.Logger) = struct
         n_plus (n_mult n (Num offset)) accum
       ) (Common.zip l dim) (Num 0)
 
-  let shared_memory (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t = Variable.Map.filter_map (fun _ v ->
-    if Memory.is_shared v then
-      let open Inference in
-      let ty = Common.join " " v.data_type |> C_type.make in
-      match C_type.sizeof ty with
-      | Some n -> Some {byte_count=n; dim=v.size}
-      | None -> Some {byte_count=word_size; dim=v.size}
-    else
-      None
-    ) mem
+  (* Given a map of memory descriptors, return a map of array sizes *)
+  let shared_memory (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t =
+    mem
+    |> Variable.Map.filter_map (fun _ v ->
+      if Memory.is_shared v then
+        let open Inference in
+        let ty = Common.join " " v.data_type |> C_type.make in
+        match C_type.sizeof ty with
+        | Some n -> Some {byte_count=n; dim=v.size}
+        | None -> Some {byte_count=word_size; dim=v.size}
+      else
+        None
+    )
 
+  (*
+    Given a protocol, apply all the transformations above: type-mult,
+    nd-array, and uniform ranges.
+   *)
   let simplify_kernel
     (params:Params.t)
     (k : Proto.prog Proto.kernel)
@@ -275,6 +286,9 @@ module Make (L:Logger.Logger) = struct
       kernel_arrays = arrays;
     }
 
+  (*
+  Given a kernel return a sequence of slices.
+   *)
   let from_kernel (params:Params.t) (k: Proto.prog Proto.kernel) : t Seq.t =
     let open Exp in
     let shared = shared_memory k.kernel_arrays in

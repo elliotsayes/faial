@@ -33,24 +33,25 @@ let print_cost
     else
       Index_analysis.Default.analyze params k.kernel_local_variables
   in
+  let get_cost (r:Ra.t) : (string, Bank_conflicts.Errors.t) Result.t =
+    (if show_ra then (Ra.to_string r |> print_endline) else ());
+    if use_absynth then
+      r |> Absynth.run_ra ~verbose:show_code ~exe:absynth_exe ~asympt
+    else if use_cofloco then
+      r |> Cofloco.run_ra ~verbose:show_code ~exe:cofloco_exe ~asympt
+    else if use_koat then
+      r |> Koat.run_ra ~verbose:show_code ~exe:koat_exe ~asympt
+    else if use_maxima then
+      r |> Maxima.run_ra ~verbose:show_code ~exe:maxima_exe
+    else (
+      (if show_code then (Ra.to_string r |> print_endline) else ());
+      Ok (Symbolic.Default.from_ra r |> Symbolic.Default.simplify)
+    )
+  in
   let with_ra () : unit =
     let r = Ra.Default.from_kernel idx_analysis params k in
     let r = if skip_simpl_ra then r else Ra.simplify r in
-    (if show_ra then (Ra.to_string r |> print_endline) else ());
-    match
-      if use_absynth then
-        r |> Absynth.run_ra ~verbose:show_code ~exe:absynth_exe ~asympt
-      else if use_cofloco then
-        r |> Cofloco.run_ra ~verbose:show_code ~exe:cofloco_exe ~asympt
-      else if use_koat then
-        r |> Koat.run_ra ~verbose:show_code ~exe:koat_exe ~asympt
-      else if use_maxima then
-        r |> Maxima.run_ra ~verbose:show_code ~exe:maxima_exe
-      else (
-        (if show_code then (Ra.to_string r |> print_endline) else ());
-        Ok (Symbolic.Default.from_ra r |> Symbolic.Default.simplify)
-      )
-    with
+    match get_cost r  with
     | Ok cost ->
       Stdlib.flush_all ();
       if only_cost then (
@@ -71,27 +72,16 @@ let print_cost
       exit (-1)
   in
   let with_slices () : unit =
-    let render_s ?(show_code=false) (s: Symbolic.t) : (string, Errors.t) Result.t =
-      if use_maxima then
-        Maxima.run_symbolic ~verbose:show_code ~exe:maxima_exe s
-      else if use_absynth then
-        Absynth.run_symbolic ~verbose:show_code ~exe:absynth_exe s
-      else if use_cofloco then
-        Cofloco.run_symbolic ~verbose:show_code ~exe:cofloco_exe s
-      else if use_koat then
-        Koat.run_symbolic ~verbose:show_code ~exe:koat_exe s
-      else
-        Ok (Symbolic.Default.simplify s)
-    in
     Shared_access.Default.from_kernel params k
     |> Seq.iter (fun s ->
       (* Convert a slice into an expression *)
-      let s1 = Symbolic.Default.from_slice idx_analysis s in
+      let r1 = Ra.Default.from_shared_access idx_analysis s in
+      let s1 = Symbolic.Default.from_ra r1 in
       if skip_zero && Symbolic.is_zero s1 then
         ()
       else
         (* Flatten the expression *)
-        let simplified_cost = match render_s ~show_code s1 with
+        let simplified_cost = match get_cost r1 with
           | Ok s -> s
           | Error e ->
             prerr_endline (Errors.to_string e);

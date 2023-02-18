@@ -410,15 +410,6 @@ let rec from_ra : Ra.t -> t =
     match sum r (from_ra p) with
     | Some s -> s
     | None -> failwith ("Unsupported range: " ^ Range.to_string r)
-
-let rec from_slice  (idx_analysis : Exp.nexp -> int) : Shared_access.t -> t =
-  function
-  | Index a -> Const (idx_analysis a.index)
-  | Cond (_, p) -> from_slice idx_analysis p
-  | Loop (r, p) ->
-    match sum r (from_slice idx_analysis p) with
-    | Some s -> s
-    | None -> failwith ("Unsupported range: " ^ Range.to_string r)
 end
 
 module Default = Make(Logger.Colors)

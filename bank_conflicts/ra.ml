@@ -88,6 +88,13 @@ let print (x:t) : unit =
 module Make (L:Logger.Logger) = struct
   module S = Shared_access.Make(L)
 
+  let rec from_shared_access (idx_analysis : Exp.nexp -> int) : Shared_access.t -> t =
+    function
+    | Index a -> Tick (idx_analysis a.index)
+    | Cond (_, p) -> from_shared_access idx_analysis p
+    | Loop (r, p) ->
+      Loop (r, from_shared_access idx_analysis  p)
+
   let from_kernel (idx_analysis : Exp.nexp -> int) (params:Params.t) (k: Proto.prog Proto.kernel) : t =
     let shared = S.shared_memory k.kernel_arrays in
     let rec from_i : Proto.inst -> t =

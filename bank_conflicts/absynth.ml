@@ -1,23 +1,6 @@
 open Stage0
 open Protocols
 
-let from_symbolic : Symbolic.t -> string =
-  let indent (depth:int) : string = String.make depth '\t' in
-  let rec translate (depth:int) : Symbolic.t -> string =
-    function
-    | Const k -> indent depth ^ "tick " ^ string_of_int k ^ "\n"
-    | Sum (b, s) ->
-      let x = Variable.name b.var in
-      indent depth ^ x ^ " = " ^ Exp.n_to_string b.first_elem ^ "\n" ^
-      indent depth ^ "while " ^ x ^ " <= (" ^ Exp.n_to_string b.last_elem ^ "):\n" ^
-      translate (depth + 1) s ^
-      indent (depth + 1) ^ x ^ " = " ^ x ^ " + 1\n"
-    | Add l -> List.map (translate depth) l |> String.concat ""
-  in
-  fun x ->
-    "def f():\n" ^
-    translate 1 x
-
 let from_ra : Ra.t -> string =
   let indent (depth:int) : string = String.make depth '\t' in
   let rec translate (depth:int) : Ra.t -> string =
@@ -74,9 +57,6 @@ let run ?(asympt=false) ?(verbose=false) ?(exe="absynth") (data:string) : (strin
     Common.run ~exe (args @ [filename])
   )
   |> Errors.handle_result parse_absynth
-
-let run_symbolic ?(asympt=false) ?(verbose=false) ?(exe="absynth") (x:Symbolic.t) : (string, Errors.t) Result.t =
-  run ~asympt ~verbose ~exe (from_symbolic x)
 
 let run_ra ?(asympt=false) ?(verbose=false) ?(exe="absynth") (x:Ra.t) : (string, Errors.t) Result.t =
   run ~asympt ~verbose ~exe (from_ra x)

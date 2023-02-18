@@ -49,8 +49,5 @@ let run ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Resu
   Common.run ~stdin:expr ~exe ["--very-quiet"; "--disable-readline"]
   |> Errors.handle_result parse_maxima
 
-let run_symbolic ?(verbose=false) ?(exe="maxima") (x:Symbolic.t) : (string, Errors.t) Result.t =
-  run ~verbose ~exe (from_symbolic x)
-
 let run_ra ?(verbose=false) ?(exe="maxima") (x:Ra.t) : (string, Errors.t) Result.t =
   run ~verbose ~exe (from_ra x)
