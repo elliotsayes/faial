@@ -88,60 +88,93 @@ let box_locals (w:Witness.t) : PrintBox.t =
 let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
 
-let main
-  (fname: string)
-  (timeout:int option)
-  (show_proofs:bool)
-  (show_proto:bool)
-  (show_wf:bool)
-  (show_align:bool)
-  (show_phase_split:bool)
-  (show_loc_split:bool)
-  (show_flat_acc:bool)
-  (show_symbexp:bool)
-  (logic:string option)
-:
-  unit
-=
-  let parsed = Protocol_parser.Silent.to_proto fname in
-  let grid_dim = parsed.options.grid_dim |> Vec3.from_dim3 in
-  let block_dim = parsed.options.block_dim |> Vec3.from_dim3 in
-  parsed.kernels
-  |> List.iter (fun (p:Proto.prog Proto.kernel) ->
-    let kernel_name = p.kernel_name in
+module App = struct
+  type t = {
+    kernel: Proto.prog Proto.kernel;
+    timeout:int option;
+    show_proofs:bool;
+    show_proto:bool;
+    show_wf:bool;
+    show_align:bool;
+    show_phase_split:bool;
+    show_loc_split:bool;
+    show_flat_acc:bool;
+    show_symbexp:bool;
+    logic:string option;
+    block_dim:Vec3.t;
+    grid_dim:Vec3.t;
+  }
+  let make
+    ~timeout
+    ~show_proofs
+    ~show_proto
+    ~show_wf
+    ~show_align
+    ~show_phase_split
+    ~show_loc_split
+    ~show_flat_acc
+    ~show_symbexp
+    ~logic
+    ~block_dim
+    ~grid_dim
+    (kernel: Proto.prog Proto.kernel)
+  :
+    t
+  = {
+      timeout;
+      show_proofs;
+      show_proto;
+      show_wf;
+      show_align;
+      show_phase_split;
+      show_loc_split;
+      show_flat_acc;
+      show_symbexp;
+      logic;
+      block_dim;
+      grid_dim;
+      kernel;
+    }
+
+  let run (a:t) : (Symbexp.Proof.t * Z3_solver.Solution.t) list =
+    let p = a.kernel in
     let show (b:bool) (call:unit -> unit) : unit =
       if b then call () else ()
     in
-    show show_proto (fun () -> Proto.print_k p);
+    show a.show_proto (fun () -> Proto.print_k p);
     let p = Wellformed.translate p in
-    show show_wf (fun () -> Wellformed.print_kernels p);
+    show a.show_wf (fun () -> Wellformed.print_kernels p);
     let p = Phasealign.translate p in
-    show show_align (fun () -> Phasealign.print_kernels p);
+    show a.show_align (fun () -> Phasealign.print_kernels p);
     let p = Phasesplit.translate p false in
-    show show_phase_split (fun () -> Phasesplit.print_kernels p);
+    show a.show_phase_split (fun () -> Phasesplit.print_kernels p);
     let p = Locsplit.translate p in
-    show show_loc_split (fun () -> Locsplit.print_kernels p);
+    show a.show_loc_split (fun () -> Locsplit.print_kernels p);
     let p = Flatacc.translate p in
-    show show_flat_acc (fun () -> Flatacc.print_kernels p);
+    show a.show_flat_acc (fun () -> Flatacc.print_kernels p);
     let p = Symbexp.translate p in
-    show show_symbexp (fun () -> Symbexp.print_kernels p);
+    show a.show_symbexp (fun () -> Symbexp.print_kernels p);
     let open Z3_solver in
     let open Solution in
+    p
+    |> solve
+        ~grid_dim:(Some a.grid_dim)
+        ~block_dim:(Some a.block_dim)
+        ~timeout:a.timeout
+        ~show_proofs:a.show_proofs
+        ~logic:a.logic
+    |> Streamutil.to_list
+
+  let tui (app:t) (solutions: (Symbexp.Proof.t * Z3_solver.Solution.t) list) : unit =
     let errors =
-      p
-      |> solve
-          ~grid_dim:(Some grid_dim)
-          ~block_dim:(Some block_dim)
-          ~timeout:timeout
-          ~show_proofs
-          ~logic
-      |> Streamutil.map_opt (
+      solutions
+      |> List.filter_map (
+        let open Z3_solver.Solution in
         function
-        | Drf -> None
-        | Unknown -> Some (Either.Left p)
-        | Racy w -> Some (Either.Right (p, w))
+        | _, Drf -> None
+        | p, Unknown -> Some (Either.Left p)
+        | p, Racy w -> Some (Either.Right (p, w))
       )
-      |> Streamutil.to_list
     in
     let print_errors errs =
       errs |> List.iteri (fun i (w:Witness.t) ->
@@ -169,13 +202,14 @@ let main
       );
     in
     match Common.either_split errors with
-    | [], [] -> T.print_string [T.Bold; T.Foreground T.Green] ("Kernel '" ^ kernel_name ^ "' is DRF!\n")
+    | [], [] ->
+      T.print_string [T.Bold; T.Foreground T.Green] ("Kernel '" ^ app.kernel.kernel_name ^ "' is DRF!\n")
     | unk, errs ->
       let has_unknown = List.length unk > 0 in
       let errs = List.split errs |> snd in
       let err_count = List.length errs |> string_of_int in
       let dr = "data-race" ^ (if err_count = "1" then "" else "s") in
-      T.print_string [T.Bold; T.Foreground T.Red] ("Kernel '" ^ kernel_name ^ "' has " ^ err_count ^ " " ^ dr ^ ".\n");
+      T.print_string [T.Bold; T.Foreground T.Red] ("Kernel '" ^ app.kernel.kernel_name ^ "' has " ^ err_count ^ " " ^ dr ^ ".\n");
       print_errors errs;
       if has_unknown then
         T.print_string [T.Foreground T.Red] ("A portion of the kernel was not analyzable. Try to increasing the timeout.\n")
@@ -184,7 +218,47 @@ let main
         exit 1
       else
         ()
+end
+
+let main
+  (fname: string)
+  (timeout:int option)
+  (show_proofs:bool)
+  (show_proto:bool)
+  (show_wf:bool)
+  (show_align:bool)
+  (show_phase_split:bool)
+  (show_loc_split:bool)
+  (show_flat_acc:bool)
+  (show_symbexp:bool)
+  (logic:string option)
+:
+  unit
+=
+  let parsed = Protocol_parser.Silent.to_proto fname in
+  let grid_dim = parsed.options.grid_dim |> Vec3.from_dim3 in
+  let block_dim = parsed.options.block_dim |> Vec3.from_dim3 in
+  parsed.kernels
+  |> List.map (App.make
+      ~timeout
+      ~show_proofs
+      ~show_proto
+      ~show_wf
+      ~show_align
+      ~show_phase_split
+      ~show_loc_split
+      ~show_flat_acc
+      ~show_symbexp
+      ~logic
+      ~block_dim
+      ~grid_dim
+    )
+  |> List.iter (fun app ->
+    app
+    |> App.run
+    |> App.tui app
   )
+
 
 open Cmdliner
 
