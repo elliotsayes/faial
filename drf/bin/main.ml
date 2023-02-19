@@ -3,31 +3,11 @@ open Protocols
 open Inference
 open Drf
 
-module VarSet = Variable.Set
 module Environ = Z3_solver.Environ
 module Witness = Z3_solver.Witness
 module Vec3 = Z3_solver.Vec3
 module Task = Z3_solver.Task
 module T = ANSITerminal
-
-let parse_imp (j:Yojson.Basic.t) : Imp.p_kernel list =
-  match C_lang.parse_program j with
-  | Ok k1 ->
-    let k2 = D_lang.rewrite_program k1 in
-      (match D_to_imp.Default.parse_program k2 with
-      | Ok k3 -> k3
-      | Error e ->
-        C_lang.print_program k1;
-        print_endline "------";
-        D_lang.print_program k2;
-        print_endline "-------";
-        D_to_imp.print_error e;
-        exit(-1)
-      )
-
-  | Error e ->
-    Rjson.print_error e;
-    exit(-1)
 
 let box_environ (e:Environ.t) : PrintBox.t =
   PrintBox.(
@@ -120,35 +100,15 @@ let main
   (show_flat_acc:bool)
   (show_symbexp:bool)
   (logic:string option)
-: unit =
-  let gv = Gv_parser.parse fname in
-  (match gv with
-    | Some x -> prerr_endline ("WARNING: parsed GV args: " ^ Gv_parser.to_string x);
-    | None -> ()
-  );
-  let j = Cu_to_json.cu_to_json ~ignore_fail:true fname in
-  let p = parse_imp j in
-  List.iter (fun p ->
-    let p = Imp.compile p in
+:
+  unit
+=
+  let parsed = Protocol_parser.Silent.to_proto fname in
+  let grid_dim = parsed.options.grid_dim |> Vec3.from_dim3 in
+  let block_dim = parsed.options.block_dim |> Vec3.from_dim3 in
+  parsed.kernels
+  |> List.iter (fun (p:Proto.prog Proto.kernel) ->
     let kernel_name = p.kernel_name in
-    let key_vals =
-      Proto.kernel_constants p
-      |> List.filter (fun (x,_) ->
-        (* Make sure we only replace thread-global variables *)
-        VarSet.mem (Variable.from_name x) p.kernel_global_variables
-      )
-    in
-    let key_vals = match gv with
-      | Some gv -> Gv_parser.to_assoc gv @ key_vals
-      | None -> key_vals
-    in
-    let dim (f:Gv_parser.t -> Dim3.t) : Vec3.t option = match gv with
-      | Some gv -> Some (Vec3.from_dim3 (f gv))
-      | None -> None
-    in
-    let grid_dim = dim (fun gv -> gv.grid_dim) in
-    let block_dim = dim (fun gv -> gv.block_dim) in
-    let p = Proto.replace_constants key_vals p in
     let show (b:bool) (call:unit -> unit) : unit =
       if b then call () else ()
     in
@@ -170,8 +130,8 @@ let main
     let errors =
       p
       |> solve
-          ~grid_dim
-          ~block_dim
+          ~grid_dim:(Some grid_dim)
+          ~block_dim:(Some block_dim)
           ~timeout:timeout
           ~show_proofs
           ~logic
@@ -224,7 +184,7 @@ let main
         exit 1
       else
         ()
-  ) p
+  )
 
 open Cmdliner
 

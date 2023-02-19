@@ -307,58 +307,42 @@ let pico
   (count_shared_access:bool)
   (output_json:bool)
 =
-  try
-    let parsed_json = Cu_to_json.cu_to_json fname in
-    let gv = match Gv_parser.parse fname with
-      | Some gv ->
-        Logger.Colors.info ("Found GPUVerify args in source file: " ^ Gv_parser.to_string gv);
-        gv
-      | None -> Gv_parser.default
-    in
-    let kvs = Gv_parser.to_assoc gv in
-    let block_dim = block_dim |> Option.value ~default:gv.block_dim in
-    let grid_dim = grid_dim |> Option.value ~default:gv.grid_dim in
-    let params = Params.make ~block_dim ~grid_dim () in
-    let c_ast = parsed_json |> C_lang.parse_program |> Result.get_ok in
-    let d_ast = c_ast |> D_lang.rewrite_program in
-    let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
-    let proto =
-      imp
-      |> List.map Imp.compile
-      |> List.map (Proto.replace_constants kvs)
-      |> List.filter Proto.has_shared_arrays
-    in
-    if ignore_absent || List.length proto > 0 then
-      List.iter (fun k ->
-        print_cost
-          ~explain
-          ~use_maxima
-          ~use_absynth
-          ~use_cofloco
-          ~use_koat
-          ~show_code
-          ~show_ra
-          ~skip_zero:(not show_all)
-          ~absynth_exe
-          ~maxima_exe
-          ~cofloco_exe
-          ~koat_exe
-          ~skip_simpl_ra
-          ~params
-          ~only_cost
-          ~asympt
-          ~count_shared_access
-          ~output_json
-          k
-      ) proto
-    else (
-      Logger.Colors.error "No kernels using __shared__ arrays found.";
-      exit (-1)
+  let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
+  let block_dim = parsed.options.block_dim in
+  let grid_dim = parsed.options.grid_dim in
+  let params = Params.make ~block_dim ~grid_dim () in
+  let proto =
+    parsed.kernels
+    |> List.filter Proto.has_shared_arrays
+  in
+  if ignore_absent || List.length proto > 0 then
+    proto
+    |> List.iter (fun k ->
+      print_cost
+        ~explain
+        ~use_maxima
+        ~use_absynth
+        ~use_cofloco
+        ~use_koat
+        ~show_code
+        ~show_ra
+        ~skip_zero:(not show_all)
+        ~absynth_exe
+        ~maxima_exe
+        ~cofloco_exe
+        ~koat_exe
+        ~skip_simpl_ra
+        ~params
+        ~only_cost
+        ~asympt
+        ~count_shared_access
+        ~output_json
+        k
     )
-  with
-  | Common.ParseError b ->
-      Buffer.output_buffer stderr b;
-      exit (-1)
+  else (
+    Logger.Colors.error "No kernels using __shared__ arrays found.";
+    exit (-1)
+  )
 
 (* Command-line interface *)
 
