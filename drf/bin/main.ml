@@ -218,6 +218,28 @@ module App = struct
         exit 1
       else
         ()
+
+  let jui (app:t) (solutions: (Symbexp.Proof.t * Z3_solver.Solution.t) list) : unit =
+    let unknowns, errors =
+      solutions
+      |> List.filter_map (
+        let open Z3_solver.Solution in
+        function
+        | _, Drf -> None
+        | p, Unknown -> Some (Either.Left p)
+        | p, Racy _ -> Some (Either.Right p)
+      )
+      |> Common.either_split
+    in
+    let is_ok = (List.length unknowns + List.length errors) = 0 in
+    `Assoc [
+      "kernel_name", `String app.kernel.kernel_name;
+      "status", `String (if is_ok then "drf" else "racy");
+      "unknowns", `List (List.map Symbexp.Proof.to_json unknowns);
+      "errors", `List (List.map Symbexp.Proof.to_json errors);
+    ]
+    |> Yojson.Basic.to_string
+    |> print_endline
 end
 
 let main
@@ -232,6 +254,7 @@ let main
   (show_flat_acc:bool)
   (show_symbexp:bool)
   (logic:string option)
+  (output_json:bool)
 :
   unit
 =
@@ -256,7 +279,7 @@ let main
   |> List.iter (fun app ->
     app
     |> App.run
-    |> App.tui app
+    |> (if output_json then App.jui app else App.tui app)
   )
 
 
@@ -306,6 +329,10 @@ let show_symbexp =
   let doc = "Show the symbexp kernel." in
   Arg.(value & flag & info ["show-symbexp"] ~doc)
 
+let output_json =
+  let doc = "Output result as JSON." in
+  Arg.(value & flag & info ["json"] ~doc)
+
 let main_t = Term.(
   const main
   $ get_fname
@@ -319,6 +346,7 @@ let main_t = Term.(
   $ show_flat_acc
   $ show_symbexp
   $ logic
+  $ output_json
 )
 
 let info =

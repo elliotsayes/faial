@@ -6,6 +6,14 @@ type t = {
   interval: Interval.t;
 }
 
+let to_json (loc:t) : Yojson.Basic.t =
+  `Assoc [
+    ("filename", `String loc.filename);
+    ("line", `Int (Index.to_base1 loc.line));
+    ("col_start", `Int (loc.interval |> Interval.start |> Index.to_base1));
+    ("col_finish", `Int (loc.interval |> Interval.finish |> Index.to_base1));
+  ]
+
 let make ~filename ~interval ~line : t =
   {filename; interval; line}
 

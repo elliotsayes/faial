@@ -51,6 +51,15 @@ module Proof = struct
     decls: string list;
     goal: bexp;
   }
+
+  let to_json (p:t) : Yojson.Basic.t =
+    `Assoc [
+      "id", `Int p.id;
+      "kernel_name", `String p.kernel_name;
+      "array_name", `String p.array_name;
+      "locations", `List (List.map Location.to_json p.locations);
+    ]
+
   let mk ~kernel_name ~array_name ~id ~goal ~locations : t =
     let decls =
       Freenames.free_names_bexp goal Variable.Set.empty
