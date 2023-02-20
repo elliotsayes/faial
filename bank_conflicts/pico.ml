@@ -4,6 +4,7 @@ open Bank_conflicts
 open Protocols
 
 module Solver = struct
+
   type t = {
     kernel: Proto.prog Proto.kernel;
     skip_zero: bool;
@@ -22,6 +23,7 @@ module Solver = struct
     params: Params.t;
     count_shared_access: bool;
     explain: bool;
+    show_ratio: bool;
   }
 
   let make
@@ -42,6 +44,7 @@ module Solver = struct
     ~params
     ~count_shared_access
     ~explain
+    ~show_ratio
   :
     t
   =
@@ -63,13 +66,20 @@ module Solver = struct
       params;
       count_shared_access;
       explain;
+      show_ratio;
     }
+
+  let bank_conflict_count (app:t) : Exp.nexp -> int =
+    Index_analysis.Default.analyze app.params app.kernel.kernel_local_variables
+
+  let access_count (_:t) : Exp.nexp -> int =
+    fun _ -> 1
 
   let access_analysis (app:t) : Exp.nexp -> int =
     if app.count_shared_access then
-      fun _ -> 1
+      access_count app
     else
-      Index_analysis.Default.analyze app.params app.kernel.kernel_local_variables
+      bank_conflict_count app
 
   type cost = {
     amount: string;
@@ -95,11 +105,27 @@ module Solver = struct
     )
     |> Result.map_error Errors.to_string
 
-  let total_cost (a:t) : (cost, string) Result.t =
-    let idx_analysis = access_analysis a in
+  let get_ra (a:t) (idx_analysis: Exp.nexp -> int) : Ra.t =
     let r = Ra.Default.from_kernel idx_analysis a.params a.kernel in
-    let r = if a.skip_simpl_ra then r else Ra.simplify r in
+    if a.skip_simpl_ra then r else Ra.simplify r
+
+  let total_cost (a:t) : (cost, string) Result.t =
+    let r = get_ra a (access_analysis a) in
     get_cost a r
+
+  let ratio_cost (a:t) : (cost, string) Result.t =
+    let numerator = get_ra a (bank_conflict_count a) in
+    let denominator = get_ra a (access_count a) in
+    let start = Unix.gettimeofday () in
+    Maxima.run_ra_ratio
+      ~verbose:a.show_code
+      ~exe:a.maxima_exe
+      ~numerator
+      ~denominator
+    |> Result.map (fun c ->
+      {amount=c; analysis_duration=Unix.gettimeofday () -. start}
+    )
+    |> Result.map_error Errors.to_string
 
   let sliced_cost (a:t) : (Shared_access.t * Ra.t * ((cost, string) Result.t)) Seq.t =
     let idx_analysis = access_analysis a in
@@ -116,10 +142,13 @@ module Solver = struct
   type summary =
     | TotalCost of (cost, string) Result.t
     | SlicedCost of (Shared_access.t * Ra.t * ((cost, string) Result.t)) Seq.t
+    | RatioCost of (cost, string) Result.t
 
   let run (s:t) : summary =
     if s.explain then
       SlicedCost (sliced_cost s)
+    else if s.show_ratio then
+      RatioCost (ratio_cost s)
     else
       TotalCost (total_cost s)
 
@@ -129,6 +158,7 @@ module TUI = struct
   let run ~only_cost (s:Solver.t) =
     Stdlib.flush_all ();
     match Solver.run s with
+    | RatioCost (Ok c)
     | TotalCost (Ok c) ->
       if only_cost then (
         print_endline c.amount
@@ -144,6 +174,7 @@ module TUI = struct
         |> PrintBox_text.to_string
         |> print_endline
       )
+    | RatioCost (Error e)
     | TotalCost (Error e) ->
       prerr_endline e;
       exit (-1)
@@ -196,6 +227,13 @@ module JUI = struct
         ("kernel_name", `String s.kernel.kernel_name);
         ("analysis_duration_seconds", `Float e.analysis_duration);
       ]
+    | RatioCost (Ok e) ->
+      `Assoc [
+        ("ratio_cost", `String e.amount);
+        ("kernel_name", `String s.kernel.kernel_name);
+        ("analysis_duration_seconds", `Float e.analysis_duration);
+      ]
+    | RatioCost (Error e)
     | TotalCost (Error e) ->
       `Assoc [
         ("kernel_name", `String s.kernel.kernel_name);
@@ -255,6 +293,7 @@ let print_cost
   ~params
   ~count_shared_access
   ~output_json
+  ~show_ratio
   (k : Proto.prog Proto.kernel)
 :
   unit
@@ -276,6 +315,7 @@ let print_cost
     ~params
     ~count_shared_access
     ~explain
+    ~show_ratio
     ~kernel:k
   in
   if output_json then
@@ -306,6 +346,7 @@ let pico
   (asympt:bool)
   (count_shared_access:bool)
   (output_json:bool)
+  (show_ratio: bool)
 =
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
   let block_dim = parsed.options.block_dim in
@@ -337,6 +378,7 @@ let pico
         ~asympt
         ~count_shared_access
         ~output_json
+        ~show_ratio
         k
     )
   else (
@@ -439,6 +481,12 @@ let explain =
   let doc = "Show bank-conflicts per location." in
   Arg.(value & flag & info ["explain"] ~doc)
 
+let show_ratio =
+  let doc = "Show the ratio between bank-conflicts over number of shared " ^
+  "accesses (ranges from 0 .. 31)."
+  in
+  Arg.(value & flag & info ["ratio"] ~doc)
+
 let show_code =
   let doc = "Show the code being sent to the solver if any." in
   Arg.(value & flag & info ["show-code"] ~doc)
@@ -474,6 +522,7 @@ let pico_t = Term.(
   $ asympt
   $ count_shared_accesses
   $ output_json
+  $ show_ratio
 )
 
 let info =

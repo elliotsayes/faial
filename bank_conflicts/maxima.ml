@@ -50,6 +50,20 @@ let run ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Resu
   Common.run ~stdin:expr ~exe ["--very-quiet"; "--disable-readline"]
   |> Errors.handle_result parse_maxima
 
+let run_ra_ratio
+  ~verbose
+  ~exe
+  ~numerator
+  ~denominator
+:
+  (string, Errors.t) Result.t
+=
+  let (let*) = Result.bind in
+  if Ra.is_zero denominator then Ok "0" else
+  let* numerator = from_ra numerator in
+  let* denominator = from_ra denominator in
+  run ~verbose ~exe ("(" ^ numerator ^ ") / (" ^ denominator ^ ")")
+
 let run_ra ?(verbose=false) ?(exe="maxima") (x:Ra.t) : (string, Errors.t) Result.t =
   let (let*) = Result.bind in
   let* s = from_ra x in
