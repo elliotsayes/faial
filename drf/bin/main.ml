@@ -88,9 +88,16 @@ let box_locals (w:Witness.t) : PrintBox.t =
 let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
 
-module App = struct
+module Analysis = struct
   type t = {
     kernel: Proto.prog Proto.kernel;
+    report: (Symbexp.Proof.t * Z3_solver.Solution.t) list;
+  }
+end
+
+module App = struct
+  type t = {
+    kernels: Proto.prog Proto.kernel list;
     timeout:int option;
     show_proofs:bool;
     show_proto:bool;
@@ -117,7 +124,7 @@ module App = struct
     ~logic
     ~block_dim
     ~grid_dim
-    (kernel: Proto.prog Proto.kernel)
+    (kernels: Proto.prog Proto.kernel list)
   :
     t
   = {
@@ -133,41 +140,56 @@ module App = struct
       logic;
       block_dim;
       grid_dim;
-      kernel;
+      kernels;
     }
 
-  let run (a:t) : (Symbexp.Proof.t * Z3_solver.Solution.t) list =
-    let p = a.kernel in
-    let show (b:bool) (call:unit -> unit) : unit =
-      if b then call () else ()
-    in
-    show a.show_proto (fun () -> Proto.print_k p);
-    let p = Wellformed.translate p in
-    show a.show_wf (fun () -> Wellformed.print_kernels p);
-    let p = Phasealign.translate p in
-    show a.show_align (fun () -> Phasealign.print_kernels p);
-    let p = Phasesplit.translate p false in
-    show a.show_phase_split (fun () -> Phasesplit.print_kernels p);
-    let p = Locsplit.translate p in
-    show a.show_loc_split (fun () -> Locsplit.print_kernels p);
-    let p = Flatacc.translate p in
-    show a.show_flat_acc (fun () -> Flatacc.print_kernels p);
-    let p = Symbexp.translate p in
-    show a.show_symbexp (fun () -> Symbexp.print_kernels p);
-    let open Z3_solver in
-    let open Solution in
-    p
-    |> solve
-        ~grid_dim:(Some a.grid_dim)
-        ~block_dim:(Some a.block_dim)
-        ~timeout:a.timeout
-        ~show_proofs:a.show_proofs
-        ~logic:a.logic
-    |> Streamutil.to_list
+  let run (a:t) : Analysis.t list =
+    a.kernels
+    |> List.map (fun p ->
+      let kernel = p in
+      let show (b:bool) (call:unit -> unit) : unit =
+        if b then call () else ()
+      in
+      show a.show_proto (fun () -> Proto.print_k p);
+      let p = Wellformed.translate p in
+      show a.show_wf (fun () -> Wellformed.print_kernels p);
+      let p = Phasealign.translate p in
+      show a.show_align (fun () -> Phasealign.print_kernels p);
+      let p = Phasesplit.translate p false in
+      show a.show_phase_split (fun () -> Phasesplit.print_kernels p);
+      let p = Locsplit.translate p in
+      show a.show_loc_split (fun () -> Locsplit.print_kernels p);
+      let p = Flatacc.translate p in
+      show a.show_flat_acc (fun () -> Flatacc.print_kernels p);
+      let p = Symbexp.translate p in
+      show a.show_symbexp (fun () -> Symbexp.print_kernels p);
+      let open Z3_solver in
+      let open Solution in
+      let report =
+        p
+        |> solve
+            ~grid_dim:(Some a.grid_dim)
+            ~block_dim:(Some a.block_dim)
+            ~timeout:a.timeout
+            ~show_proofs:a.show_proofs
+            ~logic:a.logic
+        |> Streamutil.to_list
+      in
+      Stdlib.flush_all ();
+      Analysis.{kernel; report}
+    )
 
-  let tui (app:t) (solutions: (Symbexp.Proof.t * Z3_solver.Solution.t) list) : unit =
+
+end
+
+let tui (output: Analysis.t list) : unit =
+  output
+  |> List.iter (fun solution ->
+    let kernel_name =
+      let open Analysis in
+      solution.kernel.kernel_name in
     let errors =
-      solutions
+      solution.report
       |> List.filter_map (
         let open Z3_solver.Solution in
         function
@@ -203,13 +225,13 @@ module App = struct
     in
     match Common.either_split errors with
     | [], [] ->
-      T.print_string [T.Bold; T.Foreground T.Green] ("Kernel '" ^ app.kernel.kernel_name ^ "' is DRF!\n")
+      T.print_string [T.Bold; T.Foreground T.Green] ("Kernel '" ^ kernel_name ^ "' is DRF!\n")
     | unk, errs ->
       let has_unknown = List.length unk > 0 in
       let errs = List.split errs |> snd in
       let err_count = List.length errs |> string_of_int in
       let dr = "data-race" ^ (if err_count = "1" then "" else "s") in
-      T.print_string [T.Bold; T.Foreground T.Red] ("Kernel '" ^ app.kernel.kernel_name ^ "' has " ^ err_count ^ " " ^ dr ^ ".\n");
+      T.print_string [T.Bold; T.Foreground T.Red] ("Kernel '" ^ kernel_name ^ "' has " ^ err_count ^ " " ^ dr ^ ".\n");
       print_errors errs;
       if has_unknown then
         T.print_string [T.Foreground T.Red] ("A portion of the kernel was not analyzable. Try to increasing the timeout.\n")
@@ -218,29 +240,40 @@ module App = struct
         exit 1
       else
         ()
+  )
 
-  let jui (app:t) (solutions: (Symbexp.Proof.t * Z3_solver.Solution.t) list) : unit =
-    let unknowns, errors =
-      solutions
-      |> List.filter_map (
-        let open Z3_solver.Solution in
-        function
-        | _, Drf -> None
-        | p, Unknown -> Some (Either.Left p)
-        | p, Racy _ -> Some (Either.Right p)
-      )
-      |> Common.either_split
-    in
-    let is_ok = (List.length unknowns + List.length errors) = 0 in
-    `Assoc [
-      "kernel_name", `String app.kernel.kernel_name;
-      "status", `String (if is_ok then "drf" else "racy");
-      "unknowns", `List (List.map Symbexp.Proof.to_json unknowns);
-      "errors", `List (List.map Symbexp.Proof.to_json errors);
-    ]
-    |> Yojson.Basic.to_string
-    |> print_endline
-end
+let jui (output: Analysis.t list) : unit =
+  let kernels =
+    output
+    |> List.map (fun analysis ->
+      let open Analysis in
+      let kernel_name = analysis.kernel.kernel_name in
+      let solutions = analysis.report in
+      let unknowns, errors =
+        solutions
+        |> List.filter_map (
+          let open Z3_solver.Solution in
+          function
+          | _, Drf -> None
+          | p, Unknown -> Some (Either.Left p)
+          | p, Racy _ -> Some (Either.Right p)
+        )
+        |> Common.either_split
+      in
+      let is_ok = (List.length unknowns + List.length errors) = 0 in
+      `Assoc [
+        "kernel_name", `String kernel_name;
+        "status", `String (if is_ok then "drf" else "racy");
+        "unknowns", `List (List.map Symbexp.Proof.to_json unknowns);
+        "errors", `List (List.map Symbexp.Proof.to_json errors);
+      ]
+    )
+  in
+  `Assoc [
+    "kernels", `List kernels
+  ]
+  |> Yojson.Basic.to_string
+  |> print_endline
 
 let main
   (fname: string)
@@ -261,8 +294,9 @@ let main
   let parsed = Protocol_parser.Silent.to_proto fname in
   let grid_dim = parsed.options.grid_dim |> Vec3.from_dim3 in
   let block_dim = parsed.options.block_dim |> Vec3.from_dim3 in
+  let ui = if output_json then jui else tui in
   parsed.kernels
-  |> List.map (App.make
+  |> App.make
       ~timeout
       ~show_proofs
       ~show_proto
@@ -275,12 +309,8 @@ let main
       ~logic
       ~block_dim
       ~grid_dim
-    )
-  |> List.iter (fun app ->
-    app
-    |> App.run
-    |> (if output_json then App.jui app else App.tui app)
-  )
+  |> App.run
+  |> ui
 
 
 open Cmdliner

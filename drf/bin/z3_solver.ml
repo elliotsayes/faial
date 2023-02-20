@@ -240,7 +240,7 @@ module Witness = struct
 			(parse "1", parse "2")
 		with
 			Failure(e) ->
-				List.iter (fun (k,v) -> print_endline (k ^ ": " ^ v)) kvs;
+				List.iter (fun (k,v) -> prerr_endline (k ^ ": " ^ v)) kvs;
 				failwith e
 
 	let parse_meta (env:Environ.t) : (Environ.t * (string list * Access.Mode.t * Access.Mode.t)) =

@@ -41,7 +41,9 @@ module Make (L:Logger.Logger) = struct
     | Ok k1 ->
       let k2 = D_lang.rewrite_program k1 in
         (match D.parse_program k2 with
-        | Ok kernels -> {options; kernels}
+        | Ok kernels ->
+          Stdlib.flush_all ();
+          {options; kernels}
         | Error e ->
           C_lang.print_program k1;
           print_endline "------";
