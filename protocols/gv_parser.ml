@@ -17,6 +17,17 @@ let default = {
   options=[]
 }
 
+let make
+  ?(block_dim=default_block_dim)
+  ?(grid_dim=default_grid_dim)
+  ?(pass=true)
+  ?(options=[])
+  ()
+  :
+t
+  =
+  { block_dim; grid_dim; pass; options}
+
 let to_string (x:t) : string =
   "{pass=" ^ (if x.pass then "true" else "false") ^
     ", block_dim=" ^ Dim3.to_string x.block_dim ^

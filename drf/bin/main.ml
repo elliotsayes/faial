@@ -3,31 +3,11 @@ open Protocols
 open Inference
 open Drf
 
-module VarSet = Variable.Set
 module Environ = Z3_solver.Environ
 module Witness = Z3_solver.Witness
 module Vec3 = Z3_solver.Vec3
 module Task = Z3_solver.Task
 module T = ANSITerminal
-
-let parse_imp (j:Yojson.Basic.t) : Imp.p_kernel list =
-  match C_lang.parse_program j with
-  | Ok k1 ->
-    let k2 = D_lang.rewrite_program k1 in
-      (match D_to_imp.Default.parse_program k2 with
-      | Ok k3 -> k3
-      | Error e ->
-        C_lang.print_program k1;
-        print_endline "------";
-        D_lang.print_program k2;
-        print_endline "-------";
-        D_to_imp.print_error e;
-        exit(-1)
-      )
-
-  | Error e ->
-    Rjson.print_error e;
-    exit(-1)
 
 let box_environ (e:Environ.t) : PrintBox.t =
   PrintBox.(
@@ -108,80 +88,115 @@ let box_locals (w:Witness.t) : PrintBox.t =
 let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
 
-let main
-  (fname: string)
-  (timeout:int option)
-  (show_proofs:bool)
-  (show_proto:bool)
-  (show_wf:bool)
-  (show_align:bool)
-  (show_phase_split:bool)
-  (show_loc_split:bool)
-  (show_flat_acc:bool)
-  (show_symbexp:bool)
-  (logic:string option)
-: unit =
-  let gv = Gv_parser.parse fname in
-  (match gv with
-    | Some x -> prerr_endline ("WARNING: parsed GV args: " ^ Gv_parser.to_string x);
-    | None -> ()
-  );
-  let j = Cu_to_json.cu_to_json ~ignore_fail:true fname in
-  let p = parse_imp j in
-  List.iter (fun p ->
-    let p = Imp.compile p in
-    let kernel_name = p.kernel_name in
-    let key_vals =
-      Proto.kernel_constants p
-      |> List.filter (fun (x,_) ->
-        (* Make sure we only replace thread-global variables *)
-        VarSet.mem (Variable.from_name x) p.kernel_global_variables
-      )
-    in
-    let key_vals = match gv with
-      | Some gv -> Gv_parser.to_assoc gv @ key_vals
-      | None -> key_vals
-    in
-    let dim (f:Gv_parser.t -> Dim3.t) : Vec3.t option = match gv with
-      | Some gv -> Some (Vec3.from_dim3 (f gv))
-      | None -> None
-    in
-    let grid_dim = dim (fun gv -> gv.grid_dim) in
-    let block_dim = dim (fun gv -> gv.block_dim) in
-    let p = Proto.replace_constants key_vals p in
-    let show (b:bool) (call:unit -> unit) : unit =
-      if b then call () else ()
-    in
-    show show_proto (fun () -> Proto.print_k p);
-    let p = Wellformed.translate p in
-    show show_wf (fun () -> Wellformed.print_kernels p);
-    let p = Phasealign.translate p in
-    show show_align (fun () -> Phasealign.print_kernels p);
-    let p = Phasesplit.translate p false in
-    show show_phase_split (fun () -> Phasesplit.print_kernels p);
-    let p = Locsplit.translate p in
-    show show_loc_split (fun () -> Locsplit.print_kernels p);
-    let p = Flatacc.translate p in
-    show show_flat_acc (fun () -> Flatacc.print_kernels p);
-    let p = Symbexp.translate p in
-    show show_symbexp (fun () -> Symbexp.print_kernels p);
-    let open Z3_solver in
-    let open Solution in
+module Analysis = struct
+  type t = {
+    kernel: Proto.prog Proto.kernel;
+    report: (Symbexp.Proof.t * Z3_solver.Solution.t) list;
+  }
+end
+
+module App = struct
+  type t = {
+    kernels: Proto.prog Proto.kernel list;
+    timeout:int option;
+    show_proofs:bool;
+    show_proto:bool;
+    show_wf:bool;
+    show_align:bool;
+    show_phase_split:bool;
+    show_loc_split:bool;
+    show_flat_acc:bool;
+    show_symbexp:bool;
+    logic:string option;
+    block_dim:Vec3.t;
+    grid_dim:Vec3.t;
+  }
+  let make
+    ~timeout
+    ~show_proofs
+    ~show_proto
+    ~show_wf
+    ~show_align
+    ~show_phase_split
+    ~show_loc_split
+    ~show_flat_acc
+    ~show_symbexp
+    ~logic
+    ~block_dim
+    ~grid_dim
+    (kernels: Proto.prog Proto.kernel list)
+  :
+    t
+  = {
+      timeout;
+      show_proofs;
+      show_proto;
+      show_wf;
+      show_align;
+      show_phase_split;
+      show_loc_split;
+      show_flat_acc;
+      show_symbexp;
+      logic;
+      block_dim;
+      grid_dim;
+      kernels;
+    }
+
+  let run (a:t) : Analysis.t list =
+    a.kernels
+    |> List.map (fun p ->
+      let kernel = p in
+      let show (b:bool) (call:unit -> unit) : unit =
+        if b then call () else ()
+      in
+      show a.show_proto (fun () -> Proto.print_k p);
+      let p = Wellformed.translate p in
+      show a.show_wf (fun () -> Wellformed.print_kernels p);
+      let p = Phasealign.translate p in
+      show a.show_align (fun () -> Phasealign.print_kernels p);
+      let p = Phasesplit.translate p false in
+      show a.show_phase_split (fun () -> Phasesplit.print_kernels p);
+      let p = Locsplit.translate p in
+      show a.show_loc_split (fun () -> Locsplit.print_kernels p);
+      let p = Flatacc.translate p in
+      show a.show_flat_acc (fun () -> Flatacc.print_kernels p);
+      let p = Symbexp.translate p in
+      show a.show_symbexp (fun () -> Symbexp.print_kernels p);
+      let open Z3_solver in
+      let open Solution in
+      let report =
+        p
+        |> solve
+            ~grid_dim:(Some a.grid_dim)
+            ~block_dim:(Some a.block_dim)
+            ~timeout:a.timeout
+            ~show_proofs:a.show_proofs
+            ~logic:a.logic
+        |> Streamutil.to_list
+      in
+      Stdlib.flush_all ();
+      Analysis.{kernel; report}
+    )
+
+
+end
+
+let tui (output: Analysis.t list) : unit =
+  output
+  |> List.iter (fun solution ->
+    let kernel_name =
+      let open Analysis in
+      solution.kernel.kernel_name in
     let errors =
-      p
-      |> solve
-          ~grid_dim
-          ~block_dim
-          ~timeout:timeout
-          ~show_proofs
-          ~logic
-      |> Streamutil.map_opt (
+      solution.report
+      |> List.filter_map (
+        let open Z3_solver.Solution in
         function
-        | Drf -> None
-        | Unknown -> Some (Either.Left p)
-        | Racy w -> Some (Either.Right (p, w))
+        | _, Drf -> None
+        | p, Unknown -> Some (Either.Left p)
+        | p, Racy w -> Some (Either.Right (p, w))
       )
-      |> Streamutil.to_list
     in
     let print_errors errs =
       errs |> List.iteri (fun i (w:Witness.t) ->
@@ -209,7 +224,8 @@ let main
       );
     in
     match Common.either_split errors with
-    | [], [] -> T.print_string [T.Bold; T.Foreground T.Green] ("Kernel '" ^ kernel_name ^ "' is DRF!\n")
+    | [], [] ->
+      T.print_string [T.Bold; T.Foreground T.Green] ("Kernel '" ^ kernel_name ^ "' is DRF!\n")
     | unk, errs ->
       let has_unknown = List.length unk > 0 in
       let errs = List.split errs |> snd in
@@ -224,7 +240,78 @@ let main
         exit 1
       else
         ()
-  ) p
+  )
+
+let jui (output: Analysis.t list) : unit =
+  let kernels =
+    output
+    |> List.map (fun analysis ->
+      let open Analysis in
+      let kernel_name = analysis.kernel.kernel_name in
+      let solutions = analysis.report in
+      let unknowns, errors =
+        solutions
+        |> List.filter_map (
+          let open Z3_solver.Solution in
+          function
+          | _, Drf -> None
+          | p, Unknown -> Some (Either.Left p)
+          | p, Racy _ -> Some (Either.Right p)
+        )
+        |> Common.either_split
+      in
+      let is_ok = (List.length unknowns + List.length errors) = 0 in
+      `Assoc [
+        "kernel_name", `String kernel_name;
+        "status", `String (if is_ok then "drf" else "racy");
+        "unknowns", `List (List.map Symbexp.Proof.to_json unknowns);
+        "errors", `List (List.map Symbexp.Proof.to_json errors);
+      ]
+    )
+  in
+  `Assoc [
+    "kernels", `List kernels
+  ]
+  |> Yojson.Basic.to_string
+  |> print_endline
+
+let main
+  (fname: string)
+  (timeout:int option)
+  (show_proofs:bool)
+  (show_proto:bool)
+  (show_wf:bool)
+  (show_align:bool)
+  (show_phase_split:bool)
+  (show_loc_split:bool)
+  (show_flat_acc:bool)
+  (show_symbexp:bool)
+  (logic:string option)
+  (output_json:bool)
+:
+  unit
+=
+  let parsed = Protocol_parser.Silent.to_proto fname in
+  let grid_dim = parsed.options.grid_dim |> Vec3.from_dim3 in
+  let block_dim = parsed.options.block_dim |> Vec3.from_dim3 in
+  let ui = if output_json then jui else tui in
+  parsed.kernels
+  |> App.make
+      ~timeout
+      ~show_proofs
+      ~show_proto
+      ~show_wf
+      ~show_align
+      ~show_phase_split
+      ~show_loc_split
+      ~show_flat_acc
+      ~show_symbexp
+      ~logic
+      ~block_dim
+      ~grid_dim
+  |> App.run
+  |> ui
+
 
 open Cmdliner
 
@@ -272,6 +359,10 @@ let show_symbexp =
   let doc = "Show the symbexp kernel." in
   Arg.(value & flag & info ["show-symbexp"] ~doc)
 
+let output_json =
+  let doc = "Output result as JSON." in
+  Arg.(value & flag & info ["json"] ~doc)
+
 let main_t = Term.(
   const main
   $ get_fname
@@ -285,6 +376,7 @@ let main_t = Term.(
   $ show_flat_acc
   $ show_symbexp
   $ logic
+  $ output_json
 )
 
 let info =

@@ -13,9 +13,10 @@ let rec from_symbolic : Symbolic.t -> string =
     ")"
   | Add l -> List.map from_symbolic l |> Common.join " + "
 
-let from_ra (r: Ra.t) : string =
+let from_ra (r: Ra.t) : (string, Errors.t) Result.t =
   Symbolic.Default.from_ra r
-  |> from_symbolic
+  |> Result.map from_symbolic
+  |> Symbolic.adapt_error
 
 let parse_maxima (x:string) : string option =
   if Common.contains ~substring:"incorrect syntax" x then None
@@ -42,15 +43,28 @@ let parse_maxima (x:string) : string option =
   )
 
 let run ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Result.t =
-  let expr = expr ^ ",simpsum;" in
+  let expr = expr ^ ",simpsum,ratsimp;" in
   (if verbose
     then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
     else ());
   Common.run ~stdin:expr ~exe ["--very-quiet"; "--disable-readline"]
   |> Errors.handle_result parse_maxima
 
-let run_symbolic ?(verbose=false) ?(exe="maxima") (x:Symbolic.t) : (string, Errors.t) Result.t =
-  run ~verbose ~exe (from_symbolic x)
+let run_ra_ratio
+  ~verbose
+  ~exe
+  ~numerator
+  ~denominator
+:
+  (string, Errors.t) Result.t
+=
+  let (let*) = Result.bind in
+  if Ra.is_zero denominator then Ok "0" else
+  let* numerator = from_ra numerator in
+  let* denominator = from_ra denominator in
+  run ~verbose ~exe ("(" ^ numerator ^ ") / (" ^ denominator ^ ")")
 
 let run_ra ?(verbose=false) ?(exe="maxima") (x:Ra.t) : (string, Errors.t) Result.t =
-  run ~verbose ~exe (from_ra x)
+  let (let*) = Result.bind in
+  let* s = from_ra x in
+  run ~verbose ~exe s

@@ -7,6 +7,14 @@ type t =
   | Loop of Range.t * t
   | Seq of t * t
 
+let rec is_zero : t -> bool =
+  function
+  | Skip
+  | Tick 0 -> true
+  | Tick _ -> false
+  | Loop (_, r) -> is_zero r
+  | Seq (p, q) -> is_zero p && is_zero q
+
 let to_environ (s:t) : Environ.t =
   let rec fvs (s:t) (env:Environ.Fvs.t) : Environ.Fvs.t =
     match s with
@@ -87,13 +95,16 @@ let print (x:t) : unit =
 
 module Make (L:Logger.Logger) = struct
   module S = Shared_access.Make(L)
-  module I = Index_analysis.Make(L)
 
-  let from_kernel (params:Params.t) (k: Proto.prog Proto.kernel) : t =
+  let rec from_shared_access (idx_analysis : Exp.nexp -> int) : Shared_access.t -> t =
+    function
+    | Index a -> Tick (idx_analysis a.index)
+    | Cond (_, p) -> from_shared_access idx_analysis p
+    | Loop (r, p) ->
+      Loop (r, from_shared_access idx_analysis  p)
+
+  let from_kernel (idx_analysis : Exp.nexp -> int) (params:Params.t) (k: Proto.prog Proto.kernel) : t =
     let shared = S.shared_memory k.kernel_arrays in
-    let idx_analysis : Exp.nexp -> int =
-      I.analyze params k.kernel_local_variables
-    in
     let rec from_i : Proto.inst -> t =
       function
       | Acc (x, {index=l; _}) ->

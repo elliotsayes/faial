@@ -440,6 +440,8 @@ module Kernel = struct
     params: C_lang.Param.t list;
     attribute: KernelAttr.t;
   }
+  let is_global (k:t) : bool =
+    k.attribute |> KernelAttr.is_global
 end
 
 type d_def =
@@ -565,23 +567,23 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     let (st, e3) = rewrite_exp e3 st in
     (st, ConditionalOperator {cond=e1; then_expr=e2; else_expr=e3; ty=ty})
 
-  | CXXNewExpr {arg=arg; ty=ty} -> 
+  | CXXNewExpr {arg=arg; ty=ty} ->
     fun st ->
     let (st, arg) = rewrite_exp arg st in
     (st, CXXNewExpr {arg=arg; ty=ty})
 
-  | CXXDeleteExpr {arg=arg; ty=ty} -> 
+  | CXXDeleteExpr {arg=arg; ty=ty} ->
     fun st ->
     let (st, arg) = rewrite_exp arg st in
     (st, CXXDeleteExpr {arg=arg; ty=ty})
 
-  | CXXOperatorCallExpr {func=f; args=args; ty=ty} -> 
+  | CXXOperatorCallExpr {func=f; args=args; ty=ty} ->
     fun st ->
     let (st, f) = rewrite_exp f st in
     let (st, args) = state_map rewrite_exp args st in
     (st, CXXOperatorCallExpr {func=f; args=args; ty=ty})
 
-  | CallExpr {func=f; args=args; ty=ty} -> 
+  | CallExpr {func=f; args=args; ty=ty} ->
     fun st ->
     let (st, f) = rewrite_exp f st in
     let (st, args) = state_map rewrite_exp args st in
@@ -800,4 +802,3 @@ let program_to_s (p:d_program) : Indent.t list =
 
 let print_program (p:d_program) : unit =
   Indent.print (program_to_s p)
-

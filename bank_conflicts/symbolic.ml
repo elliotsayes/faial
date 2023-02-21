@@ -149,8 +149,16 @@ let sum power e : Exp.nexp =
 let n_fact (e:Exp.nexp) : Exp.nexp =
   NCall ("!", e)
 
+let adapt_error (r:('a, string) Result.t) : ('a, Errors.t) Result.t =
+  r
+  |> Result.map_error (fun e ->
+    let open Errors in
+    {output=e; reason=UnsupportedInput}
+  )
+
 module Make (L:Logger.Logger) = struct
   module I = Index_analysis.Make(L)
+
 
 let rec flatten : t -> (Exp.nexp, string) Result.t =
   let (let*) = Result.bind in
@@ -401,25 +409,32 @@ let sum (r:Range.t) (s:t) : t option =
       Some (Sum (b, s))
   | _ -> None
 
-let rec from_ra : Ra.t -> t =
+let rec from_ra : Ra.t -> (t, string) Result.t =
+  let (let*) = Result.bind in
   function
-  | Ra.Tick k -> Const k
-  | Ra.Skip -> Const 0
-  | Ra.Seq (p, q) -> Add [from_ra p; from_ra q]
+  | Ra.Tick k -> Ok (Const k)
+  | Ra.Skip -> Ok (Const 0)
+  | Ra.Seq (p, q) ->
+    let* p = from_ra p in
+    let* q = from_ra q in
+    Ok (Add [p; q])
   | Ra.Loop (r, p) ->
-    match sum r (from_ra p) with
-    | Some s -> s
-    | None -> failwith ("Unsupported range: " ^ Range.to_string r)
+    let* s = from_ra p in
+    match sum r s with
+    | Some s -> Ok s
+    | None -> Error ("Unsupported range: " ^ Range.to_string r)
 
-let rec from_slice (params:Params.t) (locs:Variable.Set.t) : Shared_access.t -> t =
-  function
-  | Index a -> Const (I.analyze params locs a.index)
-  | Cond (_, p) -> from_slice params locs p
-  | Loop (r, p) ->
-    match sum r (from_slice params locs p) with
-    | Some s -> s
-    | None -> failwith ("Unsupported range: " ^ Range.to_string r)
+let run_ra ~show_code (r: Ra.t) : (string, Errors.t) Result.t =
+  from_ra r
+  |> Result.map (fun s ->
+    (if show_code then (to_string s |> print_endline) else ());
+    simplify s
+  )
+  |> adapt_error
+
 end
+
+
 
 module Default = Make(Logger.Colors)
 module Silent = Make(Logger.Silent)

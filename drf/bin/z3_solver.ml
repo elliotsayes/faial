@@ -240,7 +240,7 @@ module Witness = struct
 			(parse "1", parse "2")
 		with
 			Failure(e) ->
-				List.iter (fun (k,v) -> print_endline (k ^ ": " ^ v)) kvs;
+				List.iter (fun (k,v) -> prerr_endline (k ^ ": " ^ v)) kvs;
 				failwith e
 
 	let parse_meta (env:Environ.t) : (Environ.t * (string list * Access.Mode.t * Access.Mode.t)) =
@@ -325,22 +325,23 @@ module Witness = struct
 end
 
 module Solution = struct
-	type t =
-	| Drf
-	| Racy of Witness.t
-	| Unknown
-	let to_json: t -> json =
-		function
-		| Drf -> `String "drf"
-		| Unknown -> `String "unknown"
-		| Racy w -> Witness.to_json w
+  type t =
+    | Drf
+    | Racy of Witness.t
+    | Unknown
 
-	(*
-		Example of retrieving values from a model.
+  let to_json: t -> json =
+    function
+    | Drf -> `String "drf"
+    | Unknown -> `String "unknown"
+    | Racy w -> Witness.to_json w
 
-		https://github.com/icra-team/icra/blob/ee3fd360ee75490277dd3fd05d92e1548db983e4/duet/pa/paSmt.ml
-	 *)
-	let solve
+  (*
+    Example of retrieving values from a model.
+
+    https://github.com/icra-team/icra/blob/ee3fd360ee75490277dd3fd05d92e1548db983e4/duet/pa/paSmt.ml
+    *)
+  let solve
     ?(timeout=None)
     ?(show_proofs=false)
     ?(logic=None)
@@ -348,7 +349,7 @@ module Solution = struct
     ~grid_dim
     (ps:Symbexp.Proof.t Streamutil.stream)
   :
-    t Streamutil.stream
+    (Symbexp.Proof.t * t) Streamutil.stream
   =
     let b_to_expr = ref IntGen.b_to_expr in
     let parse_num = ref IntGen.parse_num in
@@ -398,24 +399,24 @@ module Solution = struct
             prerr_endline ("WARNING: arithmetic solver cannot handle operator '" ^ x ^ "', trying bit-vector arithmetic instead.");
             set_bv ();
             solve ()
-			in
-			(if show_proofs then (
+      in
+      (if show_proofs then (
         let title = "proof #" ^ string_of_int p.id in
         let body = Solver.to_string s ^ "(check-sat)\n(get-model)\n" in
         Tui.print_frame ~title ~body
       ) else ());
       let block_dim = block_dim |> Ojson.unwrap_or Vec3.default in
       let grid_dim = grid_dim |> Ojson.unwrap_or Vec3.default in
-			let r = match Solver.check s [] with
-			| UNSATISFIABLE -> Drf
-			| SATISFIABLE ->
-				(match Solver.get_model s with
-				| Some m -> Racy (Witness.parse (List.nth p.locations) !parse_num ~block_dim ~grid_dim ~proof_id:p.id m)
-				| None -> failwith "INVALID")
-			| UNKNOWN -> Unknown
-			in
-			r
-		) ps
+      let r = match Solver.check s [] with
+      | UNSATISFIABLE -> Drf
+      | SATISFIABLE ->
+        (match Solver.get_model s with
+        | Some m -> Racy (Witness.parse (List.nth p.locations) !parse_num ~block_dim ~grid_dim ~proof_id:p.id m)
+        | None -> failwith "INVALID")
+      | UNKNOWN -> Unknown
+      in
+      (p, r)
+    ) ps
 
 end
 

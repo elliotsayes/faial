@@ -3,7 +3,276 @@ open Inference
 open Bank_conflicts
 open Protocols
 
-(* Main function *)
+module Solver = struct
+
+  type t = {
+    kernel: Proto.prog Proto.kernel;
+    skip_zero: bool;
+    use_maxima: bool;
+    maxima_exe: string;
+    use_absynth: bool;
+    absynth_exe: string;
+    use_cofloco: bool;
+    cofloco_exe: string;
+    use_koat: bool;
+    koat_exe: string;
+    show_code: bool;
+    show_ra: bool;
+    skip_simpl_ra: bool;
+    asympt: bool;
+    params: Params.t;
+    count_shared_access: bool;
+    explain: bool;
+    show_ratio: bool;
+  }
+
+  let make
+    ~kernel
+    ~skip_zero
+    ~use_maxima
+    ~use_absynth
+    ~use_cofloco
+    ~use_koat
+    ~absynth_exe
+    ~cofloco_exe
+    ~koat_exe
+    ~show_code
+    ~maxima_exe
+    ~show_ra
+    ~skip_simpl_ra
+    ~asympt
+    ~params
+    ~count_shared_access
+    ~explain
+    ~show_ratio
+  :
+    t
+  =
+    {
+      kernel;
+      skip_zero;
+      use_maxima;
+      use_absynth;
+      use_cofloco;
+      use_koat;
+      absynth_exe;
+      cofloco_exe;
+      koat_exe;
+      show_code;
+      maxima_exe;
+      show_ra;
+      skip_simpl_ra;
+      asympt;
+      params;
+      count_shared_access;
+      explain;
+      show_ratio;
+    }
+
+  let bank_conflict_count (app:t) : Exp.nexp -> int =
+    Index_analysis.Default.analyze app.params app.kernel.kernel_local_variables
+
+  let access_count (_:t) : Exp.nexp -> int =
+    fun _ -> 1
+
+  let access_analysis (app:t) : Exp.nexp -> int =
+    if app.count_shared_access then
+      access_count app
+    else
+      bank_conflict_count app
+
+  type cost = {
+    amount: string;
+    analysis_duration: float;
+  }
+
+  let get_cost (app:t) (r:Ra.t) : (cost, string) Result.t =
+    (if app.show_ra then (Ra.to_string r |> print_endline) else ());
+    let start = Unix.gettimeofday () in
+    (if app.use_absynth then
+      r |> Absynth.run_ra ~verbose:app.show_code ~exe:app.absynth_exe ~asympt:app.asympt
+    else if app.use_cofloco then
+      r |> Cofloco.run_ra ~verbose:app.show_code ~exe:app.cofloco_exe ~asympt:app.asympt
+    else if app.use_koat then
+      r |> Koat.run_ra ~verbose:app.show_code ~exe:app.koat_exe ~asympt:app.asympt
+    else if app.use_maxima then
+      r |> Maxima.run_ra ~verbose:app.show_code ~exe:app.maxima_exe
+    else
+      r |> Symbolic.Default.run_ra ~show_code:app.show_code
+    )
+    |> Result.map (fun c ->
+      {amount=c; analysis_duration=Unix.gettimeofday () -. start}
+    )
+    |> Result.map_error Errors.to_string
+
+  let get_ra (a:t) (idx_analysis: Exp.nexp -> int) : Ra.t =
+    let r = Ra.Default.from_kernel idx_analysis a.params a.kernel in
+    if a.skip_simpl_ra then r else Ra.simplify r
+
+  let total_cost (a:t) : (cost, string) Result.t =
+    let r = get_ra a (access_analysis a) in
+    get_cost a r
+
+  let ratio_cost (a:t) : (cost, string) Result.t =
+    let numerator = get_ra a (bank_conflict_count a) in
+    let denominator = get_ra a (access_count a) in
+    let start = Unix.gettimeofday () in
+    Maxima.run_ra_ratio
+      ~verbose:a.show_code
+      ~exe:a.maxima_exe
+      ~numerator
+      ~denominator
+    |> Result.map (fun c ->
+      {amount=c; analysis_duration=Unix.gettimeofday () -. start}
+    )
+    |> Result.map_error Errors.to_string
+
+  let sliced_cost (a:t) : (Shared_access.t * Ra.t * ((cost, string) Result.t)) Seq.t =
+    let idx_analysis = access_analysis a in
+    Shared_access.Default.from_kernel a.params a.kernel
+    |> Seq.filter_map (fun s ->
+      (* Convert a slice into an expression *)
+      let r = Ra.Default.from_shared_access idx_analysis s in
+      if Ra.is_zero r && a.skip_zero then
+        None
+      else
+        Some (s, r, get_cost a r)
+    )
+
+  type summary =
+    | TotalCost of (cost, string) Result.t
+    | SlicedCost of (Shared_access.t * Ra.t * ((cost, string) Result.t)) Seq.t
+    | RatioCost of (cost, string) Result.t
+
+  let run (s:t) : summary =
+    if s.explain then
+      SlicedCost (sliced_cost s)
+    else if s.show_ratio then
+      RatioCost (ratio_cost s)
+    else
+      TotalCost (total_cost s)
+
+end
+
+module TUI = struct
+  let run ~only_cost (s:Solver.t) =
+    Stdlib.flush_all ();
+    match Solver.run s with
+    | RatioCost (Ok c)
+    | TotalCost (Ok c) ->
+      if only_cost then (
+        print_endline c.amount
+      ) else (
+        let d = Float.to_int (c.analysis_duration *. 1000.) in
+        print_string (s.kernel.kernel_name ^ " (" ^ string_of_int d  ^ "ms):\n");
+        PrintBox.(
+          c.amount
+          |> text
+          |> hpad 1
+          |> frame
+        )
+        |> PrintBox_text.to_string
+        |> print_endline
+      )
+    | RatioCost (Error e)
+    | TotalCost (Error e) ->
+      prerr_endline e;
+      exit (-1)
+    | SlicedCost s ->
+      s
+      |> Seq.iter (fun (s, r, c) ->
+        let simplified_cost = match c with
+          | Ok s -> Solver.(s.amount)
+          | Error e ->
+            Logger.Colors.error e;
+            "???"
+        in
+        let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
+        let cost = match Symbolic.Default.from_ra r with
+        | Ok e ->
+            PrintBox.(tree ("▶ Cost: "  ^ Symbolic.to_string e |> text)
+            [
+              tree ("▶ Cost (simplified):" |> text_with_style blue)
+              [
+                text_with_style blue simplified_cost |> hpad 1
+              ]
+            ])
+        | Error e ->
+          Logger.Colors.error e;
+          PrintBox.(tree ("▶ Cost (simplified):" |> text_with_style blue)
+          [
+            text_with_style blue simplified_cost |> hpad 1
+          ])
+        in
+        (* Flatten the expression *)
+        ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
+        s |> Shared_access.location |> Tui.LocationUI.print;
+        print_endline "";
+        PrintBox.(
+          tree (s |> Shared_access.to_string |> String.cat "▶ Context: " |> text)
+          [cost]
+        ) |> PrintBox_text.output stdout;
+        print_endline "\n"
+      )
+end
+
+module JUI = struct
+  open Yojson.Basic
+  type json = Yojson.Basic.t
+  let to_json (s:Solver.t) : json =
+    match Solver.run s with
+    | TotalCost (Ok e) ->
+      `Assoc [
+        ("total_cost", `String e.amount);
+        ("kernel_name", `String s.kernel.kernel_name);
+        ("analysis_duration_seconds", `Float e.analysis_duration);
+      ]
+    | RatioCost (Ok e) ->
+      `Assoc [
+        ("ratio_cost", `String e.amount);
+        ("kernel_name", `String s.kernel.kernel_name);
+        ("analysis_duration_seconds", `Float e.analysis_duration);
+      ]
+    | RatioCost (Error e)
+    | TotalCost (Error e) ->
+      `Assoc [
+        ("kernel_name", `String s.kernel.kernel_name);
+        ("error", `String e);
+      ]
+    | SlicedCost s ->
+      `List (s
+      |> Seq.map (fun (s, _, e) ->
+        let loc = Shared_access.location s in
+        let loc = [
+          "location",
+            `Assoc [
+              ("filename", `String loc.filename);
+              ("line", `Int (Index.to_base1 loc.line));
+              ("col_start", `Int (loc.interval |> Interval.start |> Index.to_base1));
+              ("col_finish", `Int (loc.interval |> Interval.finish |> Index.to_base1));
+            ]
+          ]
+        in
+        let cost = match e with
+          | Ok c ->
+            let open Solver in
+            [
+            "cost", `String c.amount;
+            "analysis_duration_seconds", `Float c.analysis_duration
+            ]
+          | Error e -> ["error", `String e]
+        in
+        `Assoc (loc @ cost)
+      )
+      |> List.of_seq
+      )
+
+  let run (s:Solver.t) : unit =
+    s
+    |> to_json
+    |> to_string
+    |> print_endline
+end
 
 let print_cost
   ?(skip_zero=true)
@@ -19,101 +288,40 @@ let print_cost
   ?(maxima_exe="maxima")
   ?(show_ra=false)
   ?(skip_simpl_ra=true)
+  ~asympt
   ~only_cost
   ~params
+  ~count_shared_access
+  ~output_json
+  ~show_ratio
   (k : Proto.prog Proto.kernel)
 :
   unit
 =
-  let with_ra (k:Proto.prog Proto.kernel) : unit =
-    let r = Ra.Default.from_kernel params k in
-    let r = if skip_simpl_ra then r else Ra.simplify r in
-    (if show_ra then (Ra.to_string r |> print_endline) else ());
-    match
-      if use_absynth then
-        r |> Absynth.run_ra ~verbose:show_code ~exe:absynth_exe
-      else if use_cofloco then
-        r |> Cofloco.run_ra ~verbose:show_code ~exe:cofloco_exe
-      else if use_koat then
-        r |> Koat.run_ra ~verbose:show_code ~exe:koat_exe
-      else if use_maxima then
-        r |> Maxima.run_ra ~verbose:show_code ~exe:maxima_exe
-      else (
-        (if show_code then (Ra.to_string r |> print_endline) else ());
-        Ok (Symbolic.Default.from_ra r |> Symbolic.Default.simplify)
-      )
-    with
-    | Ok cost ->
-      Stdlib.flush_all ();
-      if only_cost then (
-        print_endline cost
-      ) else (
-        print_string (k.kernel_name ^ ":\n");
-        PrintBox.(
-          cost
-          |> text
-          |> hpad 1
-          |> frame
-        )
-        |> PrintBox_text.to_string
-        |> print_endline
-      )
-    | Error e ->
-      prerr_endline (Errors.to_string e);
-      exit (-1)
+  let app : Solver.t = Solver.make
+    ~use_maxima
+    ~maxima_exe
+    ~use_absynth
+    ~absynth_exe
+    ~use_cofloco
+    ~cofloco_exe
+    ~use_koat
+    ~koat_exe
+    ~show_code
+    ~show_ra
+    ~asympt
+    ~skip_zero
+    ~skip_simpl_ra
+    ~params
+    ~count_shared_access
+    ~explain
+    ~show_ratio
+    ~kernel:k
   in
-  let with_slices (k:Proto.prog Proto.kernel) : unit =
-    let render_s ?(show_code=false) (s: Symbolic.t) : (string, Errors.t) Result.t =
-      if use_maxima then
-        Maxima.run_symbolic ~verbose:show_code ~exe:maxima_exe s
-      else if use_absynth then
-        Absynth.run_symbolic ~verbose:show_code ~exe:absynth_exe s
-      else if use_cofloco then
-        Cofloco.run_symbolic ~verbose:show_code ~exe:cofloco_exe s
-      else if use_koat then
-        Koat.run_symbolic ~verbose:show_code ~exe:koat_exe s
-      else
-        Ok (Symbolic.Default.simplify s)
-    in
-    Shared_access.Default.from_kernel params k
-    |> Seq.iter (fun s ->
-      (* Convert a slice into an expression *)
-      let s1 = Symbolic.Default.from_slice params k.kernel_local_variables s in
-      if skip_zero && Symbolic.is_zero s1 then
-        ()
-      else
-        (* Flatten the expression *)
-        let simplified_cost = match render_s ~show_code s1 with
-          | Ok s -> s
-          | Error e ->
-            prerr_endline (Errors.to_string e);
-            "???"
-        in
-        ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
-        s |> Shared_access.location |> Tui.LocationUI.print;
-        print_endline "";
-        let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
-        PrintBox.(
-          tree (s |> Shared_access.to_string |> String.cat "▶ Context: " |> text)
-          [
-            tree ("▶ Cost: "  ^ Symbolic.to_string s1 |> text)
-            [
-              tree ("▶ Cost (simplified):" |> text_with_style blue)
-              [
-                text_with_style blue simplified_cost |> hpad 1
-              ]
-            ]
-          ]
-        ) |> PrintBox_text.output stdout;
-        print_endline "\n";
-    );
-  in
-  (* 1. break a kernel into slices *)
-  if explain then (
-    with_slices k
-  ) else (
-    with_ra k
-  )
+  if output_json then
+    JUI.run app
+  else
+    TUI.run ~only_cost app
 
 
 let pico
@@ -135,56 +343,48 @@ let pico
   (skip_simpl_ra:bool)
   (only_cost:bool)
   (ignore_absent:bool)
+  (asympt:bool)
+  (count_shared_access:bool)
+  (output_json:bool)
+  (show_ratio: bool)
 =
-  try
-    let parsed_json = Cu_to_json.cu_to_json fname in
-    let gv = match Gv_parser.parse fname with
-      | Some gv ->
-        Logger.Colors.info ("Found GPUVerify args in source file: " ^ Gv_parser.to_string gv);
-        gv
-      | None -> Gv_parser.default
-    in
-    let kvs = Gv_parser.to_assoc gv in
-    let block_dim = block_dim |> Option.value ~default:gv.block_dim in
-    let grid_dim = grid_dim |> Option.value ~default:gv.grid_dim in
-    let params = Params.make ~block_dim ~grid_dim () in
-    let c_ast = parsed_json |> C_lang.parse_program |> Result.get_ok in
-    let d_ast = c_ast |> D_lang.rewrite_program in
-    let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
-    let proto =
-      imp
-      |> List.map Imp.compile
-      |> List.map (Proto.replace_constants kvs)
-      |> List.filter Proto.has_shared_arrays
-    in
-    if ignore_absent || List.length proto > 0 then
-      List.iter (fun k ->
-        print_cost
-          ~explain
-          ~use_maxima
-          ~use_absynth
-          ~use_cofloco
-          ~use_koat
-          ~show_code
-          ~show_ra
-          ~skip_zero:(not show_all)
-          ~absynth_exe
-          ~maxima_exe
-          ~cofloco_exe
-          ~koat_exe
-          ~skip_simpl_ra
-          ~params
-          ~only_cost
-          k
-      ) proto
-    else (
-      Logger.Colors.error "No kernels using __shared__ arrays found.";
-      exit (-1)
+  let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
+  let block_dim = parsed.options.block_dim in
+  let grid_dim = parsed.options.grid_dim in
+  let params = Params.make ~block_dim ~grid_dim () in
+  let proto =
+    parsed.kernels
+    |> List.filter Proto.has_shared_arrays
+  in
+  if ignore_absent || List.length proto > 0 then
+    proto
+    |> List.iter (fun k ->
+      print_cost
+        ~explain
+        ~use_maxima
+        ~use_absynth
+        ~use_cofloco
+        ~use_koat
+        ~show_code
+        ~show_ra
+        ~skip_zero:(not show_all)
+        ~absynth_exe
+        ~maxima_exe
+        ~cofloco_exe
+        ~koat_exe
+        ~skip_simpl_ra
+        ~params
+        ~only_cost
+        ~asympt
+        ~count_shared_access
+        ~output_json
+        ~show_ratio
+        k
     )
-  with
-  | Common.ParseError b ->
-      Buffer.output_buffer stderr b;
-      exit (-1)
+  else (
+    Logger.Colors.error "No kernels using __shared__ arrays found.";
+    exit (-1)
+  )
 
 (* Command-line interface *)
 
@@ -273,13 +473,31 @@ let show_ra =
   let doc = "Print out the resource-analysis problem that represents the bank conflicts." in
   Arg.(value & flag & info ["show-ra"] ~doc)
 
+let asympt =
+  let doc = "Calculate the asymptotic cost of bank conflicts." in
+  Arg.(value & flag & info ["asympt"] ~doc)
+
 let explain =
   let doc = "Show bank-conflicts per location." in
   Arg.(value & flag & info ["explain"] ~doc)
 
+let show_ratio =
+  let doc = "Show the ratio between bank-conflicts over number of shared " ^
+  "accesses (ranges from 0 .. 31)."
+  in
+  Arg.(value & flag & info ["ratio"] ~doc)
+
 let show_code =
   let doc = "Show the code being sent to the solver if any." in
   Arg.(value & flag & info ["show-code"] ~doc)
+
+let count_shared_accesses =
+  let doc = "Instead of counting how many bank-conflicts, count how many shared accesses occur." in
+  Arg.(value & flag & info ["count-shared"] ~doc)
+
+let output_json =
+  let doc = "Output in JSON." in
+  Arg.(value & flag & info ["json"] ~doc)
 
 let pico_t = Term.(
   const pico
@@ -301,6 +519,10 @@ let pico_t = Term.(
   $ skip_simpl_ra
   $ only_cost
   $ ignore_absent
+  $ asympt
+  $ count_shared_accesses
+  $ output_json
+  $ show_ratio
 )
 
 let info =

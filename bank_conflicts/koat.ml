@@ -37,52 +37,6 @@ type prog = {env:Environ.t; code:inst list}
 let rule (src:int) ?(cost=0) ?(dst=[]) ?(cnd=[]) () : inst =
   Rule (Rule.make ~src ~cost ~dst ~cnd)
 
-let from_symbolic (env:Environ.t) (s: Symbolic.t) : prog =
-  let open Exp in
-  (* Compute a map from variable to its identifier *)
-  let rec translate (idx:int) : Symbolic.t -> int * inst list =
-    function
-    | Sum (b, s) ->
-      let x = b.var in
-      let (idx', rest) = translate (idx + 2) s in
-      idx' + 1,
-      [
-        (* Initialize the loop *)
-        rule
-          idx
-          ~dst:[{id=idx + 1; args=[(x, b.first_elem)]}] ();
-        (* Transition of next iteration *)
-        rule (idx + 1) ~dst:[
-          {id=idx + 2; args=[(x, Exp.n_inc (Var x))]}; (* next iter *)
-        ] ~cnd:[n_le (Var x) b.last_elem] ();
-      ] @
-      rest
-      @ [
-        rule idx'
-          ~dst:[{id=idx + 1; args=[]}]
-        ();
-        (* Transition of end of loop: *)
-        rule (idx + 1) ~cnd:[n_gt (Var x) b.last_elem]
-            ~dst:[{id=idx' + 1; args=[]}] ();
-      ]
-    | Add l ->
-      List.fold_right (fun (s:Symbolic.t) ((idx:int), l1) ->
-        let (idx, l2) = translate idx s in
-        (idx, l1 @ l2)
-      ) l (idx, [])
-    | Const k ->
-      idx + 1,
-      [
-        rule idx
-          ~cost:k
-          ~dst:[{id=idx+1;args=[]}] ();
-      ]
-  in
-  let (idx, l) = translate 0 s in
-  let code = l @ [rule idx ()] in
-  {env; code}
-
-
 let from_ra (env:Environ.t) (s:Ra.t) : prog =
   let open Exp in
   (* Compute a map from variable to its identifier *)
@@ -152,25 +106,28 @@ let to_string (p:prog) : string =
 
 let r_id = Str.regexp {|nat(\([A-Za-z_0-9-]+\))|}
 
-let parse_koat (env:Environ.t) (x:string) : string option =
+let parse_asympt (env:Environ.t) (x:string) : string option =
+  let (let*) = Option.bind in
+  let* (_, x) = Common.split '{' x in
+  let* (x, _) = Common.split '}' x in
+  let x = Environ.decode (String.trim x) env |> Str.global_replace r_id "\\1" in
+  Some x
+
+let parse_cost (env:Environ.t) (x:string) : string option =
   let (let*) = Option.bind in
   let* (x, _) = Common.split '{' x in
   let x = Environ.decode (String.trim x) env |> Str.global_replace r_id "\\1" in
   Some x
 
-let run ?(exe="koat2") ?(verbose=false) (env:Environ.t) (expr:string) : (string, Errors.t) Result.t =
+let run ?(asympt=false) ?(exe="koat2") ?(verbose=false) (env:Environ.t) (expr:string) : (string, Errors.t) Result.t =
   (if verbose
     then prerr_endline ("KoAT output:\n" ^ expr ^ "\n")
     else ());
+  let parse = if asympt then parse_asympt else parse_cost in
   Common.run ~stdin:expr ~exe ["analyse"; "-i"; "/dev/stdin"]
-  |> Errors.handle_result (parse_koat env)
+  |> Errors.handle_result (parse env)
 
-let run_symbolic ?(exe="koat2") ?(verbose=false) (s:Symbolic.t) : (string, Errors.t) Result.t =
-  let env = Symbolic.Default.to_environ s in
-  let expr = from_symbolic env s |> to_string in
-  run ~exe ~verbose env expr
-
-let run_ra ?(exe="koat2") ?(verbose=false) (s:Ra.t) : (string, Errors.t) Result.t =
+let run_ra ?(asympt=false) ?(exe="koat2") ?(verbose=false) (s:Ra.t) : (string, Errors.t) Result.t =
   let env = Ra.to_environ s in
   let expr = from_ra env s |> to_string in
-  run ~exe ~verbose env expr
+  run ~asympt ~exe ~verbose env expr
