@@ -97,6 +97,12 @@ let acc_expr_to_dummy (x, a : Variable.t * Access.t) (racuda : bool)
   | Rd -> [Line (var_to_dummy x ^ " = " ^ var ^ ";")]
   | Wr -> [Line (var ^ " = " ^ var_to_dummy x ^ "_w();")]
 
+(* Converts a division loop to a multiplication loop in RaCUDA output *)
+let div_to_mult (r : Range.t) (racuda : bool) : Range.t =
+  match racuda, r.step, r.dir with
+  | true, Mult _, Decrease -> {r with dir = Increase}
+  | _ -> r
+
 (* Converts a loop increment to a string *)
 let inc_to_s (r : Range.t) (n_to_s : nexp -> string) : string =
   Variable.name r.var ^
@@ -119,6 +125,7 @@ let rec inst_to_s (racuda : bool) : inst -> Indent.t list = function
   | Loop (r, p) ->
     let x = Variable.name r.var in
     let n_to_s = if racuda then n_to_s else Exp.n_to_string in
+    let r = div_to_mult r racuda in
     let lb, ub, op = match r.dir with
       | Increase -> r.lower_bound, r.upper_bound, " < "
       | Decrease -> n_dec r.upper_bound, n_dec r.lower_bound, " > "
