@@ -212,6 +212,15 @@ let vars_distinct (p:prog)  (known:Variable.Set.t) : prog =
   in
   uniq_p p known |> fst
 
+let kernel_vars_distinct (k:prog kernel) : prog kernel =
+  let vars =
+    Variable.Set.union
+      k.kernel_global_variables
+      k.kernel_local_variables
+  in
+  { k with
+    kernel_code = vars_distinct k.kernel_code vars
+  }
 
 let rec inst_to_s : inst -> Indent.t list =
   function

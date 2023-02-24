@@ -25,6 +25,7 @@ module Colors : Logger = struct
   let error (x: string) : unit =
     let open ANSITerminal in
     prerr_string [Bold; Foreground Red] ("ERROR: " ^ x ^ "\n")
+
 end
 
 module Silent : Logger = struct
