@@ -307,7 +307,7 @@ module JUI = struct
         )
       in
       `Assoc [
-        "kernel", `String k.kernel_name;
+        "kernel_name", `String k.kernel_name;
         "accesses", accs;
       ]
     in
