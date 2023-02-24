@@ -40,6 +40,7 @@ module Solver = struct
     ~maxima_exe
     ~show_ra
     ~skip_simpl_ra
+    ~distinct_vars
     ~asympt
     ~params
     ~count_shared_access
@@ -48,6 +49,20 @@ module Solver = struct
   :
     t
   =
+    let kernel =
+      if distinct_vars then (
+        let open Proto in
+        let vars =
+          Variable.Set.union
+            kernel.kernel_global_variables
+            kernel.kernel_local_variables
+        in
+        { kernel with
+          kernel_code = Proto.vars_distinct kernel.kernel_code vars
+        }
+      ) else
+        kernel
+    in
     {
       kernel;
       skip_zero;
@@ -288,6 +303,7 @@ let print_cost
   ?(maxima_exe="maxima")
   ?(show_ra=false)
   ?(skip_simpl_ra=true)
+  ~distinct_vars
   ~asympt
   ~only_cost
   ~params
@@ -312,6 +328,7 @@ let print_cost
     ~asympt
     ~skip_zero
     ~skip_simpl_ra
+    ~distinct_vars
     ~params
     ~count_shared_access
     ~explain
@@ -341,6 +358,7 @@ let pico
   (koat_exe:string)
   (maxima_exe:string)
   (skip_simpl_ra:bool)
+  (distinct_vars:bool)
   (only_cost:bool)
   (ignore_absent:bool)
   (asympt:bool)
@@ -368,6 +386,7 @@ let pico
         ~show_code
         ~show_ra
         ~skip_zero:(not show_all)
+        ~distinct_vars
         ~absynth_exe
         ~maxima_exe
         ~cofloco_exe
@@ -465,6 +484,10 @@ let skip_simpl_ra =
   let doc = "By default we simplify the RA to improve performance of solvers." in
   Arg.(value & flag & info ["skip-simpl-ra"] ~doc)
 
+let distinct_vars =
+  let doc = "Make all loop varibles distinct. This is a workaround for certain solvers." in
+  Arg.(value & flag & info ["distinct-vars"] ~doc)
+
 let show_all =
   let doc = "By default we skip accesses that yield 0 bank-conflicts." in
   Arg.(value & flag & info ["show-all"] ~doc)
@@ -517,6 +540,7 @@ let pico_t = Term.(
   $ koat_exe
   $ maxima_exe
   $ skip_simpl_ra
+  $ distinct_vars
   $ only_cost
   $ ignore_absent
   $ asympt
