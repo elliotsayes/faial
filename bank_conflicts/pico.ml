@@ -311,10 +311,18 @@ module JUI = struct
         "accesses", accs;
       ]
     in
-    match Solver.run s with
-    | TotalCost l -> `List (List.map (c_to_j "total_cost") l)
-    | RatioCost l -> `List (List.map (c_to_j "ratio_cost") l)
-    | SlicedCost s -> `List (List.map s_to_j s)
+    let kernels =
+      match Solver.run s with
+      | TotalCost l -> `List (List.map (c_to_j "total_cost") l)
+      | RatioCost l -> `List (List.map (c_to_j "ratio_cost") l)
+      | SlicedCost s -> `List (List.map s_to_j s)
+    in
+    `Assoc [
+      "kernels", kernels;
+      "argv", `List (Sys.argv |> Array.to_list |> List.map (fun x -> `String x));
+      "executable_name", `String Sys.executable_name;
+      "z3_version", `String (Z3.Version.to_string);
+    ]
 
   let run (s:Solver.t) : unit =
     s
