@@ -40,7 +40,7 @@ module Solver = struct
     ~maxima_exe
     ~show_ra
     ~skip_simpl_ra
-    ~distinct_vars
+    ~skip_distinct_vars
     ~asympt
     ~params
     ~count_shared_access
@@ -50,7 +50,9 @@ module Solver = struct
     t
   =
     let kernel =
-      if distinct_vars then (
+      if skip_distinct_vars then
+        kernel
+      else (
         let open Proto in
         let vars =
           Variable.Set.union
@@ -60,8 +62,7 @@ module Solver = struct
         { kernel with
           kernel_code = Proto.vars_distinct kernel.kernel_code vars
         }
-      ) else
-        kernel
+      )
     in
     {
       kernel;
@@ -303,7 +304,7 @@ let print_cost
   ?(maxima_exe="maxima")
   ?(show_ra=false)
   ?(skip_simpl_ra=true)
-  ~distinct_vars
+  ~skip_distinct_vars
   ~asympt
   ~only_cost
   ~params
@@ -328,7 +329,7 @@ let print_cost
     ~asympt
     ~skip_zero
     ~skip_simpl_ra
-    ~distinct_vars
+    ~skip_distinct_vars
     ~params
     ~count_shared_access
     ~explain
@@ -358,7 +359,7 @@ let pico
   (koat_exe:string)
   (maxima_exe:string)
   (skip_simpl_ra:bool)
-  (distinct_vars:bool)
+  (skip_distinct_vars:bool)
   (only_cost:bool)
   (ignore_absent:bool)
   (asympt:bool)
@@ -386,7 +387,7 @@ let pico
         ~show_code
         ~show_ra
         ~skip_zero:(not show_all)
-        ~distinct_vars
+        ~skip_distinct_vars
         ~absynth_exe
         ~maxima_exe
         ~cofloco_exe
@@ -484,9 +485,9 @@ let skip_simpl_ra =
   let doc = "By default we simplify the RA to improve performance of solvers." in
   Arg.(value & flag & info ["skip-simpl-ra"] ~doc)
 
-let distinct_vars =
-  let doc = "Make all loop varibles distinct. This is a workaround for certain solvers." in
-  Arg.(value & flag & info ["distinct-vars"] ~doc)
+let skip_distinct_vars =
+  let doc = "By default we make all loop varibles distinct, as a workaround for certain solvers' limitations." in
+  Arg.(value & flag & info ["skip-distinct-vars"] ~doc)
 
 let show_all =
   let doc = "By default we skip accesses that yield 0 bank-conflicts." in
@@ -540,7 +541,7 @@ let pico_t = Term.(
   $ koat_exe
   $ maxima_exe
   $ skip_simpl_ra
-  $ distinct_vars
+  $ skip_distinct_vars
   $ only_cost
   $ ignore_absent
   $ asympt
