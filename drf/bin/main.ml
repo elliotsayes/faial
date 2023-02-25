@@ -270,7 +270,10 @@ let jui (output: Analysis.t list) : unit =
     )
   in
   `Assoc [
-    "kernels", `List kernels
+    "kernels", `List kernels;
+    "argv", `List (Sys.argv |> Array.to_list |> List.map (fun x -> `String x));
+    "executable_name", `String Sys.executable_name;
+    "z3_version", `String (Z3.Version.to_string);
   ]
   |> Yojson.Basic.to_string
   |> print_endline

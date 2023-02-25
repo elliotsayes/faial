@@ -43,7 +43,9 @@ let parse_maxima (x:string) : string option =
   )
 
 let run ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Result.t =
-  let expr = expr ^ ",simpsum,ratsimp;" in
+  let expr =
+    "log2(x) := log(x)/log(2)$" ^
+    "pow2(x) := x^2\n$" ^ expr ^ ",logcontract,simpsum,ratsimp;" in
   (if verbose
     then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
     else ());
