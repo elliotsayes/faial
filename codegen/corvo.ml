@@ -1,21 +1,15 @@
 open Stage0
 open Inference
-open Bank_conflicts
 open Protocols
 
 (* Parses GPUVerify arguments from the CUDA file *)
-let read_params (fname : string) : Gv_parser.t * Params.t =
-  let gv = match Gv_parser.parse fname with
-    | Some gv ->
-      Logger.Colors.info ("Found GPUVerify args in source file: "
-                          ^ Gv_parser.to_string gv);
-      gv
-    | None -> Gv_parser.default
-
-  in
-  let block_dim = gv.block_dim in
-  let grid_dim = gv.grid_dim in
-  gv, Params.make ~block_dim ~grid_dim ()
+let read_params (fname : string) : Gv_parser.t =
+  match Gv_parser.parse fname with
+  | Some gv ->
+    Logger.Colors.info ("Found GPUVerify args in source file: "
+                        ^ Gv_parser.to_string gv);
+    gv
+  | None -> Gv_parser.default
 
 (* Parses a list of protocols from the CUDA file *)
 let read_kernels (fname : string) : Proto.prog Proto.kernel list =
@@ -47,7 +41,7 @@ let corvo
     (racuda : bool)
     (toml : bool)
   : unit =
-  let gv, params = read_params input_file in
+  let gv, params = read_params input_file |> Prep.prepare_params racuda in
   let prepare_kernel = Prep.prepare_kernel racuda params in
   let kernels = read_kernels input_file |> List.map prepare_kernel in
   let generator = (if toml then Tgen.gen_toml else Cgen.gen_cuda) racuda gv in

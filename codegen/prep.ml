@@ -6,6 +6,14 @@ open Proto
 module VarSet = Variable.Set
 module VarMap = Variable.Map
 
+(* Make blockDim parameters RaCUDA-friendly *)
+let prepare_params (racuda : bool) (gv : Gv_parser.t) : Gv_parser.t * Params.t =
+  let f x = if not racuda then x else if x > 1 then max x 32 else 1 in
+  let x, y, z = gv.block_dim.x, gv.block_dim.y, gv.block_dim.z in
+  let block_dim = Dim3.{x = f x; y = f y; z = f z} in
+  let grid_dim = gv.grid_dim in
+  { gv with block_dim }, Params.make ~block_dim ~grid_dim ()
+
 (* Use constant folding to simplify the code *)
 let constant_folding (k : prog kernel) : prog kernel =
   let code = p_opt k.kernel_code in
