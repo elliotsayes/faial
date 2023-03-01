@@ -1,6 +1,6 @@
 (library
  (name cgen)
- (modules cgen tgen prep)
+ (modules cgen tgen prep generator)
  (wrapped false)
  (libraries inference stage0 protocols otoml bank_conflicts))
 
