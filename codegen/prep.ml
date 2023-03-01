@@ -88,11 +88,15 @@ let mk_types_compatible (racuda : bool) (k : prog kernel) : prog kernel =
   {k with kernel_arrays = arrays}
 
 (* Prepare the kernel for serialization *)
-let prepare_kernel (racuda : bool) (params : Params.t) (k : prog kernel)
+let prepare_kernel
+    (racuda : bool)
+    (distinct_vars : bool)
+    (params : Params.t)
+    (k : prog kernel)
   : prog kernel =
   k
   |> constant_folding
   |> remove_unused_variables
   |> mk_types_compatible racuda
-  |> (if racuda then kernel_vars_distinct else Fun.id)
+  |> (if distinct_vars then kernel_vars_distinct else Fun.id)
   |> (if racuda then Shared_access.Silent.simplify_kernel params else Fun.id)

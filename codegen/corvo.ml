@@ -39,10 +39,12 @@ let corvo
     (input_file : string)
     (output_file : string)
     (racuda : bool)
+    (distinct_vars : bool)
     (toml : bool)
   : unit =
+  let distinct_vars = if racuda then true else distinct_vars in
   let gv, params = read_params input_file |> Prep.prepare_params racuda in
-  let prepare_kernel = Prep.prepare_kernel racuda params in
+  let prepare_kernel = Prep.prepare_kernel racuda distinct_vars params in
   let kernels = read_kernels input_file |> List.map prepare_kernel in
   let generator = (if toml then Tgen.gen_toml else Cgen.gen_cuda) racuda gv in
   List.map generator kernels |> Common.join "\n" |> write_string output_file;
@@ -63,6 +65,10 @@ let racuda =
   let doc = "Generate a RaCUDA-friendly kernel." in
   Arg.(value & flag & info ["r"; "racuda"] ~doc)
 
+let distinct_vars =
+  let doc = "Make all loop variables distinct." in
+  Arg.(value & flag & info ["distinct-vars"] ~doc)
+
 let toml =
   let doc = "Generate a TOML file." in
   Arg.(value & flag & info ["t"; "toml"] ~doc)
@@ -72,6 +78,7 @@ let corvo_t = Term.(
     $ input_file
     $ output_file
     $ racuda
+    $ distinct_vars
     $ toml
   )
 
