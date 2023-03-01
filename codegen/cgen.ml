@@ -44,43 +44,6 @@ let vector_types : StringSet.t =
 let idx_to_s (f : 'a -> string) (l : 'a list) : string =
   "[" ^ (Common.join "][" (List.map f l)) ^ "]"
 
-(* Converts source expression to a RaCUDA-friendly form *)
-let rec n_par (n : nexp) : string =
-  match n with
-  | Proj _
-  | Num _
-  | Var _
-  | NCall _
-    -> n_to_s n
-  | NIf _
-  | Bin _
-    -> "(" ^ n_to_s n ^ ")"
-and n_to_s : nexp -> string = function
-  | Proj (t, x) ->
-    "proj(" ^ task_to_string t ^ ", "  ^ Variable.name x ^ ")"
-  | Num n -> string_of_int n
-  | Var x -> Variable.name x
-  | Bin (b, a1, a2) -> n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
-  | NCall (x, arg) ->
-    x ^ "(" ^ n_to_s arg ^ ")"
-  | NIf (b, n1, n2) ->
-    b_par b ^ " ? " ^ n_par n1 ^ " : " ^ n_par n2
-and b_to_s : bexp -> string = function
-  | Bool b -> if b then "(0 == 0)" else "(0 != 0)"
-  | NRel (b, n1, n2) ->
-    n_to_s n1 ^ " " ^ Exp.nrel_to_string b ^ " " ^ n_to_s n2
-  | BRel (b, b1, b2) ->
-    b_par b1 ^ " " ^ Exp.brel_to_string b ^ " " ^ b_par b2
-  | BNot b -> "!" ^ b_par b
-  | Pred (x, v) -> x ^ "(" ^ n_to_s v ^ ")"
-and b_par (b : bexp) : string =
-  match b with
-  | Pred _
-  | Bool _
-  | NRel _ -> b_to_s b
-  | BNot _
-  | BRel _ -> "("  ^ b_to_s b ^ ")"
-
 (* Gives the dummy variable string for any variable *)
 let var_to_dummy (v : Variable.t) : string = "__dummy" ^ Variable.name v
 
@@ -89,10 +52,8 @@ let is_dummy_var (v : Variable.t) : bool =
   String.starts_with ~prefix:"__dummy" (Variable.name v)
 
 (* Gives the dummy instruction for any array read/write *)
-let acc_expr_to_dummy (x, a : Variable.t * Access.t) (racuda : bool)
-  : Indent.t list =
-  let n_to_s = if racuda then n_to_s else Exp.n_to_string in
-  let var = Variable.name x ^ idx_to_s n_to_s a.Access.index in
+let acc_expr_to_dummy (x, a : Variable.t * Access.t) : Indent.t list =
+  let var = Variable.name x ^ idx_to_s n_to_string a.Access.index in
   match a.Access.mode with
   | Rd -> [Line (var_to_dummy x ^ " = " ^ var ^ ";")]
   | Wr -> [Line (var ^ " = " ^ var_to_dummy x ^ "_w();")]
@@ -104,35 +65,34 @@ let div_to_mult (r : Range.t) (racuda : bool) : Range.t =
   | _ -> r
 
 (* Converts a loop increment to a string *)
-let inc_to_s (r : Range.t) (n_to_s : nexp -> string) : string =
+let inc_to_s (r : Range.t) : string =
   Variable.name r.var ^
   match r.step, r.dir with
-  | Plus step, Increase -> " += " ^ n_to_s step
-  | Plus step, Decrease -> " -= " ^ n_to_s step
-  | Mult step, Increase -> " *= " ^ n_to_s step
-  | Mult step, Decrease -> " /= " ^ n_to_s step
+  | Plus step, Increase -> " += " ^ n_to_string step
+  | Plus step, Decrease -> " -= " ^ n_to_string step
+  | Mult step, Increase -> " *= " ^ n_to_string step
+  | Mult step, Decrease -> " /= " ^ n_to_string step
 
 (* Converts source instruction to a valid CUDA operation *)
 let rec inst_to_s (racuda : bool) : inst -> Indent.t list = function
-  | Acc e -> acc_expr_to_dummy e racuda
+  | Acc e -> acc_expr_to_dummy e
   | Sync -> [Line "__syncthreads();"]
   | Cond (b, p) ->
     [
-      Line ("if (" ^ (if racuda then b_to_s else Exp.b_to_string) b ^ ") {");
+      Line ("if (" ^ b_to_string b ^ ") {");
       Block (List.map (inst_to_s racuda) p |> List.flatten);
       Line "}"
     ]
   | Loop (r, p) ->
     let x = Variable.name r.var in
-    let n_to_s = if racuda then n_to_s else Exp.n_to_string in
     let r = div_to_mult r racuda in
     let lb, ub, op = match r.dir with
       | Increase -> r.lower_bound, r.upper_bound, " < "
       | Decrease -> n_dec r.upper_bound, n_dec r.lower_bound, " > "
     in
     [ 
-      Line ("for (" ^ "int " ^ x ^ " = " ^ n_to_s lb ^ "; " ^ x
-            ^ op ^ n_to_s ub ^ "; " ^ inc_to_s r n_to_s ^ ") {");
+      Line ("for (" ^ "int " ^ x ^ " = " ^ n_to_string lb ^ "; "
+            ^ x ^ op ^ n_to_string ub ^ "; " ^ inc_to_s r ^ ") {");
       Block (List.map (inst_to_s racuda) p |> List.flatten);
       Line "}"
     ]
