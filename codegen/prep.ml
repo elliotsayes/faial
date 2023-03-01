@@ -62,27 +62,18 @@ let remove_template (s : string) : string =
   | None -> s
   | Some t_index -> String.sub s 0 t_index
 
+(* Convert a dependent/templated type to a generic CUDA type *)
+let rec convert_type : string list -> string list = function
+  | [] -> []
+  | [last_type] -> [remove_template last_type]
+  | modifier :: types ->
+    if modifier = "typename" then convert_type types
+    else modifier :: convert_type types
+
 (* Replace the type of each array with a compatible alternative *)
-let mk_types_compatible (racuda : bool) (k : prog kernel) : prog kernel =
-  let rec convert_type (shared : bool) : string list -> string list =
-    function
-    | [] -> []
-    (* Unknown/incompatible types are converted to int in RaCUDA output *)
-    | [last_type] ->
-      if racuda then
-        match last_type with
-        | "char" | "double" | "float" | "int" | "void" -> [last_type]
-        | "long" | "short" -> if shared then ["int"] else [last_type]
-        | _ -> ["int"]
-      else [remove_template last_type]
-    (* Remove unsigned modifier to make shared arrays RaCUDA-friendly *)
-    | modifier :: types ->
-      if racuda && shared && modifier = "unsigned" || modifier = "typename"
-      then convert_type shared types
-      else modifier :: convert_type shared types
-  in
+let mk_types_compatible (k : prog kernel) : prog kernel =
   let mk_array_compatible (arr : Memory.t) : Memory.t =
-    {arr with data_type = convert_type (Memory.is_shared arr) arr.data_type}
+    {arr with data_type = convert_type arr.data_type}
   in
   let arrays = VarMap.map mk_array_compatible k.kernel_arrays in
   {k with kernel_arrays = arrays}
@@ -97,6 +88,6 @@ let prepare_kernel
   k
   |> constant_folding
   |> remove_unused_variables
-  |> mk_types_compatible racuda
+  |> mk_types_compatible
   |> (if distinct_vars then kernel_vars_distinct else Fun.id)
   |> (if racuda then Shared_access.Silent.simplify_kernel params else Fun.id)
