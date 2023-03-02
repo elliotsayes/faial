@@ -1,3 +1,4 @@
+(* Container type for code generation flags *)
 type t = {
   const_fold : bool;
   distinct_vars : bool;
@@ -23,6 +24,7 @@ let make
     ~use_dummy_array
   : t =
   {
+    (* RaCUDA option enables all code generation flags *)
     const_fold = const_fold || racuda;
     distinct_vars = distinct_vars || racuda;
     div_to_mult = div_to_mult || racuda;
