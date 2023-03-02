@@ -61,12 +61,13 @@ let corvo
       ~toml
       ~use_dummy_array
   in
-  let gv, params = read_params input_file |> Prep.prepare_params racuda in
-  let prepare_kernel = Prep.prepare_kernel racuda distinct_vars params in
+  let gv, params = read_params input_file |> Prep.prepare_params g in
+  let prepare_kernel = Prep.prepare_kernel g params in
   let kernels = read_kernels input_file |> List.map prepare_kernel in
-  let generator = (if g.toml then Tgen.gen_toml else Cgen.gen_cuda) racuda gv in
+  let generator = (if toml then Tgen.gen_toml else Cgen.gen_cuda) g gv in
   List.map generator kernels |> Common.join "\n" |> write_string output_file;
-  if racuda then Cgen.gen_params gv |> write_string (output_file ^ ".params");
+  if g.gen_params then
+    Cgen.gen_params gv |> write_string (output_file ^ ".params");
 
 open Cmdliner
 

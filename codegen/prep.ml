@@ -7,8 +7,9 @@ module VarSet = Variable.Set
 module VarMap = Variable.Map
 
 (* Make blockDim parameters RaCUDA-friendly *)
-let prepare_params (racuda : bool) (gv : Gv_parser.t) : Gv_parser.t * Params.t =
-  let f x = if not racuda then x else if x > 1 then max x 32 else 1 in
+let prepare_params (g : Generator.t) (gv : Gv_parser.t)
+  : Gv_parser.t * Params.t =
+  let f x = if not g.mod_gv_args then x else if x > 1 then max x 32 else 1 in
   let x, y, z = gv.block_dim.x, gv.block_dim.y, gv.block_dim.z in
   let block_dim = Dim3.{x = f x; y = f y; z = f z} in
   let grid_dim = gv.grid_dim in
@@ -79,15 +80,12 @@ let mk_types_compatible (k : prog kernel) : prog kernel =
   {k with kernel_arrays = arrays}
 
 (* Prepare the kernel for serialization *)
-let prepare_kernel
-    (racuda : bool)
-    (distinct_vars : bool)
-    (params : Params.t)
-    (k : prog kernel)
+let prepare_kernel (g : Generator.t) (params : Params.t) (k : prog kernel)
   : prog kernel =
   k
-  |> constant_folding
+  |> (if g.const_fold then constant_folding else Fun.id)
   |> remove_unused_variables
   |> mk_types_compatible
-  |> (if distinct_vars then kernel_vars_distinct else Fun.id)
-  |> (if racuda then Shared_access.Silent.simplify_kernel params else Fun.id)
+  |> (if g.distinct_vars then kernel_vars_distinct else Fun.id)
+  |> (if g.simplify_kernel then Shared_access.Silent.simplify_kernel params
+      else Fun.id)
