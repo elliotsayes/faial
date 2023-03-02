@@ -184,7 +184,10 @@ let header_to_s (g : Generator.t) (gv : Gv_parser.t) (k : prog kernel)
   in
   let type_decls = decl_unknown_types k.kernel_arrays in
   let base_protos =
-    if g.use_dummy_array then [] else ["extern __device__ int __dummy_int();"]
+    if g.use_dummy_array then []
+    else if g.expand_device then
+      ["extern __attribute__((device)) int __dummy_int();"]
+    else ["extern __device__ int __dummy_int();"]
   in
   let funct_protos = base_protos @ arr_to_proto k.kernel_arrays g in
   Indent.Line (comments @ type_decls @ funct_protos |> Common.join "\n")
