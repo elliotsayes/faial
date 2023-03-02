@@ -94,7 +94,7 @@ let div_to_mult =
 
 let expand_device =
   let doc = "Expand the __device__ attribute of function prototypes." in
-  Arg.(value & flag & info ["expand_device"] ~doc)
+  Arg.(value & flag & info ["expand-device"] ~doc)
 
 let gen_params =
   let dim_to_s (d : Dim3.t) : string =
