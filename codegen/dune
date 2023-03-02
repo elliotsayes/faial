@@ -9,9 +9,3 @@
  (name corvo)
  (modules corvo)
  (libraries cgen cmdliner))
-
-(executable
- (public_name gen_kernels)
- (name gen_kernels)
- (modules gen_kernels)
- (libraries cgen))
