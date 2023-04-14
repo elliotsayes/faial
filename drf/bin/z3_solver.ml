@@ -135,11 +135,10 @@ module Task = struct
 			"threadIdx", Vec3.to_json x.thread_idx;
 			"locals", Environ.to_json x.locals;
 			"mode", `String (Access.Mode.to_string x.mode);
-			"location", `String (
-        x.location
-        |> Option.map Location.repr
-        |> Option.value ~default:"?"
-      )
+			"location",
+        match x.location; with
+        | Some l -> Location.to_json l
+        | None -> `Null
 		]
 
 	let to_string (v:t) : string =

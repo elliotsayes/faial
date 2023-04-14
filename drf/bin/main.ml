@@ -256,7 +256,7 @@ let jui (output: Analysis.t list) : unit =
           function
           | _, Drf -> None
           | p, Unknown -> Some (Either.Left p)
-          | p, Racy _ -> Some (Either.Right p)
+          | p, Racy w -> Some (Either.Right (p, w))
         )
         |> Common.either_split
       in
@@ -265,7 +265,12 @@ let jui (output: Analysis.t list) : unit =
         "kernel_name", `String kernel_name;
         "status", `String (if is_ok then "drf" else "racy");
         "unknowns", `List (List.map Symbexp.Proof.to_json unknowns);
-        "errors", `List (List.map Symbexp.Proof.to_json errors);
+        "errors", `List (List.map (fun (p, w) ->
+          `Assoc [
+            "summary", Symbexp.Proof.to_json p;
+            "counter_example", Witness.to_json w;
+          ]
+        ) errors);
       ]
     )
   in
