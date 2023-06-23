@@ -710,12 +710,12 @@ module Loops = struct
 
   let is_do : t -> bool =
     function
-    | For _ -> true
+    | Do _ -> true
     | _ -> false
 
   let is_while : t -> bool =
     function
-    | For _ -> true
+    | While _ -> true
     | _ -> false
 
   let has_early_exit (s: t) : bool =
