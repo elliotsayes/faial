@@ -51,15 +51,14 @@ let rec n_opt (a : nexp) : nexp =
     let a1 = n_opt a1 in
     let a2 = n_opt a2 in
     match b, a1, a2 with
+    | _, Num a1, Num a2 ->
+      Num (eval_nbin b a1 a2)
     (* Absorb *)
-    | Minus, Num 0, _
     | Mult, Num 0, _
     | Mult, _, Num 0
-    | Div, Num 0, _
     | Mod, _, Num 1
     -> Num 0
     | Mod, _, Num 0
-    | Div, _, Num 0
     -> raise (Failure ("Division by zero: " ^ n_to_string a))
     (* Neutral *)
     | Plus, Num 0, a
@@ -69,8 +68,8 @@ let rec n_opt (a : nexp) : nexp =
     | Mult, Num 1, a
     | Mult, a, Num 1
     -> a
-    | LeftShift, a, Num n -> n_opt (n_mult a (Num (Common.pow ~base:2 n)))
-    | RightShift, a, Num n -> n_opt (n_div a (Num (Common.pow ~base:2 n)))
+    | LeftShift, a, Num n -> n_opt (Bin (Mult, a, Num (Common.pow ~base:2 n)))
+    | RightShift, a, Num n -> n_opt (Bin (Div, a, Num (Common.pow ~base:2 n)))
     (* Compute *)
       (*
 
@@ -79,46 +78,46 @@ let rec n_opt (a : nexp) : nexp =
       n1   n2    n1*n2
 
        *)
-    | Mult, Bin (Div, Num n1, Num n2), Bin (Div, Num n3, Num n4) ->
+(*    | Mult, Bin (Div, Num n1, Num n2), Bin (Div, Num n3, Num n4) ->
       n_opt (Bin (Div, Num (n1*n3), Num (n2*n4)))
     | Plus, Bin (Div, e1, Num n1), Bin (Div, e2, Num n2) ->
       let e1 = Bin (Mult, e1, Num n2) in
       let e2 = Bin (Mult, e2, Num n1) in
       let e1_e2 = n_opt (Bin (Plus, e1, e2)) in
-      n_opt (n_div e1_e2 (Num (n1*n2)))
+      n_opt (n_div e1_e2 (Num (n1*n2)))*)
     (*
         e1         e1 + e2*e3
         --- + e3 = ---------
         e2           e2
       *)
-    | Plus, Bin (Div, e1, Num n2), Num n3
+(*    | Plus, Bin (Div, e1, Num n2), Num n3
     | Plus, Num n3, Bin (Div, e1, Num n2) ->
-      n_opt (Bin (Div, Bin (Plus, e1, Num (n2*n3)), Num n2))
+      n_opt (Bin (Div, Bin (Plus, e1, Num (n2*n3)), Num n2))*)
       (*
               n2    n1 * n2
         n1 * --- = --------
               e        e
       *)
-    | Mult, Bin (Div, Num n2, e), Num n1
+(*    | Mult, Bin (Div, Num n2, e), Num n1
     | Mult, Num n1, Bin (Div, Num n2, e)
       ->
-      n_opt (Bin (Div, Num (n1 * n2), e))
+      n_opt (Bin (Div, Num (n1 * n2), e))*)
       (*
           n1          n1 / gcd n1 n2
           -------- = ------------------
           (n2 * e)   (n2 / gcd n1 n2) e
 
        *)
-    | Div, Num n1, Bin (Mult, Num n2, e) when n2 <> 0 ->
+(*    | Div, Num n1, Bin (Mult, Num n2, e) when n2 <> 0 ->
       let g = gcd n1 n2 in
-      Bin (Div, Num (n1/g), n_opt (Bin (Mult, Num (n2/g), e)))
-    | Div, Num n1, Bin (Mult, e, Num n2) when n2 <> 0 ->
+      Bin (Div, Num (n1/g), n_opt (Bin (Mult, Num (n2/g), e)))*)
+(*    | Div, Num n1, Bin (Mult, e, Num n2) when n2 <> 0 ->
       let g = gcd n1 n2 in
       Bin (Div, Num (n1/g), n_opt (Bin (Mult, Num (n2/g), e)))
     | Div, Num n1, Num n2 when Common.modulo n1 n2 = 0 -> Num (n1 / n2)
     | Div, Num n1, Num n2 ->
       Bin (Div, Num (n1 / gcd n1 n2), Num (n2 / gcd n1 n2))
-    | o, Num n1, Num n2 when o <> Div -> Num ((eval_nbin b) n1 n2)
+    | o, Num n1, Num n2 when o <> Div -> Num ((eval_nbin b) n1 n2)*)
     (* Propagate *)
     | _, _, _ -> Bin (b, a1, a2)
 

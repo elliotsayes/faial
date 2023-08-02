@@ -92,7 +92,7 @@ module PSubstPair = Make(Subst.SubstPair)
 let p_opt (p:prog) : prog =
   let rec opt_i : inst -> prog =
     function
-    | Acc e -> [Acc e]
+    | Acc (x, e) -> [Acc (x, Constfold.a_opt e)]
     | Sync -> [Sync]
     | Cond(b, p) ->
       begin
@@ -137,6 +137,13 @@ let clear_kernel (k:prog kernel) : prog kernel =
     kernel_code = [];
     kernel_global_variables = Variable.Set.empty;
     kernel_local_variables = Variable.Set.empty;
+  }
+
+let optimize_kernel (k:prog kernel) : prog kernel =
+  {
+    k with
+    kernel_pre = Constfold.b_opt k.kernel_pre;
+    kernel_code = p_opt k.kernel_code;
   }
 
 let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =

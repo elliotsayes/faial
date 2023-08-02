@@ -151,7 +151,7 @@ module App = struct
         if b then call () else ()
       in
       show a.show_proto (fun () -> Proto.print_k p);
-      let p = Wellformed.translate p in
+      let p = p |> Proto.optimize_kernel |> Wellformed.translate in
       show a.show_wf (fun () -> Wellformed.print_kernels p);
       let p = Phasealign.translate p in
       show a.show_align (fun () -> Phasealign.print_kernels p);
