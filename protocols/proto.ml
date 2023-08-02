@@ -148,8 +148,8 @@ let replace_constants (kvs:(string*int) list) (k:prog kernel) : prog kernel =
     {
       kernel_name = k.kernel_name;
       kernel_arrays = k.kernel_arrays;
-      kernel_pre = PSubstAssoc.M.b_subst kvs k.kernel_pre |> Constfold.b_opt;
-      kernel_code = PSubstAssoc.p_subst kvs k.kernel_code |> p_opt;
+      kernel_pre = PSubstAssoc.M.b_subst kvs k.kernel_pre;
+      kernel_code = PSubstAssoc.p_subst kvs k.kernel_code;
       kernel_global_variables = Variable.Set.diff k.kernel_global_variables keys;
       kernel_local_variables = Variable.Set.diff k.kernel_local_variables keys;
     }
