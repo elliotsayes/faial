@@ -51,17 +51,17 @@ module Make (S:SUBST) = struct
           )
         | None -> Proj (t, x)
       end
-    | Bin (o, n1, n2) -> n_bin o (n_subst s n1) (n_subst s n2)
-    | NIf (b, n1, n2) -> n_if (b_subst s b) (n_subst s n1) (n_subst s n2)
+    | Bin (o, n1, n2) -> Bin (o, n_subst s n1, n_subst s n2)
+    | NIf (b, n1, n2) -> NIf (b_subst s b, n_subst s n1, n_subst s n2)
     | NCall (x, a) -> NCall (x, n_subst s a)
 
   and b_subst (s:S.t) (b:bexp) : bexp =
     match b with
     | Pred (n, v) -> Pred (n, n_subst s v)
     | Bool _ -> b
-    | NRel (o, n1, n2) -> n_rel o (n_subst s n1) (n_subst s n2)
-    | BRel (o, b1, b2) -> b_rel o (b_subst s b1) (b_subst s b2)
-    | BNot b -> b_not (b_subst s b)
+    | NRel (o, n1, n2) -> NRel (o, n_subst s n1, n_subst s n2)
+    | BRel (o, b1, b2) -> BRel (o, b_subst s b1, b_subst s b2)
+    | BNot b -> BNot (b_subst s b)
 
   let a_subst (s:S.t) (a:Access.t) : Access.t =
     { a with
