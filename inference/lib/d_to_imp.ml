@@ -419,51 +419,34 @@ let parse_location_alias (s:d_location_alias) : Imp.stmt list d_result =
     }
   )
 
-
 type 'a unop =
   {op: 'a; arg: nexp}
 
-type for_range = {
-  name: Variable.t;
-  init: nexp;
-  cond: Loops.comparator unop;
-  inc: Loops.increment unop;
-}
+module ForRange = struct
+  type t = {
+    name: Variable.t;
+    init: nexp;
+    cond: Loops.comparator unop;
+    inc: Loops.increment unop;
+  }
 
-let parse_unop (u:'a Loops.unop) : 'a unop option d_result =
-  let* arg = parse_exp u.arg in
-  Ok (match Unknown.try_to_nexp arg with
-    | Some arg -> Some {op=u.op; arg=arg}
-    | None -> None)
-
-let infer_range (r:D_lang.Stmt.d_for) : Range.t option d_result =
-  let parse_for_range (r:Loops.d_for_range) : for_range option d_result =
-    let* init = parse_exp r.init in
-    let* cond = parse_unop r.cond in
-    let* inc = parse_unop r.inc in
-    Ok (match Unknown.try_to_nexp init, cond, inc with
-    | Some init, Some cond, Some inc -> Some {name = r.name; init=init; cond=cond; inc=inc}
-    | _, _, _ -> None)
-  in
-  let infer_range (r:for_range) : Range.t option =
-    let open Loops in
-    let open Exp in
-    let (let*) = Option.bind in
-    let (lb, ub, d) = match r with
+  let infer_bounds : t -> nexp * nexp * Range.direction =
+    function
     (* (int i = 0; i < 4; i++) *)
     | {init=lb; cond={op=Lt; arg=ub; _}; _} ->
-      (lb, ub, Range.Increase)
+      (lb, Bin (Minus, ub, Num 1), Range.Increase)
     (* (int i = 4; i >= 0; i--) *)
     | {init=ub; cond={op=GtEq; arg=lb; _}; _} ->
-      (lb, n_plus (Num 1) ub, Decrease)
+      (lb, ub, Decrease)
     (* (int i = 0; i <= 4; i++) *)
     | {init=lb; cond={op=LtEq; arg=ub; _}; _} ->
-      (lb, n_plus (Num 1) ub, Increase)
+      (lb, ub, Increase)
     (* (int i = 4; i > 0; i--) *)
     | {init=ub; cond={op=Gt; arg=lb; _}; _} ->
-      (n_plus (Num 1) lb, n_plus (Num 1) ub, Decrease)
-    in
-    let* step = match r.inc with
+      (Bin (Plus, Num 1, lb), ub, Decrease)
+
+  let infer_step (r:t) : Range.Step.t option =
+    match r.inc with
     | {op=Plus; arg=a}
     | {op=Minus; arg=a} -> Some (Range.Step.Plus a)
     | {op=Mult; arg=a}
@@ -473,7 +456,11 @@ let infer_range (r:D_lang.Stmt.d_for) : Range.t option d_result =
     | {op=RShift; arg=Num a} ->
       Some (Range.Step.Mult (Num (Common.pow ~base:2 a)))
     | _ -> None
-    in
+
+  let infer (r:t) : Range.t option =
+    let (let*) = Option.bind in
+    let (lb, ub, d) = infer_bounds r in
+    let* step = infer_step r in
     Some Range.{
       var=r.name;
       lower_bound=lb;
@@ -481,13 +468,29 @@ let infer_range (r:D_lang.Stmt.d_for) : Range.t option d_result =
       step=step;
       dir=d;
     }
+end
+
+let parse_unop (u:'a Loops.unop) : 'a unop option d_result =
+  let* arg = parse_exp u.arg in
+  Ok (match Unknown.try_to_nexp arg with
+    | Some arg -> Some {op=u.op; arg=arg}
+    | None -> None)
+
+let infer_range (r:D_lang.Stmt.d_for) : Range.t option d_result =
+  let parse_for_range (r:Loops.d_for_range) : ForRange.t option d_result =
+    let* init = parse_exp r.init in
+    let* cond = parse_unop r.cond in
+    let* inc = parse_unop r.inc in
+    Ok (match Unknown.try_to_nexp init, cond, inc with
+    | Some init, Some cond, Some inc ->
+      let open ForRange in
+      Some {name = r.name; init=init; cond=cond; inc=inc}
+    | _, _, _ -> None)
   in
   match Loops.parse_for r with
   | Some r ->
     let* r = parse_for_range r in
-    Ok (match r with
-    | Some r -> infer_range r
-    | None -> None)
+    Ok (Option.bind r ForRange.infer)
   | None -> Ok None
 
 let get_locality (s: Imp.stmt) : Imp.locality =

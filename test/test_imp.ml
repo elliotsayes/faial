@@ -208,7 +208,7 @@ let tests = "test_predicates" >::: [
           Acc (_, {index=[e2]; _});
           Acc (_, {index=[e3]; _})] ->
         let tid = Var (Variable.from_name "threadIdx.x") in
-        let inc e = n_plus (Num 32) e in
+        let inc e = Bin (Plus, Num 32, e) in
         assert_nexp tid e1;
         assert_nexp (inc tid) e2;
         assert_nexp (inc (inc tid)) e3;
