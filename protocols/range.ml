@@ -169,113 +169,165 @@ let first (r:t) : nexp =
   | Decrease -> r.upper_bound
 
 (*
-  3 ... 12  += 3
+  ub - ((ub-lb) % step)
 
-  3 5 7 9 11
+  0 ... 3 += 1 -> [0, 1, 2, 3]
+  = 3 - ((3 - 0) % 3)
+  = 3 - (3 % 3)
+  = 3
 
-  12 - 3
+  3 ... 13  += 3 -> [3, 6, 9, 12]
+  = 13 - ((13 - 3) % 3)
+  = 13 - (10 % 3)
+  = 13 - 1
+  = 12
 
-  12 - (3 % step ) = 11
 
-  4 ... 15 += 3
-
-  4 7 10 13
-
-  up - (step - lb % step) = 13 - (3 - 4 % 3) = 13 - (3 - 1) = 13 - 2 = 11
+  4 ... 15 += 3 -> [4, 7, 10, 13]
+  = 15 - ((15 - 4) % 3)
+  = 15 - (11 % 3)
+  = 15 - 2
+  = 13
 
  *)
 
 let last_plus ~lower_bound ~upper_bound (step:nexp) : nexp =
-  n_minus upper_bound
-    (n_minus step (n_mod lower_bound step))
+  n_minus
+    upper_bound
+    (n_mod (n_minus upper_bound lower_bound) step)
 
 (*
-  2 ... 13  -= 3
 
-  13 10 7 4
+  lb + ((ub-lb) % step)
 
-    lb + step - ub % step
-  = 2 + 3 - 13 % 3
-  = 2 + 3 - 1
-  = 2 + 2
+  0 ... 3 -= 1 -> [3, 2, 1, 0]
+  = 0 + ((3 - 0) % 3)
+  = 0 + (3 % 3)
+  = 0
+
+  3 ... 13  -= 3 -> [13, 10, 7, 4]
+  = 3 + ((13 - 3) % 3)
+  = 3 + (10 % 3)
+  = 3 + 1
   = 4
 
+  4 ... 15 += 3 -> [15, 12, 9, 6]
+  = 4 + ((15 - 4) % 3)
+  = 4 + (11 % 3)
+  = 4 + 2
+  = 6
  *)
 
 let last_minus ~lower_bound ~upper_bound (step:nexp) : nexp =
   n_plus
     lower_bound
-    (n_minus step (n_mod upper_bound step))
+    (n_mod (n_minus upper_bound lower_bound) step)
+
+let highest_power =
+  let open Common in
+  [| 0; 0;
+    pow ~base:2 29;
+    pow ~base:3 18;
+    pow ~base:4 14;
+    pow ~base:5 12;
+    pow ~base:6 11;
+    pow ~base:7 10;
+    pow ~base:8 9;
+    pow ~base:9 9;
+    pow ~base:10 9;
+    pow ~base:11 8;
+    pow ~base:12 8;
+    pow ~base:13 8;
+    pow ~base:14 7;
+    pow ~base:15 7;
+    pow ~base:16 7;
+    pow ~base:17 7;
+    pow ~base:18 7;
+    pow ~base:19 7;
+    pow ~base:20 6;
+    pow ~base:21 6;
+    pow ~base:22 6;
+    pow ~base:23 6;
+    pow ~base:24 6;
+    pow ~base:25 6;
+  |]
+
+let gen_highest_power ~base (e: nexp) : nexp =
+  let rec gen (pow:int) : nexp =
+    let p = Num pow in
+    if pow <= 1
+    then Num 1
+    else NIf (n_le p e, p, gen (pow / base))
+  in
+  gen (highest_power.(base))
 
 let highest_power ~base : nexp -> nexp =
-  let rec gen (n:int) (x:nexp) : nexp =
-    if n <= 0 then (Num 1)
-    else
-      let p = Num (Common.pow ~base n) in
-      NIf (n_gt x p, p, gen (n - 1) x)
-  in
-  let trunc_fun (n:nexp) : nexp =
-    gen base n
-  in
   function
   | Num n -> Num (Common.highest_power ~base n)
-  | e -> trunc_fun e
+  | e -> gen_highest_power ~base e
 
 (*
 
-  4 ... 15 *= 3 = [4, 12]
-    log_step(ub/lb)
-  = log_step(15/4)
-  = 1
+  lb * (ub / lb)
 
-    lb * step ^ log_step(ub/lb) =
-  = 4 * 3 ^ 1
+  lb * step^log_step(ub/lb)
+
+  4 ... 15 *= 3 = [4, 12]
+  = 4 * 3 ^ (log3 (15/4))
+  = 4 * 3 ^ (log3 3)
   = 4 * 3
   = 12
 
   3 ... 76 *= 5 -> [3, 15, 75]
+  = 3 * 5 ^ (log5 (76 / 3))
+  = 3 * 5 ^ (log5 25)
+  = 3 * 5 ^ 2
+  = 3 * 25
+  = 75
 
-  log_step(ub/lb) = 2
+  4 ... 20 *= 2 -> [4, 8, 16]
+  = 4 * 2 ^ (log2 (20/4))
+  = 4 * 2 ^ (log2 5)
+  = 4 * 2 ^ 2
+  = 4 * 4
+  = 16
 
-  lower_bound * step ^ log_step(ub/lb) = 3 * 5^2 = 75
-
+  3 .. 10  *= 4 -> [3]
+  = 3 * 4 ^ log4 (10/3)
+  = 3 * 4 ^ 0
+  = 3
  *)
 
 let last_mult ~lower_bound ~upper_bound (step:int) : nexp =
-  if step = 2 then
+  if step >= 2 then
     Bin (
       Mult,
       lower_bound,
-      Bin (LeftShift, Num 2, Bin (Div, upper_bound, lower_bound))
+      (highest_power ~base:step (Bin (Div, upper_bound, lower_bound)))
     )
   else
     failwith ("last_mult: invalid base: " ^ string_of_int step)
 
 (*
+  ub / (ub / lb)
 
   4 ... 15 /= 3 = [15, 5]
-
-    log_step(ub/lb)
-  = log_step(15/4)
-  = 1
-
-    ub / step ^ log_step(ub/lb) =
-  = 15 / 3 ^ 1
+  = 15 / (15 / 4)
   = 15 / 3
   = 5
 
+  3 ... 76 /= 5 -> [76, 15, 3]
+  = 76 / (76 / 3)
+  = 3
+
  *)
 let last_div ~lower_bound ~upper_bound (step:int) : nexp =
-  if step = 2 then
-    match lower_bound with
-    | Num 1 -> Num 1
-    | _ ->
-      Bin (
-        Div,
-        upper_bound,
-        (* 2 << (ub/lb) *)
-        Bin (LeftShift, Num 2, Bin (Div, lower_bound, upper_bound))
-      )
+  if step >= 2 then
+    Bin (
+      Div,
+      upper_bound,
+      (highest_power ~base:step (Bin (Div, upper_bound, lower_bound)))
+    )
   else
     failwith ("last_mult: invalid base: " ^ string_of_int step)
 
@@ -285,9 +337,9 @@ let last (r:t) : nexp option =
     Some (last_plus ~lower_bound:r.lower_bound ~upper_bound:r.upper_bound s)
   | Decrease, Plus s ->
     Some (last_minus ~lower_bound:r.lower_bound ~upper_bound:r.upper_bound s)
-  | Increase, Mult (Num s) when s = 2 ->
+  | Increase, Mult (Num s) when s >= 2 ->
     Some (last_mult ~lower_bound:r.lower_bound ~upper_bound:r.upper_bound s)
-  | Decrease, Mult (Num s) when s = 2 ->
+  | Decrease, Mult (Num s) when s >= 2 ->
     Some (last_div ~lower_bound:r.lower_bound ~upper_bound:r.upper_bound s)
   | _ -> None
 
