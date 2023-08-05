@@ -1,4 +1,3 @@
-(* open Stage0 *)
 open OUnit2
 open Protocols
 
