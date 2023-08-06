@@ -53,7 +53,7 @@ let tests = "tests" >::: [
     Plus,
     Bin (Mult, var "a", Num 10),
     var "c"
-  ))) (* a*b + c *)
+  ))) (* a*10 + c *)
   (Some {ydim = Num 10; x = var "a"; y = var "c"})));
 
   "fallback" >:: (fun _ -> assert_projection_opt
