@@ -36,9 +36,9 @@ let add
       n_le (Var (Variable.from_name x)) (Num 2147483647)
       |> b_to_expr ctx
     )
-	in
-	vars
-	@
+  in
+  vars
+  @
   (if add_block_dim then [
     assign "blockDim.y" 1;
     assign "blockDim.z" 1;

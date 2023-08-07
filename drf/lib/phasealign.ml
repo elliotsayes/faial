@@ -49,11 +49,11 @@ let align (w:w_prog) : a_prog =
     | SSync c -> (ASync c, [])
     | SLoop (c1, r, p, c2) ->
       let (q, c3) = p_align p in
-      let q1 = seq c1 (a_subst (r.var, r.lower_bound) q) in
+      let q1 = seq c1 (a_subst (r.var, Range.first r) q) in
       let c = u_seq c3 c2 in
       let r' = Range.next r in
       let x = r.var in
-      let x_dec = Range.dec r in
+      let x_dec = Range.prev r in
       (ALoop (q1, r', seq (u_subst (x, x_dec) c) q),
         u_subst (x, Range.lossy_last r) c)
   and p_align (p:w_prog) : a_prog * u_prog =

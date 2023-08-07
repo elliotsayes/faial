@@ -4,7 +4,7 @@
    test_common
    test_imp
    test_locsplit
-   test_predicates
+   test_range
    test_streamutil
    test_ctype
    test_slice

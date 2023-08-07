@@ -86,7 +86,7 @@ let inline: bexp -> bexp =
       let p = Hashtbl.find all_predicates_db x in
       p.pred_body (inline_n n)
     | Bool _ -> b
-    | BNot b -> inline_b b
+    | BNot b -> BNot (inline_b b)
     | NRel (o, n1, n2) -> NRel (o, inline_n n1, inline_n n2)
     | BRel (o, b1, b2) -> BRel (o, inline_b b1, inline_b b2)
   in
