@@ -11,14 +11,28 @@ type projection = {
 }
 let var name = Var { name = name; location = None }
 
+let rec is_constant = function
+  | Num _ -> true
+  | Bin (_, l, r) -> is_constant l && is_constant r
+  | NIf (p, t, f) -> b_is_constant p && is_constant t && is_constant f
+  | _ -> false
+and b_is_constant = function
+  | Bool _ -> true
+  | NRel (_, l, r) -> is_constant l && is_constant r
+  | BRel (_, l, r) -> b_is_constant l && b_is_constant r
+  | BNot b -> b_is_constant b
+  | _ -> false
+(* TODO: are Proj, Pred and NCall safe to assume constant if args are constant? *)
+
 let infer_dim a b y = match a, b with
   (* If one is explicitly named blockDim, assume it's the dimension *)
+  | (Var {name; _} as ydim), x
+  when String.starts_with ~prefix:"blockDim" name -> Some {ydim; x; y}
   | x, (Var {name; _} as ydim)
     when String.starts_with ~prefix:"blockDim" name -> Some {ydim; x; y}
-  | (Var {name; _} as ydim), x
-    when String.starts_with ~prefix:"blockDim" name -> Some {ydim; x; y}
   (* if one is a constant, assume the it is the dimension *)
-  | x, (Num _ as ydim) | (Num _ as ydim), x -> Some {ydim; x; y}
+  | ydim, x when is_constant ydim -> Some {ydim; x; y}
+  | x, ydim when is_constant ydim -> Some {ydim; x; y}
   | _ -> Some {ydim = a; x = b; y}
 
 let find_projection = function
