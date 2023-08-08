@@ -11,22 +11,62 @@ open Protocols
 open Exp
 
 module CondAccess = struct
-  type t = {
-    location: Location.t;
-    access: Access.t;
-    cond: bexp;
-  }
+  type t = {location: Location.t; access: Access.t; cond: bexp; }
+
+  let dim (a:t) : int = List.length a.access.index
 
   let location (x:t) : Location.t = x.location
-
-  let add (b:bexp) (c:t) : t =
-    { c with cond = b_and c.cond b }
 
   let to_s (a:t) : Indent.t =
     let lineno = (Location.line a.location |> Index.to_base1 |> string_of_int) ^ ": " in
     Line (lineno ^ Access.to_string a.access ^ " if " ^
       b_to_string a.cond ^";")
+end
 
+module Flat = struct
+  type t =
+    | Cond of CondAccess.t
+    | Seq of t * t
+    | Skip
+
+  let to_list : t -> CondAccess.t list =
+    let rec to_list (accum:CondAccess.t list) : t -> CondAccess.t list =
+      function
+      | Skip -> accum
+      | Cond a -> a :: accum
+      | Seq (p, q) ->
+        to_list (to_list accum p) q
+    in
+    to_list []
+
+  let rec to_s : t -> Indent.t list =
+    function
+    | Skip -> [Line "skip;"]
+    | Seq (p, q) -> to_s p @ to_s q
+    | Cond a -> [CondAccess.to_s a]
+
+  (* The dimention is the index count *)
+  let rec dim : t -> int option =
+    function
+    | Skip -> None
+    | Cond a -> Some (CondAccess.dim a)
+    | Seq (p, q) ->
+      (match dim p with
+      | Some n -> Some n
+      | None -> dim q)
+
+  let from_unsync : Unsync.t -> t =
+    let rec flatten (b:bexp) : Unsync.t -> t =
+      function
+      | Skip -> Skip
+      | Assert _ -> failwith "Internall error: call Unsync.inline_asserts first!"
+      | Acc (x, e) -> Cond {location = Variable.location x; access = e; cond = b}
+      | Cond (b', p) -> flatten (b_and b' b) p
+      | Loop (r, p) -> flatten (b_and (Range.to_cond r) b) p
+      | Seq (p, q) -> Seq (flatten b p, flatten b q)
+    in
+    fun u ->
+      flatten (Bool true) (Unsync.inline_asserts u)
 end
 
 module Kernel = struct
@@ -34,7 +74,7 @@ module Kernel = struct
     name: string;
     array_name: string;
     local_variables: Variable.Set.t;
-    accesses: CondAccess.t list;
+    accesses: Flat.t;
     pre: bexp;
   }
 
@@ -44,25 +84,15 @@ module Kernel = struct
         Line ("locals: " ^ Variable.set_to_string k.local_variables ^ ";");
         Line ("pre: " ^ b_to_string k.pre ^ ";");
         Line "{";
-        Block (List.map CondAccess.to_s k.accesses);
+        Block (Flat.to_s k.accesses);
         Line "}"
     ]
 
   let from_loc_split (k:Locsplit.Kernel.t) : t =
-    let rec flatten (b:bexp) : Unsync.t -> CondAccess.t list =
-      function
-      | Skip -> []
-      | Assert _ -> failwith "Internall error: call Unsync.inline_asserts first!"
-      | Acc (x, e) -> [CondAccess.{location = Variable.location x; access = e; cond = b}]
-      | Cond (b', p) -> flatten (b_and b' b) p
-      | Loop (r, p) -> flatten (b_and (Range.to_cond r) b) p
-      | Seq (p, q) -> flatten b p |> Common.append_rev1 (flatten b q)
-    in
-    let code = Unsync.inline_asserts k.code in
     {
       name = k.name;
       array_name = k.array_name;
-      accesses = flatten (Bool true) code;
+      accesses = Flat.from_unsync k.code;
       local_variables = Unsync.binders k.code k.local_variables;
       pre = b_and_ex (List.map Range.to_cond k.ranges);
     }
