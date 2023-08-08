@@ -49,79 +49,21 @@ module Kernel = struct
     ]
 
   let from_loc_split (k:Locsplit.Kernel.t) : t =
-    let is_assert (i:Unsync.inst) =
-      match i with
-      | Assert _ -> true
-      | _ -> false
-    in
-    let is_not_assert i = not (is_assert i) in
-    let rec has_asserts (p:Unsync.t) : bool =
-      match p with
-      | i :: p ->
-        if is_assert i || has_asserts p then true
-        else
-        has_asserts (match i with
-          | Acc _
-          | Assert _ -> []
-          | Loop (_, p)
-          | Cond (_, p) -> p
-        )
-      | [] -> false
-    in
-    let rm_asserts (p:Unsync.t) : Unsync.t =
-      let rm_asserts_0 (p:Unsync.t) : Unsync.t =
-        let asserts = List.filter_map (fun i ->
-          match i with
-          | Unsync.Assert b -> Some b
-          | _ -> None
-        ) p
-        in
-        if Common.list_is_empty asserts then
-          p
-        else
-          [Cond (b_and_ex asserts, List.filter is_not_assert p)]
-      in
-      let rec rm_asserts_1 (p:Unsync.t) : Unsync.t =
-        match p with
-        | i ::l ->
-          let i = match i with
-          | Cond (b, p) -> Unsync.Cond (b, rm_asserts_0 (rm_asserts_1 p))
-          | Loop (r, p) -> Loop (r, rm_asserts_0 (rm_asserts_1 p))
-          | i -> i
-          in
-          i :: rm_asserts_1 l
-        | [] -> []
-      in
-      rm_asserts_1 p |> rm_asserts_0
-    in
-    let rec flatten_i (b:bexp) (i:Unsync.inst) : CondAccess.t list =
-      match i with
-      | Assert _ -> failwith "Internall error: call rm_asserts first!"
+    let rec flatten (b:bexp) : Unsync.t -> CondAccess.t list =
+      function
+      | Skip -> []
+      | Assert _ -> failwith "Internall error: call Unsync.inline_asserts first!"
       | Acc (x, e) -> [CondAccess.{location = Variable.location x; access = e; cond = b}]
-      | Cond (b', p) -> flatten_p (b_and b' b) p
-      | Loop (r, p) -> flatten_p (b_and (Range.to_cond r) b) p
-    and flatten_p (b:bexp) (p:Unsync.t) : CondAccess.t list =
-      List.map (flatten_i b) p |> List.flatten
+      | Cond (b', p) -> flatten (b_and b' b) p
+      | Loop (r, p) -> flatten (b_and (Range.to_cond r) b) p
+      | Seq (p, q) -> flatten b p |> Common.append_rev1 (flatten b q)
     in
-    let rec loop_vars_i (i:Unsync.inst) (vars:Variable.Set.t) : Variable.Set.t =
-      match i with
-      | Assert _
-      | Acc _ -> vars
-      | Cond (_, p) -> loop_vars_p p vars
-      | Loop (r, p) -> loop_vars_p p (Variable.Set.add r.var vars)
-    and loop_vars_p (p:Unsync.t) (vars:Variable.Set.t) : Variable.Set.t =
-      List.fold_right loop_vars_i p vars
-    in
-    let code =
-      if has_asserts [k.code]
-      then [k.code] |> rm_asserts
-      else [k.code]
-    in
+    let code = Unsync.inline_asserts k.code in
     {
       name = k.name;
       array_name = k.array_name;
-      accesses = flatten_p (Bool true) code;
-      local_variables = loop_vars_i k.code k.local_variables;
+      accesses = flatten (Bool true) code;
+      local_variables = Unsync.binders k.code k.local_variables;
       pre = b_and_ex (List.map Range.to_cond k.ranges);
     }
 end

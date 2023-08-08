@@ -46,7 +46,7 @@ let rec seq (c:Unsync.t) (w:t) : t =
 let align (w:Sync.t) : t =
   let rec align : Sync.t -> t * Unsync.t =
     function
-    | Sync c -> ([Sync c], [])
+    | Sync c -> ([Sync c], Skip)
     | Loop (c1, r, p, c2) ->
       let (q, c3) = align p in
       let q1 = seq c1 (subst (r.var, Range.first r) q) in

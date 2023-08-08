@@ -9,7 +9,7 @@ open Streamutil
 
 type w_or_u_inst =
   | WInst of Sync.t
-  | UInst of Unsync.inst
+  | UInst of Unsync.t
   | Both of Sync.t * Unsync.t
 
 
@@ -19,7 +19,7 @@ let make_well_formed (p:Proto.prog) : Sync.t Streamutil.stream =
     let open Streamutil in
     match i with
     | Acc e -> UInst (Acc e) |> one
-    | Sync -> WInst (Sync []) |> one
+    | Sync -> WInst Sync.skip |> one
     | Cond (b, p) ->
       p_infer in_loop p |>
       map (function
@@ -29,7 +29,7 @@ let make_well_formed (p:Proto.prog) : Sync.t Streamutil.stream =
         else
           [
             UInst (Assert (b_not b));
-            Both (Sync.inline_cond b p, Assert b :: c);
+            Both (Sync.inline_cond b p, Seq (Assert b, c));
           ] |> from_list
       | (None, c) -> UInst (Cond (b, c)) |> one
       )
@@ -37,7 +37,7 @@ let make_well_formed (p:Proto.prog) : Sync.t Streamutil.stream =
     | Loop (r, p) ->
       p_infer true p |>
       map (function
-      | Some p, c -> WInst (Loop ([], r, p, c))
+      | Some p, c -> WInst (Loop (Skip, r, p, c))
       | None, c -> UInst (Loop (r, c))
       )
   and p_infer (in_loop:bool) (p:Proto.prog) : (Sync.t option * Unsync.t) Streamutil.stream =
@@ -50,18 +50,18 @@ let make_well_formed (p:Proto.prog) : Sync.t Streamutil.stream =
         | (None, c2) ->
           begin match j with
           | WInst w -> (Some w, c2)
-          | UInst p -> (None, p::c2)
-          | Both (p, c1) -> (Some p, Unsync.seq c1 c2)
+          | UInst p -> (None, Unsync.Seq (p, c2))
+          | Both (p, c1) -> (Some p, Seq (c1, c2))
           end
         | (Some p, c2) ->
           begin match j with
           | WInst i -> Some (Seq (i, p)), c2
-          | UInst c -> Some (Sync.map_first (List.cons c) p), c2
+          | UInst c -> Some (Sync.map_first (Unsync.seq c) p), c2
           | Both (i, c) -> Some (Seq (i, Sync.map_first (Unsync.seq c) p)), c2
           end
         )
       ) |> concat
-    | [] -> (None, []) |> one
+    | [] -> (None, Unsync.Skip) |> one
   in
   let open Streamutil in
   p_infer false p

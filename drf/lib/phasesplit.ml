@@ -18,13 +18,13 @@ type u_kernel = {
   (* Global ranges *)
   u_kernel_ranges: Range.t list;
   (* The code of a kernel performs the actual memory accesses. *)
-  u_kernel_code: Unsync.inst;
+  u_kernel_code: Unsync.t;
 }
 
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
 
 type barrier_interval = {
-    bi_code: Unsync.inst;
+    bi_code: Unsync.t;
     bi_ranges: Range.t list;
   }
 
@@ -73,20 +73,6 @@ let a_prog_to_bi (pre:bexp) : Aligned.t -> barrier_interval stream =
   in
   p_phase
 
-let u_free_names (p:Unsync.t) : Variable.Set.t -> Variable.Set.t =
-  let rec fn_i (i:Unsync.inst) (fns:Variable.Set.t) : Variable.Set.t =
-    match i with
-    | Assert b -> Freenames.free_names_bexp b fns
-    | Acc (_,e) ->
-      Freenames.free_names_access e fns
-    | Loop (r, l) ->
-      Freenames.free_names_range r fns |> fn_p l
-    | Cond (b, l) ->
-      Freenames.free_names_bexp b fns |> fn_p l
-  and fn_p (p:Unsync.t) (fns:Variable.Set.t) : Variable.Set.t =
-    List.fold_right fn_i p fns
-  in
-  fn_p p
 
 exception PhasesplitException of (string * Location.t option) list
 
@@ -126,7 +112,7 @@ let translate (ks: Aligned.t kernel stream) (_:bool) : u_kernel stream =
     a_prog_to_bi k.kernel_pre k.kernel_code
     |> filter_map (fun b ->
       (* Get locations of u_prog *)
-      let locations:Variable.Set.t = Unsync.write_locations [b.bi_code] Variable.Set.empty in
+      let locations = Unsync.write_locations b.bi_code Variable.Set.empty in
       if Variable.Set.is_empty locations then None
       else Some (b, locations)
     )
@@ -149,7 +135,7 @@ let u_kernel_to_s (k:u_kernel) : Indent.t list =
       Line ("locals: " ^ Variable.set_to_string k.u_kernel_local_variables ^ ";");
       Line ("ranges: " ^ ranges ^ ";");
       Line "{";
-      Block (Unsync.inst_to_s k.u_kernel_code);
+      Block (Unsync.to_s k.u_kernel_code);
       Line "}"
   ]
 

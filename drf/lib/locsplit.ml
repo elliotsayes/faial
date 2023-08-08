@@ -17,7 +17,7 @@ module Kernel = struct
     (* Global ranges *)
     ranges: Range.t list;
     (* The code of a kernel performs the actual memory accesses. *)
-    code: Unsync.inst;
+    code: Unsync.t;
   }
 
   let to_s (k:t) : Indent.t list =
@@ -31,7 +31,7 @@ module Kernel = struct
         Line ("locals: " ^ Variable.set_to_string k.local_variables ^ ";");
         Line ("ranges: " ^ ranges ^ ";");
         Line "{";
-        Block (Unsync.inst_to_s k.code);
+        Block (Unsync.to_s k.code);
         Line "}"
     ]
 
