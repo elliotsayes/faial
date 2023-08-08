@@ -37,37 +37,31 @@ end
 module S1 = Make(SubstPair)
 let subst = S1.subst
 
+let rec seq (c:Unsync.t) (w:t) : t =
+  match w with
+  | Sync c' :: w -> Sync (Unsync.seq c c') :: w
+  | Loop (p, r, q)::w -> Loop (seq c p, r, q)::w
+  | [] -> failwith "UNEXPECTED!"
+
 let align (w:Sync.t) : t =
-  let rec seq (c:Unsync.t) (w:t) : t =
-    match w with
-    | Sync c' :: w -> Sync (Unsync.seq c c') :: w
-    | Loop (p, r, q)::w -> Loop (seq c p, r, q)::w
-    | [] -> failwith "UNEXPECTED!"
-  in
-  let rec i_align (i:Sync.inst) : inst * Unsync.t =
-    match i with
-    | Sync c -> (Sync c, [])
+  let rec align : Sync.t -> t * Unsync.t =
+    function
+    | Sync c -> ([Sync c], [])
     | Loop (c1, r, p, c2) ->
-      let (q, c3) = p_align p in
+      let (q, c3) = align p in
       let q1 = seq c1 (subst (r.var, Range.first r) q) in
       let c = Unsync.seq c3 c2 in
       let r' = Range.next r in
       let x = r.var in
       let x_dec = Range.prev r in
-      (Loop (q1, r', seq (Unsync.subst (x, x_dec) c) q),
+      ([Loop (q1, r', seq (Unsync.subst (x, x_dec) c) q)],
         Unsync.subst (x, Range.lossy_last r) c)
-  and p_align (p:Sync.t) : t * Unsync.t =
-    match p with
-    | [i] ->
-      let (i, c) = i_align i in
-      [i], c
-    | i :: p ->
-      let (i, c1) = i_align i in
-      let (q, c2) = p_align p in
-      i :: seq c1 q, c2
-    | [] -> failwith "Unexpected empty synchronized code!"
+    | Seq (i, p) ->
+      let (i, c1) = align i in
+      let (q, c2) = align p in
+      i @ seq c1 q, c2
   in
-  match p_align w with
+  match align w with
     (p, c) -> Sync c :: p
 
 let translate (ks: Sync.t kernel Streamutil.stream) : t kernel Streamutil.stream =

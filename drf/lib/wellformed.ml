@@ -8,7 +8,7 @@ open Proto
 open Streamutil
 
 type w_or_u_inst =
-  | WInst of Sync.inst
+  | WInst of Sync.t
   | UInst of Unsync.inst
   | Both of Sync.t * Unsync.t
 
@@ -49,15 +49,15 @@ let make_well_formed (p:Proto.prog) : Sync.t Streamutil.stream =
         |> map (function
         | (None, c2) ->
           begin match j with
-          | WInst w -> (Some [w], c2)
+          | WInst w -> (Some w, c2)
           | UInst p -> (None, p::c2)
           | Both (p, c1) -> (Some p, Unsync.seq c1 c2)
           end
         | (Some p, c2) ->
           begin match j with
-          | WInst i -> Some (i::p), c2
-          | UInst c -> Some (Sync.add c p), c2
-          | Both (i, c) -> Some (i @ (Sync.seq c p)), c2
+          | WInst i -> Some (Seq (i, p)), c2
+          | UInst c -> Some (Sync.map_first (List.cons c) p), c2
+          | Both (i, c) -> Some (Seq (i, Sync.map_first (Unsync.seq c) p)), c2
           end
         )
       ) |> concat
@@ -66,8 +66,8 @@ let make_well_formed (p:Proto.prog) : Sync.t Streamutil.stream =
   let open Streamutil in
   p_infer false p
   |> map (function
-    | Some p, c -> p @ [Sync.Sync c]
-    | None, c -> [Sync.Sync c]
+    | Some p, c -> Sync.Seq (p, Sync.Sync c)
+    | None, c -> Sync.Sync c
   )
 
 let translate (k: Proto.prog kernel) : Sync.t kernel Streamutil.stream =
