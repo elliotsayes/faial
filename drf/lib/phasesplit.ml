@@ -6,84 +6,86 @@ open Proto
 open Common
 open Streamutil
 
-type u_kernel = {
-  (* The kernel name *)
-  u_kernel_name : string;
-  (* The shared locations that can be accessed in the kernel. *)
-  u_kernel_arrays: Variable.Set.t;
-  (* The internal variables are used in the code of the kernel.  *)
-  u_kernel_global_variables: Variable.Set.t;
-  (* The internal variables are used in the code of the kernel.  *)
-  u_kernel_local_variables: Variable.Set.t;
-  (* Global ranges *)
-  u_kernel_ranges: Range.t list;
-  (* The code of a kernel performs the actual memory accesses. *)
-  u_kernel_code: Unsync.t;
-}
-
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
 
-type barrier_interval = {
-    bi_code: Unsync.t;
-    bi_ranges: Range.t list;
+module Phased = struct
+  type t = {
+    code: Unsync.t;
+    ranges: Range.t list;
   }
 
 
-let bi_add (bi:barrier_interval) (r:Range.t) : barrier_interval =
-  { bi with bi_ranges = r :: bi.bi_ranges }
+  let add (r:Range.t) (bi:t) : t =
+    { bi with ranges = r :: bi.ranges }
 
-(* Implements |> *)
-let a_prog_to_bi (pre:bexp) : Aligned.t -> barrier_interval stream =
-  let rec phase: Aligned.t -> barrier_interval stream =
-    function
-      (* ^P; sync |> { P } *)
-    | Sync u ->
-      {
-        bi_code = Cond (pre, u);
-        bi_ranges = []
-      }
-      |> Streamutil.one
-    | Loop (p, r, q) ->
-      (* Rule:
-        P |> p    q = { for x in [n,m) Q | Q \in p }
-        ------------------------------
-        for x in [n,m) {Q} |> q
-      *)
-      (* Break down the body into phases, and prefix each phase with the
-          binding *)
-      phase p
-      |> Streamutil.sequence (
-        phase q
-        |> Streamutil.map (fun bi ->
-          (* For every phase in q, prefix it with variable in r *)
-          bi_add bi r
-        )
-      )
-    | Seq (p, q) ->
-      (* Rule:
-        P |> p      Q |> q
-        ------------------
-        P;Q |> p U q
+  (* Implements |> *)
+  let from_aligned (pre:bexp) : Aligned.t -> t stream =
+    let rec phase: Aligned.t -> t stream =
+      function
+        (* ^P; sync |> { P } *)
+      | Sync u ->
+        {
+          code = Cond (pre, u);
+          ranges = []
+        }
+        |> Streamutil.one
+      | Loop (p, r, q) ->
+        (* Rule:
+          P |> p    q = { for x in [n,m) Q | Q \in p }
+          ------------------------------
+          for x in [n,m) {Q} |> q
         *)
-      phase p |> Streamutil.sequence (phase q)
-  in
-  phase
+        (* Break down the body into phases, and prefix each phase with the
+            binding *)
+        phase p
+        |> Streamutil.sequence (
+          phase q
+          |> Streamutil.map (fun bi ->
+            (* For every phase in q, prefix it with variable in r *)
+            add r bi
+          )
+        )
+      | Seq (p, q) ->
+        (* Rule:
+          P |> p      Q |> q
+          ------------------
+          P;Q |> p U q
+          *)
+        phase p |> Streamutil.sequence (phase q)
+    in
+    phase
 
+end
 
 exception PhasesplitException of (string * Location.t option) list
 
-let translate (ks: Aligned.t kernel stream) (_:bool) : u_kernel stream =
-  let translate_k (k: Aligned.t kernel) : u_kernel stream =
-    let p_to_k ((bi,locations):(barrier_interval * Variable.Set.t)) : u_kernel =
+module Kernel = struct
+  type t = {
+    (* The kernel name *)
+    name : string;
+    (* The shared locations that can be accessed in the kernel. *)
+    arrays: Variable.Set.t;
+    (* The internal variables are used in the code of the kernel.  *)
+    global_variables: Variable.Set.t;
+    (* The internal variables are used in the code of the kernel.  *)
+    local_variables: Variable.Set.t;
+    (* Global ranges *)
+    ranges: Range.t list;
+    (* The code of a kernel performs the actual memory accesses. *)
+    code: Unsync.t;
+  }
+
+  let from_aligned (k: Aligned.t kernel) : t stream =
+    let p_to_k ((bi,locations):(Phased.t * Variable.Set.t)) : t =
       (* Check for undefs *)
       (* 1. compute all globals *)
       let globals =
-        List.map (fun r -> let open Range in r.var) bi.bi_ranges
+        List.map (fun r -> let open Range in r.var) bi.ranges
         |> Variable.Set.of_list
         |> Variable.Set.union k.kernel_global_variables
       in
       (* 2. compute all free names in the ranges *)
-      let fns = List.fold_right Freenames.free_names_range bi.bi_ranges Variable.Set.empty in
+      let fns = List.fold_right Freenames.free_names_range bi.ranges Variable.Set.empty in
       (* 3. check if there are any locals *)
       let errs = Variable.Set.diff fns globals
         |> Variable.Set.elements
@@ -97,52 +99,56 @@ let translate (ks: Aligned.t kernel stream) (_:bool) : u_kernel stream =
         raise (PhasesplitException errs)
       else
         {
-          u_kernel_name = k.kernel_name;
-          u_kernel_local_variables = k.kernel_local_variables;
-          u_kernel_global_variables = k.kernel_global_variables;
-          u_kernel_arrays = locations;
-          u_kernel_ranges = bi.bi_ranges;
-          u_kernel_code = bi.bi_code;
+          name = k.kernel_name;
+          local_variables = k.kernel_local_variables;
+          global_variables = k.kernel_global_variables;
+          arrays = locations;
+          ranges = bi.ranges;
+          code = bi.code;
         }
     in
-    a_prog_to_bi k.kernel_pre k.kernel_code
+    Phased.from_aligned k.kernel_pre k.kernel_code
     |> filter_map (fun b ->
       (* Get locations of u_prog *)
-      let locations = Unsync.write_locations b.bi_code Variable.Set.empty in
+      let locations = Unsync.write_locations b.Phased.code Variable.Set.empty in
       if Variable.Set.is_empty locations then None
       else Some (b, locations)
     )
     |> Streamutil.map p_to_k
-  in
-  map translate_k ks |> concat
+
+
+  let to_s (k:t) : Indent.t list =
+    let open Indent in
+    let ranges =
+      List.map Range.to_string k.ranges
+      |> join "; "
+    in
+    [
+        Line ("arrays: " ^ Variable.set_to_string k.arrays ^ ";");
+        Line ("globals: " ^ Variable.set_to_string k.global_variables ^ ";");
+        Line ("locals: " ^ Variable.set_to_string k.local_variables ^ ";");
+        Line ("ranges: " ^ ranges ^ ";");
+        Line "{";
+        Block (Unsync.to_s k.code);
+        Line "}"
+    ]
+
+end
+
+let translate (ks: Aligned.t kernel stream) (_:bool) : Kernel.t stream =
+  map Kernel.from_aligned ks |> concat
 
 
 (* ---------------------- SERIALIZATION ------------------------ *)
 
-let u_kernel_to_s (k:u_kernel) : Indent.t list =
-  let open Indent in
-  let ranges =
-    List.map Range.to_string k.u_kernel_ranges
-    |> join "; "
-  in
-  [
-      Line ("arrays: " ^ Variable.set_to_string k.u_kernel_arrays ^ ";");
-      Line ("globals: " ^ Variable.set_to_string k.u_kernel_global_variables ^ ";");
-      Line ("locals: " ^ Variable.set_to_string k.u_kernel_local_variables ^ ";");
-      Line ("ranges: " ^ ranges ^ ";");
-      Line "{";
-      Block (Unsync.to_s k.u_kernel_code);
-      Line "}"
-  ]
 
-
-let print_kernels (ks : u_kernel Streamutil.stream) : unit =
+let print_kernels (ks : Kernel.t Streamutil.stream) : unit =
   print_endline "; conc";
   let count = ref 0 in
-  Streamutil.iter (fun (k:u_kernel) ->
+  Streamutil.iter (fun (k:Kernel.t) ->
     let curr = !count + 1 in
     count := curr;
     print_endline ("; phase " ^ (string_of_int curr));
-    Indent.print (u_kernel_to_s k)
+    Indent.print (Kernel.to_s k)
   ) ks;
   print_endline "; end of conc"

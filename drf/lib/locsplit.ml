@@ -4,8 +4,6 @@
 open Stage0
 open Protocols
 
-open Phasesplit
-
 module Kernel = struct
   type t = {
     (* The kernel name *)
@@ -35,19 +33,19 @@ module Kernel = struct
         Line "}"
     ]
 
-  let from_phased (k:u_kernel) : t Streamutil.stream =
-    Variable.Set.elements k.u_kernel_arrays
+  let from_phased (k:Phasesplit.Kernel.t) : t Streamutil.stream =
+    Variable.Set.elements k.arrays
     |> Streamutil.from_list
     |> Streamutil.filter_map (fun x ->
       (* For every location *)
-      match Unsync.filter_by_location x k.u_kernel_code with
+      match Unsync.filter_by_location x k.code with
       | Some p ->
         (* Filter out code that does not touch location x *)
         Some {
           array_name = Variable.name x;
-          name = k.u_kernel_name;
-          ranges = k.u_kernel_ranges;
-          local_variables = k.u_kernel_local_variables;
+          name = k.name;
+          ranges = k.ranges;
+          local_variables = k.local_variables;
           code = p;
         }
       | None -> None (* No locations being used, so ignore *)
@@ -55,7 +53,7 @@ module Kernel = struct
 end
 (* ------------------------ THIRD STAGE OF TRANSLATION ---------------------- *)
 
-let translate (stream:u_kernel Streamutil.stream) : Kernel.t Streamutil.stream =
+let translate (stream:Phasesplit.Kernel.t Streamutil.stream) : Kernel.t Streamutil.stream =
   stream
   |> Streamutil.map Kernel.from_phased
   (* We have a stream of streams, flatten it *)
