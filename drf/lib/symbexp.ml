@@ -1,3 +1,7 @@
+(*
+ Given a flat kernel
+ *)
+
 open Stage0
 open Protocols
 
@@ -99,13 +103,13 @@ end
 
 type h_prog = {
   prog_locals: Variable.Set.t;
-  prog_accesses: cond_access list;
+  prog_accesses: CondAccess.t list;
 }
 
 (* When we lower the representation, we do not want to have source code
    locations. Instead, we each *)
 
-let proj_access (locals:Variable.Set.t) (t:task) (idx:int) (ca:cond_access) : SymAccess.t =
+let proj_access (locals:Variable.Set.t) (t:task) (idx:int) (ca:CondAccess.t) : SymAccess.t =
   (* Add a suffix to a variable *)
   let var_append (x:Variable.t) (suffix:string) : Variable.t =
     Variable.set_name (Variable.name x ^ suffix) x
@@ -134,10 +138,10 @@ let proj_access (locals:Variable.Set.t) (t:task) (idx:int) (ca:cond_access) : Sy
     | NRel (o, n1, n2) -> NRel (o, inline_proj_n t n1, inline_proj_n t n2)
   in
   let inline_acc (a:Access.t) = Access.map (inline_proj_n t) a in
-  let location = LocationIndex.mk idx ca.ca_location in
-  SymAccess.mk ~location ~access:(inline_acc ca.ca_access) ~condition:(inline_proj_b t ca.ca_cond)
+  let location = LocationIndex.mk idx ca.location in
+  SymAccess.mk ~location ~access:(inline_acc ca.access) ~condition:(inline_proj_b t ca.cond)
 
-let proj_accesses locals t : cond_access list -> SymAccess.t list = List.mapi (proj_access locals t)
+let proj_accesses locals t : CondAccess.t list -> SymAccess.t list = List.mapi (proj_access locals t)
 
 let mode_to_nexp (m:Access.Mode.t) : nexp =
   Num (match m with
@@ -182,7 +186,7 @@ let cond_acc_list_to_bexp (t:assign_task) (l:SymAccess.t list) : bexp =
 
 let h_prog_to_bexp
   (locals:Variable.Set.t)
-  (accs:cond_access list)
+  (accs:CondAccess.t list)
 :
   bexp
 =
@@ -207,10 +211,10 @@ let h_prog_to_bexp
     |> b_and_ex
   in
   (* The dimention is the index count *)
-  let get_dim (l:cond_access list) : int =
+  let get_dim (l:CondAccess.t list) : int =
     match l with
     | [] -> failwith "Phase split should not generate empty phases!"
-    | c :: _ -> List.length c.ca_access.index
+    | c :: _ -> List.length c.access.index
   in
   b_and_ex [
     task_to_bexp Task1;
@@ -218,25 +222,25 @@ let h_prog_to_bexp
     get_dim accs |> gen_eq_index
   ]
 
-let f_kernel_to_proof (proof_id:int) (k:f_kernel) : Proof.t =
+let f_kernel_to_proof (proof_id:int) (k:Flatacc.Kernel.t) : Proof.t =
   let goal =
-    h_prog_to_bexp k.f_kernel_local_variables k.f_kernel_accesses
-    |> b_and k.f_kernel_pre
+    h_prog_to_bexp k.local_variables k.accesses
+    |> b_and k.pre
     |> Constfold.b_opt (* Optimize the output expression *)
   in
   let locations =
-    k.f_kernel_accesses
-    |> List.map (fun x -> x.ca_location)
+    k.accesses
+    |> List.map CondAccess.location
   in
   Proof.mk
     ~id:proof_id
-    ~kernel_name:k.f_kernel_name
-    ~array_name:k.f_kernel_array
+    ~kernel_name:k.name
+    ~array_name:k.array
     ~locations
     ~goal
 
 
-let translate (stream:f_kernel Streamutil.stream) : (Proof.t Streamutil.stream) =
+let translate (stream:Flatacc.Kernel.t Streamutil.stream) : (Proof.t Streamutil.stream) =
   Streamutil.mapi f_kernel_to_proof stream
 
 (* ------------------- SERIALIZE ---------------------- *)
