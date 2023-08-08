@@ -1,8 +1,5 @@
 open Stage0
 open Protocols
-
-let (@) = Common.append_tr
-
 open Exp
 open Proto
 open Streamutil
