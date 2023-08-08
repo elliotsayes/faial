@@ -1,3 +1,6 @@
+(*
+ Given a phase-split kernel, generate a location-split kernel.
+ *)
 open Stage0
 open Protocols
 
