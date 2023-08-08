@@ -235,7 +235,7 @@ let f_kernel_to_proof (proof_id:int) (k:Flatacc.Kernel.t) : Proof.t =
   Proof.mk
     ~id:proof_id
     ~kernel_name:k.name
-    ~array_name:k.array
+    ~array_name:k.array_name
     ~locations
     ~goal
 

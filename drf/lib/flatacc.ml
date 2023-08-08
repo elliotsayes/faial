@@ -10,7 +10,6 @@ open Stage0
 open Protocols
 
 open Wellformed
-open Locsplit
 open Exp
 
 module CondAccess = struct
@@ -35,7 +34,7 @@ end
 module Kernel = struct
   type t = {
     name: string;
-    array: string;
+    array_name: string;
     local_variables: Variable.Set.t;
     accesses: CondAccess.t list;
     pre: bexp;
@@ -43,7 +42,7 @@ module Kernel = struct
 
   let to_s (k:t) : Indent.t list =
     [
-        Line ("array: " ^ k.array ^ ";");
+        Line ("array: " ^ k.array_name ^ ";");
         Line ("locals: " ^ Variable.set_to_string k.local_variables ^ ";");
         Line ("pre: " ^ b_to_string k.pre ^ ";");
         Line "{";
@@ -51,7 +50,7 @@ module Kernel = struct
         Line "}"
     ]
 
-  let from_loc_split (k:l2_kernel) : t =
+  let from_loc_split (k:Locsplit.Kernel.t) : t =
     let is_assert (i:u_inst) =
       match i with
       | UAssert _ -> true
@@ -116,21 +115,21 @@ module Kernel = struct
       List.fold_right loop_vars_i p vars
     in
     let code =
-      if has_asserts [k.l_kernel_code]
-      then [k.l_kernel_code] |> rm_asserts
-      else [k.l_kernel_code]
+      if has_asserts [k.code]
+      then [k.code] |> rm_asserts
+      else [k.code]
     in
     {
-      name = k.l_kernel_name;
-      array = k.l_kernel_array;
+      name = k.name;
+      array_name = k.array_name;
       accesses = flatten_p (Bool true) code;
-      local_variables = loop_vars_i k.l_kernel_code k.l_kernel_local_variables;
-      pre = b_and_ex (List.map Range.to_cond k.l_kernel_ranges);
+      local_variables = loop_vars_i k.code k.local_variables;
+      pre = b_and_ex (List.map Range.to_cond k.ranges);
     }
 end
 
 
-let translate (stream:l2_kernel Streamutil.stream) : Kernel.t Streamutil.stream =
+let translate (stream:Locsplit.Kernel.t Streamutil.stream) : Kernel.t Streamutil.stream =
   let open Streamutil in
   map Kernel.from_loc_split stream
 

@@ -7,20 +7,37 @@ open Protocols
 open Wellformed
 open Phasesplit
 
-type l2_kernel = {
-  (* The kernel name *)
-  l_kernel_name : string;
-  (* The shared locations that can be accessed in the kernel. *)
-  l_kernel_array: string;
-  (* The internal variables are used in the code of the kernel.  *)
-  l_kernel_local_variables: Variable.Set.t;
-  (* Global ranges *)
-  l_kernel_ranges: Range.t list;
-  (* The code of a kernel performs the actual memory accesses. *)
-  l_kernel_code: u_inst;
-  (* A thread-local pre-condition that is true on all phases. *)
-}
+module Kernel = struct
+  type t = {
+    (* The kernel name *)
+    name : string;
+    (* The shared locations that can be accessed in the kernel. *)
+    array_name: string;
+    (* The internal variables are used in the code of the kernel.  *)
+    local_variables: Variable.Set.t;
+    (* Global ranges *)
+    ranges: Range.t list;
+    (* The code of a kernel performs the actual memory accesses. *)
+    code: u_inst;
+  }
 
+
+  let to_s (k:t) : Indent.t list =
+    let open Indent in
+    let ranges =
+      List.map Range.to_string k.ranges
+      |> Common.join "; "
+    in
+    [
+        Line ("array: " ^ k.array_name ^ ";");
+        Line ("locals: " ^ Variable.set_to_string k.local_variables ^ ";");
+        Line ("ranges: " ^ ranges ^ ";");
+        Line "{";
+        Block (u_inst_to_s k.code);
+        Line "}"
+    ]
+
+end
 (* ------------------------ THIRD STAGE OF TRANSLATION ---------------------- *)
 
 type 'a possibility =
@@ -72,7 +89,7 @@ let filter_by_location (x:Variable.t) (i: u_inst) : u_inst option =
   | Has p -> Some p
   | _ -> None
 
-let translate (stream:u_kernel Streamutil.stream) : l2_kernel Streamutil.stream =
+let translate (stream:u_kernel Streamutil.stream) : Kernel.t Streamutil.stream =
   let open Streamutil in
   stream
   |> map (fun k ->
@@ -85,11 +102,11 @@ let translate (stream:u_kernel Streamutil.stream) : l2_kernel Streamutil.stream 
       | Some p ->
         (* Filter out code that does not touch location x *)
         Some {
-          l_kernel_array = Variable.name x;
-          l_kernel_name = k.u_kernel_name;
-          l_kernel_ranges = k.u_kernel_ranges;
-          l_kernel_local_variables = k.u_kernel_local_variables;
-          l_kernel_code = p;
+          Kernel.array_name = Variable.name x;
+          Kernel.name = k.u_kernel_name;
+          Kernel.ranges = k.u_kernel_ranges;
+          Kernel.local_variables = k.u_kernel_local_variables;
+          Kernel.code = p;
         }
       | None -> None (* No locations being used, so ignore *)
     )
@@ -97,30 +114,13 @@ let translate (stream:u_kernel Streamutil.stream) : l2_kernel Streamutil.stream 
   (* We have a stream of streams, flatten it *)
   |> concat
 
-(* ------------------- SERIALIZE ---------------------- *)
-
-let l_kernel_to_s (k:l2_kernel) : Indent.t list =
-  let open Indent in
-  let ranges =
-    List.map Range.to_string k.l_kernel_ranges
-    |> Common.join "; "
-  in
-  [
-      Line ("array: " ^ k.l_kernel_array ^ ";");
-      Line ("locals: " ^ Variable.set_to_string k.l_kernel_local_variables ^ ";");
-      Line ("ranges: " ^ ranges ^ ";");
-      Line "{";
-      Block (u_inst_to_s k.l_kernel_code);
-      Line "}"
-  ]
-
-let print_kernels (ks : l2_kernel Streamutil.stream) : unit =
+let print_kernels (ks : Kernel.t Streamutil.stream) : unit =
   print_endline "; locsplit";
   let count = ref 0 in
-  Streamutil.iter (fun (k:l2_kernel) ->
+  Streamutil.iter (fun (k:Kernel.t) ->
     let curr = !count + 1 in
     count := curr;
     print_endline ("; loc " ^ (string_of_int curr));
-    Indent.print (l_kernel_to_s k)
+    Indent.print (Kernel.to_s k)
   ) ks;
   print_endline "; end of locsplit"
