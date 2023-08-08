@@ -127,7 +127,7 @@ let translate (ks: a_prog kernel stream) (_:bool) : u_kernel stream =
         }
     in
     a_prog_to_bi k.kernel_pre k.kernel_code
-    |> map_opt (fun b ->
+    |> filter_map (fun b ->
       (* Get locations of u_prog *)
       let locations:Variable.Set.t = Wellformed.get_locs [b.bi_code] Variable.Set.empty in
       if Variable.Set.is_empty locations then None

@@ -74,7 +74,7 @@ let filter (p:'a -> bool) (s:'a stream) : 'a stream = {
             )
     }
 
-let map_opt (f:'a -> 'b option) (stream: 'a stream) : 'b stream =
+let filter_map (f:'a -> 'b option) (stream: 'a stream) : 'b stream =
   map f stream
   |> filter (function
     | Some _ -> true

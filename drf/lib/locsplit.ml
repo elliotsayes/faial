@@ -21,7 +21,6 @@ module Kernel = struct
     code: u_inst;
   }
 
-
   let to_s (k:t) : Indent.t list =
     let open Indent in
     let ranges =
@@ -36,83 +35,82 @@ module Kernel = struct
         Block (u_inst_to_s k.code);
         Line "}"
     ]
+  (* ------------ filter by location -------------- *)
 
-end
-(* ------------------------ THIRD STAGE OF TRANSLATION ---------------------- *)
+  type 'a possibility =
+    | Has of 'a
+    | Might of 'a
+    | Nothing
 
-type 'a possibility =
-  | Has of 'a
-  | Might of 'a
-  | Nothing
+  let possibility_to_option =
+    function
+    | Has p -> Some p
+    | Might p -> Some p
+    | Nothing -> None
 
-let possibility_to_option =
-  function
-  | Has p -> Some p
-  | Might p -> Some p
-  | Nothing -> None
+  let possibility_unwrap =
+    function
+    | Has p -> p
+    | Might p -> p
+    | Nothing -> failwith "possibility_get Nothing"
 
-let possibility_unwrap =
-  function
-  | Has p -> p
-  | Might p -> p
-  | Nothing -> failwith "possibility_get Nothing"
+  let is_has =
+    function
+    | Has _ -> true
+    | _ -> false
 
-let is_has =
-  function
-  | Has _ -> true
-  | _ -> false
+  (* Given an input phase, returns a phase with only accesses x.
+    Changes the accesses to not contain the location info. *)
+  let filter_by_location (x:Variable.t) (i: u_inst) : u_inst option =
+    (* Filter programs *)
+    let rec filter_i (i:u_inst) : u_inst possibility =
+      match i with
+      | UAssert b -> Might (UAssert b)
+      | UAcc (y, _) -> if Variable.equal x y then Has i else Nothing
+      | UCond (b, p) -> begin match filter_p p with
+          | Some p -> Has (UCond (b, p))
+          | None -> Nothing
+        end
+      | ULoop (r, p) -> begin match filter_p p with
+          | Some p -> Has (ULoop (r, p))
+          | None -> Nothing
+        end
+    and filter_p (p:u_prog) : u_prog option =
+      let p = List.map filter_i p in
+      if List.exists is_has p then
+        Some (List.filter_map possibility_to_option p)
+      else
+        None
+    in
+    match filter_i i with
+    | Has p -> Some p
+    | _ -> None
 
-(* Given an input phase, returns a phase with only accesses x.
-   Changes the accesses to not contain the location info. *)
-let filter_by_location (x:Variable.t) (i: u_inst) : u_inst option =
-  (* Filter programs *)
-  let rec filter_i (i:u_inst) : u_inst possibility =
-    match i with
-    | UAssert b -> Might (UAssert b)
-    | UAcc (y, _) -> if Variable.equal x y then Has i else Nothing
-    | UCond (b, p) -> begin match filter_p p with
-        | Some p -> Has (UCond (b, p))
-        | None -> Nothing
-      end
-    | ULoop (r, p) -> begin match filter_p p with
-        | Some p -> Has (ULoop (r, p))
-        | None -> Nothing
-      end
-  and filter_p (p:u_prog) : u_prog option =
-    let p = List.map filter_i p in
-    if List.exists is_has p then
-      Some (List.filter_map possibility_to_option p)
-    else
-      None
-  in
-  match filter_i i with
-  | Has p -> Some p
-  | _ -> None
-
-let translate (stream:u_kernel Streamutil.stream) : Kernel.t Streamutil.stream =
-  let open Streamutil in
-  stream
-  |> map (fun k ->
-    (* For every kernel *)
+  let from_phased (k:u_kernel) : t Streamutil.stream =
     Variable.Set.elements k.u_kernel_arrays
-    |> from_list
-    |> map_opt (fun x ->
+    |> Streamutil.from_list
+    |> Streamutil.filter_map (fun x ->
       (* For every location *)
       match filter_by_location x k.u_kernel_code with
       | Some p ->
         (* Filter out code that does not touch location x *)
         Some {
-          Kernel.array_name = Variable.name x;
-          Kernel.name = k.u_kernel_name;
-          Kernel.ranges = k.u_kernel_ranges;
-          Kernel.local_variables = k.u_kernel_local_variables;
-          Kernel.code = p;
+          array_name = Variable.name x;
+          name = k.u_kernel_name;
+          ranges = k.u_kernel_ranges;
+          local_variables = k.u_kernel_local_variables;
+          code = p;
         }
       | None -> None (* No locations being used, so ignore *)
     )
-  )
+end
+(* ------------------------ THIRD STAGE OF TRANSLATION ---------------------- *)
+
+let translate (stream:u_kernel Streamutil.stream) : Kernel.t Streamutil.stream =
+  stream
+  |> Streamutil.map Kernel.from_phased
   (* We have a stream of streams, flatten it *)
-  |> concat
+  |> Streamutil.concat
 
 let print_kernels (ks : Kernel.t Streamutil.stream) : unit =
   print_endline "; locsplit";
