@@ -5,7 +5,6 @@ let (@) = Common.append_tr
 
 open Proto
 open Subst
-open Wellformed
 
 type inst =
   | Sync of Unsync.t
