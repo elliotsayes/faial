@@ -7,27 +7,27 @@ open Proto
 open Subst
 open Wellformed
 
-type a_inst =
-  | ASync of u_prog
-  | ALoop of a_inst list * Range.t * a_inst list
+type inst =
+  | Sync of Unsync.t
+  | Loop of inst list * Range.t * inst list
 
-type a_prog = a_inst list
+type t = inst list
 
 module Make (S:SUBST) = struct
   module M = Subst.Make(S)
-  module N = Wellformed.Make(S)
+  module U = Unsync.Make(S)
 
-  let a_subst: S.t -> a_prog -> a_prog =
-    let rec i_subst (s:S.t) (i:a_inst) : a_inst =
+  let subst: S.t -> t -> t =
+    let rec i_subst (s:S.t) (i:inst) : inst =
       match i with
-      | ASync c -> ASync (N.u_subst s c)
-      | ALoop (p, r, q) ->
+      | Sync c -> Sync (U.subst s c)
+      | Loop (p, r, q) ->
         let q = M.add s r.var (function
           | Some s -> p_subst s q
           | None -> q
         ) in
-        ALoop (p_subst s p, M.r_subst s r, q)
-    and p_subst (s:S.t) : a_prog -> a_prog =
+        Loop (p_subst s p, M.r_subst s r, q)
+    and p_subst (s:S.t) : t -> t =
       List.map (i_subst s)
     in
     p_subst
@@ -35,28 +35,28 @@ module Make (S:SUBST) = struct
 end
 
 module S1 = Make(SubstPair)
-let a_subst = S1.a_subst
+let subst = S1.subst
 
-let align (w:w_prog) : a_prog =
-  let rec seq (c:u_prog) (w:a_prog) : a_prog =
+let align (w:Sync.t) : t =
+  let rec seq (c:Unsync.t) (w:t) : t =
     match w with
-    | ASync c' :: w -> ASync (u_seq c c') :: w
-    | ALoop (p, r, q)::w -> ALoop (seq c p, r, q)::w
+    | Sync c' :: w -> Sync (Unsync.seq c c') :: w
+    | Loop (p, r, q)::w -> Loop (seq c p, r, q)::w
     | [] -> failwith "UNEXPECTED!"
   in
-  let rec i_align (i:w_inst) : a_inst * u_prog =
+  let rec i_align (i:Sync.inst) : inst * Unsync.t =
     match i with
-    | SSync c -> (ASync c, [])
-    | SLoop (c1, r, p, c2) ->
+    | Sync c -> (Sync c, [])
+    | Loop (c1, r, p, c2) ->
       let (q, c3) = p_align p in
-      let q1 = seq c1 (a_subst (r.var, Range.first r) q) in
-      let c = u_seq c3 c2 in
+      let q1 = seq c1 (subst (r.var, Range.first r) q) in
+      let c = Unsync.seq c3 c2 in
       let r' = Range.next r in
       let x = r.var in
       let x_dec = Range.prev r in
-      (ALoop (q1, r', seq (u_subst (x, x_dec) c) q),
-        u_subst (x, Range.lossy_last r) c)
-  and p_align (p:w_prog) : a_prog * u_prog =
+      (Loop (q1, r', seq (Unsync.subst (x, x_dec) c) q),
+        Unsync.subst (x, Range.lossy_last r) c)
+  and p_align (p:Sync.t) : t * Unsync.t =
     match p with
     | [i] ->
       let (i, c) = i_align i in
@@ -68,19 +68,18 @@ let align (w:w_prog) : a_prog =
     | [] -> failwith "Unexpected empty synchronized code!"
   in
   match p_align w with
-    (p, c) -> ASync c :: p
+    (p, c) -> Sync c :: p
 
-let translate (ks: w_prog kernel Streamutil.stream) : a_prog kernel Streamutil.stream =
+let translate (ks: Sync.t kernel Streamutil.stream) : t kernel Streamutil.stream =
   let open Streamutil in
   ks
   |> map (fun k -> { k with kernel_code = align k.kernel_code })
 
-let a_prog_to_s: a_prog -> Indent.t list =
-  let open Indent in
-  let rec inst_to_s : a_inst -> Indent.t list =
+let to_s: t -> Indent.t list =
+  let rec inst_to_s : inst -> Indent.t list =
     function
-    | ASync e -> u_prog_to_s e @ [Line "sync;"]
-    | ALoop (p, r, q) ->
+    | Sync e -> Unsync.to_s e @ [Line "sync;"]
+    | Loop (p, r, q) ->
       (List.map inst_to_s p |> List.flatten)
       @
       [
@@ -91,17 +90,17 @@ let a_prog_to_s: a_prog -> Indent.t list =
         Line "}"
       ]
   in
-  let prog_to_s (p: a_prog) : t list =
+  let prog_to_s (p: t) : Indent.t list =
     List.map inst_to_s p |> List.flatten
   in
   prog_to_s
 
 
 (* ---------------------- SERIALIZATION ------------------------ *)
-let print_kernel (k : a_prog kernel) : unit =
-  Proto.print_kernel a_prog_to_s k
+let print_kernel (k : t kernel) : unit =
+  Proto.print_kernel to_s k
 
-let print_kernels (ks : a_prog kernel Streamutil.stream) : unit =
+let print_kernels (ks : t kernel Streamutil.stream) : unit =
   print_endline "; a-lang";
   let count = ref 0 in
   Streamutil.iter (fun k ->

@@ -8,8 +8,6 @@
  *)
 open Stage0
 open Protocols
-
-open Wellformed
 open Exp
 
 module CondAccess = struct
@@ -51,44 +49,44 @@ module Kernel = struct
     ]
 
   let from_loc_split (k:Locsplit.Kernel.t) : t =
-    let is_assert (i:u_inst) =
+    let is_assert (i:Unsync.inst) =
       match i with
-      | UAssert _ -> true
+      | Assert _ -> true
       | _ -> false
     in
     let is_not_assert i = not (is_assert i) in
-    let rec has_asserts (p:u_prog) : bool =
+    let rec has_asserts (p:Unsync.t) : bool =
       match p with
       | i :: p ->
         if is_assert i || has_asserts p then true
         else
         has_asserts (match i with
-          | UAcc _
-          | UAssert _ -> []
-          | ULoop (_, p)
-          | UCond (_, p) -> p
+          | Acc _
+          | Assert _ -> []
+          | Loop (_, p)
+          | Cond (_, p) -> p
         )
       | [] -> false
     in
-    let rm_asserts (p:u_prog) : u_prog =
-      let rm_asserts_0 (p:u_prog) : u_prog =
+    let rm_asserts (p:Unsync.t) : Unsync.t =
+      let rm_asserts_0 (p:Unsync.t) : Unsync.t =
         let asserts = List.filter_map (fun i ->
           match i with
-          | UAssert b -> Some b
+          | Unsync.Assert b -> Some b
           | _ -> None
         ) p
         in
         if Common.list_is_empty asserts then
           p
         else
-          [UCond (b_and_ex asserts, List.filter is_not_assert p)]
+          [Cond (b_and_ex asserts, List.filter is_not_assert p)]
       in
-      let rec rm_asserts_1 (p:u_prog) : u_prog =
+      let rec rm_asserts_1 (p:Unsync.t) : Unsync.t =
         match p with
         | i ::l ->
           let i = match i with
-          | UCond (b, p) -> UCond (b, rm_asserts_0 (rm_asserts_1 p))
-          | ULoop (r, p) -> ULoop (r, rm_asserts_0 (rm_asserts_1 p))
+          | Cond (b, p) -> Unsync.Cond (b, rm_asserts_0 (rm_asserts_1 p))
+          | Loop (r, p) -> Loop (r, rm_asserts_0 (rm_asserts_1 p))
           | i -> i
           in
           i :: rm_asserts_1 l
@@ -96,22 +94,22 @@ module Kernel = struct
       in
       rm_asserts_1 p |> rm_asserts_0
     in
-    let rec flatten_i (b:bexp) (i:u_inst) : CondAccess.t list =
+    let rec flatten_i (b:bexp) (i:Unsync.inst) : CondAccess.t list =
       match i with
-      | UAssert _ -> failwith "Internall error: call rm_asserts first!"
-      | UAcc (x, e) -> [CondAccess.{location = Variable.location x; access = e; cond = b}]
-      | UCond (b', p) -> flatten_p (b_and b' b) p
-      | ULoop (r, p) -> flatten_p (b_and (Range.to_cond r) b) p
-    and flatten_p (b:bexp) (p:u_prog) : CondAccess.t list =
+      | Assert _ -> failwith "Internall error: call rm_asserts first!"
+      | Acc (x, e) -> [CondAccess.{location = Variable.location x; access = e; cond = b}]
+      | Cond (b', p) -> flatten_p (b_and b' b) p
+      | Loop (r, p) -> flatten_p (b_and (Range.to_cond r) b) p
+    and flatten_p (b:bexp) (p:Unsync.t) : CondAccess.t list =
       List.map (flatten_i b) p |> List.flatten
     in
-    let rec loop_vars_i (i:u_inst) (vars:Variable.Set.t) : Variable.Set.t =
+    let rec loop_vars_i (i:Unsync.inst) (vars:Variable.Set.t) : Variable.Set.t =
       match i with
-      | UAssert _
-      | UAcc _ -> vars
-      | UCond (_, p) -> loop_vars_p p vars
-      | ULoop (r, p) -> loop_vars_p p (Variable.Set.add r.var vars)
-    and loop_vars_p (p:u_prog) (vars:Variable.Set.t) : Variable.Set.t =
+      | Assert _
+      | Acc _ -> vars
+      | Cond (_, p) -> loop_vars_p p vars
+      | Loop (r, p) -> loop_vars_p p (Variable.Set.add r.var vars)
+    and loop_vars_p (p:Unsync.t) (vars:Variable.Set.t) : Variable.Set.t =
       List.fold_right loop_vars_i p vars
     in
     let code =

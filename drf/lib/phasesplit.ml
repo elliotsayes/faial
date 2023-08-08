@@ -5,8 +5,6 @@ open Exp
 open Proto
 open Common
 open Streamutil
-open Wellformed
-open Phasealign
 
 type u_kernel = {
   (* The kernel name *)
@@ -20,14 +18,13 @@ type u_kernel = {
   (* Global ranges *)
   u_kernel_ranges: Range.t list;
   (* The code of a kernel performs the actual memory accesses. *)
-  u_kernel_code: u_inst;
-  (* A thread-local pre-condition that is true on all phases. *)
+  u_kernel_code: Unsync.inst;
 }
 
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
 
 type barrier_interval = {
-    bi_code: u_inst;
+    bi_code: Unsync.inst;
     bi_ranges: Range.t list;
   }
 
@@ -36,17 +33,17 @@ let bi_add (bi:barrier_interval) (r:Range.t) : barrier_interval =
   { bi with bi_ranges = r :: bi.bi_ranges }
 
 (* Implements |> *)
-let a_prog_to_bi (pre:bexp) : a_prog -> barrier_interval stream =
-  let rec i_phase: a_inst -> barrier_interval stream =
+let a_prog_to_bi (pre:bexp) : Aligned.t -> barrier_interval stream =
+  let rec i_phase: Aligned.inst -> barrier_interval stream =
     function
       (* ^P; sync |> { P } *)
-    | ASync u ->
+    | Sync u ->
       {
-        bi_code = UCond (pre, u);
+        bi_code = Cond (pre, u);
         bi_ranges = []
       }
       |> Streamutil.one
-    | ALoop (p, r, q) ->
+    | Loop (p, r, q) ->
       (* Rule:
         P |> p    q = { for x in [n,m) Q | Q \in p }
         ------------------------------
@@ -62,7 +59,7 @@ let a_prog_to_bi (pre:bexp) : a_prog -> barrier_interval stream =
           bi_add bi r
         )
       )
-  and p_phase : a_prog -> barrier_interval stream =
+  and p_phase : Aligned.t -> barrier_interval stream =
     function
     | [] -> Streamutil.empty
     | i :: p ->
@@ -76,25 +73,25 @@ let a_prog_to_bi (pre:bexp) : a_prog -> barrier_interval stream =
   in
   p_phase
 
-let u_free_names (p:u_prog) : Variable.Set.t -> Variable.Set.t =
-  let rec fn_i (i:u_inst) (fns:Variable.Set.t) : Variable.Set.t =
+let u_free_names (p:Unsync.t) : Variable.Set.t -> Variable.Set.t =
+  let rec fn_i (i:Unsync.inst) (fns:Variable.Set.t) : Variable.Set.t =
     match i with
-    | UAssert b -> Freenames.free_names_bexp b fns
-    | UAcc (_,e) ->
+    | Assert b -> Freenames.free_names_bexp b fns
+    | Acc (_,e) ->
       Freenames.free_names_access e fns
-    | ULoop (r, l) ->
+    | Loop (r, l) ->
       Freenames.free_names_range r fns |> fn_p l
-    | UCond (b, l) ->
+    | Cond (b, l) ->
       Freenames.free_names_bexp b fns |> fn_p l
-  and fn_p (p:u_prog) (fns:Variable.Set.t) : Variable.Set.t =
+  and fn_p (p:Unsync.t) (fns:Variable.Set.t) : Variable.Set.t =
     List.fold_right fn_i p fns
   in
   fn_p p
 
 exception PhasesplitException of (string * Location.t option) list
 
-let translate (ks: a_prog kernel stream) (_:bool) : u_kernel stream =
-  let translate_k (k: a_prog kernel) : u_kernel stream =
+let translate (ks: Aligned.t kernel stream) (_:bool) : u_kernel stream =
+  let translate_k (k: Aligned.t kernel) : u_kernel stream =
     let p_to_k ((bi,locations):(barrier_interval * Variable.Set.t)) : u_kernel =
       (* Check for undefs *)
       (* 1. compute all globals *)
@@ -129,7 +126,7 @@ let translate (ks: a_prog kernel stream) (_:bool) : u_kernel stream =
     a_prog_to_bi k.kernel_pre k.kernel_code
     |> filter_map (fun b ->
       (* Get locations of u_prog *)
-      let locations:Variable.Set.t = Wellformed.get_locs [b.bi_code] Variable.Set.empty in
+      let locations:Variable.Set.t = Unsync.write_locations [b.bi_code] Variable.Set.empty in
       if Variable.Set.is_empty locations then None
       else Some (b, locations)
     )
@@ -152,7 +149,7 @@ let u_kernel_to_s (k:u_kernel) : Indent.t list =
       Line ("locals: " ^ Variable.set_to_string k.u_kernel_local_variables ^ ";");
       Line ("ranges: " ^ ranges ^ ";");
       Line "{";
-      Block (u_inst_to_s k.u_kernel_code);
+      Block (Unsync.inst_to_s k.u_kernel_code);
       Line "}"
   ]
 

@@ -2,8 +2,6 @@ open Protocols
 open Drf
 
 open OUnit2
-open Wellformed
-open Locsplit
 open Exp
 
 let x = (Variable.from_name "x")
@@ -20,27 +18,27 @@ let write = Access.{
   index = [];
   mode = Mode.Wr;
 }
-let x_acc = UAcc (x, write)
-let y_acc = UAcc (y, write)
+let x_acc = Unsync.Acc (x, write)
+let y_acc = Unsync.Acc (y, write)
 
-let assert_filter i (expected:u_inst option) =
-  let given = filter_by_location x i in
+let assert_filter i (expected:Unsync.inst option) =
+  let given = Unsync.filter_by_location x i in
   let msg = match expected, given with
   | Some _, None -> "given none, expecting:"
   | None, Some _ -> "expecting none, given:"
-  | Some l1, Some l2 -> "expecting:\n" ^ u_prog_to_string [l1] ^
-    "\ngiven:\n" ^ u_prog_to_string [l2]
+  | Some l1, Some l2 -> "expecting:\n" ^ Unsync.to_string [l1] ^
+    "\ngiven:\n" ^ Unsync.to_string [l2]
   | None, None -> ""
   in
   assert_equal given expected ~msg
 
 let expect_none l =
-  assert_filter (UCond (b, l)) None
+  assert_filter (Cond (b, l)) None
 
 let expect_some l1 l2 =
   assert_filter
-    (UCond (b, l1))
-    (Some (UCond (b, l2)))
+    (Cond (b, l1))
+    (Some (Cond (b, l2)))
 
 let tests = "locsplit" >::: [
   "lvl1" >:: (fun _ ->
@@ -66,80 +64,80 @@ let tests = "locsplit" >::: [
     expect_some
       [
         x_acc;
-        UAssert b;
+        Assert b;
         y_acc
       ]
       [
         x_acc;
-        UAssert b;
+        Assert b;
       ];
     expect_some
       [
         x_acc;
-        UAssert b;
-        UAssert b;
-        UAssert b;
+        Assert b;
+        Assert b;
+        Assert b;
       ]
       [
         x_acc;
-        UAssert b;
-        UAssert b;
-        UAssert b;
+        Assert b;
+        Assert b;
+        Assert b;
       ];
     ()
   );
   "lvl2" >:: (fun _ ->
     expect_some
       [
-        UCond (b, [x_acc]);
+        Cond (b, [x_acc]);
         y_acc
       ]
       [
-        UCond (b, [x_acc])
+        Cond (b, [x_acc])
       ];
     expect_some
       [
-        UCond (b, [x_acc]);
-        UAssert b;
+        Cond (b, [x_acc]);
+        Assert b;
         y_acc
       ]
       [
-        UCond (b, [x_acc]);
-        UAssert b;
+        Cond (b, [x_acc]);
+        Assert b;
       ];
     expect_some
       [
-        ULoop (r, [UCond (b, [
+        Loop (r, [Cond (b, [
           x_acc
         ])
         ]);
-        UAssert b;
+        Assert b;
         y_acc
       ]
       [
-        ULoop (r, [UCond (b, [
+        Loop (r, [Cond (b, [
           x_acc
         ])]);
-        UAssert b;
+        Assert b;
       ];
     expect_some
       [
-        ULoop (r, [UCond (b, [
+        Loop (r, [Cond (b, [
           x_acc
         ])
         ]);
-        UAssert b;
-        UAssert b;
-        UAssert b;
+        Assert b;
+        Assert b;
+        Assert b;
         y_acc
       ]
       [
-        ULoop (r, [UCond (b, [
+        Loop (r, [Cond (b, [
           x_acc
         ])]);
-        UAssert b;
-        UAssert b;
-        UAssert b;
+        Assert b;
+        Assert b;
+        Assert b;
       ];
     ()
   );

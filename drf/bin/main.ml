@@ -161,8 +161,8 @@ module App = struct
       show a.show_proto (fun () -> Proto.print_k p);
       let p = p |> Proto.optimize_kernel |> Wellformed.translate in
       show a.show_wf (fun () -> Wellformed.print_kernels p);
-      let p = Phasealign.translate p in
-      show a.show_align (fun () -> Phasealign.print_kernels p);
+      let p = Aligned.translate p in
+      show a.show_align (fun () -> Aligned.print_kernels p);
       let p = Phasesplit.translate p false in
       show a.show_phase_split (fun () -> Phasesplit.print_kernels p);
       let p = Locsplit.translate p in
