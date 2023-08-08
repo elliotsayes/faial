@@ -11,7 +11,7 @@ module T = ANSITerminal
 
 let box_environ (e:Environ.t) : PrintBox.t =
   PrintBox.(
-    v_record (List.map (fun (k,v) -> (k, text v)) e)
+    v_record (List.map (fun (k,v) -> (k, text v)) (Environ.labels e))
     |> frame
   )
 
@@ -47,8 +47,13 @@ let box_tasks (block_dim:Vec3.t) (t1:Task.t) (t2:Task.t) : PrintBox.t =
   let open PrintBox in
   let locals =
     t1.locals
+    |> Environ.variables
     |> List.map (fun (k, v1) -> 
-      [| text k; text v1; text (List.assoc_opt k t2.locals |> Ojson.unwrap_or "?") |]
+      [|
+        text (Option.value ~default:k (Environ.label k t1.locals));
+        text v1;
+        text (Environ.get k t2.locals |> Ojson.unwrap_or "?")
+      |]
     )
   in
   let locals =
@@ -72,13 +77,16 @@ let box_globals (w:Witness.t) : PrintBox.t =
     else
       [name, dim_to_s v]
   in
+  { w.globals with
+  variables=
   [
     "index", Common.join " │ " w.indices;
   ]
   @ box_dim "gridDim" w.grid_dim
   @ box_idx "blockIdx" ~idx:w.block_idx ~dim:w.grid_dim
   @ box_dim "blockDim" w.block_dim
-  @ w.globals
+  @ w.globals.variables
+  }
   |> box_environ
 
 let box_locals (w:Witness.t) : PrintBox.t =

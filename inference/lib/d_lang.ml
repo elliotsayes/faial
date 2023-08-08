@@ -490,17 +490,17 @@ module AccessState = struct
 
   let make_empty = []
 
-  let add_var (f:Variable.t -> Stmt.t list) (st:t) : (t * Variable.t) =
+  let add_var (lbl:string) (f:Variable.t -> Stmt.t list) (st:t) : (t * Variable.t) =
     let count = !counter in
     counter := count + 1;
-    let name = "_unknown_" ^ string_of_int count in
-    let x = Variable.from_name name in
+    let name : string = "_unknown_" ^ string_of_int count in
+    let x = {Variable.name=name; Variable.label=Some lbl;Variable.location=None} in
     (f x @ st, x)
 
   let add_stmt (s: Stmt.t) (st:t) : t = s :: st
 
   let add_expr (expr:Expr.t) (ty:d_type) (st:t) : t * Variable.t =
-    add_var (fun name ->
+    add_var (Expr.to_string expr) (fun name ->
       [
         let ty_var = TyVariable.make ~ty ~name in
         DeclStmt [Decl.from_expr ty_var expr]
@@ -517,7 +517,7 @@ module AccessState = struct
     | VarDecl {name=x; _} ->
       (add_stmt (wr x) st, x)
     | _ ->
-      add_var (fun x ->
+      add_var (subscript_to_s a) (fun x ->
         [
           wr x;
           let ty_var = TyVariable.make ~name:x ~ty:a.ty in
@@ -526,7 +526,7 @@ module AccessState = struct
       ) st
 
   let add_read (a:d_subscript) (st:t) : (t * Variable.t) =
-    add_var (fun x ->
+    add_var (subscript_to_s a) (fun x ->
       [
         ReadAccessStmt {target=x; source=a};
       ]

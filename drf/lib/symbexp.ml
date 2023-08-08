@@ -49,8 +49,12 @@ module Proof = struct
     locations: Location.t list;
     preds: Predicates.t list;
     decls: string list;
+    labels: (string * string) list;
     goal: bexp;
   }
+
+  let labels (p:t) : (string * string) list =
+    p.labels
 
   let to_json (p:t) : Yojson.Basic.t =
     `Assoc [
@@ -61,13 +65,19 @@ module Proof = struct
     ]
 
   let mk ~kernel_name ~array_name ~id ~goal ~locations : t =
-    let decls =
+    let fns =
       Freenames.free_names_bexp goal Variable.Set.empty
       |> Variable.Set.elements
-      |> List.map Variable.name
     in
+    let decls = List.map Variable.name fns in
+    let labels = List.filter_map (fun x ->
+      Variable.label_opt x
+      |> Option.map (fun l ->
+        (Variable.name x, l)
+      )
+    ) fns in
     let preds = Predicates.get_predicates goal in
-    {id; preds; decls; goal; array_name; kernel_name; locations;}
+    {id; preds; decls; goal; array_name; kernel_name; locations; labels;}
 
     let to_string (p:t) : Indent.t list =
       let open Common in

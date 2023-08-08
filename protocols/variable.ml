@@ -1,10 +1,17 @@
 open Stage0 (* Loads Location.t *)
 
-type t = {name: string; location: Location.t option}
+type t = {name: string; label: string option; location: Location.t option}
 
-let make ~name ~location : t = {name=name; location=Some location}
+let make ~name ~location : t = {name=name; label=None; location=Some location}
 
-let from_name (name:string) : t = {name=name; location=None}
+let from_name (name:string) : t = {name=name; label=None; location=None}
+
+let label (x:t) =
+  match x.label with
+  | Some l -> l
+  | None -> x.name
+
+let label_opt (x:t) = x.label
 
 let tidx : t = from_name "threadIdx.x"
 
@@ -21,7 +28,7 @@ let set_name (name:string) : t -> t =
 let set_location (location:Location.t) (v:t) : t =
   { v with location = Some location}
 
-let clear_location (v:t) = {name = v.name; location = None}
+let clear_location (v:t) = { v with location = None}
 
 let name (x:t) : string = x.name
 
