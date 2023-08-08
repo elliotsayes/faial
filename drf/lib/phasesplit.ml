@@ -34,7 +34,7 @@ let bi_add (bi:barrier_interval) (r:Range.t) : barrier_interval =
 
 (* Implements |> *)
 let a_prog_to_bi (pre:bexp) : Aligned.t -> barrier_interval stream =
-  let rec i_phase: Aligned.inst -> barrier_interval stream =
+  let rec phase: Aligned.t -> barrier_interval stream =
     function
       (* ^P; sync |> { P } *)
     | Sync u ->
@@ -51,27 +51,23 @@ let a_prog_to_bi (pre:bexp) : Aligned.t -> barrier_interval stream =
       *)
       (* Break down the body into phases, and prefix each phase with the
           binding *)
-      p_phase p
+      phase p
       |> Streamutil.sequence (
-        p_phase q
+        phase q
         |> Streamutil.map (fun bi ->
           (* For every phase in q, prefix it with variable in r *)
           bi_add bi r
         )
       )
-  and p_phase : Aligned.t -> barrier_interval stream =
-    function
-    | [] -> Streamutil.empty
-    | i :: p ->
+    | Seq (p, q) ->
       (* Rule:
         P |> p      Q |> q
         ------------------
         P;Q |> p U q
         *)
-      i_phase i
-      |> Streamutil.sequence (p_phase p)
+      phase p |> Streamutil.sequence (phase q)
   in
-  p_phase
+  phase
 
 
 exception PhasesplitException of (string * Location.t option) list
