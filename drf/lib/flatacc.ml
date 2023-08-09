@@ -23,7 +23,7 @@ module CondAccess = struct
       b_to_string a.cond ^";")
 end
 
-module Flat = struct
+module Code = struct
   type t =
     | Cond of CondAccess.t
     | Seq of t * t
@@ -74,7 +74,7 @@ module Kernel = struct
     name: string;
     array_name: string;
     local_variables: Variable.Set.t;
-    accesses: Flat.t;
+    code: Code.t;
     pre: bexp;
   }
 
@@ -84,7 +84,7 @@ module Kernel = struct
         Line ("locals: " ^ Variable.set_to_string k.local_variables ^ ";");
         Line ("pre: " ^ b_to_string k.pre ^ ";");
         Line "{";
-        Block (Flat.to_s k.accesses);
+        Block (Code.to_s k.code);
         Line "}"
     ]
 
@@ -92,7 +92,7 @@ module Kernel = struct
     {
       name = k.name;
       array_name = k.array_name;
-      accesses = Flat.from_unsync k.code;
+      code = Code.from_unsync k.code;
       local_variables = Unsync.binders k.code k.local_variables;
       pre = b_and_ex (List.map Range.to_cond k.ranges);
     }

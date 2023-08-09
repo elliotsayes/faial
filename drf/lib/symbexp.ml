@@ -31,8 +31,14 @@ type assign_task = {
 }
 
 module SymAccess = struct
-  type t = {location: LocationIndex.t; condition: bexp; access: Access.t}
+  type t = {
+    location: LocationIndex.t;
+    condition: bexp;
+    access: Access.t
+  }
+
   let mk ~location ~condition ~access = {location; condition; access}
+
   (* Given a task generator serialize a conditional access *)
   let to_bexp (t:assign_task) (a:t) : bexp =
     let head = [
@@ -42,6 +48,46 @@ module SymAccess = struct
     let head = t.assign_loc a.location :: head in
     head @ List.mapi t.assign_index a.access.index
     |> b_and_ex
+
+
+  (* When we lower the representation, we do not want to have source code
+    locations. Instead, we each *)
+
+  let from_cond_access (locals:Variable.Set.t) (t:task) (idx:int) (ca:CondAccess.t) : t =
+    (* Add a suffix to a variable *)
+    let var_append (x:Variable.t) (suffix:string) : Variable.t =
+      Variable.set_name (Variable.name x ^ suffix) x
+    in
+    (* Add a suffix to all variables to make them unique. Use $ to ensure
+      these variables did not come from C *)
+    let task_suffix (t:task) = "$" ^ task_to_string t in
+    let proj_var (t:task) (x:Variable.t) : Variable.t =
+      var_append x (task_suffix t)
+    in
+    let rec inline_proj_n (t:task) (n: nexp) : nexp =
+      match n with
+      | Num _ -> n
+      | Var x when Variable.Set.mem x locals -> Var (proj_var t x)
+      | Var _ -> n
+      | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
+      | Proj (t', x) -> Var (proj_var t' x)
+      | NIf (b, n1, n2) -> NIf (inline_proj_b t b, inline_proj_n t n1, inline_proj_n t n2)
+      | NCall (x, n) -> NCall (x, inline_proj_n t n)
+    and inline_proj_b (t:task) (b: bexp) : bexp =
+      match b with
+      | Pred (x, n) -> Pred (x, inline_proj_n t n)
+      | Bool _ -> b
+      | BNot b -> BNot (inline_proj_b t b)
+      | BRel (o, b1, b2) -> BRel (o, inline_proj_b t b1, inline_proj_b t b2)
+      | NRel (o, n1, n2) -> NRel (o, inline_proj_n t n1, inline_proj_n t n2)
+    in
+    let inline_acc (a:Access.t) = Access.map (inline_proj_n t) a in
+    {
+      location = LocationIndex.mk idx ca.location;
+      access = inline_acc ca.access;
+      condition = inline_proj_b t ca.cond;
+    }
+
 
 end
 
@@ -101,45 +147,10 @@ module Proof = struct
 
 end
 
-(* When we lower the representation, we do not want to have source code
-   locations. Instead, we each *)
-
-let proj_access (locals:Variable.Set.t) (t:task) (idx:int) (ca:CondAccess.t) : SymAccess.t =
-  (* Add a suffix to a variable *)
-  let var_append (x:Variable.t) (suffix:string) : Variable.t =
-    Variable.set_name (Variable.name x ^ suffix) x
-  in
-  (* Add a suffix to all variables to make them unique. Use $ to ensure
-    these variables did not come from C *)
-  let task_suffix (t:task) = "$" ^ task_to_string t in
-  let proj_var (t:task) (x:Variable.t) : Variable.t =
-    var_append x (task_suffix t)
-  in
-  let rec inline_proj_n (t:task) (n: nexp) : nexp =
-    match n with
-    | Num _ -> n
-    | Var x when Variable.Set.mem x locals -> Var (proj_var t x)
-    | Var _ -> n
-    | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
-    | Proj (t', x) -> Var (proj_var t' x)
-    | NIf (b, n1, n2) -> NIf (inline_proj_b t b, inline_proj_n t n1, inline_proj_n t n2)
-    | NCall (x, n) -> NCall (x, inline_proj_n t n)
-  and inline_proj_b (t:task) (b: bexp) : bexp =
-    match b with
-    | Pred (x, n) -> Pred (x, inline_proj_n t n)
-    | Bool _ -> b
-    | BNot b -> BNot (inline_proj_b t b)
-    | BRel (o, b1, b2) -> BRel (o, inline_proj_b t b1, inline_proj_b t b2)
-    | NRel (o, n1, n2) -> NRel (o, inline_proj_n t n1, inline_proj_n t n2)
-  in
-  let inline_acc (a:Access.t) = Access.map (inline_proj_n t) a in
-  let location = LocationIndex.mk idx ca.location in
-  SymAccess.mk ~location ~access:(inline_acc ca.access) ~condition:(inline_proj_b t ca.cond)
-
-let proj_accesses locals t (f: Flat.t) : SymAccess.t list =
+let proj_accesses locals t (f: Code.t) : SymAccess.t list =
   f
-  |> Flat.to_list
-  |> List.mapi (proj_access locals t)
+  |> Code.to_list
+  |> List.mapi (SymAccess.from_cond_access locals t)
 
 let mode_to_nexp (m:Access.Mode.t) : nexp =
   Num (match m with
@@ -184,7 +195,7 @@ let cond_acc_list_to_bexp (t:assign_task) (l:SymAccess.t list) : bexp =
 
 let h_prog_to_bexp
   (locals:Variable.Set.t)
-  (accs:Flat.t)
+  (accs:Code.t)
 :
   bexp
 =
@@ -211,16 +222,16 @@ let h_prog_to_bexp
   b_and_ex [
     task_to_bexp Task1;
     task_to_bexp Task2;
-    Flat.dim accs |> Option.get |> gen_eq_index
+    Code.dim accs |> Option.get |> gen_eq_index
   ]
 
 let f_kernel_to_proof (proof_id:int) (k:Flatacc.Kernel.t) : Proof.t =
   let goal =
-    h_prog_to_bexp k.local_variables k.accesses
+    h_prog_to_bexp k.local_variables k.code
     |> b_and k.pre
     |> Constfold.b_opt (* Optimize the output expression *)
   in
-  let locations = Flat.to_list k.accesses |> List.map CondAccess.location in
+  let locations = Code.to_list k.code |> List.map CondAccess.location in
   Proof.mk
     ~id:proof_id
     ~kernel_name:k.name
