@@ -18,69 +18,12 @@ module LocationIndex = struct
   let location (x:t) = x.location
 end
 
-(* The assign_task datatype creates two constructors.
-   - assign_mode: given a mode, returns a boolean expression that represents
-     assigning the given mode to the current mode-variable.
-   - assign_index: given an index and an index value (nexp) returns a boolean
-     expression that assigns the expression to the current index.
-*)
 let prefix (t:task) = "$" ^ task_to_string t ^ "$"
 let mk_var (x:string) = Var (Variable.from_name x)
 let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
 
 let assign_index (t:task) (idx:int) (n:nexp) : bexp =
   n_eq (mk_idx t idx) n
-
-module AssignTask = struct
-  (*
-
-  Each task is represented as: the mode of access, the index of an
-  n-dimensional access (eg, for [x][y], x=0 and y=1), and a location
-  identifier.
-
-  In SMT terms, we assign each field to a variable.
-  For instance, we assign the mode of task A, say Rd, to a mode variable, say $mode$T1,
-  so the code generated becomes $mode$T1 = 0 to encode that task A's mode is Rd.
-
-  This particular data-structure stores generators that given a mode, which
-  is then instantiated by a value of type `task`.
-  *)
-  type t = {
-    mode : Access.Mode.t -> bexp;
-    index: int -> nexp -> bexp;
-    loc: LocationIndex.t -> bexp;
-  }
-
-  let mode_to_nexp (m:Access.Mode.t) : nexp =
-    Num (match m with
-    | Rd -> 0
-    | Wr -> 1)
-
-  let mk_mode (t:task) = mk_var (prefix t ^ "mode")
-  let mk_loc (t:task) = mk_var (prefix t ^ "loc")
-
-  (* Returns the generators for the given task *)
-  let from_task (t:task) : t =
-    let this_mode_v : nexp = mk_mode t in
-    let other_mode_v : nexp = mk_mode (other_task t) in
-    let eq_mode (m:Access.Mode.t): bexp =
-      let b = n_eq this_mode_v (mode_to_nexp m) in
-      if Access.Mode.is_read m then
-        n_eq other_mode_v (mode_to_nexp Wr)
-        |> b_and b
-      else b
-    in
-    let assign_loc (l:LocationIndex.t) : bexp =
-          n_eq (mk_loc (other_task t))
-              (Num (LocationIndex.index l))
-    in
-    {
-      mode = eq_mode;
-      index = assign_index t;
-      loc = assign_loc;
-    }
-
-end
 
 let project_access (locals:Variable.Set.t) (t:task) (ca:CondAccess.t) : CondAccess.t =
   (* Add a suffix to a variable *)
@@ -119,28 +62,59 @@ let project_access (locals:Variable.Set.t) (t:task) (ca:CondAccess.t) : CondAcce
 module SymAccess = struct
   (*
 
-    A symbolic access represents an access of a particular task.
+  Each task is represented as: the mode of access, the index of an
+  n-dimensional access (eg, for [x][y], x=0 and y=1), and a location
+  identifier.
 
-    Given an AssignTask code generator, we can then generate the code for
-    a particular task.
+  In SMT terms, we assign each field to a variable.
+  For instance, we assign the mode of task A, say Rd, to a mode variable, say $mode$T1,
+  so the code generated becomes $mode$T1 = 0 to encode that task A's mode is Rd.
 
-   *)
+  condition /\
+  assign location /\
+  assign mode /\
+  assign index 0 /\
+  ...
+  assign index n
+  *)
   type t = {
     location: LocationIndex.t;
     condition: bexp;
     access: Access.t
   }
 
+
+  let mode_to_nexp (m:Access.Mode.t) : nexp =
+    Num (match m with
+    | Rd -> 0
+    | Wr -> 1)
+
+  let mk_mode (t:task) = mk_var (prefix t ^ "mode")
+  let mk_loc (t:task) = mk_var (prefix t ^ "loc")
+
   let mk ~location ~condition ~access = {location; condition; access}
 
   (* Given a task generator serialize a conditional access *)
-  let to_bexp (gen:AssignTask.t) (a:t) : bexp =
-    let head = [
-        a.condition;
-        gen.mode a.access.mode;
-    ] in
-    let head = gen.loc a.location :: head in
-    head @ List.mapi gen.index a.access.index
+  let to_bexp (t:task) (a:t) : bexp =
+    let this_mode_v : nexp = mk_mode t in
+    let other_mode_v : nexp = mk_mode (other_task t) in
+    let assign_mode (m:Access.Mode.t): bexp =
+      let b = n_eq this_mode_v (mode_to_nexp m) in
+      if Access.Mode.is_read m then
+        n_eq other_mode_v (mode_to_nexp Wr)
+        |> b_and b
+      else b
+    in
+    let assign_loc (l:LocationIndex.t) : bexp =
+          n_eq (mk_loc (other_task t))
+              (Num (LocationIndex.index l))
+    in
+    (
+      assign_loc a.location ::
+      a.condition ::
+      assign_mode a.access.mode ::
+      List.mapi (assign_index t) a.access.index
+    )
     |> b_and_ex
 
   (* When we lower the representation, we do not want to have source code
@@ -154,8 +128,6 @@ module SymAccess = struct
       condition = ca.cond;
     }
 end
-
-
 
 module Proof = struct
   type t = {
@@ -237,7 +209,7 @@ module Proof = struct
       accs
       |> Flatacc.Code.to_list (* get conditional accesses *)
       |> List.mapi (SymAccess.from_cond_access locals t) (* get symbolic access *)
-      |> List.map (AssignTask.from_task t |> SymAccess.to_bexp) (* generate code *)
+      |> List.map (SymAccess.to_bexp t) (* generate code *)
       |> b_or_ex
     in
     b_and_ex [
