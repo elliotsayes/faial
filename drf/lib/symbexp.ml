@@ -24,13 +24,107 @@ end
    - assign_index: given an index and an index value (nexp) returns a boolean
      expression that assigns the expression to the current index.
 *)
-type assign_task = {
-  assign_mode : Access.Mode.t -> bexp;
-  assign_index: int -> nexp -> bexp;
-  assign_loc: LocationIndex.t -> bexp;
-}
+let prefix (t:task) = "$" ^ task_to_string t ^ "$"
+let mk_var (x:string) = Var (Variable.from_name x)
+let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
+
+let assign_index (t:task) (idx:int) (n:nexp) : bexp =
+  n_eq (mk_idx t idx) n
+
+module AssignTask = struct
+  (*
+
+  Each task is represented as: the mode of access, the index of an
+  n-dimensional access (eg, for [x][y], x=0 and y=1), and a location
+  identifier.
+
+  In SMT terms, we assign each field to a variable.
+  For instance, we assign the mode of task A, say Rd, to a mode variable, say $mode$T1,
+  so the code generated becomes $mode$T1 = 0 to encode that task A's mode is Rd.
+
+  This particular data-structure stores generators that given a mode, which
+  is then instantiated by a value of type `task`.
+  *)
+  type t = {
+    mode : Access.Mode.t -> bexp;
+    index: int -> nexp -> bexp;
+    loc: LocationIndex.t -> bexp;
+  }
+
+  let mode_to_nexp (m:Access.Mode.t) : nexp =
+    Num (match m with
+    | Rd -> 0
+    | Wr -> 1)
+
+  let mk_mode (t:task) = mk_var (prefix t ^ "mode")
+  let mk_loc (t:task) = mk_var (prefix t ^ "loc")
+
+  (* Returns the generators for the given task *)
+  let from_task (t:task) : t =
+    let this_mode_v : nexp = mk_mode t in
+    let other_mode_v : nexp = mk_mode (other_task t) in
+    let eq_mode (m:Access.Mode.t): bexp =
+      let b = n_eq this_mode_v (mode_to_nexp m) in
+      if Access.Mode.is_read m then
+        n_eq other_mode_v (mode_to_nexp Wr)
+        |> b_and b
+      else b
+    in
+    let assign_loc (l:LocationIndex.t) : bexp =
+          n_eq (mk_loc (other_task t))
+              (Num (LocationIndex.index l))
+    in
+    {
+      mode = eq_mode;
+      index = assign_index t;
+      loc = assign_loc;
+    }
+
+end
+
+let project_access (locals:Variable.Set.t) (t:task) (ca:CondAccess.t) : CondAccess.t =
+  (* Add a suffix to a variable *)
+  let var_append (x:Variable.t) (suffix:string) : Variable.t =
+    Variable.set_name (Variable.name x ^ suffix) x
+  in
+  (* Add a suffix to all variables to make them unique. Use $ to ensure
+    these variables did not come from C *)
+  let task_suffix (t:task) = "$" ^ task_to_string t in
+  let proj_var (t:task) (x:Variable.t) : Variable.t =
+    var_append x (task_suffix t)
+  in
+  let rec inline_proj_n (t:task) (n: nexp) : nexp =
+    match n with
+    | Num _ -> n
+    | Var x when Variable.Set.mem x locals -> Var (proj_var t x)
+    | Var _ -> n
+    | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
+    | Proj (t', x) -> Var (proj_var t' x)
+    | NIf (b, n1, n2) -> NIf (inline_proj_b t b, inline_proj_n t n1, inline_proj_n t n2)
+    | NCall (x, n) -> NCall (x, inline_proj_n t n)
+  and inline_proj_b (t:task) (b: bexp) : bexp =
+    match b with
+    | Pred (x, n) -> Pred (x, inline_proj_n t n)
+    | Bool _ -> b
+    | BNot b -> BNot (inline_proj_b t b)
+    | BRel (o, b1, b2) -> BRel (o, inline_proj_b t b1, inline_proj_b t b2)
+    | NRel (o, n1, n2) -> NRel (o, inline_proj_n t n1, inline_proj_n t n2)
+  in
+  let inline_acc (a:Access.t) = Access.map (inline_proj_n t) a in
+  {ca with
+    access = inline_acc ca.access;
+    cond = inline_proj_b t ca.cond;
+  }
 
 module SymAccess = struct
+  (*
+
+    A symbolic access represents an access of a particular task.
+
+    Given an AssignTask code generator, we can then generate the code for
+    a particular task.
+
+   *)
   type t = {
     location: LocationIndex.t;
     condition: bexp;
@@ -40,56 +134,28 @@ module SymAccess = struct
   let mk ~location ~condition ~access = {location; condition; access}
 
   (* Given a task generator serialize a conditional access *)
-  let to_bexp (t:assign_task) (a:t) : bexp =
+  let to_bexp (gen:AssignTask.t) (a:t) : bexp =
     let head = [
         a.condition;
-        t.assign_mode a.access.mode;
+        gen.mode a.access.mode;
     ] in
-    let head = t.assign_loc a.location :: head in
-    head @ List.mapi t.assign_index a.access.index
+    let head = gen.loc a.location :: head in
+    head @ List.mapi gen.index a.access.index
     |> b_and_ex
 
-
   (* When we lower the representation, we do not want to have source code
-    locations. Instead, we each *)
+    locations, just an id. *)
 
   let from_cond_access (locals:Variable.Set.t) (t:task) (idx:int) (ca:CondAccess.t) : t =
-    (* Add a suffix to a variable *)
-    let var_append (x:Variable.t) (suffix:string) : Variable.t =
-      Variable.set_name (Variable.name x ^ suffix) x
-    in
-    (* Add a suffix to all variables to make them unique. Use $ to ensure
-      these variables did not come from C *)
-    let task_suffix (t:task) = "$" ^ task_to_string t in
-    let proj_var (t:task) (x:Variable.t) : Variable.t =
-      var_append x (task_suffix t)
-    in
-    let rec inline_proj_n (t:task) (n: nexp) : nexp =
-      match n with
-      | Num _ -> n
-      | Var x when Variable.Set.mem x locals -> Var (proj_var t x)
-      | Var _ -> n
-      | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
-      | Proj (t', x) -> Var (proj_var t' x)
-      | NIf (b, n1, n2) -> NIf (inline_proj_b t b, inline_proj_n t n1, inline_proj_n t n2)
-      | NCall (x, n) -> NCall (x, inline_proj_n t n)
-    and inline_proj_b (t:task) (b: bexp) : bexp =
-      match b with
-      | Pred (x, n) -> Pred (x, inline_proj_n t n)
-      | Bool _ -> b
-      | BNot b -> BNot (inline_proj_b t b)
-      | BRel (o, b1, b2) -> BRel (o, inline_proj_b t b1, inline_proj_b t b2)
-      | NRel (o, n1, n2) -> NRel (o, inline_proj_n t n1, inline_proj_n t n2)
-    in
-    let inline_acc (a:Access.t) = Access.map (inline_proj_n t) a in
+    let ca = project_access locals t ca in
     {
       location = LocationIndex.mk idx ca.location;
-      access = inline_acc ca.access;
-      condition = inline_proj_b t ca.cond;
+      access = ca.access;
+      condition = ca.cond;
     }
-
-
 end
+
+
 
 module Proof = struct
   type t = {
@@ -145,70 +211,11 @@ module Proof = struct
           Line ("goal: " ^ b_to_string p.goal ^ ";");
       ]
 
-end
 
-let proj_accesses locals t (f: Code.t) : SymAccess.t list =
-  f
-  |> Code.to_list
-  |> List.mapi (SymAccess.from_cond_access locals t)
-
-let mode_to_nexp (m:Access.Mode.t) : nexp =
-  Num (match m with
-  | Rd -> 0
-  | Wr -> 1)
-
-let mk_var (x:string) = Var (Variable.from_name x)
-let prefix (t:task) = "$" ^ task_to_string t ^ "$"
-let mk_mode (t:task) = mk_var (prefix t ^ "mode")
-let mk_loc (t:task) = mk_var (prefix t ^ "loc")
-let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
-
-
-(* Returns the generators for the given task *)
-let mk_task_gen (t:task) : assign_task =
-  let this_mode_v : nexp = mk_mode t in
-  let other_mode_v : nexp = mk_mode (other_task t) in
-  let idx_v : int -> nexp = mk_idx t in
-  let eq_mode (m:Access.Mode.t): bexp =
-    let b = n_eq this_mode_v (mode_to_nexp m) in
-    if Access.Mode.is_read m then
-      n_eq other_mode_v (mode_to_nexp Wr)
-      |> b_and b
-    else b
-  in
-  let assign_loc (l:LocationIndex.t) : bexp =
-        n_eq (mk_loc (other_task t))
-            (Num (LocationIndex.index l))
-  in
-  let assign_index (idx:int) (n:nexp) : bexp = n_eq (idx_v idx) n
-  in
-  {
-    assign_mode = eq_mode;
-    assign_index = assign_index;
-    assign_loc = assign_loc;
-  }
-
-
-let cond_acc_list_to_bexp (t:assign_task) (l:SymAccess.t list) : bexp =
-  List.map (SymAccess.to_bexp t) l
-  |> b_or_ex
-
-let h_prog_to_bexp
-  (locals:Variable.Set.t)
-  (accs:Code.t)
-:
-  bexp
-=
-  (* Pick one access *)
-  let task_to_bexp (t:task) : bexp =
-    let gen = mk_task_gen t in
-    let accs = proj_accesses locals t accs in
-    cond_acc_list_to_bexp gen accs
-  in
-  (* Make sure all indices match *)
-  (* $T1$index$0 = $T2$index$0 ... *)
-  let gen_eq_index (n:int) : bexp =
-    range (n - 1)
+  let dim_gen (dim:int) : bexp =
+    (* Make sure all indices match *)
+    (* $T1$index$0 = $T2$index$0 ... *)
+    range (dim - 1)
     |> List.map (fun i ->
       let t1 = mk_idx Task1 i in
       let t2 = mk_idx Task2 i in
@@ -218,30 +225,45 @@ let h_prog_to_bexp
       ]
     )
     |> b_and_ex
-  in
-  b_and_ex [
-    task_to_bexp Task1;
-    task_to_bexp Task2;
-    Code.dim accs |> Option.get |> gen_eq_index
-  ]
 
-let f_kernel_to_proof (proof_id:int) (k:Flatacc.Kernel.t) : Proof.t =
-  let goal =
-    h_prog_to_bexp k.local_variables k.code
-    |> b_and k.pre
-    |> Constfold.b_opt (* Optimize the output expression *)
-  in
-  let locations = Code.to_list k.code |> List.map CondAccess.location in
-  Proof.mk
-    ~id:proof_id
-    ~kernel_name:k.name
-    ~array_name:k.array_name
-    ~locations
-    ~goal
+  let from_flat_code
+    (locals:Variable.Set.t)
+    (accs:Flatacc.Code.t)
+  :
+    bexp
+  =
+    (* Pick one access *)
+    let task_to_bexp (t:task) : bexp =
+      accs
+      |> Flatacc.Code.to_list (* get conditional accesses *)
+      |> List.mapi (SymAccess.from_cond_access locals t) (* get symbolic access *)
+      |> List.map (AssignTask.from_task t |> SymAccess.to_bexp) (* generate code *)
+      |> b_or_ex
+    in
+    b_and_ex [
+      task_to_bexp Task1;
+      task_to_bexp Task2;
+      Code.dim accs |> Option.get |> dim_gen
+    ]
 
+  let from_flat (proof_id:int) (k:Flatacc.Kernel.t) : t =
+    let goal =
+      from_flat_code k.local_variables k.code
+      |> b_and k.pre
+      |> Constfold.b_opt (* Optimize the output expression *)
+    in
+    let locations = Code.to_list k.code |> List.map CondAccess.location in
+    mk
+      ~id:proof_id
+      ~kernel_name:k.name
+      ~array_name:k.array_name
+      ~locations
+      ~goal
+
+end
 
 let translate (stream:Flatacc.Kernel.t Streamutil.stream) : (Proof.t Streamutil.stream) =
-  Streamutil.mapi f_kernel_to_proof stream
+  Streamutil.mapi Proof.from_flat stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 
