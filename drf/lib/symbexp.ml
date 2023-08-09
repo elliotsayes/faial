@@ -129,6 +129,29 @@ module SymAccess = struct
     }
 end
 
+let cond_access_to_bexp (locals:Variable.Set.t) (t:task) (a:CondAccess.t) : bexp =
+  let a = project_access locals t a in
+  (
+    a.cond ::
+    List.mapi (assign_index t) a.access.index
+  )
+  |> b_and_ex
+
+
+let dim_gen (dim:int) : bexp =
+  (* Make sure all indices match *)
+  (* $T1$index$0 = $T2$index$0 ... *)
+  range (dim - 1)
+  |> List.map (fun i ->
+    let t1 = mk_idx Task1 i in
+    let t2 = mk_idx Task2 i in
+    b_and_ex [
+      n_eq t1 t2;
+      n_ge t1 (Num 0);
+    ]
+  )
+  |> b_and_ex
+
 module Proof = struct
   type t = {
     id: int;
@@ -183,21 +206,6 @@ module Proof = struct
           Line ("goal: " ^ b_to_string p.goal ^ ";");
       ]
 
-
-  let dim_gen (dim:int) : bexp =
-    (* Make sure all indices match *)
-    (* $T1$index$0 = $T2$index$0 ... *)
-    range (dim - 1)
-    |> List.map (fun i ->
-      let t1 = mk_idx Task1 i in
-      let t2 = mk_idx Task2 i in
-      b_and_ex [
-        n_eq t1 t2;
-        n_ge t1 (Num 0);
-      ]
-    )
-    |> b_and_ex
-
   let from_flat_code
     (locals:Variable.Set.t)
     (accs:Flatacc.Code.t)
@@ -230,6 +238,31 @@ module Proof = struct
       ~kernel_name:k.name
       ~array_name:k.array_name
       ~locations
+      ~goal
+
+
+
+  let from_paired
+    (proof_id:int) (k:Paired.Kernel.t)
+  :
+    t
+  =
+    let (a1, a2) = k.code in
+    let goal =
+      [
+        k.pre;                                          (* kernel pre-condition *)
+        cond_access_to_bexp k.local_variables Task1 a1; (* assign access 1 *)
+        cond_access_to_bexp k.local_variables Task2 a2; (* assign access 2 *)
+        CondAccess.dim a1 |> dim_gen          (* access dimensions *)
+      ]
+      |> b_and_ex
+      |> Constfold.b_opt (* Optimize the output expression *)
+    in
+    mk
+      ~id:proof_id
+      ~kernel_name:k.name
+      ~array_name:k.array_name
+      ~locations:[CondAccess.location a1; CondAccess.location a2]
       ~goal
 
 end
