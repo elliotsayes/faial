@@ -17,10 +17,14 @@ module CondAccess = struct
 
   let location (x:t) : Location.t = x.location
 
-  let to_s (a:t) : Indent.t =
+  let to_s (a:t) : Indent.t list =
+    let cond = b_and_split a.cond in
     let lineno = (Location.line a.location |> Index.to_base1 |> string_of_int) ^ ": " in
-    Line (lineno ^ Access.to_string a.access ^ " if " ^
-      b_to_string a.cond ^";")
+    [
+      Line (lineno ^ Access.to_string a.access ^ " if");
+      Block (List.map (fun x -> Indent.Line (b_to_string x ^ " &&")) cond);
+      Line ";";
+    ]
 end
 
 module Code = struct
@@ -43,7 +47,7 @@ module Code = struct
     function
     | Skip -> [Line "skip;"]
     | Seq (p, q) -> to_s p @ to_s q
-    | Cond a -> [CondAccess.to_s a]
+    | Cond a -> CondAccess.to_s a
 
   (* The dimention is the index count *)
   let rec dim : t -> int option =
