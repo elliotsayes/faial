@@ -239,32 +239,6 @@ module Proof = struct
       ~array_name:k.array_name
       ~locations
       ~goal
-
-
-
-  let from_paired
-    (proof_id:int) (k:Paired.Kernel.t)
-  :
-    t
-  =
-    let (a1, a2) = k.code in
-    let goal =
-      [
-        k.pre;                                          (* kernel pre-condition *)
-        cond_access_to_bexp k.local_variables Task1 a1; (* assign access 1 *)
-        cond_access_to_bexp k.local_variables Task2 a2; (* assign access 2 *)
-        CondAccess.dim a1 |> dim_gen          (* access dimensions *)
-      ]
-      |> b_and_ex
-      |> Constfold.b_opt (* Optimize the output expression *)
-    in
-    mk
-      ~id:proof_id
-      ~kernel_name:k.name
-      ~array_name:k.array_name
-      ~locations:[CondAccess.location a1; CondAccess.location a2]
-      ~goal
-
 end
 
 let translate (stream:Flatacc.Kernel.t Streamutil.stream) : (Proof.t Streamutil.stream) =
