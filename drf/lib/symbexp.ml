@@ -203,7 +203,9 @@ module Proof = struct
           Line ("kernel: " ^ p.kernel_name);
           Line ("predicates: " ^ preds ^ ";");
           Line ("decls: " ^ (p.decls |> join ", ") ^ ";");
-          Line ("goal: " ^ b_to_string p.goal ^ ";");
+          Line ("goal:");
+          Block (b_to_s p.goal);
+          Line (";")
       ]
 
   let from_flat_code

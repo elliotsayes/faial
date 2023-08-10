@@ -256,11 +256,12 @@ let kernel_to_s (f:'a -> Indent.t list) (k:'a kernel) : Indent.t list =
     Line ("arrays: " ^ Memory.map_to_string k.kernel_arrays ^ ";");
     Line ("globals: " ^ Variable.set_to_string k.kernel_global_variables ^ ";");
     Line ("locals: " ^ Variable.set_to_string k.kernel_local_variables ^ ";");
-    Line ("invariant: " ^ Exp.b_to_string k.kernel_pre ^";");
-    Line "";
-    Line "code {";
+    Line ("invariant:");
+    Block (b_to_s k.kernel_pre);
+    Line ";";
+    Line "code:";
     Block (f k.kernel_code);
-    Line "}"
+    Line "; end of code"
   ]
 
 let print_kernel (f:'a -> Indent.t list) (k: 'a kernel) : unit =

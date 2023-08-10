@@ -269,6 +269,12 @@ let rec b_or_ex l =
 let distinct (idx:Variable.t list) : bexp =
   b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)
 
+let rec b_and_split : bexp -> bexp list =
+  function
+  | BRel (BAnd, b1, b2) ->
+    b_and_split b1 @ b_and_split b2
+  | b -> [b]
+
 let nbin_to_string : nbin -> string = function
   | Plus -> "+"
   | Minus -> "-"
@@ -336,3 +342,8 @@ and b_par (b:bexp) : string =
   | BRel _
   | NRel _
     -> "("  ^ b_to_string b ^ ")"
+
+let b_to_s (b:bexp) : Indent.t list =
+  b
+  |> b_and_split
+  |> List.map (fun x -> Indent.Line (b_to_string x ^ "&&"))
