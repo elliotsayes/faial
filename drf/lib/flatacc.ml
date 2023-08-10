@@ -28,49 +28,32 @@ module CondAccess = struct
 end
 
 module Code = struct
-  type t =
-    | Cond of CondAccess.t
-    | Seq of t * t
-    | Skip
+  type t = CondAccess.t list
 
   let to_list : t -> CondAccess.t list =
-    let rec to_list (accum:CondAccess.t list) : t -> CondAccess.t list =
-      function
-      | Skip -> accum
-      | Cond a -> a :: accum
-      | Seq (p, q) ->
-        to_list (to_list accum p) q
-    in
-    to_list []
+    fun x -> x
 
-  let rec to_s : t -> Indent.t list =
-    function
-    | Skip -> [Line "skip;"]
-    | Seq (p, q) -> to_s p @ to_s q
-    | Cond a -> CondAccess.to_s a
+  let to_s (l:t) : Indent.t list =
+    List.concat_map CondAccess.to_s l
 
   (* The dimention is the index count *)
-  let rec dim : t -> int option =
-    function
-    | Skip -> None
-    | Cond a -> Some (CondAccess.dim a)
-    | Seq (p, q) ->
-      (match dim p with
-      | Some n -> Some n
-      | None -> dim q)
+  let dim (l:t) : int option =
+    List.nth_opt l 0 |> Option.map CondAccess.dim
 
   let from_unsync : Unsync.t -> t =
-    let rec flatten (b:bexp) : Unsync.t -> t =
+    let rec flatten (accum:t) (b:bexp) : Unsync.t -> t =
       function
-      | Skip -> Skip
+      | Skip -> accum
       | Assert _ -> failwith "Internall error: call Unsync.inline_asserts first!"
-      | Acc (x, e) -> Cond {location = Variable.location x; access = e; cond = b}
-      | Cond (b', p) -> flatten (b_and b' b) p
-      | Loop (r, p) -> flatten (b_and (Range.to_cond r) b) p
-      | Seq (p, q) -> Seq (flatten b p, flatten b q)
+      | Acc (x, e) -> {location = Variable.location x; access = e; cond = b} :: accum
+      | Cond (b', p) -> flatten accum (b_and b' b) p
+      | Loop (r, p) -> flatten accum (b_and (Range.to_cond r) b) p
+      | Seq (p, q) ->
+        let accum = flatten accum b p in
+        flatten accum b q
     in
     fun u ->
-      flatten (Bool true) (Unsync.inline_asserts u)
+      flatten [] (Bool true) (Unsync.inline_asserts u)
 end
 
 module Kernel = struct
