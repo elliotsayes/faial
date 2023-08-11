@@ -60,12 +60,12 @@ module SymAccess = struct
   identifier.
 
   In SMT terms, we assign each field to a variable.
-  For instance, we assign the mode of task A, say Rd, to a mode variable, say $mode$T1,
-  so the code generated becomes $mode$T1 = 0 to encode that task A's mode is Rd.
+  For instance, we assign the conditional access id of task A, say 0, to a
+  conditional-access-id variable, say $acc$T1, and the code generated becomes
+  $acc$T1 = 0 to encode that task A's CondAccess.t id is 0.
 
   condition /\
-  assign location /\
-  assign mode /\
+  cond-acc id /\
   assign index 0 /\
   ...
   assign index n
