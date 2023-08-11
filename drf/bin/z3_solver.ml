@@ -142,21 +142,21 @@ module Vec3 = struct
 end
 
 module Task = struct
-	type t = {
-		thread_idx: Vec3.t;
-		locals: Environ.t;
-		mode: Access.Mode.t;
-		location: Location.t option;
-	}
+  type t = {
+    thread_idx: Vec3.t;
+    locals: Environ.t;
+    access: Access.t;
+    location: Location.t option;
+  }
 
-	let mk ~thread_idx:tid ~locals:locals ~mode:mode ~location:location =
-		{thread_idx=tid; locals=locals; mode=mode; location=location}
+	let mk ~thread_idx ~locals ~access ~location =
+		{thread_idx; locals; access; location}
 
 	let to_json (x:t) : json =
 		`Assoc [
 			"threadIdx", Vec3.to_json x.thread_idx;
 			"locals", Environ.to_json x.locals;
-			"mode", `String (Access.Mode.to_string x.mode);
+			"mode", `String (Access.Mode.to_string x.access.mode);
 			"location",
         match x.location; with
         | Some l -> Location.to_json l
@@ -263,33 +263,36 @@ module Witness = struct
         List.iter (fun (k,v) -> prerr_endline (k ^ ": " ^ v)) kvs;
         failwith e
 
-	let parse_meta (e:Environ.t) : (Environ.t * (string list * Access.Mode.t * Access.Mode.t)) =
-		let (kvs, env) = List.partition (fun (k, _) ->
-				String.starts_with ~prefix:"$" k
-		) e.variables
-		in
-		let (t1_mode, t2_mode) = parse_mode {e with variables=kvs} in
-		(
+  let parse_meta (e:Environ.t) : (Environ.t * string list) =
+    let (kvs, env) = List.partition (fun (k, _) ->
+        String.starts_with ~prefix:"$" k
+    ) e.variables
+    in
+    (
       {e with variables=env},
-      (parse_indices {e with variables=kvs}, t1_mode, t2_mode)
+      parse_indices {e with variables=kvs}
     )
 
-  let parse (parse_location:int -> Location.t) (parse_num:string -> string) ~proof ~block_dim ~grid_dim (m:Model.model) : t =
+  let parse (parse_num:string -> string) ~proof ~block_dim ~grid_dim (m:Model.model) : t =
     let env =
       let open Symbexp in
       Environ.parse (Proof.labels proof) parse_num m
     in
-    let parse_loc (tid:string) =
-      env
-      |> Environ.get ("$T" ^ tid ^ "$loc")
-      |> Option.map (fun x ->
-        x
+    let inst1, inst2 =
+      let parse_inst_id (tid:string) : int =
+        env
+        |> Environ.get ("$T" ^ tid ^ "$id")
+        |> Option.get
         |> int_of_string
-        |> parse_location
-      )
+      in
+      parse_inst_id "1", parse_inst_id "2"
     in
-    let t1_loc = parse_loc "1" in
-    let t2_loc = parse_loc "2" in
+    let acc (idx:int) : Location.t * Access.t =
+      let acc = Symbexp.Proof.get idx proof in
+      Flatacc.CondAccess.location acc, Flatacc.CondAccess.access acc
+    in
+    let (t1_loc, t1_acc) = acc inst1 in
+    let (t2_loc, t2_acc) = acc inst2 in
     (* put all special variables in kvs
       $T2$loc: 0
       $T1$mode: 0
@@ -298,7 +301,7 @@ module Witness = struct
       $T1$idx$0: 1
       $T2$idx$0: 1
     *)
-    let (env, (idx, t1_mode, t2_mode)) = parse_meta env in
+    let (env, idx) = parse_meta env in
     let (tids, globals) = List.partition (fun (k, _) ->
         String.starts_with ~prefix:"threadIdx." k
     ) env.variables
@@ -339,14 +342,14 @@ module Witness = struct
     let t1 = Task.{
       thread_idx = t1_tid;
       locals = {variables=t1_locals;labels=t1_labels};
-      mode = t1_mode;
-      location = t1_loc;
+      access = t1_acc;
+      location = Some t1_loc;
     } in
     let t2 = Task.{
       thread_idx = t2_tid;
       locals = {variables=t2_locals;labels=t2_labels};
-      mode = t2_mode;
-      location = t2_loc;
+      access = t2_acc;
+      location = Some t2_loc;
     }
     in
     {
@@ -447,7 +450,7 @@ module Solution = struct
       | UNSATISFIABLE -> Drf
       | SATISFIABLE ->
         (match Solver.get_model s with
-        | Some m -> Racy (Witness.parse (List.nth p.locations) !parse_num ~block_dim ~grid_dim ~proof:p m)
+        | Some m -> Racy (Witness.parse !parse_num ~block_dim ~grid_dim ~proof:p m)
         | None -> failwith "INVALID")
       | UNKNOWN -> Unknown
       in

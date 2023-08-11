@@ -11,13 +11,6 @@ open Common
 open Exp
 open Flatacc
 
-module LocationIndex = struct
-  type t = {index: int; location:Location.t}
-  let mk (index:int) (location:Location.t) : t = {index; location}
-  let index (x:t) = x.index
-  let location (x:t) = x.location
-end
-
 let prefix (t:task) = "$" ^ task_to_string t ^ "$"
 let mk_var (x:string) = Var (Variable.from_name x)
 let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
@@ -78,7 +71,7 @@ module SymAccess = struct
   assign index n
   *)
   type t = {
-    location: LocationIndex.t;
+    id: int;
     condition: bexp;
     access: Access.t
   }
@@ -90,9 +83,7 @@ module SymAccess = struct
     | Wr -> 1)
 
   let mk_mode (t:task) = mk_var (prefix t ^ "mode")
-  let mk_loc (t:task) = mk_var (prefix t ^ "loc")
-
-  let mk ~location ~condition ~access = {location; condition; access}
+  let mk_id (t:task) = mk_var (prefix t ^ "id")
 
   (* Given a task generator serialize a conditional access *)
   let to_bexp (t:task) (a:t) : bexp =
@@ -105,12 +96,10 @@ module SymAccess = struct
         |> b_and b
       else b
     in
-    let assign_loc (l:LocationIndex.t) : bexp =
-          n_eq (mk_loc (other_task t))
-              (Num (LocationIndex.index l))
+    let assign_id : bexp = n_eq (mk_id (other_task t)) (Num a.id)
     in
     (
-      assign_loc a.location ::
+      assign_id ::
       a.condition ::
       assign_mode a.access.mode ::
       List.mapi (assign_index t) a.access.index
@@ -123,7 +112,7 @@ module SymAccess = struct
   let from_cond_access (locals:Variable.Set.t) (t:task) (idx:int) (ca:CondAccess.t) : t =
     let ca = project_access locals t ca in
     {
-      location = LocationIndex.mk idx ca.location;
+      id = idx;
       access = ca.access;
       condition = ca.cond;
     }
@@ -157,11 +146,11 @@ module Proof = struct
     id: int;
     kernel_name: string;
     array_name: string;
-    locations: Location.t list;
     preds: Predicates.t list;
     decls: string list;
     labels: (string * string) list;
     goal: bexp;
+    code: Flatacc.Code.t;
   }
 
   let labels (p:t) : (string * string) list =
@@ -172,10 +161,13 @@ module Proof = struct
       "id", `Int p.id;
       "kernel_name", `String p.kernel_name;
       "array_name", `String p.array_name;
-      "locations", `List (List.map Location.to_json p.locations);
     ]
 
-  let mk ~kernel_name ~array_name ~id ~goal ~locations : t =
+  let get (idx:int) (p:t) : CondAccess.t =
+    List.nth p.code idx
+
+  let make ~kernel_name ~array_name ~id ~goal ~code : t =
+    let goal = Constfold.b_opt goal (* Optimize the output expression *) in
     let fns =
       Freenames.free_names_bexp goal Variable.Set.empty
       |> Variable.Set.elements
@@ -188,35 +180,35 @@ module Proof = struct
       )
     ) fns in
     let preds = Predicates.get_predicates goal in
-    {id; preds; decls; goal; array_name; kernel_name; locations; labels;}
+    {id; preds; decls; goal; array_name; kernel_name; labels; code;}
 
-    let to_string (p:t) : Indent.t list =
-      let open Common in
-      let open Indent in
-      let preds =
-        let open Predicates in
-        List.map (fun x -> x.pred_name) p.preds
-        |> join ", "
-      in
-      [
-          Line ("array: " ^ p.array_name);
-          Line ("kernel: " ^ p.kernel_name);
-          Line ("predicates: " ^ preds ^ ";");
-          Line ("decls: " ^ (p.decls |> join ", ") ^ ";");
-          Line ("goal:");
-          Block (b_to_s p.goal);
-          Line (";")
-      ]
+  let to_string (p:t) : Indent.t list =
+    let open Common in
+    let open Indent in
+    let preds =
+      let open Predicates in
+      List.map (fun x -> x.pred_name) p.preds
+      |> join ", "
+    in
+    [
+        Line ("array: " ^ p.array_name);
+        Line ("kernel: " ^ p.kernel_name);
+        Line ("predicates: " ^ preds ^ ";");
+        Line ("decls: " ^ (p.decls |> join ", ") ^ ";");
+        Line ("goal:");
+        Block (b_to_s p.goal);
+        Line (";")
+    ]
 
-  let from_flat_code
+  let from_code
     (locals:Variable.Set.t)
-    (accs:Flatacc.Code.t)
+    (code:Flatacc.Code.t)
   :
     bexp
   =
     (* Pick one access *)
     let task_to_bexp (t:task) : bexp =
-      accs
+      code
       |> Flatacc.Code.to_list (* get conditional accesses *)
       |> List.mapi (SymAccess.from_cond_access locals t) (* get symbolic access *)
       |> List.map (SymAccess.to_bexp t) (* generate code *)
@@ -225,25 +217,23 @@ module Proof = struct
     b_and_ex [
       task_to_bexp Task1;
       task_to_bexp Task2;
-      Code.dim accs |> Option.get |> dim_gen
+      Code.dim code |> Option.get |> dim_gen
     ]
 
   let from_flat (proof_id:int) (k:Flatacc.Kernel.t) : t =
     let goal =
-      from_flat_code k.local_variables k.code
+      from_code k.local_variables k.code
       |> b_and k.pre
-      |> Constfold.b_opt (* Optimize the output expression *)
     in
-    let locations = Code.to_list k.code |> List.map CondAccess.location in
-    mk
+    make
       ~id:proof_id
       ~kernel_name:k.name
       ~array_name:k.array_name
-      ~locations
       ~goal
+      ~code:k.code
 end
 
-let translate (stream:Flatacc.Kernel.t Streamutil.stream) : (Proof.t Streamutil.stream) =
+let translate (stream:Flatacc.Kernel.t Streamutil.stream) : Proof.t Streamutil.stream =
   Streamutil.mapi Proof.from_flat stream
 
 (* ------------------- SERIALIZE ---------------------- *)

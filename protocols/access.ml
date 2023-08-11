@@ -24,6 +24,8 @@ end
 (* An access pairs the index-expression with the access mode (R/W) *)
 type t = {index: Exp.nexp list; mode: Mode.t}
 
+let mode (x:t) : Mode.t = x.mode
+
 let is_write (x:t) : bool =
   Mode.is_write x.mode
 

@@ -17,6 +17,8 @@ module CondAccess = struct
 
   let location (x:t) : Location.t = x.location
 
+  let access (x:t) : Access.t = x.access
+
   let to_s (a:t) : Indent.t list =
     let cond = b_and_split a.cond in
     let lineno = (Location.line a.location |> Index.to_base1 |> string_of_int) ^ ": " in
