@@ -80,7 +80,7 @@ module SymAccess = struct
   let mode_to_nexp (m:Access.Mode.t) : nexp =
     Num (match m with
     | Rd -> 0
-    | Wr -> 1)
+    | Wr _ -> 1)
 
   let mk_mode (t:task) = mk_var (prefix t ^ "mode")
   let mk_id (t:task) = mk_var (prefix t ^ "id")
@@ -92,7 +92,7 @@ module SymAccess = struct
     let assign_mode (m:Access.Mode.t): bexp =
       let b = n_eq this_mode_v (mode_to_nexp m) in
       if Access.Mode.is_read m then
-        n_eq other_mode_v (mode_to_nexp Wr)
+        n_eq other_mode_v (mode_to_nexp (Wr None))
         |> b_and b
       else b
     in

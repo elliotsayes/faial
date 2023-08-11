@@ -149,23 +149,26 @@ module Task = struct
     location: Location.t option;
   }
 
-	let mk ~thread_idx ~locals ~access ~location =
-		{thread_idx; locals; access; location}
+  let can_conflict (x1:t) (x2:t) : bool =
+    Access.can_conflict x1.access x2.access
 
-	let to_json (x:t) : json =
-		`Assoc [
-			"threadIdx", Vec3.to_json x.thread_idx;
-			"locals", Environ.to_json x.locals;
-			"mode", `String (Access.Mode.to_string x.access.mode);
-			"location",
+  let mk ~thread_idx ~locals ~access ~location =
+    {thread_idx; locals; access; location}
+
+  let to_json (x:t) : json =
+    `Assoc [
+      "threadIdx", Vec3.to_json x.thread_idx;
+      "locals", Environ.to_json x.locals;
+      "mode", `String (Access.Mode.to_string x.access.mode);
+      "location",
         match x.location; with
         | Some l -> Location.to_json l
         | None -> `Null
-		]
+    ]
 
-	let to_string (v:t) : string =
-		let open Yojson.Basic in
-		to_json v |> pretty_to_string
+  let to_string (v:t) : string =
+    let open Yojson.Basic in
+    to_json v |> pretty_to_string
 
 end
 
@@ -179,6 +182,10 @@ module Witness = struct
     grid_dim: Vec3.t;
     globals: Environ.t;
   }
+
+  let can_conflict (x:t) : bool =
+    let (t1, t2) = x.tasks in
+    Task.can_conflict t1 t2
 
 	let to_json (x:t) : json =
 		let (t1, t2) = x.tasks in
@@ -246,22 +253,6 @@ module Witness = struct
 		|> List.map string_of_int
 		(* And look them up using parse_idx *)
 		|> List.map parse_idx 
-
-  let parse_mode (e:Environ.t) : Access.Mode.t * Access.Mode.t =
-    let kvs = e.variables in
-    let parse_mode (x:string) =
-      let open Access.Mode in
-      match List.assoc ("$T" ^ x ^ "$mode") kvs with
-      | "1" -> Wr
-      | "0" -> Rd
-      | _ -> failwith ("Unknown mode: " ^ x)
-    in
-    try
-      (parse_mode "1", parse_mode "2")
-    with
-      Failure(e) ->
-        List.iter (fun (k,v) -> prerr_endline (k ^ ": " ^ v)) kvs;
-        failwith e
 
   let parse_meta (e:Environ.t) : (Environ.t * string list) =
     let (kvs, env) = List.partition (fun (k, _) ->
@@ -450,7 +441,9 @@ module Solution = struct
       | UNSATISFIABLE -> Drf
       | SATISFIABLE ->
         (match Solver.get_model s with
-        | Some m -> Racy (Witness.parse !parse_num ~block_dim ~grid_dim ~proof:p m)
+        | Some m ->
+          let w = Witness.parse !parse_num ~block_dim ~grid_dim ~proof:p m in
+          if Witness.can_conflict w then Racy w else Drf
         | None -> failwith "INVALID")
       | UNKNOWN -> Unknown
       in

@@ -16,7 +16,7 @@ let r = Range.{
 }
 let write = Access.{
   index = [];
-  mode = Mode.Wr;
+  mode = Mode.Wr None;
 }
 let x_acc = Unsync.Acc (x, write)
 let y_acc = Unsync.Acc (y, write)

@@ -20,7 +20,7 @@ let tests = "test_predicates" >::: [
       *)
     let id = Variable.from_name "id" in
     let sq = Variable.from_name "s_Q" in
-    let mk_acc e = Access.{index = [Var e]; mode = Mode.Wr} in
+    let mk_acc e = Access.{index = [Var e]; mode = Mode.Wr None} in
     let wr = Acc (sq, mk_acc id) in
     let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
@@ -55,12 +55,12 @@ let tests = "test_predicates" >::: [
     let p : Post.prog = [
       let open Post in
       Decl (id, Local, Some (n_plus (Num 32) (Var id)),[ (* local id = 32 + id; *)
-        Acc (sq, {index=[Var id]; mode = Wr}) (* rw s_Q[id]; *)
+        Acc (sq, {index=[Var id]; mode = Wr None}) (* rw s_Q[id]; *)
       ])
     ] in
     let p : Post.prog = Post.inline_decls Variable.Set.empty p in
     match p with
-    | [Post.Acc (_, {index=[e]; mode = Wr}) (* rw s_Q[32 + id]; *)
+    | [Post.Acc (_, {index=[e]; mode = Wr None}) (* rw s_Q[32 + id]; *)
       ] ->
       assert_nexp (n_plus (Num 32) (Var id)) e;
       ()
@@ -77,7 +77,7 @@ let tests = "test_predicates" >::: [
     let id = Variable.from_name "id" in
     let tid = Variable.from_name "threadIdx.x" in
     let sq = Variable.from_name "s_Q" in
-    let mk_acc e = Access.{index = [Var e]; mode = Wr} in
+    let mk_acc e = Access.{index = [Var e]; mode = Wr None} in
     let wr = Acc (sq, mk_acc id) in
     let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
@@ -126,7 +126,7 @@ let tests = "test_predicates" >::: [
       *)
     let id = Variable.from_name "id" in
     let tid = Variable.from_name "threadIdx.x" in
-    let wr = Acc (Variable.from_name "s_Q", {index = [Var id]; mode = Wr}) in
+    let wr = Acc (Variable.from_name "s_Q", {index = [Var id]; mode = Wr None}) in
     let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
       Decl[(tid, Local, None)];
@@ -176,7 +176,7 @@ let tests = "test_predicates" >::: [
     let m = Variable.from_name "m" in
     let k = Variable.from_name "k" in
     let id = Variable.from_name "id" in
-    let wr = Acc (Variable.from_name "s_Q", {index = [Var id]; mode = Wr}) in
+    let wr = Acc (Variable.from_name "s_Q", {index = [Var id]; mode = Wr None}) in
     let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
       Decl[(Variable.from_name "threadIdx.x", Local, None)];
@@ -231,7 +231,7 @@ let tests = "test_predicates" >::: [
         x, Local, None;
         b, Local, Some (Var x);
       ];
-      Acc (Variable.from_name "A", Access.write [Var a; Var b])
+      Acc (Variable.from_name "A", Access.write [Var a; Var b] None)
     ] in
     let p1 =
       let open Post in
@@ -239,7 +239,7 @@ let tests = "test_predicates" >::: [
         [Decl (a, Local, Some (Var x),
           [Decl (x, Local, None,
             [Decl (b, Local, Some (Var x),
-              [Acc (Variable.from_name "A", Access.write [Var a; Var b])]
+              [Acc (Variable.from_name "A", Access.write [Var a; Var b] None)]
             )]
           )]
         )]
@@ -252,7 +252,7 @@ let tests = "test_predicates" >::: [
         [Decl (a, Local, Some (Var x),
           [Decl (x, Local, None,
             [Decl (b, Local, Some (Var x),
-              [Acc (Variable.from_name "A", Access.write [Var a; Var b])]
+              [Acc (Variable.from_name "A", Access.write [Var a; Var b] None)]
             )]
           )]
         )]
@@ -263,7 +263,7 @@ let tests = "test_predicates" >::: [
       let open Post in
       [Post.Decl (x, Local, None,
         [Decl (x1, Local, None,
-          [Acc (Variable.from_name "A", Access.write [Var x; Var x1])]
+          [Acc (Variable.from_name "A", Access.write [Var x; Var x1] None)]
         )]
       )]
     in

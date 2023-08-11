@@ -301,7 +301,17 @@ type d_subscript = {name: Variable.t; index: Expr.t list; ty: d_type; location: 
 let subscript_to_s (s:d_subscript) : string =
   Variable.name s.name ^ "[" ^ list_to_s Expr.to_string s.index ^ "]"
 
-type d_write = {target: d_subscript; source: Expr.t}
+type d_write = {
+  (* The index *)
+  target: d_subscript;
+  (* The value being written to the array *)
+  source: Expr.t;
+  (* A payload is used to detect *benign data-races*. If we are able to identify a
+     literal being written to the array, then the value is captured in the
+     payload. This particular value is propagated to MAPs.
+     *)
+  payload: int option
+}
 type d_read = {target: Variable.t; source: d_subscript}
 
 module Stmt = struct
@@ -508,10 +518,11 @@ module AccessState = struct
     ) st
 
 
-  let add_write (a:d_subscript) (source:Expr.t) (st:t) : (t * Variable.t) =
+  let add_write (a:d_subscript) (source:Expr.t) (payload:int option) (st:t) : (t * Variable.t) =
     let wr x = Stmt.WriteAccessStmt {
       target=a;
-      source=VarDecl {name=x; ty=a.ty}
+      source=VarDecl {name=x; ty=a.ty};
+      payload
     } in
     match source with
     | VarDecl {name=x; _} ->
@@ -544,7 +555,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     -> rewrite_write a src
 
   | SizeOfExpr ty ->
-    fun st -> (st, RecoveryExpr ty)
+    fun st -> (st, SizeOfExpr ty)
 
   | RecoveryExpr ty ->
     fun st -> (st, RecoveryExpr ty)
@@ -647,7 +658,11 @@ and rewrite_write (a:C_lang.Expr.c_array_subscript) (src:C_lang.Expr.t) : (Acces
   fun st ->
     let (st, src') = rewrite_exp src st in
     let (st, a) = rewrite_subscript a st in
-    let (st, x) = AccessState.add_write a src' st in
+    let payload = match src with
+      | IntegerLiteral x -> Some x
+      | _ -> None
+    in
+    let (st, x) = AccessState.add_write a src' payload st in
   state_pure (Expr.VarDecl {name=x; ty=C_lang.Expr.to_type src}) st
 and rewrite_read (a:C_lang.Expr.c_array_subscript): (AccessState.t, Expr.t) state =
   fun st ->

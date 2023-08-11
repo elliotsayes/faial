@@ -557,7 +557,9 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
   | WriteAccessStmt w ->
     let x = w.target.name |> Variable.set_location w.target.location in
     let* idx = with_msg "write.idx" (cast_map parse_exp) w.target.index in
-    idx |> ret_ns (fun idx -> Imp.Acc (x, {index=idx; mode=Wr}))
+    idx |> ret_ns (fun idx ->
+      Imp.Acc (x, {index=idx; mode=Wr w.payload})
+    )
 
   | ReadAccessStmt r ->
     let x = r.source.name |> Variable.set_location r.source.location in
