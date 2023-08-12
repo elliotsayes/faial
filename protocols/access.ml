@@ -3,6 +3,10 @@ open Stage0
 module Mode = struct
   type t =
     | Rd
+    (* The payload of the write is used
+       to detect benign data-races.
+       See can-conflict for potentially
+       racy accesses. *)
     | Wr of int option
 
   let to_string : t -> string =
