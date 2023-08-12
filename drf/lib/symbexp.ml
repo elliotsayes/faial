@@ -96,7 +96,7 @@ module SymAccess = struct
         |> b_and b
       else b
     in
-    let assign_id : bexp = n_eq (mk_id (other_task t)) (Num a.id)
+    let assign_id : bexp = n_eq (mk_id t) (Num a.id)
     in
     (
       assign_id ::
@@ -217,6 +217,10 @@ module Proof = struct
     b_and_ex [
       task_to_bexp Task1;
       task_to_bexp Task2;
+      (* There is no need to try out all combinations of ids,
+         so this contrain ensures that Task1 is never a larger access than
+         Task2. *)
+      n_le (SymAccess.mk_id Task1) (SymAccess.mk_id Task2);
       Code.dim code |> Option.get |> dim_gen
     ]
 
