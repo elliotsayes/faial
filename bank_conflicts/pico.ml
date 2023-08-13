@@ -3,7 +3,7 @@ open Inference
 open Bank_conflicts
 open Protocols
 
-type kernel = Proto.prog Proto.kernel
+type kernel = Proto.t Proto.kernel
 
 let abort_when (b:bool) (msg:string) : unit =
   if b then (
@@ -353,7 +353,7 @@ let run
   ~output_json
   ~ignore_absent
   ~show_ratio
-  (kernels : Proto.prog Proto.kernel list)
+  (kernels : Proto.t Proto.kernel list)
 :
   unit
 =

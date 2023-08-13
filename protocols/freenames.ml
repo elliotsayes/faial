@@ -52,9 +52,10 @@ let free_names_access a fns =
 let free_names_list f l fns =
   List.fold_right f l fns
 
-let rec free_names_inst (i:Proto.inst) (fns:Variable.Set.t) : Variable.Set.t =
+let rec free_names_proto (i:Proto.t) (fns:Variable.Set.t) : Variable.Set.t =
   let open Proto in
   match i with
+  | Skip
   | Sync -> fns
   | Acc (_, a) -> free_names_access a fns
   | Cond (b, p1) ->
@@ -64,19 +65,19 @@ let rec free_names_inst (i:Proto.inst) (fns:Variable.Set.t) : Variable.Set.t =
     free_names_proto p fns
     |> Variable.Set.remove r.var
     |> Variable.Set.union (free_names_nexp r.upper_bound fns)
+  | Seq (p, q) ->
+    free_names_proto p fns |> free_names_proto q
 
-and free_names_proto (p:Proto.prog) (fns:Variable.Set.t) : Variable.Set.t =
-  free_names_list free_names_inst p fns
 
-let rec free_locs_inst (i:Proto.inst) (fns:Variable.Set.t) =
+let rec free_locs_proto (i:Proto.t) (fns:Variable.Set.t) =
   let open Proto in
   match i with
+  | Skip
   | Sync
     -> fns
   | Acc (x, _) -> Variable.Set.add x fns
   | Cond (_, p)
   | Loop (_, p)
     -> free_locs_proto p fns
-
-and free_locs_proto p (fns:Variable.Set.t) =
-  free_names_list free_locs_inst p fns
+  | Seq (p, q) ->
+    free_locs_proto p fns |> free_locs_proto q

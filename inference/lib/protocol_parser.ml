@@ -3,7 +3,7 @@ open Protocols
 
 
 type imp_kernel = Imp.p_kernel
-type proto_kernel = Proto.prog Proto.kernel
+type proto_kernel = Proto.t Proto.kernel
 
 type 'a t = {options: Gv_parser.t; kernels: 'a list}
 

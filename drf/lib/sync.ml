@@ -67,3 +67,6 @@ let rec map_first (f: Unsync.t -> Unsync.t) : t -> t =
   | Sync c -> Sync (f c)
   | Loop (c1, r, w1, c2) -> Loop (f c1, r, w1, c2)
   | Seq (p, q) -> Seq (map_first f p, q)
+
+let add (u:Unsync.t) : t -> t =
+  map_first (fun u2 -> Seq (u, u2))

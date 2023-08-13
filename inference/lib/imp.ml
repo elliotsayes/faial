@@ -323,25 +323,27 @@ let imp_to_post (s:stmt) : Post.prog =
   in
   imp_to_post_s (Block [s])
 
-let post_to_proto (p: Post.prog) : Proto.prog =
-  let rec post_to_proto_i (i:Post.inst) : Proto.prog =
+let post_to_proto (p: Post.prog) : Proto.t =
+  let rec post_to_proto_i (i:Post.inst) : Proto.t =
     let open Post in
     match i with
-    | Sync -> [Proto.Sync]
-    | Acc (x,e) -> [Proto.Acc (x, e)]
-    | Skip -> []
+    | Sync -> Proto.Sync
+    | Acc (x,e) -> Proto.Acc (x, e)
+    | Skip -> Proto.Skip
     | If (b, p1, p2) ->
-      Proto.p_cond b (post_to_proto_p p1) @ Proto.p_cond (b_not b) (post_to_proto_p p2)
+      Proto.seq
+        (Proto.cond b (post_to_proto_p p1))
+        (Proto.cond (b_not b) (post_to_proto_p p2))
     | For (r, p) ->
-      [Proto.Loop (r, post_to_proto_p p)]
+      Proto.Loop (r, post_to_proto_p p)
     | Decl (_, _, Some _, _) ->
       failwith ("Run inline_decl first: " ^ Post.prog_to_s [i])
     | Decl (_, _, None, p) -> post_to_proto_p p
-  and post_to_proto_p (p:Post.prog) : Proto.prog =
+  and post_to_proto_p (p:Post.prog) : Proto.t =
     match p with
-    | [] -> []
-    | i::p -> 
-      post_to_proto_i i @ post_to_proto_p p
+    | [] -> Skip
+    | i::p ->
+      Proto.seq (post_to_proto_i i) (post_to_proto_p p)
   in
   post_to_proto_p p
 
@@ -445,7 +447,7 @@ let kernel_to_s (k:p_kernel) : Indent.t list =
 let print_kernel (k: p_kernel) : unit =
   Indent.print (kernel_to_s k)
 
-let compile (k:p_kernel) : Proto.prog kernel =
+let compile (k:p_kernel) : Proto.t kernel =
   let p : Post.prog = imp_to_post k.p_kernel_code
     |> Post.filter_locs k.p_kernel_arrays (* Remove unknown arrays *)
     (* Inline local variable assignment and ensure variables are distinct*)
@@ -453,10 +455,10 @@ let compile (k:p_kernel) : Proto.prog kernel =
   in
   let (locals, globals) = Post.get_decls k.p_kernel_params p in
   let p = post_to_proto p in
-  let rec pre_from_body (l:Proto.prog) : (bexp * Proto.prog) =
+  let rec pre_from_body (l:Proto.t) : (bexp * Proto.t) =
     match l with
-    | [Cond(b,[Cond(b',l)])] -> pre_from_body [Cond(b_and b b', l)]
-    | [Cond(b, l)] -> (b, l)
+    | Cond(b,Cond(b',l)) -> pre_from_body (Cond(b_and b b', l))
+    | Cond(b, l) -> (b, l)
     | l -> (Bool true, l)
   in
   let (more_pre, p) = p |> pre_from_body in

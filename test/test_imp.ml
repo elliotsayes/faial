@@ -136,7 +136,7 @@ let tests = "test_predicates" >::: [
       wr;
     ] in
     (* Translate: *)
-    let p : Proto.prog = p
+    let p : Proto.t = p
       |> imp_to_post
       |> Post.inline_decls Variable.Set.empty
       |> post_to_proto
@@ -145,9 +145,9 @@ let tests = "test_predicates" >::: [
     begin
       let open Proto in
       match p with
-      | [
-          Acc (_, {index=[e1]; _});
-          Acc (_, {index=[e2]; _})] ->
+      | Seq (
+          Acc (_, {index=[e1]; _}),
+          Acc (_, {index=[e2]; _})) ->
         let inc e = n_plus (Num 32) e in
         let tid = Var tid in
         assert_nexp tid e1;
@@ -194,7 +194,7 @@ let tests = "test_predicates" >::: [
       inc id;
     ] in
     (* Translate: *)
-    let p : Proto.prog = p
+    let p : Proto.t = p
       |> imp_to_post
       |> Post.inline_decls Variable.Set.empty
       |> post_to_proto
@@ -203,10 +203,11 @@ let tests = "test_predicates" >::: [
     begin
       let open Proto in
       match p with
-      | [
-          Acc (_, {index=[e1]; _});
-          Acc (_, {index=[e2]; _});
-          Acc (_, {index=[e3]; _})] ->
+      | Seq (
+          Acc (_, {index=[e1]; _}),
+          Seq (
+          Acc (_, {index=[e2]; _}),
+          Acc (_, {index=[e3]; _}))) ->
         let tid = Var (Variable.from_name "threadIdx.x") in
         let inc e = Bin (Plus, Num 32, e) in
         assert_nexp tid e1;
@@ -269,14 +270,14 @@ let tests = "test_predicates" >::: [
     in
     assert_post p3 (Post.inline_decls Variable.Set.empty p2);
     (* Translate: *)
-    let p : Proto.prog = p
+    let p : Proto.t = p
       |> imp_to_post
       |> Post.inline_decls Variable.Set.empty
       |> post_to_proto
     in
     let open Proto in
     match p with
-    | [Acc (_, {index=[x1; x2]; _})] ->
+    | Acc (_, {index=[x1; x2]; _}) ->
       assert_nexp (Var (Variable.from_name "x")) x1;
       assert_nexp (Var (Variable.from_name "x1")) x2;
     | _ -> assert false

@@ -17,7 +17,7 @@ let load_data (fname : string) : (string * int) list =
   with
     _ -> []
 
-let shared_arrays (k:Proto.prog Proto.kernel) : Variable.Set.t =
+let shared_arrays (k:Proto.t Proto.kernel) : Variable.Set.t =
   let open Proto in
   Variable.Map.bindings k.kernel_arrays
   |> List.filter_map (fun (k, a) ->

@@ -98,14 +98,14 @@ let print_box: PrintBox.t -> unit =
 
 module Analysis = struct
   type t = {
-    kernel: Proto.prog Proto.kernel;
+    kernel: Proto.t Proto.kernel;
     report: (Symbexp.Proof.t * Z3_solver.Solution.t) list;
   }
 end
 
 module App = struct
   type t = {
-    kernels: Proto.prog Proto.kernel list;
+    kernels: Proto.t Proto.kernel list;
     timeout:int option;
     show_proofs:bool;
     show_proto:bool;
@@ -132,7 +132,7 @@ module App = struct
     ~logic
     ~block_dim
     ~grid_dim
-    (kernels: Proto.prog Proto.kernel list)
+    (kernels: Proto.t Proto.kernel list)
   :
     t
   = {

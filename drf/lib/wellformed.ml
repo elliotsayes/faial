@@ -2,72 +2,82 @@ open Stage0
 open Protocols
 open Exp
 open Proto
-open Streamutil
 
-type w_or_u_inst =
-  | WInst of Sync.t
+type t =
+  | SInst of Sync.t
   | UInst of Unsync.t
   | Both of Sync.t * Unsync.t
 
+let add_u (u:Unsync.t) : t -> t =
+  function
+  | SInst s -> SInst (Sync.add u s)
+  | UInst u2 -> UInst (Seq (u, u2))
+  | Both (p, u2) -> Both (Sync.add u p, u2)
+
+let add_s (s:Sync.t) : t -> t =
+  function
+  | SInst s2 -> SInst (Seq (s, s2))
+  | UInst u -> Both (s, u)
+  | Both (s2, u) -> Both (Seq (s, s2), u)
+
+let seq (p:t) (q:t) : t =
+  match p, q with
+  | UInst u, s -> add_u u s
+  | SInst p, s -> add_s p s
+  | Both (p, u), s -> add_s p (add_u u s)
 
 (* Given a regular program, return a well-formed one *)
-let make_well_formed (p:Proto.prog) : Sync.t Streamutil.stream =
-  let rec i_infer (in_loop:bool) (i:Proto.inst): w_or_u_inst Streamutil.stream =
-    let open Streamutil in
-    match i with
+let make_well_formed : Proto.t -> Sync.t Streamutil.stream =
+  let open Streamutil in
+  let rec infer (in_loop:bool) : Proto.t -> t Streamutil.stream =
+    function
+    | Skip -> UInst Skip |> one
     | Acc e -> UInst (Acc e) |> one
-    | Sync -> WInst Sync.skip |> one
+    | Sync -> SInst Sync.skip |> one
     | Cond (b, p) ->
-      p_infer in_loop p |>
-      map (function
-      | (Some p, c) ->
-        if in_loop then
+      infer in_loop p
+      |> flat_map (
+        function
+        | Both _ when in_loop ->
           failwith "We do not support synchronized conditionals inside loops"
-        else
+        | SInst _ when in_loop ->
+          failwith "We do not support synchronized conditionals inside loops"
+        | SInst p ->
+          [
+            UInst (Assert (b_not b));
+            SInst (Sync.inline_cond b p);
+          ] |> from_list
+        | Both (p, c) ->
           [
             UInst (Assert (b_not b));
             Both (Sync.inline_cond b p, Seq (Assert b, c));
           ] |> from_list
-      | (None, c) -> UInst (Cond (b, c)) |> one
+        | UInst c ->
+          UInst (Cond (b, c)) |> one
       )
-      |> concat
     | Loop (r, p) ->
-      p_infer true p |>
-      map (function
-      | Some p, c -> WInst (Loop (Skip, r, p, c))
-      | None, c -> UInst (Loop (r, c))
+      infer true p
+      |> map (
+        function
+        | Both (p, c) -> SInst (Loop (Skip, r, p, c))
+        | SInst p -> SInst (Loop (Skip, r, p, Skip))
+        | UInst c -> UInst (Loop (r, c))
       )
-  and p_infer (in_loop:bool) (p:Proto.prog) : (Sync.t option * Unsync.t) Streamutil.stream =
-    match p with
-    | i :: p ->
-      i_infer in_loop i
-      |> map (fun j ->
-        p_infer in_loop p
-        |> map (function
-        | (None, c2) ->
-          begin match j with
-          | WInst w -> (Some w, c2)
-          | UInst p -> (None, Unsync.Seq (p, c2))
-          | Both (p, c1) -> (Some p, Seq (c1, c2))
-          end
-        | (Some p, c2) ->
-          begin match j with
-          | WInst i -> Some (Seq (i, p)), c2
-          | UInst c -> Some (Sync.map_first (Unsync.seq c) p), c2
-          | Both (i, c) -> Some (Seq (i, Sync.map_first (Unsync.seq c) p)), c2
-          end
-        )
-      ) |> concat
-    | [] -> (None, Unsync.Skip) |> one
+    | Seq (p, q) ->
+      infer in_loop p
+      |> flat_map (fun p ->
+        infer in_loop q |> map (seq p)
+      )
   in
-  let open Streamutil in
-  p_infer false p
-  |> map (function
-    | Some p, c -> Sync.Seq (p, Sync.Sync c)
-    | None, c -> Sync.Sync c
-  )
+  fun p ->
+    infer false p
+    |> map (function
+      | SInst p -> p
+      | UInst c -> Sync c
+      | Both (p, c) -> Sync.Seq (p, Sync.Sync c)
+    )
 
-let translate (k: Proto.prog kernel) : Sync.t kernel Streamutil.stream =
+let translate (k: Proto.t kernel) : Sync.t kernel Streamutil.stream =
   let vars = Variable.Set.union k.kernel_local_variables k.kernel_global_variables in
   let p = Proto.vars_distinct k.kernel_code vars in
   make_well_formed p
