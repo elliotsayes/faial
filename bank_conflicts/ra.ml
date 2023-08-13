@@ -121,7 +121,7 @@ module Make (L:Logger.Logger) = struct
       | Sync -> Skip
       | Cond (_, p) -> from_p p
       | Loop (r, p) ->
-        let r = S.uniform params.block_dim r |> Ojson.unwrap_or r in
+        let r = S.uniform params.block_dim r |> Option.value ~default:r in
         Loop (r, from_p p)
 
     and from_p (l: Proto.prog) : t =

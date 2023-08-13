@@ -62,12 +62,12 @@ let is_pointer (c:t) =
 let get_array_length (c:t) : int list =
   to_string c
   |> parse_array_dim_opt
-  |> Ojson.unwrap_or []
+  |> Option.value ~default:[]
 
 let get_array_type (c:t) : string list =
   to_string c
   |> parse_array_type_opt
-  |> Ojson.unwrap_or []
+  |> Option.value ~default:[]
 
 let is_array (c:t) : bool =
   to_string c

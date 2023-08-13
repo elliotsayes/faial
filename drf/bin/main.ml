@@ -52,7 +52,7 @@ let box_tasks (block_dim:Vec3.t) (t1:Task.t) (t2:Task.t) : PrintBox.t =
       [|
         text (Option.value ~default:k (Environ.label k t1.locals));
         text v1;
-        text (Environ.get k t2.locals |> Ojson.unwrap_or "?")
+        text (Environ.get k t2.locals |> Option.value ~default:"?")
       |]
     )
   in

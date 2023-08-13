@@ -90,7 +90,7 @@ module Environ = struct
         let e : string = FuncDecl.apply d []
           |> (fun e -> Model.eval m e true)
           |> Option.map Expr.to_string
-          |> Ojson.unwrap_or "?"
+          |> Option.value ~default:"?"
         in
         (key, parse_num e)
       )
@@ -127,7 +127,9 @@ module Vec3 = struct
 	let parse (kvs:Environ.t) : (t * t) =
 		let parse_vec (suffix:string) : t =
 			let parse (x:string) : string =
-				Environ.get ("threadIdx." ^ x ^ "$T" ^ suffix) kvs |> Ojson.unwrap_or "0"
+				kvs
+				|> Environ.get ("threadIdx." ^ x ^ "$T" ^ suffix)
+				|> Option.value ~default:"0"
 			in
 			{x=parse "x"; y=parse "y"; z=parse "z"}
 		in
@@ -435,8 +437,8 @@ module Solution = struct
         let body = Solver.to_string s ^ "(check-sat)\n(get-model)\n" in
         Tui.print_frame ~title ~body
       ) else ());
-      let block_dim = block_dim |> Ojson.unwrap_or Vec3.default in
-      let grid_dim = grid_dim |> Ojson.unwrap_or Vec3.default in
+      let block_dim = block_dim |> Option.value ~default:Vec3.default in
+      let grid_dim = grid_dim |> Option.value ~default:Vec3.default in
       let r = match Solver.check s [] with
       | UNSATISFIABLE -> Drf
       | SATISFIABLE ->

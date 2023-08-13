@@ -461,7 +461,7 @@ module NestedLoops = struct
         let loop_vars =
           f.init
           |> Option.map ForInit.loop_vars
-          |> Ojson.unwrap_or []
+          |> Option.value ~default:[]
           |> VarSet.of_list
         in
         (* Check if an expression uses a bound variable *)

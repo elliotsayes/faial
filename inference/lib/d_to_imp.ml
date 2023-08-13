@@ -154,7 +154,7 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
   | SizeOfExpr ty ->
     (match C_lang.parse_type ty with
     | Ok ty ->
-      let size = C_type.sizeof ty |> Ojson.unwrap_or 4 in
+      let size = C_type.sizeof ty |> Option.value ~default:4 in
       L.warning ("sizeof(" ^ C_type.to_string ty ^ ") = " ^ string_of_int size);
       ret_n (Num size)
     | Error _ ->

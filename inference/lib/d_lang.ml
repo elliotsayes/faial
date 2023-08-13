@@ -293,7 +293,7 @@ module ForInit = struct
   let opt_to_string (o:t option) : string =
     o
     |> Option.map to_string
-    |> Ojson.unwrap_or ""
+    |> Option.value ~default:""
 
 end
 
@@ -430,9 +430,9 @@ module Stmt = struct
 end
 
 let for_to_expr (f:Stmt.d_for) : Expr.t list =
-  let l1 = f.init |> Option.map ForInit.to_exp |> Ojson.unwrap_or [] in
-  let l2 = f.cond |> Option.map (fun x -> [x]) |> Ojson.unwrap_or [] in
-  let l3 = f.inc |> Option.map (fun x -> [x]) |> Ojson.unwrap_or [] in
+  let l1 = f.init |> Option.map ForInit.to_exp |> Option.value ~default:[] in
+  let l2 = f.cond |> Option.map (fun x -> [x]) |> Option.value ~default:[] in
+  let l3 = f.inc |> Option.map (fun x -> [x]) |> Option.value ~default:[] in
   l1
   |> Common.append_rev1 l2
   |> Common.append_rev1 l3
@@ -440,7 +440,7 @@ let for_to_expr (f:Stmt.d_for) : Expr.t list =
 let for_loop_vars (f:Stmt.d_for) : Variable.t list =
   f.init
   |> Option.map ForInit.loop_vars
-  |> Ojson.unwrap_or []
+  |> Option.value ~default:[]
 
 module Kernel = struct
   type t = {

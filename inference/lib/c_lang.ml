@@ -864,7 +864,7 @@ let is_invalid (o: j_object) : bool =
   let open Rjson in
   with_opt_field "isInvalid" cast_bool o
   |> unwrap_or None
-  |> Ojson.unwrap_or false
+  |> Option.value ~default:false
 
 let rec parse_exp (j:json) : Expr.t j_result =
   let open Rjson in
@@ -1022,7 +1022,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
       | _ -> root_cause "ERROR: parse_exp" j)
 
   | "BinaryOperator" ->
-    let ty = List.assoc_opt "type" o |> Ojson.unwrap_or C_type.j_int_type in
+    let ty = List.assoc_opt "type" o |> Option.value ~default:C_type.j_int_type in
     let* opcode = with_field "opcode" cast_string o in
     let* lhs, rhs = with_field "inner"
       (cast_list_2 parse_exp parse_exp) o
@@ -1142,7 +1142,7 @@ let parse_decl (j:json) : Decl.t option j_result =
   else (
     let* name = parse_variable j in
     let* ty = get_field "type" o in
-    let inner = List.assoc_opt "inner" o |> Ojson.unwrap_or (`List []) in
+    let inner = List.assoc_opt "inner" o |> Option.value ~default:(`List []) in
     let* inner = cast_list inner in
     let inner = List.filter is_valid_j inner in
     let attrs, inits = List.partition (fun j ->
@@ -1153,7 +1153,7 @@ let parse_decl (j:json) : Decl.t option j_result =
           | "CUDASharedAttr" -> true
           | _ -> false
         )
-      ) |> unwrap_or false
+      ) |> (Result.value ~default:false)
     ) inner in
     let* attrs = map parse_attr attrs in
     let* inits = map parse_init inits in
