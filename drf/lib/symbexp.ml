@@ -18,6 +18,10 @@ let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
 let assign_index (t:task) (idx:int) (n:nexp) : bexp =
   n_eq (mk_idx t idx) n
 
+(*
+  For each thread-local variable x generate x$1 and x$2 to represent the
+  thread-local assignments of each thread.
+ *)
 let project_access (locals:Variable.Set.t) (t:task) (ca:CondAccess.t) : CondAccess.t =
   (* Add a suffix to a variable *)
   let var_append (x:Variable.t) (suffix:string) : Variable.t =
@@ -99,10 +103,10 @@ module SymAccess = struct
     let assign_id : bexp = n_eq (mk_id t) (Num a.id)
     in
     (
-      assign_id ::
-      a.condition ::
-      assign_mode a.access.mode ::
-      List.mapi (assign_index t) a.access.index
+      assign_id :: (* assign identifier of the conditional access *)
+      a.condition :: (* assign the pre-condition of the access *)
+      assign_mode a.access.mode :: (* assign the mode *)
+      List.mapi (assign_index t) a.access.index (* assign the values of the index *)
     )
     |> b_and_ex
 
@@ -127,9 +131,11 @@ let cond_access_to_bexp (locals:Variable.Set.t) (t:task) (a:CondAccess.t) : bexp
   |> b_and_ex
 
 
-let dim_gen (dim:int) : bexp =
+let assign_indices (dim:int) : bexp =
   (* Make sure all indices match *)
-  (* $T1$index$0 = $T2$index$0 ... *)
+  (* idx0$T1 = idx0$T2  /\ idx1$T1 = idx1$T2 ... /\ idxn$T1 = idxn$T2 /\
+     idx0$T1 >= 0 /\ ... /\ idxn$T1 >= 0
+  *)
   range (dim - 1)
   |> List.map (fun i ->
     let t1 = mk_idx Task1 i in
@@ -206,8 +212,13 @@ module Proof = struct
   :
     bexp
   =
-    (* Pick one access *)
-    let task_to_bexp (t:task) : bexp =
+    (*
+      tid = access_1 \/
+      tid = access_2 \/
+      ...
+      tid = access_n
+    *)
+    let assign_accesses (t:task) : bexp =
       code
       |> Flatacc.Code.to_list (* get conditional accesses *)
       |> List.mapi (SymAccess.from_cond_access locals t) (* get symbolic access *)
@@ -215,13 +226,18 @@ module Proof = struct
       |> b_or_ex
     in
     b_and_ex [
-      task_to_bexp Task1;
-      task_to_bexp Task2;
+      (* Assign the accesses of task 1 *)
+      assign_accesses Task1;
+      (* Assign the accesses of task 2 *)
+      assign_accesses Task2;
       (* There is no need to try out all combinations of ids,
          so this contrain ensures that Task1 is never a larger access than
          Task2. *)
       n_le (SymAccess.mk_id Task1) (SymAccess.mk_id Task2);
-      Code.dim code |> Option.get |> dim_gen
+      (*
+        All indices of task1 are equal to the indices of task2
+      *)
+      Code.dim code |> Option.get |> assign_indices
     ]
 
   let from_flat (proof_id:int) (k:Flatacc.Kernel.t) : t =
