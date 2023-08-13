@@ -248,6 +248,7 @@ module Make (L:Logger.Logger) = struct
         Acc (x, a)
       | Skip -> Skip
       | Cond (b, p) -> Cond (b, simpl p)
+      | Decl (x, p) -> Decl (x, simpl p)
       | Loop (r, p) ->
         let p = simpl p in
         (match uniform params.block_dim r with
@@ -306,6 +307,7 @@ module Make (L:Logger.Logger) = struct
         | None -> Seq.empty)
       | Proto.Sync ->
         Seq.empty
+      | Decl (_, p) -> on_p p
       | Proto.Cond (b, p) ->
         on_p p
         |> Seq.map (fun (i:t) : t -> Cond (b, i))

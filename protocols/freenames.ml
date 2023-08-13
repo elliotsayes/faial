@@ -61,6 +61,9 @@ let rec free_names_proto (i:Proto.t) (fns:Variable.Set.t) : Variable.Set.t =
   | Cond (b, p1) ->
     free_names_bexp b fns
     |> free_names_proto p1
+  | Decl (x, p) ->
+    free_names_proto p fns
+    |> Variable.Set.remove x
   | Loop (r, p) ->
     free_names_proto p fns
     |> Variable.Set.remove r.var
@@ -76,6 +79,7 @@ let rec free_locs_proto (i:Proto.t) (fns:Variable.Set.t) =
   | Sync
     -> fns
   | Acc (x, _) -> Variable.Set.add x fns
+  | Decl (_, p)
   | Cond (_, p)
   | Loop (_, p)
     -> free_locs_proto p fns

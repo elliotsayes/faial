@@ -12,6 +12,7 @@ type t =
   | Loop of Range.t * t
   | Seq of t * t
   | Skip
+  | Decl of Variable.t * t
 
 type 'a kernel = {
   (* The kernel name *)
@@ -73,6 +74,11 @@ module Make (S:Subst.SUBST) = struct
         M.b_subst s b,
         subst s p
       )
+    | Decl (x, p) ->
+      M.add s x (function
+        | Some s -> Decl (x, subst s p)
+        | None -> Decl (x, p)
+      )
     | Loop (r, p) ->
       let r = M.r_subst s r in
       M.add s r.var (function
@@ -104,6 +110,7 @@ let loop (r:Range.t) (p:t) : t =
 let rec opt : t -> t =
   function
   | Skip -> Skip
+  | Decl (x, p) -> Decl (x, opt p)
   | Seq (p, q) -> seq (opt p) (opt q)
   | Acc (x, e) -> Acc (x, Constfold.a_opt e)
   | Sync -> Sync
@@ -174,6 +181,18 @@ let vars_distinct : t -> Variable.Set.t -> t =
     | Cond (b, p) ->
       let (p, xs) = uniq p xs in
       (Cond (b, p), xs)
+    | Decl (x, p) ->
+      if Variable.Set.mem x xs then (
+        let new_x : Variable.t = Variable.fresh xs x in
+        let new_xs = Variable.Set.add new_x xs in
+        let s = Subst.SubstPair.make (x, Var new_x) in
+        let new_p = PSubstPair.subst s p in
+        let (p, new_xs) = uniq new_p new_xs in
+        Decl (new_x, p), new_xs
+      ) else (
+        let (p, new_xs) = uniq p (Variable.Set.add x xs) in
+        Decl (x, p), new_xs
+      )
     | Loop (r, p) ->
       let x = r.var in
       if Variable.Set.mem x xs then (
@@ -214,6 +233,9 @@ let rec to_s : t -> Indent.t list =
       Block (to_s p1);
       Line "}"
     ]
+  | Decl (x, p) ->
+    (Line ("var " ^ Variable.name x ^ ";"))
+    :: to_s p
   | Loop (r, p) ->
     [
       Line ("foreach (" ^ Range.to_string r ^ ") {");

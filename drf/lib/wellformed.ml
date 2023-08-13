@@ -34,6 +34,7 @@ let make_well_formed : Proto.t -> Sync.t Streamutil.stream =
     | Skip -> UInst Skip |> one
     | Acc e -> UInst (Acc e) |> one
     | Sync -> SInst Sync.skip |> one
+    | Decl _ -> failwith "Invoke Proto.inline_decl first."
     | Cond (b, p) ->
       infer in_loop p
       |> flat_map (

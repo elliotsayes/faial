@@ -121,6 +121,7 @@ module Make (L:Logger.Logger) = struct
             Tick (idx_analysis e)
           | None -> Skip)
       | Sync -> Skip
+      | Decl (_, p)
       | Cond (_, p) -> from_p p
       | Loop (r, p) ->
         let r = S.uniform params.block_dim r |> Option.value ~default:r in
