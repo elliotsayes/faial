@@ -107,6 +107,11 @@ let loop (r:Range.t) (p:t) : t =
   | Num lb, Num ub, _ when lb >= ub -> Skip
   | _, _, _ -> Loop (r, p)
 
+let decl (x:Variable.t) (p:t) : t =
+  match p with
+  | Skip -> Skip
+  | _ -> Decl (x, p)
+
 let rec opt : t -> t =
   function
   | Skip -> Skip

@@ -412,7 +412,7 @@ let rec post_to_proto : Post.t -> Proto.t =
     Proto.Loop (r, post_to_proto p)
   | Decl (_, Some _, _) as i ->
     failwith ("Run inline_decl first: " ^ Post.to_string i)
-  | Decl (x, None, p) -> Decl (x, post_to_proto p)
+  | Decl (x, None, p) -> decl x (post_to_proto p)
   | Seq (i, p) ->
     Proto.seq (post_to_proto i) (post_to_proto p)
 
@@ -529,7 +529,6 @@ let compile (k:p_kernel) : Proto.t kernel =
     (* Inline local variable assignment and ensure variables are distinct*)
     |> Post.inline_assigns k.p_kernel_params
   in
-  (*let (locals, globals) = Post.get_decls k.p_kernel_params p in*)
   let p = post_to_proto p in
   let (p, locals, pre) =
     let rec inline_header :
@@ -545,16 +544,6 @@ let compile (k:p_kernel) : Proto.t kernel =
     in
     inline_header (p, Variable.Set.empty, Bool true)
   in
-  (*
-  let rec pre_from_body (l:Proto.t) : (bexp * Proto.t) =
-    match l with
-    | Cond(b,Cond(b',l)) -> pre_from_body (Cond(b_and b b', l))
-    | Cond(b, l) -> (b, l)
-    | l -> (Bool true, l)
-  in
-  let (more_pre, p) = p |> pre_from_body in
-  let pre = b_and k.p_kernel_pre more_pre in
-  *)
   (*
     1. We rename all variables so that they are all different
     2. We break down for-loops and variable declarations
