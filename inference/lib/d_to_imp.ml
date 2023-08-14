@@ -732,7 +732,7 @@ let parse_kernel
   (globals:Variable.t list)
   (assigns:(Variable.t * nexp) list)
   (k:D_lang.Kernel.t)
-: Imp.p_kernel d_result =
+: Imp.Kernel.t d_result =
   let* code = parse_stmt k.code in
   let* (params, arrays) = parse_params k.params in
   let params =
@@ -763,23 +763,27 @@ let parse_kernel
     add_type_params params k.type_params
     |> Variable.Set.union globals
   in
+  let open Imp.Kernel in
   Ok {
-    p_kernel_name = k.name;
-    p_kernel_pre = Exp.b_true; (* TODO: implement this *)
-    p_kernel_code = code;
-    p_kernel_params = params;
-    p_kernel_arrays = Variable.Map.union
-      (fun _ _ r -> Some r)
-      arrays shared;
+    name = k.name;
+    pre = Exp.b_true; (* TODO: implement this *)
+    code = code;
+    params = params;
+    arrays = Variable.Map.union (fun _ _ r -> Some r) arrays shared;
+    visibility =
+      match k.attribute with
+      | Default -> Global
+      | Auxiliary -> Device
+    ;
   }
 
-let parse_program (p:D_lang.d_program) : Imp.p_kernel list d_result =
+let parse_program (p:D_lang.d_program) : Imp.Kernel.t list d_result =
   let rec parse_p
     (arrays:(Variable.t * Memory.t) list)
     (globals:Variable.t list)
     (assigns:(Variable.t * nexp) list)
     (p:D_lang.d_program)
-  : Imp.p_kernel list d_result =
+  : Imp.Kernel.t list d_result =
     match p with
     | Declaration v :: l ->
       let (arrays, globals, assigns) =

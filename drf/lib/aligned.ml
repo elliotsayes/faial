@@ -58,8 +58,9 @@ let align (w:Sync.t) : t =
   match align w with
     (p, c) -> Seq (Sync c, p)
 
-let translate (ks: Sync.t kernel Streamutil.stream) : t kernel Streamutil.stream =
-  Streamutil.map (fun k -> { k with kernel_code = align k.kernel_code }) ks
+let translate (ks: Sync.t Kernel.t Streamutil.stream) : t Kernel.t Streamutil.stream =
+  Streamutil.map (fun k ->
+    { k with Kernel.code = align k.Kernel.code }) ks
 
 let rec to_s: t -> Indent.t list =
   function
@@ -76,10 +77,10 @@ let rec to_s: t -> Indent.t list =
 
 
 (* ---------------------- SERIALIZATION ------------------------ *)
-let print_kernel (k : t kernel) : unit =
-  Proto.print_kernel to_s k
+let print_kernel (k : t Kernel.t) : unit =
+  Proto.Kernel.print to_s k
 
-let print_kernels (ks : t kernel Streamutil.stream) : unit =
+let print_kernels (ks : t Kernel.t Streamutil.stream) : unit =
   print_endline "; a-lang";
   let count = ref 0 in
   Streamutil.iter (fun k ->

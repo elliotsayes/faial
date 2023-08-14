@@ -454,13 +454,18 @@ module Kernel = struct
     k.attribute |> KernelAttr.is_global
 end
 
-type d_def =
-  | Kernel of Kernel.t
-  | Declaration of Decl.t
+module Def = struct
+  type t =
+    | Kernel of Kernel.t
+    | Declaration of Decl.t
 
-type d_program = d_def list
+  let is_device_kernel : t -> bool =
+    function
+    | Kernel k when Kernel.is_global k -> true
+    | _ -> false
+end
 
-
+type d_program = Def.t list
 
 (* ------------------------------------- *)
 
@@ -780,7 +785,7 @@ let rewrite_kernel (k:C_lang.Kernel.t) : Kernel.t =
     attribute = k.attribute;
   }
 
-let rewrite_def (d:C_lang.c_def) : d_def =
+let rewrite_def (d:C_lang.c_def) : Def.t =
   match d with
   | Kernel k -> Kernel (rewrite_kernel k)
   | Declaration d ->
@@ -806,7 +811,7 @@ let kernel_to_s (k:Kernel.t) : Indent.t list =
   @
   Stmt.to_string k.code
 
-let def_to_s (d:d_def) : Indent.t list =
+let def_to_s (d:Def.t) : Indent.t list =
   let open Indent in
   match d with
   | Declaration d -> [Line (Decl.to_string d ^ ";")]

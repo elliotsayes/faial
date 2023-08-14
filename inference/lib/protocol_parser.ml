@@ -2,8 +2,8 @@ open Stage0
 open Protocols
 
 
-type imp_kernel = Imp.p_kernel
-type proto_kernel = Proto.t Proto.kernel
+type imp_kernel = Imp.Kernel.t
+type proto_kernel = Proto.Code.t Proto.Kernel.t
 
 type 'a t = {options: Gv_parser.t; kernels: 'a list}
 
@@ -65,21 +65,27 @@ module Make (L:Logger.Logger) = struct
   :
     proto_kernel t
   =
-    let parsed = to_imp ~abort_on_parsing_failure ~block_dim ~grid_dim fname in
+    let parsed =
+      to_imp
+      ~abort_on_parsing_failure
+      ~block_dim
+      ~grid_dim
+      fname
+    in
     { parsed with
       kernels =
       parsed.kernels
       |> List.map (fun p ->
-        let p = Imp.compile p in
+        let p = Imp.Kernel.compile p in
         let key_vals =
-          Proto.kernel_constants p
+          Proto.Kernel.constants p
           |> List.filter (fun (x,_) ->
             (* Make sure we only replace thread-global variables *)
-            Variable.Set.mem (Variable.from_name x) p.kernel_global_variables
+            Variable.Set.mem (Variable.from_name x) p.global_variables
           )
         in
         let key_vals = Gv_parser.to_assoc parsed.options @ key_vals in
-        let p = Proto.replace_constants key_vals p in
+        let p = Proto.Kernel.replace_constants key_vals p in
         p
       )
     }

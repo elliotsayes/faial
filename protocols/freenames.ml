@@ -52,8 +52,7 @@ let free_names_access a fns =
 let free_names_list f l fns =
   List.fold_right f l fns
 
-let rec free_names_proto (i:Proto.t) (fns:Variable.Set.t) : Variable.Set.t =
-  let open Proto in
+let rec free_names_proto (i:Proto.Code.t) (fns:Variable.Set.t) : Variable.Set.t =
   match i with
   | Skip
   | Sync -> fns
@@ -72,8 +71,7 @@ let rec free_names_proto (i:Proto.t) (fns:Variable.Set.t) : Variable.Set.t =
     free_names_proto p fns |> free_names_proto q
 
 
-let rec free_locs_proto (i:Proto.t) (fns:Variable.Set.t) =
-  let open Proto in
+let rec free_locs_proto (i:Proto.Code.t) (fns:Variable.Set.t) =
   match i with
   | Skip
   | Sync

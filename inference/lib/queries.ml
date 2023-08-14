@@ -938,11 +938,10 @@ end
 
 
 module Kernel = struct
-  open Imp
 
-  let summarize (k:p_kernel) : json =
+  let summarize (k:Imp.Kernel.t) : json =
     let arrays =
-      k.p_kernel_arrays
+      k.arrays
       |> Variable.Map.bindings
       |> List.map (fun ((k:Variable.t), a) ->
         let open Memory in
@@ -955,7 +954,7 @@ module Kernel = struct
       )
     in
     `Assoc [
-      "name", `String k.p_kernel_name;
+      "name", `String k.name;
       "arrays", `List arrays;
     ]
 end

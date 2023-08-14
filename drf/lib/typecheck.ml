@@ -11,7 +11,7 @@ type type_error =
 
 type err_t = string * Location.t option
 
-let typecheck_kernel (k:t kernel) : err_t list =
+let typecheck_kernel (k:Code.t Kernel.t) : err_t list =
   let handle (ctr: Variable.t list -> type_error) (errs:type_error list) (l:Variable.Set.t) : type_error list =
     if not (Variable.Set.is_empty l)
     then (Variable.Set.elements l |> ctr)::errs
@@ -29,20 +29,20 @@ let typecheck_kernel (k:t kernel) : err_t list =
     in
     handle ctr errs (iter (Variable.Set.of_list l) l)
   in
-  let undef_vars (vars:Variable.Set.t) (p:t) (errs: type_error list) : type_error list =
+  let undef_vars (vars:Variable.Set.t) (p:Code.t) (errs: type_error list) : type_error list =
     Variable.Set.diff (Freenames.free_names_proto p Variable.Set.empty) vars
       |> handle (fun l -> UndefinedVars l) errs
   in
-  let undef_locs (locs:Variable.Set.t) (p:t) (errs:type_error list) : type_error list =
+  let undef_locs (locs:Variable.Set.t) (p:Code.t) (errs:type_error list) : type_error list =
     Variable.Set.diff (Freenames.free_locs_proto p locs) locs
       |> handle (fun l -> UndefinedLocs l) errs
   in
   let errs : type_error list = [] in
-  let all_vars : Variable.t list = List.append (k.kernel_local_variables |> Variable.Set.elements) (k.kernel_global_variables |> Variable.Set.elements) in
-  let errs = dup_vars (k.kernel_arrays |> Variable.MapSetUtil.map_to_set |> Variable.Set.elements) (fun l -> DuplicateLocs l) errs in
+  let all_vars : Variable.t list = List.append (k.local_variables |> Variable.Set.elements) (k.global_variables |> Variable.Set.elements) in
+  let errs = dup_vars (k.arrays |> Variable.MapSetUtil.map_to_set |> Variable.Set.elements) (fun l -> DuplicateLocs l) errs in
   let errs = dup_vars all_vars (fun l -> DuplicateVars l) errs in
-  let errs = undef_vars (Variable.Set.of_list all_vars) k.kernel_code errs in
-  let errs = undef_locs (k.kernel_arrays |> Variable.MapSetUtil.map_to_set) k.kernel_code errs in
+  let errs = undef_vars (Variable.Set.of_list all_vars) k.code errs in
+  let errs = undef_locs (k.arrays |> Variable.MapSetUtil.map_to_set) k.code errs in
   let on_msg msg =
     List.map (fun x -> (msg ^ " '" ^ Variable.name x ^ "'", Variable.location_opt x))
   in

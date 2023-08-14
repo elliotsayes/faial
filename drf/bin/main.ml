@@ -98,14 +98,14 @@ let print_box: PrintBox.t -> unit =
 
 module Analysis = struct
   type t = {
-    kernel: Proto.t Proto.kernel;
+    kernel: Proto.Code.t Proto.Kernel.t;
     report: (Symbexp.Proof.t * Z3_solver.Solution.t) list;
   }
 end
 
 module App = struct
   type t = {
-    kernels: Proto.t Proto.kernel list;
+    kernels: Proto.Code.t Proto.Kernel.t list;
     timeout:int option;
     show_proofs:bool;
     show_proto:bool;
@@ -132,7 +132,7 @@ module App = struct
     ~logic
     ~block_dim
     ~grid_dim
-    (kernels: Proto.t Proto.kernel list)
+    (kernels: Proto.Code.t Proto.Kernel.t list)
   :
     t
   = {
@@ -158,8 +158,8 @@ module App = struct
       let show (b:bool) (call:unit -> unit) : unit =
         if b then call () else ()
       in
-      show a.show_proto (fun () -> Proto.print_k p);
-      let p = p |> Proto.optimize_kernel |> Wellformed.translate in
+      show a.show_proto (fun () -> Proto.Kernel.print Proto.Code.to_s p);
+      let p = p |> Proto.Kernel.opt |> Wellformed.translate in
       show a.show_wf (fun () -> Wellformed.print_kernels p);
       let p = Aligned.translate p in
       show a.show_align (fun () -> Aligned.print_kernels p);
@@ -195,7 +195,7 @@ let tui (output: Analysis.t list) : unit =
   |> List.iter (fun solution ->
     let kernel_name =
       let open Analysis in
-      solution.kernel.kernel_name in
+      solution.kernel.name in
     let errors =
       solution.report
       |> List.filter_map (
@@ -255,7 +255,7 @@ let jui (output: Analysis.t list) : unit =
     output
     |> List.map (fun analysis ->
       let open Analysis in
-      let kernel_name = analysis.kernel.kernel_name in
+      let kernel_name = analysis.kernel.name in
       let solutions = analysis.report in
       let unknowns, errors =
         solutions

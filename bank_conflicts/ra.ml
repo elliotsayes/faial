@@ -103,9 +103,9 @@ module Make (L:Logger.Logger) = struct
     | Loop (r, p) ->
       Loop (r, from_shared_access idx_analysis  p)
 
-  let from_kernel (idx_analysis : Exp.nexp -> int) (params:Params.t) (k: Proto.t Proto.kernel) : t =
-    let shared = S.shared_memory k.kernel_arrays in
-    let rec from_p : Proto.t -> t =
+  let from_kernel (idx_analysis : Exp.nexp -> int) (params:Params.t) (k: Proto.Code.t Proto.Kernel.t) : t =
+    let shared = S.shared_memory k.arrays in
+    let rec from_p : Proto.Code.t -> t =
       function
       | Skip -> Skip
       | Seq (p, q) -> Seq (from_p p, from_p q)
@@ -127,9 +127,9 @@ module Make (L:Logger.Logger) = struct
         let r = S.uniform params.block_dim r |> Option.value ~default:r in
         Loop (r, from_p p)
     in
-    k.kernel_code
-    |> Proto.subst_block_dim params.block_dim
-    |> Proto.subst_grid_dim params.grid_dim
+    k.code
+    |> Proto.Code.subst_block_dim params.block_dim
+    |> Proto.Code.subst_grid_dim params.grid_dim
     |> from_p
 end
 

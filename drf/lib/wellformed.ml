@@ -27,9 +27,9 @@ let seq (p:t) (q:t) : t =
   | Both (p, u), s -> add_s p (add_u u s)
 
 (* Given a regular program, return a well-formed one *)
-let make_well_formed : Proto.t -> Sync.t Streamutil.stream =
+let make_well_formed : Proto.Code.t -> Sync.t Streamutil.stream =
   let open Streamutil in
-  let rec infer (in_loop:bool) : Proto.t -> t Streamutil.stream =
+  let rec infer (in_loop:bool) : Proto.Code.t -> t Streamutil.stream =
     function
     | Skip -> UInst Skip |> one
     | Acc e -> UInst (Acc e) |> one
@@ -78,17 +78,17 @@ let make_well_formed : Proto.t -> Sync.t Streamutil.stream =
       | Both (p, c) -> Sync.Seq (p, Sync.Sync c)
     )
 
-let translate (k: Proto.t kernel) : Sync.t kernel Streamutil.stream =
-  let k = Proto.hoist_decls k in
-  make_well_formed k.kernel_code
-  |> Streamutil.map (fun p -> { k with kernel_code = p})
+let translate (k: Proto.Code.t Kernel.t) : Sync.t Kernel.t Streamutil.stream =
+  let k = Proto.Kernel.hoist_decls k in
+  make_well_formed k.code
+  |> Streamutil.map (fun p -> { k with code = p})
 
 (* ---------------- Pretty printing -------------------- *)
 
-let print_kernel (k : Sync.t kernel) : unit =
-  Proto.print_kernel Sync.to_s k
+let print_kernel (k : Sync.t Kernel.t) : unit =
+  Proto.Kernel.print Sync.to_s k
 
-let print_kernels (ks : Sync.t kernel Streamutil.stream) : unit =
+let print_kernels (ks : Sync.t Kernel.t Streamutil.stream) : unit =
   print_endline "; w-lang";
   let count = ref 0 in
   Streamutil.iter (fun k ->

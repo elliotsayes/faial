@@ -398,23 +398,23 @@ let imp_to_post : stmt -> Variable.Set.t * Post.t =
     let (_, globals, p) = imp_to_post_s (Block [s]) (1, Variable.Set.empty) in
     (globals, p)
 
-let rec post_to_proto : Post.t -> Proto.t =
+let rec post_to_proto : Post.t -> Proto.Code.t =
   let open Post in
   function
-  | Sync -> Proto.Sync
-  | Acc (x,e) -> Proto.Acc (x, e)
-  | Skip -> Proto.Skip
+  | Sync -> Sync
+  | Acc (x,e) -> Acc (x, e)
+  | Skip -> Skip
   | If (b, p1, p2) ->
-    Proto.seq
-      (Proto.cond b (post_to_proto p1))
-      (Proto.cond (b_not b) (post_to_proto p2))
+    Proto.Code.seq
+      (Proto.Code.cond b (post_to_proto p1))
+      (Proto.Code.cond (b_not b) (post_to_proto p2))
   | For (r, p) ->
-    Proto.Loop (r, post_to_proto p)
+    Loop (r, post_to_proto p)
   | Decl (_, Some _, _) as i ->
     failwith ("Run inline_decl first: " ^ Post.to_string i)
-  | Decl (x, None, p) -> decl x (post_to_proto p)
+  | Decl (x, None, p) -> Proto.Code.decl x (post_to_proto p)
   | Seq (i, p) ->
-    Proto.seq (post_to_proto i) (post_to_proto p)
+    Proto.Code.seq (post_to_proto i) (post_to_proto p)
 
 
 let s_block l =
@@ -440,18 +440,6 @@ let s_if (b:bexp) (p1:stmt) (p2:stmt) : stmt =
   | (_, Block [], Block []) -> Block []
   | _ -> If (b, p1, p2)
 
-type p_kernel = {
-  (* The kernel name *)
-  p_kernel_name: string;
-  (* A kernel precondition of every phase. *)
-  p_kernel_pre: bexp;
-  (* The shared locations that can be accessed in the kernel. *)
-  p_kernel_arrays: Memory.t Variable.Map.t;
-  (* The internal variables are used in the code of the kernel.  *)
-  p_kernel_params: Variable.Set.t;
-  (* The code of a kernel performs the actual memory accesses. *)
-  p_kernel_code: stmt;
-}
 
 let stmt_to_s: stmt -> Indent.t list =
   let rec stmt_to_s : stmt -> Indent.t list =
@@ -481,7 +469,7 @@ let stmt_to_s: stmt -> Indent.t list =
         Block (stmt_to_s s1);
         Line "}";
       ]
-    
+
     | If (b, s1, s2) -> [
         Line ("if (" ^ b_to_string b ^ ") {");
         Block (stmt_to_s s1);
@@ -502,57 +490,78 @@ let stmt_to_s: stmt -> Indent.t list =
   in
   stmt_to_s
 
-let kernel_to_s (k:p_kernel) : Indent.t list =
-  let pre = match k.p_kernel_pre with
-  | Bool true -> ""
-  | _ -> " if (" ^ b_to_string k.p_kernel_pre ^ ")"
-  in
-  [
-    Line (
-      k.p_kernel_name ^
-      " (" ^ Memory.map_to_string k.p_kernel_arrays ^ ", " ^
-      Variable.set_to_string k.p_kernel_params ^ ")" ^
-      pre ^ " {");
-    Block (stmt_to_s k.p_kernel_code);
-    Line "}"
-  ]
-
-let print_kernel (k: p_kernel) : unit =
-  Indent.print (kernel_to_s k)
-
-let compile (k:p_kernel) : Proto.t kernel =
-  let (globals, p) = imp_to_post k.p_kernel_code in
-  let globals = Variable.Set.union globals k.p_kernel_params in
-  let p : Post.t =
-    p
-    |> Post.filter_locs k.p_kernel_arrays (* Remove unknown arrays *)
-    (* Inline local variable assignment and ensure variables are distinct*)
-    |> Post.inline_assigns k.p_kernel_params
-  in
-  let p = post_to_proto p in
-  let (p, locals, pre) =
-    let rec inline_header :
-      (Proto.t * Variable.Set.t * bexp)
-      ->
-      (Proto.t * Variable.Set.t * bexp)
-    =
-      fun (p, locals, pre) ->
-      match p with
-      | Cond (b, p) -> inline_header (p, locals, b_and b pre)
-      | Decl (x, p) -> inline_header (p, Variable.Set.add x locals, pre)
-      | _ -> (p, locals, pre)
-    in
-    inline_header (p, Variable.Set.empty, Bool true)
-  in
-  (*
-    1. We rename all variables so that they are all different
-    2. We break down for-loops and variable declarations
-    *)
-  {
-    kernel_name = k.p_kernel_name;
-    kernel_pre = pre;
-    kernel_arrays = k.p_kernel_arrays;
-    kernel_local_variables = locals;
-    kernel_global_variables = globals;
-    kernel_code = p;
+module Kernel = struct
+  type t = {
+    (* The kernel name *)
+    name: string;
+    (* A kernel precondition of every phase. *)
+    pre: bexp;
+    (* The shared locations that can be accessed in the kernel. *)
+    arrays: Memory.t Variable.Map.t;
+    (* The internal variables are used in the code of the kernel.  *)
+    params: Variable.Set.t;
+    (* The code of a kernel performs the actual memory accesses. *)
+    code: stmt;
+    (* Visibility *)
+    visibility: Proto.Kernel.visible;
   }
+
+  let to_s (k:t) : Indent.t list =
+    let pre = match k.pre with
+    | Bool true -> ""
+    | _ -> " if (" ^ b_to_string k.pre ^ ")"
+    in
+    [
+      Line (
+        k.name ^
+        " (" ^ Memory.map_to_string k.arrays ^ ", " ^
+        Variable.set_to_string k.params ^ ")" ^
+        pre ^ " {");
+      Block (stmt_to_s k.code);
+      Line "}"
+    ]
+
+  let print (k: t) : unit =
+    Indent.print (to_s k)
+
+  let compile (k:t) : Proto.Code.t Proto.Kernel.t =
+    let (globals, p) = imp_to_post k.code in
+    let globals = Variable.Set.union globals k.params in
+    let p : Post.t =
+      p
+      |> Post.filter_locs k.arrays (* Remove unknown arrays *)
+      (* Inline local variable assignment and ensure variables are distinct*)
+      |> Post.inline_assigns k.params
+    in
+    let p = post_to_proto p in
+    let (p, locals, pre) =
+      let rec inline_header :
+        (Proto.Code.t * Variable.Set.t * bexp)
+        ->
+        (Proto.Code.t * Variable.Set.t * bexp)
+      =
+        fun (p, locals, pre) ->
+        match p with
+        | Cond (b, p) -> inline_header (p, locals, b_and b pre)
+        | Decl (x, p) -> inline_header (p, Variable.Set.add x locals, pre)
+        | _ -> (p, locals, pre)
+      in
+      inline_header (p, Variable.Set.empty, Bool true)
+    in
+    (*
+      1. We rename all variables so that they are all different
+      2. We break down for-loops and variable declarations
+      *)
+    {
+      name = k.name;
+      pre = pre;
+      arrays = k.arrays;
+      local_variables = locals;
+      global_variables = globals;
+      code = p;
+      visibility = k.visibility;
+    }
+
+end
+
+

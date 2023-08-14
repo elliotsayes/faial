@@ -141,13 +141,12 @@ let tests = "test_predicates" >::: [
     ] in
     (* Translate: *)
     let (_, p) = imp_to_post p in
-    let p : Proto.t = p
+    let p : Proto.Code.t = p
       |> Post.inline_assigns Variable.Set.empty
       |> post_to_proto
     in
     (* Test: *)
     begin
-      let open Proto in
       match p with
       | Decl (_, Seq (
           Acc (_, {index=[e1]; _}),
@@ -157,7 +156,7 @@ let tests = "test_predicates" >::: [
         assert_nexp tid e1;
         assert_nexp (inc tid) e2;
         ()
-      | _ -> assert_failure (Proto.to_string p)
+      | _ -> assert_failure (Proto.Code.to_string p)
     end;
     ()
   );
@@ -199,13 +198,12 @@ let tests = "test_predicates" >::: [
     ] in
     (* Translate: *)
     let (_, p) = imp_to_post p in
-    let p : Proto.t = p
+    let p : Proto.Code.t = p
       |> Post.inline_assigns Variable.Set.empty
       |> post_to_proto
     in
     (* Test: *)
     begin
-      let open Proto in
       match p with
       | Decl (y, Seq (
           Acc (_, {index=[e1]; _}),
@@ -218,7 +216,7 @@ let tests = "test_predicates" >::: [
         assert_nexp (inc tid) e2;
         assert_nexp (inc (inc tid)) e3;
         ()
-      | _ -> assert_failure (Proto.to_string p)
+      | _ -> assert_failure (Proto.Code.to_string p)
     end;
     ()
 
@@ -285,18 +283,17 @@ let tests = "test_predicates" >::: [
     assert_post p3 (Post.inline_assigns Variable.Set.empty p2);
     (* Translate: *)
     let (_, p) = imp_to_post p in
-    let p : Proto.t = p
+    let p : Proto.Code.t = p
       |> Post.inline_assigns Variable.Set.empty
       |> post_to_proto
     in
-    let open Proto in
     match p with
     | Decl (y1,
         Decl (y2, Acc (_, {index=[x1; x2]; _})))
         when Variable.name y1 = "x" && Variable.name y2 = "x1" ->
       assert_nexp (Var (Variable.from_name "x")) x1;
       assert_nexp (Var (Variable.from_name "x1")) x2;
-    | _ -> assert_failure (Proto.to_string p)
+    | _ -> assert_failure (Proto.Code.to_string p)
   )
 ]
 

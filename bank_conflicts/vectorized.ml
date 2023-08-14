@@ -241,8 +241,8 @@ let access ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
 
 let add = NMap.pointwise (+)
 
-let eval ?(verbose=true) : Proto.t -> t -> NMap.t =
-  let rec eval (cost:NMap.t) (p:Proto.t) (ctx:t) : NMap.t =
+let eval ?(verbose=true) : Proto.Code.t -> t -> NMap.t =
+  let rec eval (cost:NMap.t) (p:Proto.Code.t) (ctx:t) : NMap.t =
     match p with
     | Sync
     | Skip -> cost

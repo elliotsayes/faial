@@ -75,14 +75,14 @@ module Kernel = struct
     code: Unsync.t;
   }
 
-  let from_aligned (k: Aligned.t kernel) : t stream =
+  let from_aligned (k: Aligned.t Kernel.t) : t stream =
     let p_to_k ((bi,locations):(Phased.t * Variable.Set.t)) : t =
       (* Check for undefs *)
       (* 1. compute all globals *)
       let globals =
         List.map (fun r -> let open Range in r.var) bi.ranges
         |> Variable.Set.of_list
-        |> Variable.Set.union k.kernel_global_variables
+        |> Variable.Set.union k.global_variables
       in
       (* 2. compute all free names in the ranges *)
       let fns = List.fold_right Freenames.free_names_range bi.ranges Variable.Set.empty in
@@ -100,15 +100,15 @@ module Kernel = struct
         raise (PhasesplitException errs)
       ) else
         {
-          name = k.kernel_name;
-          local_variables = k.kernel_local_variables;
-          global_variables = k.kernel_global_variables;
+          name = k.name;
+          local_variables = k.local_variables;
+          global_variables = k.global_variables;
           arrays = locations;
           ranges = bi.ranges;
           code = bi.code;
         }
     in
-    Phased.from_aligned k.kernel_pre k.kernel_code
+    Phased.from_aligned k.pre k.code
     |> filter_map (fun b ->
       (* Get locations of u_prog *)
       let locations = Unsync.write_locations b.Phased.code Variable.Set.empty in
@@ -136,7 +136,7 @@ module Kernel = struct
 
 end
 
-let translate (ks: Aligned.t kernel stream) (_:bool) : Kernel.t stream =
+let translate (ks: Aligned.t Proto.Kernel.t stream) (_:bool) : Kernel.t stream =
   map Kernel.from_aligned ks |> concat
 
 

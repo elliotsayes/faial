@@ -3,7 +3,7 @@ open Inference
 open Bank_conflicts
 open Protocols
 
-type kernel = Proto.t Proto.kernel
+type kernel = Proto.Code.t Proto.Kernel.t
 
 let abort_when (b:bool) (msg:string) : unit =
   if b then (
@@ -64,7 +64,7 @@ module Solver = struct
       if skip_distinct_vars then
         kernels
       else
-        List.map Proto.kernel_vars_distinct kernels
+        List.map Proto.Kernel.vars_distinct kernels
     in
     {
       kernels;
@@ -89,7 +89,7 @@ module Solver = struct
     }
 
   let bank_conflict_count (app:t) (k:kernel) : Exp.nexp -> int =
-    Index_analysis.Default.analyze app.params k.kernel_local_variables
+    Index_analysis.Default.analyze app.params k.local_variables
 
   let access_count (_:t) (_:kernel) : Exp.nexp -> int =
     fun _ -> 1
@@ -191,7 +191,7 @@ module TUI = struct
           print_endline c.amount
         ) else (
           let d = Float.to_int (c.analysis_duration *. 1000.) in
-          print_string (k.kernel_name ^ " (" ^ string_of_int d  ^ "ms):\n");
+          print_string (k.name ^ " (" ^ string_of_int d  ^ "ms):\n");
           PrintBox.(
             c.amount
             |> text
@@ -206,7 +206,7 @@ module TUI = struct
         exit (-1)
     in
     let print_slice ((k:kernel), (s:Solver.slice list)) : unit =
-      ANSITerminal.(print_string [Bold; Foreground Green] ("\n### Kernel '" ^ k.kernel_name ^ "' ###\n\n"));
+      ANSITerminal.(print_string [Bold; Foreground Green] ("\n### Kernel '" ^ k.name ^ "' ###\n\n"));
       Logger.Colors.info ("Shared accesses found: " ^ string_of_int (List.length s));
       Stdlib.flush_all ();
       s
@@ -268,12 +268,12 @@ module JUI = struct
       | Ok e ->
         `Assoc [
           (name, `String e.amount);
-          ("kernel_name", `String k.kernel_name);
+          ("kernel_name", `String k.name);
           ("analysis_duration_seconds", `Float e.analysis_duration);
         ]
       | Error e ->
         `Assoc [
-          ("kernel_name", `String k.kernel_name);
+          ("kernel_name", `String k.name);
           ("error", `String e);
         ]
     in
@@ -307,7 +307,7 @@ module JUI = struct
         )
       in
       `Assoc [
-        "kernel_name", `String k.kernel_name;
+        "kernel_name", `String k.name;
         "accesses", accs;
       ]
     in
@@ -353,7 +353,7 @@ let run
   ~output_json
   ~ignore_absent
   ~show_ratio
-  (kernels : Proto.t Proto.kernel list)
+  (kernels : Proto.Code.t Proto.Kernel.t list)
 :
   unit
 =
@@ -416,7 +416,7 @@ let pico
   let params = Params.make ~block_dim ~grid_dim () in
   let kernels : kernel list =
     parsed.kernels
-    |> List.filter Proto.has_shared_arrays
+    |> List.filter Proto.Kernel.has_shared_arrays
   in
   run
     ~explain
