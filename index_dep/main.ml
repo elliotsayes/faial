@@ -1,31 +1,30 @@
-open Stage0
 open Inference
+open Protocols
 
-let analyze ~only_global (j:Yojson.Basic.t) : unit =
-  match C_lang.parse_program j with
-  | Ok k1 ->
-    let k2 = D_lang.rewrite_program k1 in
-       k2
-       |> List.filter (
-         let open D_lang in
-         function
-         | Kernel k when Kernel.is_global k || not only_global -> true
-         | _ -> false
-       )
-       |> Indexflow.types_program
-       |> List.iter (fun (name, d) ->
-        print_endline (name ^ "," ^ Indexflow.Stmt.to_string d)
-      )
-
-  | Error e ->
-    prerr_endline ("Error parsing file");
-    Rjson.print_error e;
-    exit(-1)
+let analyze ~only_global (fname:string): unit =
+  let k = Protocol_parser.Silent.to_proto fname in
+  k.kernels |> List.iter (fun k ->
+    if only_global && not (Proto.Kernel.is_global k) then () else
+    let open Proto in
+    let locals =
+      ["threadIdx.x"; "threadIdx.y"; "threadIdx.z"]
+      |> List.map Variable.from_name
+      |> Variable.Set.of_list
+    in
+    let env = Variable.Set.union k.global_variables locals in
+    let p = Code.Cond (k.pre, k.code) in
+    let to_s k : bool -> string =
+      function
+      | true -> "ind"
+      | false -> k
+    in
+    let ci = Typing.is_control_exact env p |> to_s "ctrl" in
+    let di = Typing.is_data_exact env p |> to_s "data" in
+    print_endline (k.name ^ "," ^ di ^ "," ^ ci)
+  )
 
 let main (fname: string) (only_global:bool) : unit =
-  fname
-  |> Cu_to_json.cu_to_json ~ignore_fail:true
-  |> analyze ~only_global
+  analyze ~only_global fname
 
 open Cmdliner
 
