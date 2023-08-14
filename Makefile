@@ -15,8 +15,8 @@ c-ast:
 	cp -f $(BUILD)/inference/bin/c_ast.exe c-ast
 
 data-dep:
-	$(DUNE) build index_dep/data_dep.exe
-	cp -f $(BUILD)/index_dep/data_dep.exe data-dep
+	$(DUNE) build index_dep/main.exe
+	cp -f $(BUILD)/index_dep/main.exe data-dep
 
 build-test:
 	$(DUNE) build test
