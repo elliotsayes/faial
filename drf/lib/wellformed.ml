@@ -34,7 +34,7 @@ let make_well_formed : Proto.t -> Sync.t Streamutil.stream =
     | Skip -> UInst Skip |> one
     | Acc e -> UInst (Acc e) |> one
     | Sync -> SInst Sync.skip |> one
-    | Decl _ -> failwith "Invoke Proto.inline_decl first."
+    | Decl _ -> failwith "Invoke Proto.hoist_decls first."
     | Cond (b, p) ->
       infer in_loop p
       |> flat_map (
@@ -79,9 +79,8 @@ let make_well_formed : Proto.t -> Sync.t Streamutil.stream =
     )
 
 let translate (k: Proto.t kernel) : Sync.t kernel Streamutil.stream =
-  let vars = Variable.Set.union k.kernel_local_variables k.kernel_global_variables in
-  let p = Proto.vars_distinct k.kernel_code vars in
-  make_well_formed p
+  let k = Proto.hoist_decls k in
+  make_well_formed k.kernel_code
   |> Streamutil.map (fun p -> { k with kernel_code = p})
 
 (* ---------------- Pretty printing -------------------- *)

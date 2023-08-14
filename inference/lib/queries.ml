@@ -866,7 +866,7 @@ module Accesses = struct
         Seq.concat_map (cond_accesses in_cond) (List.to_seq l)
       | If (_, s1, s2) ->
         Seq.append (cond_accesses true s1) (cond_accesses true s2)
-      | For (_, s) ->
+      | Star s | For (_, s) ->
         cond_accesses in_cond s
     in
     cond_accesses false s

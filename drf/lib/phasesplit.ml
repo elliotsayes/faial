@@ -95,9 +95,10 @@ module Kernel = struct
           (Variable.location_opt x)
           )
       in
-      if List.length errs > 0 then
+      if List.length errs > 0 then (
+        prerr_endline (List.map fst errs |> String.concat "\n");
         raise (PhasesplitException errs)
-      else
+      ) else
         {
           name = k.kernel_name;
           local_variables = k.kernel_local_variables;

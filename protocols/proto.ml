@@ -170,7 +170,6 @@ let subst_grid_dim (grid_dim:Dim3.t) (p:t) : t =
   |> subst "gridDim.y" grid_dim.y
   |> subst "gridDim.z" grid_dim.z
 
-
 let vars_distinct : t -> Variable.Set.t -> t =
   let rec uniq (i:t) (xs:Variable.Set.t) : t * Variable.Set.t =
     match i with
@@ -223,6 +222,34 @@ let kernel_vars_distinct (k:t kernel) : t kernel =
     kernel_code = vars_distinct k.kernel_code vars
   }
 
+(*
+  Makes all variables distinct and hoists declarations as
+  thread-locals.
+ *)
+let hoist_decls : t kernel -> t kernel =
+  let rec inline (vars:Variable.Set.t) (p:t) : Variable.Set.t * t =
+    match p with
+    | Decl (x, p) -> inline (Variable.Set.add x vars) p
+    | Acc _ | Skip | Sync -> (vars, p)
+    | Cond (b, p) ->
+      let (vars, p) = inline vars p in
+      (vars, Cond (b, p))
+    | Loop (r, p) ->
+      let (vars, p) = inline vars p in
+      (vars, Loop (r, p))
+    | Seq (p, q) ->
+      let (vars, p) = inline vars p in
+      let (vars, q) = inline vars q in
+      (vars, Seq (p, q))
+  in
+  fun k ->
+  let k = kernel_vars_distinct k in
+  let (locals, p) = inline Variable.Set.empty k.kernel_code in
+  { k with
+    kernel_code = p;
+    kernel_local_variables = Variable.Set.union locals k.kernel_local_variables;
+  }
+
 let rec to_s : t -> Indent.t list =
   function
   | Skip -> [Line "skip;"]
@@ -244,6 +271,9 @@ let rec to_s : t -> Indent.t list =
     ]
   | Seq (p, q) ->
     to_s p @ to_s q
+
+let to_string (p:t) : string =
+  Indent.to_string (to_s p)
 
 let print (p: t) : unit =
   Indent.print (to_s p)
