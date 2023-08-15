@@ -43,14 +43,21 @@ let box_idx key ~idx ~dim =
   else [key, idx]
 
 
-let box_tasks (block_dim:Vec3.t) (t1:Task.t) (t2:Task.t) : PrintBox.t =
+let box_tasks (data_approx:Variable.Set.t) (block_dim:Vec3.t) (t1:Task.t) (t2:Task.t) : PrintBox.t =
   let open PrintBox in
   let locals =
     t1.locals
     |> Environ.variables
-    |> List.map (fun (k, v1) -> 
+    |> List.map (fun (k, v1) ->
+      let lbl = Option.value ~default:k (Environ.label k t1.locals) in
+      let lbl =
+        (if Variable.Set.mem (Variable.from_name k) data_approx then
+          "★ "
+        else
+          "") ^ lbl
+      in
       [|
-        text (Option.value ~default:k (Environ.label k t1.locals));
+        text lbl;
         text v1;
         text (Environ.get k t2.locals |> Option.value ~default:"?")
       |]
@@ -91,7 +98,7 @@ let box_globals (w:Witness.t) : PrintBox.t =
 
 let box_locals (w:Witness.t) : PrintBox.t =
   let (t1, t2) = w.tasks in
-  box_tasks w.block_dim t1 t2
+  box_tasks w.data_approx w.block_dim t1 t2
 
 let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
@@ -209,8 +216,8 @@ let tui (output: Analysis.t list) : unit =
     let print_errors errs =
       errs |> List.iteri (fun i (w:Witness.t) ->
         T.print_string [T.Bold; T.Foreground T.Blue] ("\n~~~~ Data-race " ^ string_of_int (i + 1) ^ " ~~~~\n\n");
+        let (t1, t2) = w.tasks in
         let locs =
-          let (t1, t2) = w.tasks in
           let l = [t1.location; t2.location] |> Common.flatten_opt in
           match l with
           | [x1; x2] when x1 = x2 -> [x1]
@@ -227,6 +234,15 @@ let tui (output: Analysis.t list) : unit =
         box_globals w |> print_box;
         T.print_string [T.Bold] ("\n\nLocals\n");
         box_locals w |> print_box;
+        (if Variable.Set.cardinal w.data_approx > 0 then
+          T.print_string [T.Bold; T.Underlined] ("\nWARNING: Expressions labeled with ★ are approximate. Expression depends on kernel input.\n")
+        else
+          ());
+        (if Variable.Set.cardinal w.control_approx > 0 then
+          (T.print_string [T.Bold; T.Underlined] ("\nWARNING: Data-race may be spurious. Control-flow depends on kernel input!\n");
+          )
+        else
+          ());
         print_endline "";
         T.print_string [T.Underlined] ("(proof #" ^ string_of_int w.proof_id ^ ")\n");
       );

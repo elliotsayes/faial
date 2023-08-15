@@ -154,9 +154,6 @@ module Task = struct
   let can_conflict (x1:t) (x2:t) : bool =
     Access.can_conflict x1.access x2.access
 
-  let mk ~thread_idx ~locals ~access ~location =
-    {thread_idx; locals; access; location}
-
   let to_json (x:t) : json =
     `Assoc [
       "threadIdx", Vec3.to_json x.thread_idx;
@@ -178,6 +175,8 @@ module Witness = struct
   type t = {
     proof_id: int;
     indices : string list;
+    data_approx: Variable.Set.t;
+    control_approx: Variable.Set.t;
     tasks : Task.t * Task.t;
     block_idx: Vec3.t;
     block_dim: Vec3.t;
@@ -280,12 +279,15 @@ module Witness = struct
       in
       parse_inst_id "1", parse_inst_id "2"
     in
-    let acc (idx:int) : Location.t * Access.t =
+    let acc (idx:int) : Location.t * Access.t * Variable.Set.t * Variable.Set.t =
       let acc = Symbexp.Proof.get idx proof in
-      Flatacc.CondAccess.location acc, Flatacc.CondAccess.access acc
+      (Flatacc.CondAccess.location acc,
+      Flatacc.CondAccess.access acc,
+      List.nth proof.data_approx idx,
+      List.nth proof.control_approx idx)
     in
-    let (t1_loc, t1_acc) = acc inst1 in
-    let (t2_loc, t2_acc) = acc inst2 in
+    let (t1_loc, t1_acc, t1_data, t1_ctrl) = acc inst1 in
+    let (t2_loc, t2_acc, t2_data, t2_ctrl) = acc inst2 in
     (* put all special variables in kvs
       $T2$loc: 0
       $T1$mode: 0
@@ -353,6 +355,8 @@ module Witness = struct
       indices = idx;
       tasks = t1, t2;
       globals = globals;
+      data_approx = Variable.Set.union t1_data t2_data;
+      control_approx = Variable.Set.union t1_ctrl t2_ctrl;
     }
 end
 

@@ -19,12 +19,21 @@ module CondAccess = struct
 
   let access (x:t) : Access.t = x.access
 
+  let control_approx (thread_locals:Variable.Set.t) (pre:bexp) (x:t) : Variable.Set.t =
+    Variable.Set.inter
+      thread_locals
+      (Freenames.free_names_bexp (b_and x.cond pre) Variable.Set.empty)
+
+  let data_approx (thread_locals:Variable.Set.t) (x:t) : Variable.Set.t =
+    Variable.Set.inter
+      thread_locals
+      (Freenames.free_names_access x.access Variable.Set.empty)
+
   let to_s (a:t) : Indent.t list =
-    let cond = b_and_split a.cond in
     let lineno = (Location.line a.location |> Index.to_base1 |> string_of_int) ^ ": " in
     [
       Line (lineno ^ Access.to_string a.access ^ " if");
-      Block (List.map (fun x -> Indent.Line (b_to_string x ^ " &&")) cond);
+      Block (b_to_s a.cond);
       Line ";";
     ]
 end

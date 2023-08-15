@@ -150,6 +150,8 @@ let assign_indices (dim:int) : bexp =
 module Proof = struct
   type t = {
     id: int;
+    data_approx: Variable.Set.t list;
+    control_approx: Variable.Set.t list;
     kernel_name: string;
     array_name: string;
     preds: Predicates.t list;
@@ -172,7 +174,7 @@ module Proof = struct
   let get (idx:int) (p:t) : CondAccess.t =
     List.nth p.code idx
 
-  let make ~kernel_name ~array_name ~id ~goal ~code : t =
+  let make ~kernel_name ~array_name ~id ~goal ~code ~data_approx ~control_approx : t =
     let goal = Constfold.b_opt goal (* Optimize the output expression *) in
     let fns =
       Freenames.free_names_bexp goal Variable.Set.empty
@@ -186,7 +188,10 @@ module Proof = struct
       )
     ) fns in
     let preds = Predicates.get_predicates goal in
-    {id; preds; decls; goal; array_name; kernel_name; labels; code;}
+    {
+      id; preds; decls; goal; array_name; kernel_name; labels; code;
+      data_approx; control_approx;
+    }
 
   let to_string (p:t) : Indent.t list =
     let open Common in
@@ -198,6 +203,10 @@ module Proof = struct
     in
     [
         Line ("array: " ^ p.array_name);
+        Line ("data approx:");
+        Block (List.map (fun x -> Line ("[" ^ Variable.set_to_string x ^ "]")) p.data_approx);
+        Line ("control approx:");
+        Block (List.map (fun x -> Line ("[" ^ Variable.set_to_string x ^ "]")) p.control_approx);
         Line ("kernel: " ^ p.kernel_name);
         Line ("predicates: " ^ preds ^ ";");
         Line ("decls: " ^ (p.decls |> join ", ") ^ ";");
@@ -241,6 +250,18 @@ module Proof = struct
     ]
 
   let from_flat (proof_id:int) (k:Flatacc.Kernel.t) : t =
+    let (data_approx, control_approx) =
+      let locals =
+        k.local_variables
+        |> Variable.Set.remove (Variable.from_name "threadIdx.x")
+        |> Variable.Set.remove (Variable.from_name "threadIdx.y")
+        |> Variable.Set.remove (Variable.from_name "threadIdx.z")
+      in
+      (
+        List.map (CondAccess.data_approx locals) k.code,
+        List.map (CondAccess.control_approx locals k.pre) k.code
+      )
+    in
     let goal =
       from_code k.local_variables k.code
       |> b_and k.pre
@@ -251,6 +272,8 @@ module Proof = struct
       ~array_name:k.array_name
       ~goal
       ~code:k.code
+      ~data_approx
+      ~control_approx
 end
 
 let translate (stream:Flatacc.Kernel.t Streamutil.stream) : Proof.t Streamutil.stream =
