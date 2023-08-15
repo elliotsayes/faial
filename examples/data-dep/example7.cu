@@ -1,4 +1,4 @@
-// ind, drf
+// data-ind,control-dep, drf
 __global__
 void saxpy(int n, float a, float *x, float *y)
 {
