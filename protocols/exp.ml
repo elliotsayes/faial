@@ -275,6 +275,12 @@ let rec b_and_split : bexp -> bexp list =
     b_and_split b1 @ b_and_split b2
   | b -> [b]
 
+let rec b_or_split : bexp -> bexp list =
+  function
+  | BRel (BOr, b1, b2) ->
+    b_or_split b1 @ b_or_split b2
+  | b -> [b]
+
 let nbin_to_string : nbin -> string = function
   | Plus -> "+"
   | Minus -> "-"
@@ -343,7 +349,46 @@ and b_par (b:bexp) : string =
   | NRel _
     -> "("  ^ b_to_string b ^ ")"
 
-let b_to_s (b:bexp) : Indent.t list =
+let b_to_s : bexp -> Indent.t list =
+  let rec to_s (in_and:bool) (b:bexp) : Indent.t list =
+    let open Indent in
+    match b with
+    | NRel _
+    | Bool _
+    | BNot _
+    | Pred _
+      -> [Line (b_to_string b)]
+    | BRel (o, _, _) ->
+      let op = brel_to_string o in
+      b
+      |> (if in_and then b_and_split else b_or_split)
+      |> List.map (fun b ->
+          match to_s (not in_and) b with
+          | [Line b] -> Line b
+          | l -> Block l
+        )
+      |> List.mapi (fun i ->
+          let op = if i = 0 then "" else op ^ " " in
+          function
+          | Line s -> [Line (op ^ s)]
+          | Block l -> [Line (op ^ "("); Block l; Line (")")]
+          | Nil -> []
+        )
+      |> List.concat
+  in
+  to_s true
+  (*
+  let b_or_to_s b =
+    match b_or_split b with
+    | [ x ] -> [Indent.Line (b_to_string x ^ " &&")]
+    | l ->
+      [
+        Indent.Line "(";
+        Indent.Block (List.map (fun x -> Indent.Line (b_to_string x ^ " ||")) l);
+        Indent.Line ") &&";
+      ]
+  in
   b
   |> b_and_split
-  |> List.map (fun x -> Indent.Line (b_to_string x ^ "&&"))
+  |> List.concat_map b_or_to_s
+  *)
