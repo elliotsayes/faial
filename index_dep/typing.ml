@@ -20,6 +20,13 @@ let typecheck_r (env:Variable.Set.t) (r:Range.t) : bool =
     (Freenames.free_names_range r Variable.Set.empty)
     env
 
+let no_acc (p:Proto.Code.t) : bool =
+  not (Proto.Code.exists (
+    function
+    | Acc _ -> true
+    | _ -> false
+  ) p)
+
 let rec is_data_exact (env:Variable.Set.t) : Proto.Code.t -> bool =
   function
   | Acc a -> typecheck_a env a
@@ -28,17 +35,26 @@ let rec is_data_exact (env:Variable.Set.t) : Proto.Code.t -> bool =
   | Cond (_, p) -> is_data_exact env p
   | Decl (_, p) -> is_data_exact env p
   | Loop (r, p) ->
-    if typecheck_r env r then
+    no_acc p || (* If there are no accesses, then we can trivially accept *)
+    is_data_exact env p ||
+    (
+      typecheck_r env r &&
       is_data_exact (Variable.Set.add (Range.var r) env) p
-    else
-      is_data_exact env p
+    )
 
 let rec is_control_exact (env:Variable.Set.t) : Proto.Code.t -> bool =
   function
   | Acc _ | Skip | Sync -> true
   | Seq (p, q) -> is_control_exact env p && is_control_exact env q
-  | Cond (b, p) -> typecheck_b env b && is_control_exact env p
+  | Cond (b, p) ->
+    no_acc p || (
+      typecheck_b env b &&
+      is_control_exact env p
+    )
   | Decl (_, p) -> is_control_exact env p
   | Loop (r, p) ->
-    typecheck_r env r &&
-    is_control_exact (Variable.Set.add (Range.var r) env) p
+    no_acc p ||
+    (
+      typecheck_r env r &&
+      is_control_exact (Variable.Set.add (Range.var r) env) p
+    )

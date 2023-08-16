@@ -15,6 +15,13 @@ module Code = struct
     | Skip
     | Decl of Variable.t * t
 
+  let rec exists (f:t -> bool) (i: t) : bool =
+    f i ||
+    match i with
+    | Acc _ | Sync | Skip -> false
+    | Cond (_, p) | Loop (_, p) | Decl (_, p) -> exists f p
+    | Seq (p, q) -> exists f p || exists f q
+
   (** Replace variables by constants. *)
 
   module Make (S:Subst.SUBST) = struct
