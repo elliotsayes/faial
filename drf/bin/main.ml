@@ -235,7 +235,7 @@ let tui (output: Analysis.t list) : unit =
         T.print_string [T.Bold] ("\n\nLocals\n");
         box_locals w |> print_box;
         (if Variable.Set.cardinal w.data_approx > 0 then
-          T.print_string [T.Bold; T.Underlined] ("\nWARNING: Expressions labeled with ★ are approximate. Expression depends on kernel input.\n")
+          T.print_string [T.Bold; T.Underlined] ("\nWARNING: Expressions labelled with ★ are approximate. Expression depends on kernel input.\n")
         else
           ());
         (if Variable.Set.cardinal w.control_approx > 0 then
