@@ -37,26 +37,13 @@ module Make (S:SUBST) = struct
         | None -> n
       end
     | Num _ -> n
-    | Proj (t, x) ->
-      begin
-        match S.find s x with
-        | Some (Var y) -> Proj (t, y)
-        | Some _ ->
-          let exp = n_to_string n in
-          let repl = S.to_string s in
-          failwith (
-            "Error: cannot replace thread-local variable " ^ Variable.name x ^
-            " by constant\n" ^
-            "substitution(expression=" ^ exp ^ ", replacement=" ^ repl ^ ")"
-          )
-        | None -> Proj (t, x)
-      end
     | Bin (o, n1, n2) -> Bin (o, n_subst s n1, n_subst s n2)
     | NIf (b, n1, n2) -> NIf (b_subst s b, n_subst s n1, n_subst s n2)
     | NCall (x, a) -> NCall (x, n_subst s a)
 
   and b_subst (s:S.t) (b:bexp) : bexp =
     match b with
+    | ThreadEqual e -> ThreadEqual (n_subst s e)
     | Pred (n, v) -> Pred (n, n_subst s v)
     | Bool _ -> b
     | NRel (o, n1, n2) -> NRel (o, n_subst s n1, n_subst s n2)
@@ -70,10 +57,7 @@ module Make (S:SUBST) = struct
 
   let r_subst (s:S.t) : Range.t -> Range.t =
     Range.map (n_subst s)
-(*
-  let acc_expr_subst (s:S.t) ((x,e):acc_expr) : acc_expr =
-    (x, a_subst s e)
-*)
+
 end
 
 module SubstPair =

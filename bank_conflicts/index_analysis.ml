@@ -49,7 +49,6 @@ module Make (L:Logger.Logger) = struct
         index_or (fun e1 e2 -> Bin (o, e1, e2)) (from_nexp e1) (from_nexp e2)
       | Bin (o, e1, e2) ->
         index_and (fun e1 e2 -> Bin (o, e1, e2)) (from_nexp e1) (from_nexp e2)
-      | Proj (p, e) -> Offset (Proj (p, e))
       | NCall (f, e) -> map (fun e -> NCall (f, e)) (from_nexp e)
       | NIf (c, n1, n2) ->
         if Freenames.contains_tid_bexp c then

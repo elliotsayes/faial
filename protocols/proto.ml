@@ -226,6 +226,7 @@ module Kernel = struct
         (Variable.name x, n) :: kvs
       | BRel (BAnd, b1, b2) ->
         constants b1 kvs |> constants b2
+      | ThreadEqual _
       | BNot _
       | Pred _
       | NRel _

@@ -175,7 +175,6 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
     with
       Division_by_zero ->
         failwith ("n_eval: division by zero: " ^ Exp.n_to_string n))
-  | Proj _ -> failwith ("n_eval: proj")
   | NCall (x,_) -> failwith ("n_eval: call " ^ x)
   | NIf (b, n1, n2) ->
     n_map3
@@ -203,6 +202,8 @@ and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
   | BNot b ->
     b_eval b ctx |> BMap.map (fun x -> not x)
 
+  | ThreadEqual _ ->
+    failwith ("b_eval: thread_equal")
   | Pred (x, _) ->
     failwith ("b_eval: pred " ^ x)
 

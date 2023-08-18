@@ -88,7 +88,6 @@ type i_nexp =
   | Var of Variable.t
   | Num of int
   | Bin of nbin * i_exp * i_exp
-  | Proj of task * Variable.t
   | NCall of string * i_exp
   | NIf of i_exp * i_exp * i_exp
 
@@ -98,6 +97,7 @@ and i_bexp =
   | BRel of brel * i_exp * i_exp
   | BNot of i_exp
   | Pred of string * i_exp
+  | ThreadEqual of i_exp
 
 and i_exp =
   | NExp of i_nexp
@@ -254,7 +254,6 @@ module Unknown = struct
         let (u, n1) = handle_n u n1 in
         let (u, n2) = handle_n u n2 in
         (u, Exp.Bin (o, n1, n2))
-      | Proj (x, y) -> (u, Exp.Proj (x, y))
       | NCall (x, n) ->
         let (u, n) = handle_n u n in
         (u, Exp.NCall (x, n)) 
@@ -286,6 +285,9 @@ module Unknown = struct
       | BNot b ->
         let (u, b) = handle_b u b in
         (u, BNot b)
+      | ThreadEqual n ->
+        let (u, n) = handle_n u n in
+        (u, ThreadEqual n)
       | Pred (x, n) ->
         let (u, n) = handle_n u n in
         (u, Pred (x, n)))

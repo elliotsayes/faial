@@ -39,11 +39,12 @@ let project_access (locals:Variable.Set.t) (t:task) (ca:CondAccess.t) : CondAcce
     | Var x when Variable.Set.mem x locals -> Var (proj_var t x)
     | Var _ -> n
     | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
-    | Proj (t', x) -> Var (proj_var t' x)
     | NIf (b, n1, n2) -> NIf (inline_proj_b t b, inline_proj_n t n1, inline_proj_n t n2)
     | NCall (x, n) -> NCall (x, inline_proj_n t n)
   and inline_proj_b (t:task) (b: bexp) : bexp =
     match b with
+    | ThreadEqual n ->
+      NRel (NEq, inline_proj_n Task1 n, inline_proj_n Task2 n)
     | Pred (x, n) -> Pred (x, inline_proj_n t n)
     | Bool _ -> b
     | BNot b -> BNot (inline_proj_b t b)

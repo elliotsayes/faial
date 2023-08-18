@@ -3,12 +3,14 @@ open Stage0
 
 let rec norm (b:bexp) : bexp list =
   match b with
+  | ThreadEqual _
   | Pred _
   | BNot (Pred _)
   | BRel (BOr, _, _)
   | Bool _
   | NRel _ -> [b]
   | BRel (BAnd, b1, b2) -> List.append (norm b1) (norm b2)
+  | BNot (ThreadEqual _) -> [b]
   | BNot (Bool b) -> [Bool (not b)]
   | BNot (BRel (BAnd, b1, b2)) -> norm (b_or (b_not b1) (b_not b2))
   | BNot (BRel (BOr, b1, b2)) -> norm (b_and (b_not b1) (b_not b2))
@@ -36,7 +38,6 @@ let rec n_opt (a : nexp) : nexp =
   | Var _ 
   | Num _ -> a
     (* if n < 0 then raise (Failure "Negative number") else a *)
-  | Proj (t, n) -> Proj(t, n)
   | NCall (x, e) -> NCall (x, n_opt e)
   | NIf (b, n1, n2) ->
     let b = b_opt b in
@@ -123,6 +124,11 @@ let rec n_opt (a : nexp) : nexp =
 
 and b_opt (e : bexp) : bexp =
   match e with
+  | ThreadEqual n ->
+    begin match n_opt n with
+    | Num _ -> Bool true
+    | n -> ThreadEqual n
+    end
   | Pred (x, e) ->
     begin match n_opt e with
     | Num _ as n ->

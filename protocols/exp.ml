@@ -46,7 +46,6 @@ type nexp =
   | Var of Variable.t
   | Num of int
   | Bin of nbin * nexp * nexp
-  | Proj of task * Variable.t
   | NCall of string * nexp
   | NIf of bexp * nexp * nexp
 
@@ -56,6 +55,7 @@ and bexp =
   | BRel of brel * bexp * bexp
   | BNot of bexp
   | Pred of string * nexp
+  | ThreadEqual of nexp
 
 let eval_nbin (o:nbin) : int -> int -> int =
   match o with
@@ -93,7 +93,6 @@ let rec n_eval_res (n: nexp) : (int, string) Result.t =
     let* n1 = n_eval_res n1 in
     let* n2 = n_eval_res n2 in
     Ok (eval_nbin o n1 n2)
-  | Proj _ -> Error "n_eval: proj"
   | NCall (x,_) -> Error ("n_eval: call " ^ x)
   | NIf (b, n1, n2) ->
     let* b = b_eval_res b in
@@ -114,6 +113,7 @@ and b_eval_res (b: bexp) : (bool, string) Result.t =
   | BNot b ->
     let* b = b_eval_res b in
     Ok (not b)
+  | ThreadEqual _ -> Error "n_eval: thread_equal"
   | Pred (x, _) ->
     Error ("b_eval: pred " ^ x)
 
@@ -267,7 +267,7 @@ let rec b_or_ex l =
   | x::l -> b_or x (b_or_ex l)
 
 let distinct (idx:Variable.t list) : bexp =
-  b_or_ex (List.map (fun x -> n_neq (Proj (Task1, x)) (Proj (Task2, x)) ) idx)
+  b_or_ex (List.map (fun x -> b_not (ThreadEqual (Var x))) idx)
 
 let rec b_and_split : bexp -> bexp list =
   function
@@ -309,7 +309,6 @@ let brel_to_string (r:brel) : string =
 
 let rec n_par (n:nexp) : string =
   match n with
-  | Proj _
   | Num _
   | Var _
   | NCall _
@@ -319,8 +318,6 @@ let rec n_par (n:nexp) : string =
     -> "(" ^ n_to_string n ^ ")"
 
 and n_to_string : nexp -> string = function
-  | Proj (t, x) ->
-    "proj(" ^ task_to_string t ^ ", "  ^ Variable.name x ^ ")"
   | Num n -> string_of_int n
   | Var x -> Variable.name x
   | Bin (b, a1, a2) ->
@@ -338,9 +335,11 @@ and b_to_string : bexp -> string = function
     b_par b1 ^ " " ^ brel_to_string b ^ " " ^ b_par b2
   | BNot b -> "!" ^ b_par b
   | Pred (x, v) -> x ^ "(" ^ n_to_string v ^ ")"
+  | ThreadEqual e -> "thread_equal(" ^ n_to_string e ^ ")"
 
 and b_par (b:bexp) : string =
   match b with
+  | ThreadEqual _
   | Pred _
   | Bool _
   | BNot _
@@ -356,6 +355,7 @@ let b_to_s : bexp -> Indent.t list =
     | NRel _
     | Bool _
     | BNot _
+    | ThreadEqual _
     | Pred _
       -> [Line (b_to_string b)]
     | BRel (o, _, _) ->
