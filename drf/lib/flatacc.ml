@@ -11,7 +11,11 @@ open Protocols
 open Exp
 
 module CondAccess = struct
-  type t = {location: Location.t; access: Access.t; cond: bexp; }
+  type t = {
+    location: Location.t;
+    access: Access.t;
+    cond: bexp;
+  }
 
   let dim (a:t) : int = List.length a.access.index
 
@@ -71,7 +75,8 @@ module Kernel = struct
   type t = {
     name: string;
     array_name: string;
-    local_variables: Variable.Set.t;
+    approx_local_variables: Variable.Set.t;
+    exact_local_variables: Variable.Set.t;
     code: Code.t;
     pre: bexp;
   }
@@ -79,7 +84,8 @@ module Kernel = struct
   let to_s (k:t) : Indent.t list =
     [
         Line ("array: " ^ k.array_name ^ ";");
-        Line ("locals: " ^ Variable.set_to_string k.local_variables ^ ";");
+        Line ("exact locals: " ^ Variable.set_to_string k.exact_local_variables ^ ";");
+        Line ("approx locals: " ^ Variable.set_to_string k.approx_local_variables ^ ";");
         Line ("pre: " ^ b_to_string k.pre ^ ";");
         Line "{";
         Block (Code.to_s k.code);
@@ -91,7 +97,8 @@ module Kernel = struct
       name = k.name;
       array_name = k.array_name;
       code = Code.from_unsync k.code;
-      local_variables = Unsync.binders k.code k.local_variables;
+      exact_local_variables = Unsync.binders k.code Variable.tid_var_set;
+      approx_local_variables = Variable.Set.diff k.local_variables Variable.tid_var_set;
       pre = b_and_ex (List.map Range.to_cond k.ranges);
     }
 end

@@ -251,19 +251,19 @@ module Proof = struct
 
   let from_flat (proof_id:int) (k:Flatacc.Kernel.t) : t =
     let (data_approx, control_approx) =
-      let locals =
-        k.local_variables
-        |> Variable.Set.remove (Variable.from_name "threadIdx.x")
-        |> Variable.Set.remove (Variable.from_name "threadIdx.y")
-        |> Variable.Set.remove (Variable.from_name "threadIdx.z")
-      in
+      let locals = k.approx_local_variables in
       (
         List.map (CondAccess.data_approx locals) k.code,
         List.map (CondAccess.control_approx locals k.pre) k.code
       )
     in
     let goal =
-      from_code k.local_variables k.code
+      let locals =
+        Variable.Set.union
+          k.exact_local_variables
+          k.approx_local_variables
+      in
+      from_code locals k.code
       |> b_and k.pre
     in
     make
