@@ -852,6 +852,7 @@ module Accesses = struct
   open Imp
 
   type t = Variable.t * Access.t
+
   let cond_accesses (s: stmt) : t Seq.t =
     let rec cond_accesses (in_cond:bool) (s: stmt) : t Seq.t =
       match s with
@@ -860,8 +861,10 @@ module Accesses = struct
       | Assert _
       | LocationAlias _ ->
         Seq.empty
-      | Acc a ->
-        if in_cond then (Seq.return a) else Seq.empty
+      | Read r ->
+        if in_cond then (Seq.return (Imp.read_to_acc r)) else Seq.empty
+      | Write w ->
+        if in_cond then (Seq.return (Imp.write_to_acc w)) else Seq.empty
       | Block l ->
         Seq.concat_map (cond_accesses in_cond) (List.to_seq l)
       | If (_, s1, s2) ->
@@ -875,7 +878,8 @@ module Accesses = struct
   let all_accesses: stmt -> t Seq.t =
     let f (s:stmt) =
       match s with
-      | Acc a -> Some a
+      | Read r -> Some (Imp.read_to_acc r)
+      | Write w -> Some (Imp.write_to_acc w)
       | _ -> None
     in
     find_all_map f

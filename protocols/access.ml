@@ -46,16 +46,16 @@ let is_read (x:t) : bool =
 let map (f:Exp.nexp -> Exp.nexp) (a: t) : t =
   { a with index = List.map f a.index }
 
-let to_string ?(name="") (a:t) : string =
-  let index_to_s (ns:Exp.nexp list) : string =
-    let idx =
-      ns
-      |> List.map Exp.n_to_string
-      |> Common.join ", "
-    in
-      "[" ^ idx ^ "]"
+let index_to_string (ns:Exp.nexp list) : string =
+  let idx =
+    ns
+    |> List.map Exp.n_to_string
+    |> Common.join ", "
   in
-  Mode.to_string a.mode ^ " " ^ name ^ index_to_s a.index
+    "[" ^ idx ^ "]"
+
+let to_string ?(name="") (a:t) : string =
+  Mode.to_string a.mode ^ " " ^ name ^ index_to_string a.index
 
 let write (index:Exp.nexp list) (v:int option) : t =
   { index = index; mode = Wr v}

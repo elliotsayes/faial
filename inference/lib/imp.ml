@@ -12,11 +12,17 @@ type var_type = Location | Index
 type access_expr = {access_index: nexp list; access_mode: Access.Mode.t}
 
 type alias_expr = {alias_source: Variable.t; alias_target: Variable.t; alias_offset: nexp}
-
+type read = {target: Variable.t; array: Variable.t; index: nexp list}
+type write = {array: Variable.t; index: nexp list; payload: int option}
+let read_to_acc (r:read) : Variable.t * Access.t =
+  (r.array, Access.{index=r.index; mode=Rd})
+let write_to_acc (w:write) : Variable.t * Access.t =
+  (w.array, Access.{index=w.index; mode=Wr w.payload})
 type stmt =
   | Sync
   | Assert of bexp
-  | Acc of (Variable.t * Access.t)
+  | Read of read
+  | Write of write
   | Block of (stmt list)
   | LocationAlias of alias_expr
   | Decl of (Variable.t * nexp option) list
@@ -40,7 +46,7 @@ let rec has_sync : stmt -> bool =
   function
   | Sync -> true
   | If (_, p, q) -> has_sync p || has_sync q
-  | Acc _ | Assert _ | LocationAlias _ | Decl _ -> false
+  | Read _ | Write _ | Assert _ | LocationAlias _ | Decl _ -> false
   | Block l -> List.exists has_sync l
   | For (_, p) | Star p -> has_sync p
 
@@ -51,7 +57,8 @@ let fold : 'a. (stmt -> 'a -> 'a) -> stmt -> 'a -> 'a =
       match s with
       | Sync
       | Assert _
-      | Acc _
+      | Read _
+      | Write _
       | Decl _
       | LocationAlias _ ->
         init
@@ -330,7 +337,7 @@ let unknown_range (x:Variable.t) : Range.t =
 
 type stateful = (int * Variable.Set.t) -> int * Variable.Set.t * Post.t
 
-let imp_to_post : stmt -> Variable.Set.t * Post.t =
+let imp_to_post : Variable.Set.t * stmt -> Variable.Set.t * Post.t =
   let unknown (x:int) : Variable.t =
     Variable.from_name ("__loop_" ^ string_of_int x)
   in
@@ -346,7 +353,21 @@ let imp_to_post : stmt -> Variable.Set.t * Post.t =
   let rec imp_to_post_s : stmt -> (int * Variable.Set.t) -> int * Variable.Set.t * Post.t =
     function
     | Sync -> ret Post.Sync
-    | Acc e -> ret (Post.Acc e)
+    | Write e -> ret (Acc (e.array, {index=e.index; mode=Wr e.payload}))
+    | Read e ->
+      fun (curr_id, globals) ->
+        let is_thread_local (e:nexp) : bool =
+          Variable.Set.diff
+            (Freenames.free_names_nexp e Variable.Set.empty)
+            globals
+          |> Variable.Set.is_empty
+        in
+        let rd = Post.Acc (e.array, {index=e.index; mode=Rd}) in
+        if List.for_all is_thread_local e.index then
+          let globals = Variable.Set.add e.target globals in
+          (curr_id, globals, rd)
+        else
+          (curr_id, globals, Decl (e.target, None, rd))
     | Block p -> imp_to_post_p p
     | If (b, s1, s2) ->
       bind (imp_to_post_p [s1]) (fun s1 ->
@@ -394,8 +415,8 @@ let imp_to_post : stmt -> Variable.Set.t * Post.t =
         )
       )
   in
-  fun s ->
-    let (_, globals, p) = imp_to_post_s (Block [s]) (1, Variable.Set.empty) in
+  fun (globals, s) ->
+    let (_, globals, p) = imp_to_post_s (Block [s]) (1, globals) in
     (globals, p)
 
 let rec post_to_proto : Post.t -> Proto.Code.t =
@@ -446,7 +467,13 @@ let stmt_to_s: stmt -> Indent.t list =
     function
     | Sync -> [Line "sync;"]
     | Assert b -> [Line ("assert (" ^ b_to_string b ^ ");")]
-    | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
+    | Read r -> [Line (Variable.name r.target ^ " = ro " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
+    | Write w ->
+      let payload :string = match w.payload with
+        | None -> ""
+        | Some x -> " = " ^ string_of_int x
+      in
+      [Line ("wr " ^ Variable.name w.array ^ Access.index_to_string w.index ^ payload ^ ";")]
     | Block [] -> []
     | Block l -> [Line "{"; Block (List.map stmt_to_s l |> List.flatten); Line "}"]
     | LocationAlias l ->
@@ -525,8 +552,7 @@ module Kernel = struct
     Indent.print (to_s k)
 
   let compile (k:t) : Proto.Code.t Proto.Kernel.t =
-    let (globals, p) = imp_to_post k.code in
-    let globals = Variable.Set.union globals k.params in
+    let (globals, p) = imp_to_post (k.params, k.code) in
     let p : Post.t =
       p
       |> Post.filter_locs k.arrays (* Remove unknown arrays *)

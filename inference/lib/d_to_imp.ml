@@ -527,16 +527,15 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     let x = w.target.name |> Variable.set_location w.target.location in
     let* idx = with_msg "write.idx" (cast_map parse_exp) w.target.index in
     idx |> ret_ns (fun idx ->
-      Imp.Acc (x, {index=idx; mode=Wr w.payload})
+      Write {array=x; index=idx; payload=w.payload}
     )
 
   | ReadAccessStmt r ->
     let x = r.source.name |> Variable.set_location r.source.location in
     let* idx = with_msg "read.idx" (cast_map parse_exp) r.source.index in
     idx
-    |> ret_ns ~extra_vars:(Variable.Set.of_list [r.target]) (fun idx ->
-      let open Imp in
-      Acc (x, {index=idx; mode=Rd})
+    |> ret_ns (fun idx ->
+      Read {target=r.target; array=x; index=idx}
     )
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 
