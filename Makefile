@@ -35,6 +35,7 @@ faial-bc:
 
 test: build-test
 	$(DUNE) runtest
+	(cd examples/data-dep; python3 run.py)
 
 sys-test:
 	@./run-tests.py
