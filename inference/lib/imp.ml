@@ -14,10 +14,13 @@ type access_expr = {access_index: nexp list; access_mode: Access.Mode.t}
 type alias_expr = {alias_source: Variable.t; alias_target: Variable.t; alias_offset: nexp}
 type read = {target: Variable.t; array: Variable.t; index: nexp list}
 type write = {array: Variable.t; index: nexp list; payload: int option}
+
 let read_to_acc (r:read) : Variable.t * Access.t =
   (r.array, Access.{index=r.index; mode=Rd})
+
 let write_to_acc (w:write) : Variable.t * Access.t =
   (w.array, Access.{index=w.index; mode=Wr w.payload})
+
 type stmt =
   | Sync
   | Assert of bexp

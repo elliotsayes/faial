@@ -23,15 +23,14 @@ let tests = "test_predicates" >::: [
       *)
     let id = Variable.from_name "id" in
     let sq = Variable.from_name "s_Q" in
-    let mk_acc e = Access.{index = [Var e]; mode = Mode.Wr None} in
-    let wr = Acc (sq, mk_acc id) in
+    let wr = Imp.(Write {array=sq; index=[Var id]; payload=None}) in
     let inc (x:Variable.t) = Decl [(x, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
       inc id;
       wr;
     ] in
     (* Translate: *)
-    let (_, p) = imp_to_post p in
+    let (_, p) = imp_to_post (Variable.Set.empty, p) in
     (* Test: *)
     let open Imp.Post in
     (match p with
@@ -78,8 +77,7 @@ let tests = "test_predicates" >::: [
     let id = Variable.from_name "id" in
     let tid = Variable.from_name "threadIdx.x" in
     let sq = Variable.from_name "s_Q" in
-    let mk_acc e = Access.{index = [Var e]; mode = Wr None} in
-    let wr = Acc (sq, mk_acc id) in
+    let wr = Imp.(Write {array=sq; index=[Var id]; payload=None}) in
     let inc (x:Variable.t) = Decl [(x, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
       Decl[(tid, None)];
@@ -89,7 +87,7 @@ let tests = "test_predicates" >::: [
       wr;
     ] in
     (* Translate: *)
-    let (_, p) = p |> imp_to_post in
+    let (_, p) = imp_to_post (Variable.Set.empty, p) in
     (* Test: *)
     (match p with
     | Post.(
@@ -130,7 +128,8 @@ let tests = "test_predicates" >::: [
       *)
     let id = Variable.from_name "id" in
     let tid = Variable.from_name "threadIdx.x" in
-    let wr = Acc (Variable.from_name "s_Q", {index = [Var id]; mode = Wr None}) in
+    let sq = Variable.from_name "s_Q" in
+    let wr = Imp.(Write {array=sq; index=[Var id]; payload=None}) in
     let inc (x:Variable.t) = Decl [(x, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
       Decl[(tid, None)];
@@ -140,7 +139,7 @@ let tests = "test_predicates" >::: [
       wr;
     ] in
     (* Translate: *)
-    let (_, p) = imp_to_post p in
+    let (_, p) = imp_to_post (Variable.Set.empty, p) in
     let p : Proto.Code.t = p
       |> Post.inline_assigns Variable.Set.empty
       |> post_to_proto
@@ -179,7 +178,8 @@ let tests = "test_predicates" >::: [
     let m = Variable.from_name "m" in
     let k = Variable.from_name "k" in
     let id = Variable.from_name "id" in
-    let wr = Acc (Variable.from_name "s_Q", {index = [Var id]; mode = Wr None}) in
+    let sq = Variable.from_name "s_Q" in
+    let wr = Imp.(Write {array=sq; index=[Var id]; payload=None}) in
     let inc (x:Variable.t) = Decl [(x, Some (n_plus (Num 32) (Var x)))] in
     let p = Block [
       Decl[(Variable.from_name "threadIdx.x", None)];
@@ -197,7 +197,7 @@ let tests = "test_predicates" >::: [
       inc id;
     ] in
     (* Translate: *)
-    let (_, p) = imp_to_post p in
+    let (_, p) = imp_to_post (Variable.Set.empty, p) in
     let p : Proto.Code.t = p
       |> Post.inline_assigns Variable.Set.empty
       |> post_to_proto
@@ -225,6 +225,10 @@ let tests = "test_predicates" >::: [
     let x = Variable.from_name "x" in
     let a = Variable.from_name "a" in
     let b = Variable.from_name "b" in
+    let wr = Imp.(Write {
+      array=Variable.from_name "A";
+      index=[Var a; Var b]; payload=None}
+    ) in
     let p = Block [
       Decl [
         x, None;
@@ -234,7 +238,7 @@ let tests = "test_predicates" >::: [
         x, None;
         b, Some (Var x);
       ];
-      Acc (Variable.from_name "A", Access.write [Var a; Var b] None)
+      wr
     ] in
     let p1 =
       let open Post in
@@ -251,7 +255,7 @@ let tests = "test_predicates" >::: [
         Skip
       )
     in
-    assert_post (imp_to_post p |> snd) p1;
+    assert_post (imp_to_post (Variable.Set.empty, p) |> snd) p1;
     let p2 =
       let open Post in
       (*
@@ -282,7 +286,7 @@ let tests = "test_predicates" >::: [
     in
     assert_post p3 (Post.inline_assigns Variable.Set.empty p2);
     (* Translate: *)
-    let (_, p) = imp_to_post p in
+    let (_, p) = imp_to_post (Variable.Set.empty, p) in
     let p : Proto.Code.t = p
       |> Post.inline_assigns Variable.Set.empty
       |> post_to_proto
