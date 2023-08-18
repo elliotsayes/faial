@@ -1,5 +1,0 @@
-# https://fmttools.ewi.utwente.nl/redmine/projects/vercors-verifier/wiki/Zeropvl
-shared x;
-const local tid
-where distinct [tid];
-rw x[tid];
