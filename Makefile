@@ -35,10 +35,9 @@ faial-bc:
 
 test: build-test
 	$(DUNE) runtest
-	(cd examples/data-dep; python3 run.py)
 
 sys-test:
-	@./run-tests.py
+	python3 examples/data-dep/run.py
 
 gitlab-test:
 	 gitlab-runner exec docker test --cache-dir=${GITLAB_CACHE} --docker-cache-dir=${GITLAB_CACHE} --docker-volumes=${GITLAB_CACHE}
