@@ -16,3 +16,7 @@
  (libraries stage0 protocols drf inference oUnit bank_conflicts)
 )
 
+(cram
+  (deps ../index_dep/main.exe
+  )
+)
