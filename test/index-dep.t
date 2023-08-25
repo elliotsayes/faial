@@ -1,3 +1,7 @@
+Preamble:
+
+  $ export EXE=../index_dep/main.exe
+
 # Input affects control flow
 
 Example: integer flows from array index
@@ -9,7 +13,7 @@ Example: integer flows from array index
   >   if (i < n) y[j] = a*j;
   > }
   > EOF
-  $ ../index_dep/main.exe example.cu
+  $ $EXE example.cu
   saxpy,data,ind
 
 Example: data flows from array to conditional
@@ -20,7 +24,7 @@ Example: data flows from array to conditional
   >  if (y[i]) x[i + 1] = a*x[i];
   > }
   > EOF
-  $ ../index_dep/main.exe example.cu
+  $ $EXE example.cu
   saxpy,ind,ctrl
 
 Example: data flows from array to lower bound of loop
@@ -35,7 +39,7 @@ Example: data flows from array to lower bound of loop
   >   }
   > }
   > EOF
-  $ ../index_dep/main.exe example.cu
+  $ $EXE example.cu
   saxpy,ind,ctrl
 
 Example: data flows from array to upper bound of loop
@@ -49,7 +53,7 @@ Example: data flows from array to upper bound of loop
   >   }
   > }
   > EOF
-  $ ../index_dep/main.exe example.cu
+  $ $EXE example.cu
   saxpy,ind,ctrl
 
 # Input affects array index
@@ -63,7 +67,7 @@ Index `j` is read from an array and then used to access array `y`.
   >   y[j] = a*j;
   > }
   > EOF
-  $ ../index_dep/main.exe example.cu
+  $ $EXE example.cu
   saxpy,data,ind
 
 # Input affects array index and control-flow
@@ -82,7 +86,7 @@ Additionally, `k` is also used to index array `y`.
   >   }
   > }
   > EOF
-  $ ../index_dep/main.exe example.cu
+  $ $EXE example.cu
   saxpy,data,ctrl
 
 # Input does not affect
@@ -98,7 +102,7 @@ Example: uses an index from a for loop.
   >   }
   > }
   > EOF
-  $ ../index_dep/main.exe example.cu
+  $ $EXE example.cu
   saxpy,ind,ind
 
 Example: index loaded from an array and used in a loop, but loop
@@ -113,7 +117,7 @@ has no accesses.
   >   }
   > }
   > EOF
-  $ ../index_dep/main.exe example.cu
+  $ $EXE example.cu
   saxpy,ind,ind
 
 Example: index loaded from array and used in a conditional, but conditional has
@@ -127,5 +131,5 @@ no accesses.
   >   }
   > }
   > EOF
-  $ ../index_dep/main.exe example.cu
+  $ $EXE example.cu
   saxpy,ind,ind
