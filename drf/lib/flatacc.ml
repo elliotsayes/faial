@@ -93,12 +93,22 @@ module Kernel = struct
     ]
 
   let from_loc_split (k:Locsplit.Kernel.t) : t =
+    let approx_local_variables =
+
+      Variable.Set.diff (k.local_variables) Variable.tid_var_set
+      |> Unsync.unsafe_binders k.code
+    in
+    let exact_local_variables =
+      approx_local_variables
+      |> Variable.Set.diff (Unsync.binders k.code Variable.Set.empty)
+      |> Variable.Set.union Variable.tid_var_set
+    in
     {
       name = k.name;
       array_name = k.array_name;
       code = Code.from_unsync k.code;
-      exact_local_variables = Unsync.binders k.code Variable.tid_var_set;
-      approx_local_variables = Variable.Set.diff k.local_variables Variable.tid_var_set;
+      exact_local_variables;
+      approx_local_variables;
       pre = b_and_ex (List.map Range.to_cond k.ranges);
     }
 end

@@ -85,6 +85,21 @@ let rec free_names (p:t) (fns: Variable.Set.t) : Variable.Set.t =
   | Cond (b, l) -> Freenames.free_names_bexp b fns |> free_names l
   | Seq (p, q) -> free_names p fns |> free_names q
 
+let rec unsafe_binders (i:t) (vars:Variable.Set.t) : Variable.Set.t =
+  match i with
+  | Skip | Assert _ | Acc _ -> vars
+  | Cond (_, p) -> unsafe_binders p vars
+  | Loop (r, p) ->
+    let vars =
+      let r_vars = Freenames.free_names_range r Variable.Set.empty in
+      if Variable.Set.is_empty (Variable.Set.inter r_vars vars) then
+        vars
+      else
+        Variable.Set.add r.var vars
+    in
+    unsafe_binders p vars
+  | Seq (p, q) -> unsafe_binders p vars |> unsafe_binders q
+
 let rec binders (i:t) (vars:Variable.Set.t) : Variable.Set.t =
   match i with
   | Skip | Assert _ | Acc _ -> vars
