@@ -126,10 +126,30 @@ no accesses.
   $ cat > example.cu << EOF
   > __global__ void saxpy(int n, float a, float *x, float *y) {
   >   int i = blockIdx.x*blockDim.x + threadIdx.x;
-  >   if (x[i]) {
-  >     int w = i + 1;
+  >   for (int j = 0; j < n; j++) {
+  >     y[j] = i;
   >   }
   > }
   > EOF
   $ $EXE example.cu
   saxpy,ind,ind
+
+# Exact and approximate variables
+
+  $ approx() { ../drf/bin/main.exe --show-flat-acc "$1" | grep "approx locals" | cut -d":" -f2; }
+
+Second loop variable is rendered as j1 and x[i] as unknonw_1.
+
+  $ cat > example.cu << EOF
+  > __global__ void saxpy(int n, float a, float *x, float *y) {
+  >   int i = blockIdx.x*blockDim.x + threadIdx.x;
+  >   for (int j = 0; j < n; j++) {
+  >     y[j] = i;
+  >   }
+  >   for (int j = x[i]; j < n; j++) {
+  >     y[j] = i;
+  >   }
+  > }
+  > EOF
+  $ approx example.cu
+   _unknown_1, j1;

@@ -17,6 +17,6 @@
 )
 
 (cram
-  (deps ../index_dep/main.exe
+  (deps ../index_dep/main.exe ../drf/bin/main.exe
   )
 )
