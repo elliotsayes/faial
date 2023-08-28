@@ -94,8 +94,7 @@ module Kernel = struct
 
   let from_loc_split (k:Locsplit.Kernel.t) : t =
     let approx_local_variables =
-
-      Variable.Set.diff (k.local_variables) Variable.tid_var_set
+      Variable.Set.diff k.local_variables Variable.tid_var_set
       |> Unsync.unsafe_binders k.code
     in
     let exact_local_variables =
