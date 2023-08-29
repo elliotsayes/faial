@@ -68,7 +68,9 @@ let list_to_string (vs: t list) : string =
   |> Common.join ", "
 
 let set_to_string (vs:Set.t) : string =
-  Set.elements vs |> list_to_string
+  Set.elements vs
+  |> List.sort (fun a b -> String.compare a.name b.name)
+  |> list_to_string
 
 (** Given a variable and a set of known variables, returns
     a fresh variable name. *)
