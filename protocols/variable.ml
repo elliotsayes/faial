@@ -54,7 +54,7 @@ let repr (x:t) : string =
 module OT = struct
   type t' = t
   type t = t'
-  let compare = fun x y -> Stdlib.compare x.name y.name
+  let compare = fun x y -> String.compare x.name y.name
 end
 
 module Set = Set.Make(OT)
@@ -79,11 +79,7 @@ let fresh (xs:Set.t) (x:t) : t =
   let rec do_fresh_name x n =
     let new_x =
       let name = x.name ^ string_of_int n in
-      let label = match x.label with
-        | Some _ as o -> o
-        | None -> Some x.name
-      in
-      { x with name; label; }
+      { x with name; }
     in
     if Set.mem new_x xs
     then do_fresh_name x (n + 1)
