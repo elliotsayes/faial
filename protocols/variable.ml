@@ -77,7 +77,14 @@ let set_to_string (vs:Set.t) : string =
 
 let fresh (xs:Set.t) (x:t) : t =
   let rec do_fresh_name x n =
-    let new_x = set_name (x.name ^ string_of_int n) x in
+    let new_x =
+      let name = x.name ^ string_of_int n in
+      let label = match x.label with
+        | Some _ as o -> o
+        | None -> Some x.name
+      in
+      { x with name; label; }
+    in
     if Set.mem new_x xs
     then do_fresh_name x (n + 1)
     else new_x
