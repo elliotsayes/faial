@@ -15,8 +15,8 @@ c-ast:
 	cp -f $(BUILD)/inference/bin/c_ast.exe c-ast
 
 data-dep:
-	$(DUNE) build index_dep/data_dep.exe
-	cp -f $(BUILD)/index_dep/data_dep.exe data-dep
+	$(DUNE) build index_dep/main.exe
+	cp -f $(BUILD)/index_dep/main.exe data-dep
 
 build-test:
 	$(DUNE) build test
@@ -37,7 +37,7 @@ test: build-test
 	$(DUNE) runtest
 
 sys-test:
-	@./run-tests.py
+	python3 examples/data-dep/run.py
 
 gitlab-test:
 	 gitlab-runner exec docker test --cache-dir=${GITLAB_CACHE} --docker-cache-dir=${GITLAB_CACHE} --docker-volumes=${GITLAB_CACHE}

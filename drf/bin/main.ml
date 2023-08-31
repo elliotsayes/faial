@@ -11,7 +11,7 @@ module T = ANSITerminal
 
 let box_environ (e:Environ.t) : PrintBox.t =
   PrintBox.(
-    v_record (List.map (fun (k,v) -> (k, text v)) e)
+    v_record (List.map (fun (k,v) -> (k, text v)) (Environ.labels e))
     |> frame
   )
 
@@ -43,12 +43,24 @@ let box_idx key ~idx ~dim =
   else [key, idx]
 
 
-let box_tasks (block_dim:Vec3.t) (t1:Task.t) (t2:Task.t) : PrintBox.t =
+let box_tasks (data_approx:Variable.Set.t) (block_dim:Vec3.t) (t1:Task.t) (t2:Task.t) : PrintBox.t =
   let open PrintBox in
   let locals =
     t1.locals
-    |> List.map (fun (k, v1) -> 
-      [| text k; text v1; text (List.assoc_opt k t2.locals |> Ojson.unwrap_or "?") |]
+    |> Environ.variables
+    |> List.map (fun (k, v1) ->
+      let lbl = Option.value ~default:k (Environ.label k t1.locals) in
+      let lbl =
+        (if Variable.Set.mem (Variable.from_name k) data_approx then
+          "★ "
+        else
+          "") ^ lbl
+      in
+      [|
+        text lbl;
+        text v1;
+        text (Environ.get k t2.locals |> Option.value ~default:"?")
+      |]
     )
   in
   let locals =
@@ -72,32 +84,35 @@ let box_globals (w:Witness.t) : PrintBox.t =
     else
       [name, dim_to_s v]
   in
+  { w.globals with
+  variables=
   [
     "index", Common.join " │ " w.indices;
   ]
   @ box_dim "gridDim" w.grid_dim
   @ box_idx "blockIdx" ~idx:w.block_idx ~dim:w.grid_dim
   @ box_dim "blockDim" w.block_dim
-  @ w.globals
+  @ w.globals.variables
+  }
   |> box_environ
 
 let box_locals (w:Witness.t) : PrintBox.t =
   let (t1, t2) = w.tasks in
-  box_tasks w.block_dim t1 t2
+  box_tasks w.data_approx w.block_dim t1 t2
 
 let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
 
 module Analysis = struct
   type t = {
-    kernel: Proto.prog Proto.kernel;
+    kernel: Proto.Code.t Proto.Kernel.t;
     report: (Symbexp.Proof.t * Z3_solver.Solution.t) list;
   }
 end
 
 module App = struct
   type t = {
-    kernels: Proto.prog Proto.kernel list;
+    kernels: Proto.Code.t Proto.Kernel.t list;
     timeout:int option;
     show_proofs:bool;
     show_proto:bool;
@@ -124,7 +139,7 @@ module App = struct
     ~logic
     ~block_dim
     ~grid_dim
-    (kernels: Proto.prog Proto.kernel list)
+    (kernels: Proto.Code.t Proto.Kernel.t list)
   :
     t
   = {
@@ -150,11 +165,11 @@ module App = struct
       let show (b:bool) (call:unit -> unit) : unit =
         if b then call () else ()
       in
-      show a.show_proto (fun () -> Proto.print_k p);
-      let p = p |> Proto.optimize_kernel |> Wellformed.translate in
+      show a.show_proto (fun () -> Proto.Kernel.print Proto.Code.to_s p);
+      let p = p |> Proto.Kernel.opt |> Wellformed.translate in
       show a.show_wf (fun () -> Wellformed.print_kernels p);
-      let p = Phasealign.translate p in
-      show a.show_align (fun () -> Phasealign.print_kernels p);
+      let p = Aligned.translate p in
+      show a.show_align (fun () -> Aligned.print_kernels p);
       let p = Phasesplit.translate p false in
       show a.show_phase_split (fun () -> Phasesplit.print_kernels p);
       let p = Locsplit.translate p in
@@ -187,7 +202,7 @@ let tui (output: Analysis.t list) : unit =
   |> List.iter (fun solution ->
     let kernel_name =
       let open Analysis in
-      solution.kernel.kernel_name in
+      solution.kernel.name in
     let errors =
       solution.report
       |> List.filter_map (
@@ -201,8 +216,8 @@ let tui (output: Analysis.t list) : unit =
     let print_errors errs =
       errs |> List.iteri (fun i (w:Witness.t) ->
         T.print_string [T.Bold; T.Foreground T.Blue] ("\n~~~~ Data-race " ^ string_of_int (i + 1) ^ " ~~~~\n\n");
+        let (t1, t2) = w.tasks in
         let locs =
-          let (t1, t2) = w.tasks in
           let l = [t1.location; t2.location] |> Common.flatten_opt in
           match l with
           | [x1; x2] when x1 = x2 -> [x1]
@@ -219,6 +234,15 @@ let tui (output: Analysis.t list) : unit =
         box_globals w |> print_box;
         T.print_string [T.Bold] ("\n\nLocals\n");
         box_locals w |> print_box;
+        (if Variable.Set.cardinal w.data_approx > 0 then
+          T.print_string [T.Bold; T.Underlined] ("\nWARNING: Expressions labelled with ★ are approximate. Expression depends on kernel input.\n")
+        else
+          ());
+        (if Variable.Set.cardinal w.control_approx > 0 then
+          (T.print_string [T.Bold; T.Underlined] ("\nWARNING: Data-race may be spurious. Control-flow depends on kernel input!\n");
+          )
+        else
+          ());
         print_endline "";
         T.print_string [T.Underlined] ("(proof #" ^ string_of_int w.proof_id ^ ")\n");
       );
@@ -247,7 +271,7 @@ let jui (output: Analysis.t list) : unit =
     output
     |> List.map (fun analysis ->
       let open Analysis in
-      let kernel_name = analysis.kernel.kernel_name in
+      let kernel_name = analysis.kernel.name in
       let solutions = analysis.report in
       let unknowns, errors =
         solutions

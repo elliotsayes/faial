@@ -293,7 +293,7 @@ module ForInit = struct
   let opt_to_string (o:t option) : string =
     o
     |> Option.map to_string
-    |> Ojson.unwrap_or ""
+    |> Option.value ~default:""
 
 end
 
@@ -301,7 +301,17 @@ type d_subscript = {name: Variable.t; index: Expr.t list; ty: d_type; location: 
 let subscript_to_s (s:d_subscript) : string =
   Variable.name s.name ^ "[" ^ list_to_s Expr.to_string s.index ^ "]"
 
-type d_write = {target: d_subscript; source: Expr.t}
+type d_write = {
+  (* The index *)
+  target: d_subscript;
+  (* The value being written to the array *)
+  source: Expr.t;
+  (* A payload is used to detect *benign data-races*. If we are able to identify a
+     literal being written to the array, then the value is captured in the
+     payload. This particular value is propagated to MAPs.
+     *)
+  payload: int option
+}
 type d_read = {target: Variable.t; source: d_subscript}
 
 module Stmt = struct
@@ -420,9 +430,9 @@ module Stmt = struct
 end
 
 let for_to_expr (f:Stmt.d_for) : Expr.t list =
-  let l1 = f.init |> Option.map ForInit.to_exp |> Ojson.unwrap_or [] in
-  let l2 = f.cond |> Option.map (fun x -> [x]) |> Ojson.unwrap_or [] in
-  let l3 = f.inc |> Option.map (fun x -> [x]) |> Ojson.unwrap_or [] in
+  let l1 = f.init |> Option.map ForInit.to_exp |> Option.value ~default:[] in
+  let l2 = f.cond |> Option.map (fun x -> [x]) |> Option.value ~default:[] in
+  let l3 = f.inc |> Option.map (fun x -> [x]) |> Option.value ~default:[] in
   l1
   |> Common.append_rev1 l2
   |> Common.append_rev1 l3
@@ -430,7 +440,7 @@ let for_to_expr (f:Stmt.d_for) : Expr.t list =
 let for_loop_vars (f:Stmt.d_for) : Variable.t list =
   f.init
   |> Option.map ForInit.loop_vars
-  |> Ojson.unwrap_or []
+  |> Option.value ~default:[]
 
 module Kernel = struct
   type t = {
@@ -444,13 +454,18 @@ module Kernel = struct
     k.attribute |> KernelAttr.is_global
 end
 
-type d_def =
-  | Kernel of Kernel.t
-  | Declaration of Decl.t
+module Def = struct
+  type t =
+    | Kernel of Kernel.t
+    | Declaration of Decl.t
 
-type d_program = d_def list
+  let is_device_kernel : t -> bool =
+    function
+    | Kernel k when Kernel.is_global k -> true
+    | _ -> false
+end
 
-
+type d_program = Def.t list
 
 (* ------------------------------------- *)
 
@@ -490,17 +505,17 @@ module AccessState = struct
 
   let make_empty = []
 
-  let add_var (f:Variable.t -> Stmt.t list) (st:t) : (t * Variable.t) =
+  let add_var (lbl:string) (f:Variable.t -> Stmt.t list) (st:t) : (t * Variable.t) =
     let count = !counter in
     counter := count + 1;
-    let name = "_unknown_" ^ string_of_int count in
-    let x = Variable.from_name name in
+    let name : string = "_unknown_" ^ string_of_int count in
+    let x = {Variable.name=name; Variable.label=Some lbl;Variable.location=None} in
     (f x @ st, x)
 
   let add_stmt (s: Stmt.t) (st:t) : t = s :: st
 
   let add_expr (expr:Expr.t) (ty:d_type) (st:t) : t * Variable.t =
-    add_var (fun name ->
+    add_var (Expr.to_string expr) (fun name ->
       [
         let ty_var = TyVariable.make ~ty ~name in
         DeclStmt [Decl.from_expr ty_var expr]
@@ -508,16 +523,17 @@ module AccessState = struct
     ) st
 
 
-  let add_write (a:d_subscript) (source:Expr.t) (st:t) : (t * Variable.t) =
+  let add_write (a:d_subscript) (source:Expr.t) (payload:int option) (st:t) : (t * Variable.t) =
     let wr x = Stmt.WriteAccessStmt {
       target=a;
-      source=VarDecl {name=x; ty=a.ty}
+      source=VarDecl {name=x; ty=a.ty};
+      payload
     } in
     match source with
     | VarDecl {name=x; _} ->
       (add_stmt (wr x) st, x)
     | _ ->
-      add_var (fun x ->
+      add_var (subscript_to_s a) (fun x ->
         [
           wr x;
           let ty_var = TyVariable.make ~name:x ~ty:a.ty in
@@ -526,7 +542,7 @@ module AccessState = struct
       ) st
 
   let add_read (a:d_subscript) (st:t) : (t * Variable.t) =
-    add_var (fun x ->
+    add_var (subscript_to_s a) (fun x ->
       [
         ReadAccessStmt {target=x; source=a};
       ]
@@ -544,7 +560,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     -> rewrite_write a src
 
   | SizeOfExpr ty ->
-    fun st -> (st, RecoveryExpr ty)
+    fun st -> (st, SizeOfExpr ty)
 
   | RecoveryExpr ty ->
     fun st -> (st, RecoveryExpr ty)
@@ -647,7 +663,11 @@ and rewrite_write (a:C_lang.Expr.c_array_subscript) (src:C_lang.Expr.t) : (Acces
   fun st ->
     let (st, src') = rewrite_exp src st in
     let (st, a) = rewrite_subscript a st in
-    let (st, x) = AccessState.add_write a src' st in
+    let payload = match src with
+      | IntegerLiteral x -> Some x
+      | _ -> None
+    in
+    let (st, x) = AccessState.add_write a src' payload st in
   state_pure (Expr.VarDecl {name=x; ty=C_lang.Expr.to_type src}) st
 and rewrite_read (a:C_lang.Expr.c_array_subscript): (AccessState.t, Expr.t) state =
   fun st ->
@@ -765,7 +785,7 @@ let rewrite_kernel (k:C_lang.Kernel.t) : Kernel.t =
     attribute = k.attribute;
   }
 
-let rewrite_def (d:C_lang.c_def) : d_def =
+let rewrite_def (d:C_lang.c_def) : Def.t =
   match d with
   | Kernel k -> Kernel (rewrite_kernel k)
   | Declaration d ->
@@ -791,7 +811,7 @@ let kernel_to_s (k:Kernel.t) : Indent.t list =
   @
   Stmt.to_string k.code
 
-let def_to_s (d:d_def) : Indent.t list =
+let def_to_s (d:Def.t) : Indent.t list =
   let open Indent in
   match d with
   | Declaration d -> [Line (Decl.to_string d ^ ";")]

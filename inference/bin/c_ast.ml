@@ -2,7 +2,7 @@ open Stage0
 open Inference
 open Queries
 module Decl = C_lang.Decl
-let analyze (j:Yojson.Basic.t) : C_lang.c_program  * D_lang.d_program * (Imp.p_kernel list) =
+let analyze (j:Yojson.Basic.t) : C_lang.c_program  * D_lang.d_program * (Imp.Kernel.t list) =
   match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = D_lang.rewrite_program k1 in
@@ -34,7 +34,7 @@ let main
     print_endline "==================== STAGE 2: C with reads/writes as statements\n";
     D_lang.print_program k2;
     print_endline "==================== STAGE 3: Memory access protocols\n";
-    List.iter Imp.print_kernel k3;
+    List.iter Imp.Kernel.print k3;
     print_endline "==================== STAGE 4: stats\n";
   );
   let k1_len = List.length k1 in
@@ -43,19 +43,17 @@ let main
   k2 |> List.iter (
     let open D_lang in
     function
-    | Kernel k ->
-      Hashtbl.add k2_ht k.name k
-    | Declaration _ -> ()
+    | Def.Kernel k -> Hashtbl.add k2_ht k.name k
+    | Def.Declaration _ -> ()
   );
   k3 |> List.iter (fun k ->
-    let open Imp in
-    Hashtbl.add k3_ht k.p_kernel_name k
+    let open Imp.Kernel in
+    Hashtbl.add k3_ht k.name k
   );
   let l = List.fold_left (fun ((decls:Decl.t list), js) ->
     let open C_lang in
     function
     | Kernel k ->
-      let open Imp in
       let k2 = Hashtbl.find k2_ht k.name in
       let k3 = Hashtbl.find k3_ht k.name in
       (decls, `Assoc [
@@ -68,9 +66,9 @@ let main
         "conditionals", Conditionals.summarize k.code;
         "variables", Variables.summarize k.code;
         "params", Params.summarize k;
-        "accesses", Accesses.summarize k3.p_kernel_code;
+        "accesses", Accesses.summarize k3.code;
         "global decls", GlobalDeclArrays.summarize decls;
-        "divergence", Divergence.summarize k3.p_kernel_code;
+        "divergence", Divergence.summarize k3.code;
         "kernel", Queries.Kernel.summarize k3;
       ] :: js)
     | Declaration d ->

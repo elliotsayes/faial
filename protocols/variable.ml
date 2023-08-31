@@ -1,10 +1,17 @@
 open Stage0 (* Loads Location.t *)
 
-type t = {name: string; location: Location.t option}
+type t = {name: string; label: string option; location: Location.t option}
 
-let make ~name ~location : t = {name=name; location=Some location}
+let make ~name ~location : t = {name=name; label=None; location=Some location}
 
-let from_name (name:string) : t = {name=name; location=None}
+let from_name (name:string) : t = {name=name; label=None; location=None}
+
+let label (x:t) =
+  match x.label with
+  | Some l -> l
+  | None -> x.name
+
+let label_opt (x:t) = x.label
 
 let tidx : t = from_name "threadIdx.x"
 
@@ -21,7 +28,7 @@ let set_name (name:string) : t -> t =
 let set_location (location:Location.t) (v:t) : t =
   { v with location = Some location}
 
-let clear_location (v:t) = {name = v.name; location = None}
+let clear_location (v:t) = { v with location = None}
 
 let name (x:t) : string = x.name
 
@@ -47,7 +54,7 @@ let repr (x:t) : string =
 module OT = struct
   type t' = t
   type t = t'
-  let compare = fun x y -> Stdlib.compare x.name y.name
+  let compare = fun x y -> String.compare x.name y.name
 end
 
 module Set = Set.Make(OT)
@@ -61,14 +68,19 @@ let list_to_string (vs: t list) : string =
   |> Common.join ", "
 
 let set_to_string (vs:Set.t) : string =
-  Set.elements vs |> list_to_string
+  Set.elements vs
+  |> List.sort (fun a b -> String.compare a.name b.name)
+  |> list_to_string
 
 (** Given a variable and a set of known variables, returns
     a fresh variable name. *)
 
 let fresh (xs:Set.t) (x:t) : t =
   let rec do_fresh_name x n =
-    let new_x = set_name (x.name ^ string_of_int n) x in
+    let new_x =
+      let name = x.name ^ string_of_int n in
+      { x with name; }
+    in
     if Set.mem new_x xs
     then do_fresh_name x (n + 1)
     else new_x

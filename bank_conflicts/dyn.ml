@@ -17,9 +17,8 @@ let load_data (fname : string) : (string * int) list =
   with
     _ -> []
 
-let shared_arrays (k:Proto.prog Proto.kernel) : Variable.Set.t =
-  let open Proto in
-  Variable.Map.bindings k.kernel_arrays
+let shared_arrays (k:Proto.Code.t Proto.Kernel.t) : Variable.Set.t =
+  Variable.Map.bindings k.arrays
   |> List.filter_map (fun (k, a) ->
     if Memory.is_shared a then
       Some k
@@ -46,13 +45,12 @@ let main (fname : string) : unit =
     let c_ast = parsed_json |> C_lang.parse_program |> Result.get_ok in
     let d_ast = c_ast |> D_lang.rewrite_program in
     let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
-    let proto = imp |> List.map Imp.compile in
+    let proto = imp |> List.map Imp.Kernel.compile in
     let env = load_data "env.json" in
     (try
       List.iter (fun p ->
         let ctx = create_ctx ~bank_count:32 ~env ~arrays:(shared_arrays p) in
-        let open Proto in
-        let cost = Vectorized.eval p.kernel_code ctx in
+        let cost = Vectorized.eval p.code ctx in
         let v = Vectorized.NMap.max cost in
         print_endline ("Dynamic cost (bid " ^ string_of_int v.index ^ "): " ^ string_of_int v.value)
       ) proto;

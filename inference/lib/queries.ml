@@ -461,7 +461,7 @@ module NestedLoops = struct
         let loop_vars =
           f.init
           |> Option.map ForInit.loop_vars
-          |> Ojson.unwrap_or []
+          |> Option.value ~default:[]
           |> VarSet.of_list
         in
         (* Check if an expression uses a bound variable *)
@@ -852,6 +852,7 @@ module Accesses = struct
   open Imp
 
   type t = Variable.t * Access.t
+
   let cond_accesses (s: stmt) : t Seq.t =
     let rec cond_accesses (in_cond:bool) (s: stmt) : t Seq.t =
       match s with
@@ -860,13 +861,15 @@ module Accesses = struct
       | Assert _
       | LocationAlias _ ->
         Seq.empty
-      | Acc a ->
-        if in_cond then (Seq.return a) else Seq.empty
+      | Read r ->
+        if in_cond then (Seq.return (Imp.read_to_acc r)) else Seq.empty
+      | Write w ->
+        if in_cond then (Seq.return (Imp.write_to_acc w)) else Seq.empty
       | Block l ->
         Seq.concat_map (cond_accesses in_cond) (List.to_seq l)
       | If (_, s1, s2) ->
         Seq.append (cond_accesses true s1) (cond_accesses true s2)
-      | For (_, s) ->
+      | Star s | For (_, s) ->
         cond_accesses in_cond s
     in
     cond_accesses false s
@@ -875,7 +878,8 @@ module Accesses = struct
   let all_accesses: stmt -> t Seq.t =
     let f (s:stmt) =
       match s with
-      | Acc a -> Some a
+      | Read r -> Some (Imp.read_to_acc r)
+      | Write w -> Some (Imp.write_to_acc w)
       | _ -> None
     in
     find_all_map f
@@ -938,11 +942,10 @@ end
 
 
 module Kernel = struct
-  open Imp
 
-  let summarize (k:p_kernel) : json =
+  let summarize (k:Imp.Kernel.t) : json =
     let arrays =
-      k.p_kernel_arrays
+      k.arrays
       |> Variable.Map.bindings
       |> List.map (fun ((k:Variable.t), a) ->
         let open Memory in
@@ -955,7 +958,7 @@ module Kernel = struct
       )
     in
     `Assoc [
-      "name", `String k.p_kernel_name;
+      "name", `String k.name;
       "arrays", `List arrays;
     ]
 end

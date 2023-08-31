@@ -224,13 +224,12 @@ module Make (L:Logger.Logger) = struct
    *)
   let simplify_kernel
     (params:Params.t)
-    (k : Proto.prog Proto.kernel)
+    (k : Proto.Code.t Proto.Kernel.t)
   :
-    Proto.prog Proto.kernel
+    Proto.Code.t Proto.Kernel.t
   =
-    let open Proto in
-    let shared = shared_memory k.kernel_arrays in
-    let rec simpl_i : Proto.inst -> Proto.inst =
+    let shared = shared_memory k.arrays in
+    let rec simpl : Proto.Code.t -> Proto.Code.t =
       function
       | Acc (x, ({index=l; _} as a)) ->
         (* Flatten n-dimensional array and apply word size *)
@@ -246,10 +245,11 @@ module Make (L:Logger.Logger) = struct
           | None -> a
         in
         Acc (x, a)
-      | Sync -> Sync
-      | Cond (b, p) -> Cond (b, simpl_p p)
+      | Skip -> Skip
+      | Cond (b, p) -> Cond (b, simpl p)
+      | Decl (x, p) -> Decl (x, simpl p)
       | Loop (r, p) ->
-        let p = simpl_p p in
+        let p = simpl p in
         (match uniform params.block_dim r with
         | Some r' ->
           let cnd =
@@ -258,16 +258,15 @@ module Make (L:Logger.Logger) = struct
               (n_ge (Var r.var) r.lower_bound)
               (n_lt (Var r.var) r.upper_bound)
           in
-          Loop (r', [Cond(cnd, p)])
+          Loop (r', Cond(cnd, p))
         | None ->
           Loop (r, p)
         )
-
-    and simpl_p (l: Proto.prog) : Proto.prog =
-      List.map simpl_i l
+      | Sync -> Sync
+      | Seq (p, q) -> Seq (simpl p, simpl q)
     in
     let arrays =
-      k.kernel_arrays
+      k.arrays
       |> Variable.Map.map (fun m ->
         let open Memory in
         let m = { m with data_type = ["int"] } in
@@ -278,23 +277,23 @@ module Make (L:Logger.Logger) = struct
       )
     in
     { k with
-      kernel_code =
-        k.kernel_code
-        |> Proto.subst_block_dim params.block_dim
-        |> Proto.subst_grid_dim params.grid_dim
-        |> simpl_p;
-      kernel_arrays = arrays;
+      code =
+        k.code
+        |> Proto.Code.subst_block_dim params.block_dim
+        |> Proto.Code.subst_grid_dim params.grid_dim
+        |> simpl;
+      arrays = arrays;
     }
 
   (*
   Given a kernel return a sequence of slices.
    *)
-  let from_kernel (params:Params.t) (k: Proto.prog Proto.kernel) : t Seq.t =
+  let from_kernel (params:Params.t) (k: Proto.Code.t Proto.Kernel.t) : t Seq.t =
     let open Exp in
-    let shared = shared_memory k.kernel_arrays in
-    let rec on_i : Proto.inst -> t Seq.t =
+    let shared = shared_memory k.arrays in
+    let rec on_p : Proto.Code.t -> t Seq.t =
       function
-      | Proto.Acc (x, {index=l; _}) ->
+      | Acc (x, {index=l; _}) ->
         (* Flatten n-dimensional array and apply word size *)
         (match Variable.Map.find_opt x shared with
         | Some a ->
@@ -305,12 +304,13 @@ module Make (L:Logger.Logger) = struct
           in
           Seq.return (Index {shared_array=x; index=e})
         | None -> Seq.empty)
-      | Proto.Sync ->
+      | Sync ->
         Seq.empty
-      | Proto.Cond (b, p) ->
+      | Decl (_, p) -> on_p p
+      | Cond (b, p) ->
         on_p p
         |> Seq.map (fun (i:t) : t -> Cond (b, i))
-      | Proto.Loop (r, p) ->
+      | Loop (r, p) ->
         on_p p
         |> Seq.map (fun i ->
           match uniform params.block_dim r with
@@ -324,13 +324,13 @@ module Make (L:Logger.Logger) = struct
           | None ->
             Loop (r, i)
         )
-
-    and on_p (l: Proto.prog) : t Seq.t =
-      List.to_seq l |> Seq.flat_map on_i
+      | Skip -> Seq.empty
+      | Seq (p, q) ->
+        Seq.append (on_p p) (on_p q)
     in
-    k.kernel_code
-    |> Proto.subst_block_dim params.block_dim
-    |> Proto.subst_grid_dim params.grid_dim
+    k.code
+    |> Proto.Code.subst_block_dim params.block_dim
+    |> Proto.Code.subst_grid_dim params.grid_dim
     |> on_p
 end
 

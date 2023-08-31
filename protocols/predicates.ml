@@ -54,6 +54,7 @@ let pred_call_opt (name:string) (n:nexp) : bexp option =
 let get_predicates (b:bexp) : t list =
   let rec get_names_b (b:bexp) (preds:StringSet.t) : StringSet.t =
     match b with
+    | ThreadEqual n -> get_names_n n preds
     | Pred (x, _) -> StringSet.add x preds
     | BRel (_, b1, b2) -> get_names_b b1 preds |> get_names_b b2
     | BNot b -> get_names_b b preds
@@ -61,7 +62,7 @@ let get_predicates (b:bexp) : t list =
     | Bool _ -> preds
   and get_names_n (n:nexp) (ns:StringSet.t) : StringSet.t =
     match n with
-    | Var _ | Num _ | Proj _ -> ns
+    | Var _ | Num _ -> ns
     | Bin (_, n1, n2) -> get_names_n n1 ns |> get_names_n n2
     | NIf (b, n1, n2) -> get_names_b b ns |> get_names_n n1 |> get_names_n n2
     | NCall (_, n) -> get_names_n n ns
@@ -76,7 +77,6 @@ let inline: bexp -> bexp =
     | NCall _
     | Var _
     | Num _
-    | Proj _
       -> n
     | Bin (o, n1, n2) -> Bin (o, inline_n n1, inline_n n2)
     | NIf (b, n1, n2) -> NIf (inline_b b, inline_n n1, inline_n n2)
@@ -85,6 +85,7 @@ let inline: bexp -> bexp =
     | Pred (x, n) ->
       let p = Hashtbl.find all_predicates_db x in
       p.pred_body (inline_n n)
+    | ThreadEqual e -> ThreadEqual (inline_n e)
     | Bool _ -> b
     | BNot b -> BNot (inline_b b)
     | NRel (o, n1, n2) -> NRel (o, inline_n n1, inline_n n2)

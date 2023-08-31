@@ -175,7 +175,6 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
     with
       Division_by_zero ->
         failwith ("n_eval: division by zero: " ^ Exp.n_to_string n))
-  | Proj _ -> failwith ("n_eval: proj")
   | NCall (x,_) -> failwith ("n_eval: call " ^ x)
   | NIf (b, n1, n2) ->
     n_map3
@@ -203,6 +202,8 @@ and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
   | BNot b ->
     b_eval b ctx |> BMap.map (fun x -> not x)
 
+  | ThreadEqual _ ->
+    failwith ("b_eval: thread_equal")
   | Pred (x, _) ->
     failwith ("b_eval: pred " ^ x)
 
@@ -241,39 +242,43 @@ let access ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
 
 let add = NMap.pointwise (+)
 
-let rec eval ?(verbose=true) (p: Proto.prog) (ctx:t) : NMap.t =
-  List.fold_left (fun cost (i:Proto.inst) ->
-    let new_cost = match i with
-      | Acc (x, {index=[n]; _}) ->
-        if ctx.use_array x then
-          access ~verbose n ctx
-        else
-          zero_cost ctx
-      | Acc _ ->
-        failwith ("Unsupported access")
-      | Sync ->
-        zero_cost ctx
-      | Cond (b, p) ->
-        restrict b ctx |> eval p
-      | Loop (r, body) ->
-        let has_next = Range.has_next r in
-        if b_eval has_next ctx |> BMap.some_true then
-          let lo = n_eval r.lower_bound ctx in
-          let r = Range.next r in
-          add (
-            eval body (
-              ctx
-              |> restrict has_next
-              |> put r.var lo
-            )
+let eval ?(verbose=true) : Proto.Code.t -> t -> NMap.t =
+  let rec eval (cost:NMap.t) (p:Proto.Code.t) (ctx:t) : NMap.t =
+    match p with
+    | Sync
+    | Skip -> cost
+    | Acc (x, {index=[n]; _}) ->
+      if ctx.use_array x then
+        add cost (access ~verbose n ctx)
+      else
+        cost
+    | Acc _ ->
+      failwith ("Unsupported access")
+    | Decl (_, p) -> eval cost p ctx
+    | Cond (b, p) ->
+      restrict b ctx |> eval cost p
+    | Loop (r, body) ->
+      let has_next = Range.has_next r in
+      if b_eval has_next ctx |> BMap.some_true then
+        let lo = n_eval r.lower_bound ctx in
+        let r = Range.next r in
+        (* run one iteration *)
+        let cost = eval cost body (
+            ctx
+            |> restrict has_next
+            |> put r.var lo
           )
-          (eval [Loop (r, body)] ctx)
-
-        else
-          zero_cost ctx
-      in
-      add cost new_cost
-  ) (zero_cost ctx) p
+        in
+        (* run the rest of the loop *)
+        eval cost (Loop (r, body)) ctx
+      else
+        cost
+    | Seq (p, q) ->
+      let cost = eval cost p ctx in
+      eval cost q ctx
+  in
+  fun p ctx ->
+    eval (zero_cost ctx) p ctx
 
 
 

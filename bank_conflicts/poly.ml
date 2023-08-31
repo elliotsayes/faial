@@ -395,6 +395,5 @@ let rec from_nexp (x:Variable.t) (n:Exp.nexp) : t option =
   | Num _
   | Var _ -> Some (Exp0 n)
   | Bin _
-  | Proj _
   | NCall _
   | NIf _ -> None

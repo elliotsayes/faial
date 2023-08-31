@@ -12,12 +12,6 @@ let (>>=) = Option.bind
 let ensure (predicate: 'a -> bool) (v:'a) : 'a option =
   if predicate v then Some v else None
 
-(* Convert an optional boolean into a boolean, where None represents false *)
-let unwrap_or (default:'a): 'a option -> 'a =
-  function
-  | Some v -> v
-  | None -> default
-
 let unless (first:'a option) (second:'a option) : 'a option =
   if Option.is_some first then first else second
 
@@ -63,7 +57,7 @@ let has_kind (ks:string list) (o:j_object) : bool =
   (* Check if the kind is in 'ks' *)
   |> Option.map (fun (k:string) -> List.mem k ks)
   (* Convert bool option to bool *)
-  |> unwrap_or false
+  |> Option.value ~default:false
 
 let pp_js data =
   let result = Yojson.Basic.to_string data in

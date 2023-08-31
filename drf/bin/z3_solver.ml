@@ -51,30 +51,52 @@ let add
   |> Solver.add s
 
 module Environ = struct
-	type t = (string * string) list
+  open Common
+
+	type t = {
+    labels: string StringMap.t;
+    variables: (string * string) list;
+  }
 
 	let to_json (env:t) : json =
 		`Assoc (
-			List.map (fun (k, v) -> (k, `String v)) env
+			List.map (fun (k, v) -> (k, `String v)) env.variables
 		)
 
-	let to_string (env:t) : string =
+	let to_string (e:t) : string =
 		let open Yojson.Basic in
-		to_json env |> pretty_to_string
+		e |> to_json |> pretty_to_string
 
-	let get: string -> t -> string option = List.assoc_opt
+	let get (x: string) (e:t) : string option =
+    List.assoc_opt x e.variables
 
-	let parse (parse_num:string -> string) (m:Model.model) : t =
-		Model.get_const_decls m
-		|> List.map (fun d ->
-			let key: string = FuncDecl.get_name d |> Symbol.get_string in
-			let e : string = FuncDecl.apply d []
-				|> (fun e -> Model.eval m e true)
-				|> Option.map Expr.to_string
-				|> Ojson.unwrap_or "?"
-			in
-			(key, parse_num e)
-		)
+  let label (x:string) (e:t) : string option =
+    StringMap.find_opt x e.labels
+
+  let variables (e:t) : (string * string) list =
+    e.variables
+
+  let labels (e:t) : (string * string) list =
+    e.variables
+    |> List.map (fun (k, v) ->
+      (e |> label k |> Option.value ~default:k, v)
+    )
+
+	let parse (labels:(string*string) list) (parse_num:string -> string) (m:Model.model) : t =
+		let variables =
+      Model.get_const_decls m
+      |> List.map (fun d ->
+        let key: string = FuncDecl.get_name d |> Symbol.get_string in
+        let e : string = FuncDecl.apply d []
+          |> (fun e -> Model.eval m e true)
+          |> Option.map Expr.to_string
+          |> Option.value ~default:"?"
+        in
+        (key, parse_num e)
+      )
+    in
+    let labels = StringMapUtil.from_list labels in
+    { labels; variables }
 
 end
 
@@ -105,7 +127,9 @@ module Vec3 = struct
 	let parse (kvs:Environ.t) : (t * t) =
 		let parse_vec (suffix:string) : t =
 			let parse (x:string) : string =
-				Environ.get ("threadIdx." ^ x ^ "$T" ^ suffix) kvs |> Ojson.unwrap_or "0"
+				kvs
+				|> Environ.get ("threadIdx." ^ x ^ "$T" ^ suffix)
+				|> Option.value ~default:"0"
 			in
 			{x=parse "x"; y=parse "y"; z=parse "z"}
 		in
@@ -120,30 +144,30 @@ module Vec3 = struct
 end
 
 module Task = struct
-	type t = {
-		thread_idx: Vec3.t;
-		locals: Environ.t;
-		mode: Access.Mode.t;
-		location: Location.t option;
-	}
+  type t = {
+    thread_idx: Vec3.t;
+    locals: Environ.t;
+    access: Access.t;
+    location: Location.t option;
+  }
 
-	let mk ~thread_idx:tid ~locals:locals ~mode:mode ~location:location =
-		{thread_idx=tid; locals=locals; mode=mode; location=location}
+  let can_conflict (x1:t) (x2:t) : bool =
+    Access.can_conflict x1.access x2.access
 
-	let to_json (x:t) : json =
-		`Assoc [
-			"threadIdx", Vec3.to_json x.thread_idx;
-			"locals", Environ.to_json x.locals;
-			"mode", `String (Access.Mode.to_string x.mode);
-			"location",
+  let to_json (x:t) : json =
+    `Assoc [
+      "threadIdx", Vec3.to_json x.thread_idx;
+      "locals", Environ.to_json x.locals;
+      "mode", `String (Access.Mode.to_string x.access.mode);
+      "location",
         match x.location; with
         | Some l -> Location.to_json l
         | None -> `Null
-		]
+    ]
 
-	let to_string (v:t) : string =
-		let open Yojson.Basic in
-		to_json v |> pretty_to_string
+  let to_string (v:t) : string =
+    let open Yojson.Basic in
+    to_json v |> pretty_to_string
 
 end
 
@@ -151,12 +175,18 @@ module Witness = struct
   type t = {
     proof_id: int;
     indices : string list;
+    data_approx: Variable.Set.t;
+    control_approx: Variable.Set.t;
     tasks : Task.t * Task.t;
     block_idx: Vec3.t;
     block_dim: Vec3.t;
     grid_dim: Vec3.t;
     globals: Environ.t;
   }
+
+  let can_conflict (x:t) : bool =
+    let (t1, t2) = x.tasks in
+    Task.can_conflict t1 t2
 
 	let to_json (x:t) : json =
 		let (t1, t2) = x.tasks in
@@ -175,24 +205,22 @@ module Witness = struct
 		to_json v |> pretty_to_string
 
 
-	let parse_vec3 (d:Vec3.t) (prefix:string) (globals:Environ.t) : Environ.t * Vec3.t =
-		let (env, globals) = List.partition (fun (k, _) -> String.starts_with ~prefix:(prefix ^ ".") k) globals in
+	let parse_vec3 (d:Vec3.t) (prefix:string) (g:Environ.t) : Environ.t * Vec3.t =
+		let (env, globals) = List.partition (fun (k, _) -> String.starts_with ~prefix:(prefix ^ ".") k) g.variables in
 		let get ~default (x:string) : string =
-			let z = match Environ.get (prefix ^ "." ^ x) env with
-			| Some x -> x
-			| None -> default
-			in
-			z
+      let z = List.assoc_opt (prefix ^ "." ^ x) env in
+      Option.value z ~default
 		in
 		let v = Vec3.{
 			x = get ~default:d.x "x";
 			y = get ~default:d.y "y";
 			z = get ~default:d.z "z";
 		} in
-		(globals, v)
+		({g with variables=globals}, v)
 
-	let parse_indices (kvs:Environ.t) : string list =
-		(* 
+	let parse_indices (e:Environ.t) : string list =
+    let kvs = e.variables in
+		(*
 		$T1$idx$0: 1
 		$T2$idx$0: 1
 		*)
@@ -227,100 +255,109 @@ module Witness = struct
 		(* And look them up using parse_idx *)
 		|> List.map parse_idx 
 
-	let parse_mode (kvs:Environ.t) : Access.Mode.t * Access.Mode.t =
-		let parse (x:string) =
-      let open Access.Mode in
-			match List.assoc ("$T" ^ x ^ "$mode") kvs with
-			| "1" -> Wr
-			| "0" -> Rd
-			| _ -> failwith ("Unknown mode: " ^ x)
-		in
-		try
-			(parse "1", parse "2")
-		with
-			Failure(e) ->
-				List.iter (fun (k,v) -> prerr_endline (k ^ ": " ^ v)) kvs;
-				failwith e
-
-	let parse_meta (env:Environ.t) : (Environ.t * (string list * Access.Mode.t * Access.Mode.t)) =
-		let (kvs, env) = List.partition (fun (k, _) ->
-				String.starts_with ~prefix:"$" k
-		) env
-		in
-		let (t1_mode, t2_mode) = parse_mode kvs in
-		(env, (parse_indices kvs, t1_mode, t2_mode)) 
-
-	let parse (parse_location:int -> Location.t) (parse_num:string -> string) ~proof_id ~block_dim ~grid_dim (m:Model.model) : t =
-		let env = Environ.parse parse_num m in
-    let parse_loc (tid:string) =
-      env
-      |> Environ.get ("$T" ^ tid ^ "$loc")
-      |> Option.map (fun x ->
-        x
-        |> int_of_string
-        |> parse_location
-      )
+  let parse_meta (e:Environ.t) : (Environ.t * string list) =
+    let (kvs, env) = List.partition (fun (k, _) ->
+        String.starts_with ~prefix:"$" k
+    ) e.variables
     in
-    let t1_loc = parse_loc "1" in
-    let t2_loc = parse_loc "2" in
-		(* put all special variables in kvs
-			$T2$loc: 0
-			$T1$mode: 0
-			$T1$loc: 1
-			$T2$mode: 1
-			$T1$idx$0: 1
-			$T2$idx$0: 1
-		*)
-		let (env, (idx, t1_mode, t2_mode)) = parse_meta env in
-		let (tids, env) = List.partition (fun (k, _) ->
-				String.starts_with ~prefix:"threadIdx." k
-		) env
-		in
-		let (locals, globals) = List.partition (fun (k, _) ->
-			String.contains k '$'
-		) env
-		in
-		let t1_locals, t2_locals = List.partition (fun (k, _) ->
-			String.ends_with ~suffix:"$T1" k
-		) locals
-		in
-		let (globals, block_idx) = parse_vec3 Vec3.default "blockIdx" globals in
-		let (globals, block_dim) = parse_vec3 block_dim "blockDim" globals in
-		let (globals, grid_dim) = parse_vec3 grid_dim "gridDim" globals in
+    (
+      {e with variables=env},
+      parse_indices {e with variables=kvs}
+    )
 
-		let fix_locals (x:string) : string =
-			match Common.rsplit '$' x with
-			| Some (x, _) -> x
-			| None -> x
-		in
-		let fix_locals : (string * string) list -> (string * string) list =
-			List.map (fun (k, v) -> (fix_locals k, v))
-		in
-		let t1_locals = fix_locals t1_locals in
-		let t2_locals = fix_locals t2_locals in
-		let (t1_tid, t2_tid) = Vec3.parse tids in
-		let t1 = Task.{
-			thread_idx = t1_tid;
-			locals = t1_locals;
-			mode = t1_mode;
-      location = t1_loc;
-		} in
-		let t2 = Task.{
-			thread_idx = t2_tid;
-			locals = t2_locals;
-			mode = t2_mode;
-      location = t2_loc;
-		}
-		in
-		{
-      proof_id = proof_id;
-			block_idx = block_idx;
-			block_dim = block_dim;
-			grid_dim = grid_dim;
-			indices = idx;
-			tasks = t1, t2;
-			globals = globals;
-		}
+  let parse (parse_num:string -> string) ~proof ~block_dim ~grid_dim (m:Model.model) : t =
+    let env =
+      let open Symbexp in
+      Environ.parse (Proof.labels proof) parse_num m
+    in
+    let inst1, inst2 =
+      let parse_inst_id (tid:string) : int =
+        env
+        |> Environ.get ("$T" ^ tid ^ "$id")
+        |> Option.get
+        |> int_of_string
+      in
+      parse_inst_id "1", parse_inst_id "2"
+    in
+    let acc (idx:int) : Location.t * Access.t * Variable.Set.t * Variable.Set.t =
+      let acc = Symbexp.Proof.get idx proof in
+      (Flatacc.CondAccess.location acc,
+      Flatacc.CondAccess.access acc,
+      List.nth proof.data_approx idx,
+      List.nth proof.control_approx idx)
+    in
+    let (t1_loc, t1_acc, t1_data, t1_ctrl) = acc inst1 in
+    let (t2_loc, t2_acc, t2_data, t2_ctrl) = acc inst2 in
+    (* put all special variables in kvs
+      $T2$loc: 0
+      $T1$mode: 0
+      $T1$loc: 1
+      $T2$mode: 1
+      $T1$idx$0: 1
+      $T2$idx$0: 1
+    *)
+    let (env, idx) = parse_meta env in
+    let (tids, globals) = List.partition (fun (k, _) ->
+        String.starts_with ~prefix:"threadIdx." k
+    ) env.variables
+    in
+    let (locals, globals) = List.partition (fun (k, _) ->
+      String.contains k '$'
+    ) globals
+    in
+    let t1_locals, t2_locals = List.partition (fun (k, _) ->
+      String.ends_with ~suffix:"$T1" k
+    ) locals
+    in
+    let globals = {env with variables=globals} in
+    let (globals, block_idx) = parse_vec3 Vec3.default "blockIdx" globals in
+    let (globals, block_dim) = parse_vec3 block_dim "blockDim" globals in
+    let (globals, grid_dim) = parse_vec3 grid_dim "gridDim" globals in
+    let labels_of suffix =
+      StringMap.filter (fun x _ -> String.ends_with ~suffix x) globals.labels
+    in
+    let fix_var (x:string) : string =
+      match Common.rsplit '$' x with
+      | Some (x, _) -> x
+      | None -> x
+    in
+    let fix_labels (env: string StringMap.t) : string StringMap.t =
+      StringMap.fold (fun (k:string) (v:string) (m:string StringMap.t) ->
+        StringMap.add (fix_var k) v m
+      ) env StringMap.empty
+    in
+    let fix_locals : (string * string) list -> (string * string) list =
+      List.map (fun (k, v) -> (fix_var k, v))
+    in
+    let t1_locals = fix_locals t1_locals in
+    let t2_locals = fix_locals t2_locals in
+    let t1_labels = fix_labels (labels_of "$T1") in
+    let t2_labels = fix_labels (labels_of "$T2") in
+    let (t1_tid, t2_tid) = Vec3.parse {globals with variables=tids} in
+    let t1 = Task.{
+      thread_idx = t1_tid;
+      locals = {variables=t1_locals;labels=t1_labels};
+      access = t1_acc;
+      location = Some t1_loc;
+    } in
+    let t2 = Task.{
+      thread_idx = t2_tid;
+      locals = {variables=t2_locals;labels=t2_labels};
+      access = t2_acc;
+      location = Some t2_loc;
+    }
+    in
+    {
+      proof_id = proof.id;
+      block_idx = block_idx;
+      block_dim = block_dim;
+      grid_dim = grid_dim;
+      indices = idx;
+      tasks = t1, t2;
+      globals = globals;
+      data_approx = Variable.Set.union t1_data t2_data;
+      control_approx = Variable.Set.union t1_ctrl t2_ctrl;
+    }
 end
 
 module Solution = struct
@@ -404,13 +441,15 @@ module Solution = struct
         let body = Solver.to_string s ^ "(check-sat)\n(get-model)\n" in
         Tui.print_frame ~title ~body
       ) else ());
-      let block_dim = block_dim |> Ojson.unwrap_or Vec3.default in
-      let grid_dim = grid_dim |> Ojson.unwrap_or Vec3.default in
+      let block_dim = block_dim |> Option.value ~default:Vec3.default in
+      let grid_dim = grid_dim |> Option.value ~default:Vec3.default in
       let r = match Solver.check s [] with
       | UNSATISFIABLE -> Drf
       | SATISFIABLE ->
         (match Solver.get_model s with
-        | Some m -> Racy (Witness.parse (List.nth p.locations) !parse_num ~block_dim ~grid_dim ~proof_id:p.id m)
+        | Some m ->
+          let w = Witness.parse !parse_num ~block_dim ~grid_dim ~proof:p m in
+          if Witness.can_conflict w then Racy w else Drf
         | None -> failwith "INVALID")
       | UNKNOWN -> Unknown
       in

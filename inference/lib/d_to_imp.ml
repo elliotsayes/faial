@@ -88,7 +88,6 @@ type i_nexp =
   | Var of Variable.t
   | Num of int
   | Bin of nbin * i_exp * i_exp
-  | Proj of task * Variable.t
   | NCall of string * i_exp
   | NIf of i_exp * i_exp * i_exp
 
@@ -98,6 +97,7 @@ and i_bexp =
   | BRel of brel * i_exp * i_exp
   | BNot of i_exp
   | Pred of string * i_exp
+  | ThreadEqual of i_exp
 
 and i_exp =
   | NExp of i_nexp
@@ -154,7 +154,7 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
   | SizeOfExpr ty ->
     (match C_lang.parse_type ty with
     | Ok ty ->
-      let size = C_type.sizeof ty |> Ojson.unwrap_or 4 in
+      let size = C_type.sizeof ty |> Option.value ~default:4 in
       L.warning ("sizeof(" ^ C_type.to_string ty ^ ") = " ^ string_of_int size);
       ret_n (Num size)
     | Error _ ->
@@ -254,7 +254,6 @@ module Unknown = struct
         let (u, n1) = handle_n u n1 in
         let (u, n2) = handle_n u n2 in
         (u, Exp.Bin (o, n1, n2))
-      | Proj (x, y) -> (u, Exp.Proj (x, y))
       | NCall (x, n) ->
         let (u, n) = handle_n u n in
         (u, Exp.NCall (x, n)) 
@@ -286,6 +285,9 @@ module Unknown = struct
       | BNot b ->
         let (u, b) = handle_b u b in
         (u, BNot b)
+      | ThreadEqual n ->
+        let (u, n) = handle_n u n in
+        (u, ThreadEqual n)
       | Pred (x, n) ->
         let (u, n) = handle_n u n in
         (u, Pred (x, n)))
@@ -331,21 +333,21 @@ module Unknown = struct
     then Some b
     else None
 
-  let as_decls (l:Imp.locality) (xs:Variable.Set.t) : (Variable.t * Imp.locality * nexp option) list =
-    Variable.Set.elements xs |> List.map (fun x -> (x, l, None))
+  let as_decls (xs:Variable.Set.t) : (Variable.t * nexp option) list =
+    Variable.Set.elements xs |> List.map (fun x -> (x, None))
 
-  let decl_unknown (l:Imp.locality) (vars:Variable.Set.t) : Imp.stmt list =
+  let decl_unknown (vars:Variable.Set.t) : Imp.stmt list =
     if Variable.Set.is_empty vars then []
     else
-      [Decl (as_decls l vars)]
+      [Decl (as_decls vars)]
 
-  let ret_u (l:Imp.locality) (vars:Variable.Set.t) (s:Imp.stmt) : Imp.stmt list d_result =
-    Ok (decl_unknown l vars @ [s])
+  let ret_u (vars:Variable.Set.t) (s:Imp.stmt) : Imp.stmt list d_result =
+    Ok (decl_unknown vars @ [s])
 
   let ret_f ?(extra_vars=Variable.Set.empty) (f:'a -> Variable.Set.t * 'b) (handler:'b -> Imp.stmt) (n:'a) : Imp.stmt list d_result =
     let vars, n = f n in
     let vars = Variable.Set.union extra_vars vars in
-    ret_u Imp.Local vars (handler n)
+    ret_u vars (handler n)
 
   let ret_n ?(extra_vars=Variable.Set.empty): (nexp -> Imp.stmt) -> i_exp -> Imp.stmt list d_result =
     ret_f ~extra_vars to_nexp
@@ -365,7 +367,7 @@ end
 let cast_map f = Rjson.map_all f (fun idx _ e ->
   StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
 
-let parse_decl (d:D_lang.Decl.t) : (Variable.t * Imp.locality * nexp option) list d_result =
+let parse_decl (d:D_lang.Decl.t) : (Variable.t * nexp option) list d_result =
   let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
   let* ty = match C_lang.parse_type d.ty_var.ty with
   | Ok ty -> Ok ty
@@ -380,7 +382,7 @@ let parse_decl (d:D_lang.Decl.t) : (Variable.t * Imp.locality * nexp option) lis
       Ok (vars, Some n)
     | _ -> Ok (Variable.Set.empty, None)
     in
-    Ok ((d.ty_var.name, Imp.Local, n) :: Unknown.as_decls Imp.Local vars )
+    Ok ((d.ty_var.name, n) :: Unknown.as_decls vars )
   ) else (
     L.warning ("parse_decl: skipping non-int local variable '" ^ Variable.name d.ty_var.name ^ "' type: " ^ Rjson.pp_js d.ty_var.ty);
     Ok []
@@ -493,41 +495,8 @@ let infer_range (r:D_lang.Stmt.d_for) : Range.t option d_result =
     Ok (Option.bind r ForRange.infer)
   | None -> Ok None
 
-let get_locality (s: Imp.stmt) : Imp.locality =
-  let rec is_sync: Imp.stmt -> bool =
-    function
-    | Sync -> true
-    | Assert _
-    | Acc _
-    | LocationAlias _
-    | Decl _
-    -> false
-    | Block l -> is_sync_l l
-    | If (_, s1, s2) -> is_sync_l [s1; s2]
-    | For (_, s) -> is_sync s
-  and is_sync_l: Imp.stmt list -> bool =
-    function
-    | s :: l ->
-      is_sync s || is_sync_l l
-    | [] -> false
-  in
-  if is_sync s then Imp.Global else Imp.Local
-
 let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
-  let u = Unknown.make in
-  let (u, x) = Unknown.create u in
-  let (u, lb) = Unknown.create u in
-  let (_, ub) = Unknown.create u in
-  let r = Range.{
-    var = x;
-    lower_bound = Var lb;
-    upper_bound = Var ub;
-    step = Plus (Num 1);
-    dir = Increase;
-  } in
-  let vars = Variable.Set.of_list [lb; ub] in
-  let l = get_locality (Block b) in
-  Unknown.ret_u l vars (For (r, Block b))
+  Ok [Imp.Star (Block b)]
 
 let ret (s:Imp.stmt) : Imp.stmt list d_result = Ok [s]
 
@@ -557,15 +526,16 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
   | WriteAccessStmt w ->
     let x = w.target.name |> Variable.set_location w.target.location in
     let* idx = with_msg "write.idx" (cast_map parse_exp) w.target.index in
-    idx |> ret_ns (fun idx -> Imp.Acc (x, {index=idx; mode=Wr}))
+    idx |> ret_ns (fun idx ->
+      Write {array=x; index=idx; payload=w.payload}
+    )
 
   | ReadAccessStmt r ->
     let x = r.source.name |> Variable.set_location r.source.location in
     let* idx = with_msg "read.idx" (cast_map parse_exp) r.source.index in
     idx
-    |> ret_ns ~extra_vars:(Variable.Set.of_list [r.target]) (fun idx ->
-      let open Imp in
-      Acc (x, {index=idx; mode=Rd})
+    |> ret_ns (fun idx ->
+      Read {target=r.target; array=x; index=idx}
     )
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 
@@ -601,7 +571,7 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     ->
     let* rhs = with_msg "assign.rhs" parse_exp rhs in
     let open Imp in
-    rhs |> ret_n (fun rhs -> Decl [v, Local, Some rhs])
+    rhs |> ret_n (fun rhs -> Decl [v, Some rhs])
 
   | ContinueStmt
   | BreakStmt
@@ -661,17 +631,12 @@ let parse_params (ps:C_lang.Param.t list) : (Variable.Set.t * Memory.t Variable.
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
   Ok (Variable.Set.of_list globals, Variable.MapUtil.from_list arrays)
 
-let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
+let cuda_preamble (tail:Imp.stmt) : Variable.Set.t * Imp.stmt =
   let open Exp in
-  let open Imp in
-  let mk_dims h (name:string) : (Variable.t * locality * nexp option) list =
-    List.map (fun x -> (Variable.from_name (name ^ "." ^ x), h, None) ) cuda_dims
+  let mk_dims (name:string) : (Variable.t * nexp option) list =
+    List.map (fun x -> (Variable.from_name (name ^ "." ^ x),  None) ) cuda_dims
   in
-  let all_vars =
-    List.concat_map (mk_dims Global) (List.map fst cuda_global_vars)
-    @
-    List.concat_map (mk_dims Local) (List.map fst cuda_local_vars)
-  in
+  let local_dims = List.concat_map mk_dims (List.map fst cuda_local_vars) in
   let mk_var (name:string) (suffix:string) (x:string) : nexp =
     Var (Variable.from_name (name ^ suffix ^ "." ^ x))
   in
@@ -689,19 +654,26 @@ let cuda_preamble (tail:Imp.stmt) : Imp.stmt =
       n_lt (mk_var name1 "Idx" x) (mk_var name2 "Dim" x)
     ) cuda_dims
   in
-  let local_vars : Variable.t list =
+  let var_list (vars : (string*int) list) : Variable.t list =
     cuda_dims
     |> List.concat_map (fun (x:string) ->
-      cuda_local_vars
+      vars
       |> List.map fst
       |> List.map (fun (name:string) ->
           Variable.from_name (name ^ "." ^ x)
       )
     )
-  in 
+  in
+  let local_vars : Variable.t list = var_list cuda_local_vars in
+  let global_vars : Variable.Set.t =
+    cuda_global_vars
+    |> var_list
+    |> Variable.Set.of_list
+  in
   let open Imp in
+  global_vars,
   Block [
-    Decl all_vars;
+    Decl local_dims;
     Assert (
       all_vars_constraints
       @
@@ -761,7 +733,7 @@ let parse_kernel
   (globals:Variable.t list)
   (assigns:(Variable.t * nexp) list)
   (k:D_lang.Kernel.t)
-: Imp.p_kernel d_result =
+: Imp.Kernel.t d_result =
   let* code = parse_stmt k.code in
   let* (params, arrays) = parse_params k.params in
   let params =
@@ -784,26 +756,35 @@ let parse_kernel
       add_type_params params l
   in
   let open Imp in
+  let globals, code =
+    let assigns = Decl (List.map (fun (k,v) -> (k, Some v)) assigns) in
+    cuda_preamble (Block (assigns :: code))
+  in
+  let params =
+    add_type_params params k.type_params
+    |> Variable.Set.union globals
+  in
+  let open Imp.Kernel in
   Ok {
-    p_kernel_name = k.name;
-    p_kernel_pre = Exp.b_true; (* TODO: implement this *)
-    p_kernel_code = ( 
-      let assigns = Decl (List.map (fun (k,v) -> (k, Global, Some v)) assigns) in
-      cuda_preamble (Block (assigns :: code))
-    );
-    p_kernel_params = add_type_params params k.type_params;
-    p_kernel_arrays = Variable.Map.union
-      (fun _ _ r -> Some r)
-      arrays shared;
+    name = k.name;
+    pre = Exp.b_true; (* TODO: implement this *)
+    code = code;
+    params = params;
+    arrays = Variable.Map.union (fun _ _ r -> Some r) arrays shared;
+    visibility =
+      match k.attribute with
+      | Default -> Global
+      | Auxiliary -> Device
+    ;
   }
 
-let parse_program (p:D_lang.d_program) : Imp.p_kernel list d_result =
+let parse_program (p:D_lang.d_program) : Imp.Kernel.t list d_result =
   let rec parse_p
     (arrays:(Variable.t * Memory.t) list)
     (globals:Variable.t list)
     (assigns:(Variable.t * nexp) list)
     (p:D_lang.d_program)
-  : Imp.p_kernel list d_result =
+  : Imp.Kernel.t list d_result =
     match p with
     | Declaration v :: l ->
       let (arrays, globals, assigns) =

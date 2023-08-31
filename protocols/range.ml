@@ -62,6 +62,7 @@ type t = {
   step: Step.t;
 }
 
+let var (r:t) : Variable.t = r.var
 
 let to_string (r : t) : string =
   let x = Variable.name r.var in
