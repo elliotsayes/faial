@@ -55,12 +55,16 @@ module Code = struct
   let dim (l:t) : int option =
     List.nth_opt l 0 |> Option.map CondAccess.dim
 
-  let from_unsync : Unsync.t -> t =
+  let from_unsync (thread_locals : Variable.Set.t) : Unsync.t -> t =
     let rec flatten (accum:t) (b:bexp) : Unsync.t -> t =
       function
       | Skip -> accum
       | Assert _ -> failwith "Internall error: call Unsync.inline_asserts first!"
-      | Acc (x, e) -> {location = Variable.location x; access = e; cond = b} :: accum
+      | Acc (x, e) -> {
+          location = Variable.location x;
+          access = Projections.translate thread_locals e;
+          cond = b
+        } :: accum
       | Cond (b', p) -> flatten accum (b_and b' b) p
       | Loop (r, p) -> flatten accum (b_and (Range.to_cond r) b) p
       | Seq (p, q) ->
@@ -102,10 +106,13 @@ module Kernel = struct
       |> Variable.Set.diff (Unsync.binders k.code Variable.Set.empty)
       |> Variable.Set.union Variable.tid_var_set
     in
+    let thread_locals = 
+      Variable.Set.union approx_local_variables exact_local_variables
+    in
     {
       name = k.name;
       array_name = k.array_name;
-      code = Code.from_unsync k.code;
+      code = Code.from_unsync thread_locals k.code;
       exact_local_variables;
       approx_local_variables;
       pre = b_and_ex (List.map Range.to_cond k.ranges);
