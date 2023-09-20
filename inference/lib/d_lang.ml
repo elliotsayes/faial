@@ -333,7 +333,24 @@ module Stmt = struct
     | CaseStmt of {case: Expr.t; body: t}
     | SExpr of Expr.t
   and d_for = {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: t}
-
+  module For = struct
+    let make ~init ~cond ~inc body : t = 
+      ForStmt({init = Some(init); cond = Some(cond); inc = Some(inc); body = body})
+    let empty : t =
+      ForStmt({init = None; cond = None; inc = None; body = CompoundStmt []})
+    let set_init (i:ForInit.t) (f:d_for) : t =
+      ForStmt {f with init = Some i}
+    let set_cond (i:Expr.t) (f:t) : t =
+      match f with
+      |ForStmt d -> 
+        ForStmt {d with cond = Some i}
+      |_ -> f
+    let set_inc(i:Expr.t) (f:t) : t =
+      match f with
+      |ForStmt d ->
+        ForStmt {d with inc = Some i}
+      |_ -> f        
+  end
   let to_string: t -> Indent.t list =
     let rec stmt_to_s : t -> Indent.t list =
       let ret l : Indent.t list =
@@ -771,9 +788,21 @@ let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t list =
     let (pre, e) = rewrite_exp e in
     decl pre (SExpr e)
 
+      
+let rec for_init_fix(c:Stmt.t list) : Stmt.t list =
+  (*if a for init is None and a variable declaration precedes the for statement
+  set the for init to that declaration*)
+  match c with
+  |Stmt.DeclStmt(d) :: Stmt.ForStmt({init=None;cond;inc;body}) :: rest  ->    
+    Stmt.ForStmt({init = Some(ForInit.Decls [List.hd d]);cond;inc;body}) :: for_init_fix rest
+  |Stmt.CompoundStmt l :: rest ->
+    Stmt.CompoundStmt(for_init_fix l) :: for_init_fix rest  
+  |hd::tl -> hd :: for_init_fix tl
+  |[] -> []
+         
 let rewrite_kernel (k:C_lang.Kernel.t) : Kernel.t =
   let rewrite_s (s:C_lang.Stmt.t) : Stmt.t =
-    match rewrite_stmt s with
+    match for_init_fix(rewrite_stmt s) with
     | [s] -> s
     | l -> CompoundStmt l
   in
