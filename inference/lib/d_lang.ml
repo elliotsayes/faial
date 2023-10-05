@@ -338,8 +338,11 @@ module Stmt = struct
       ForStmt({init = Some(init); cond = Some(cond); inc = Some(inc); body = body})
     let empty : t =
       ForStmt({init = None; cond = None; inc = None; body = CompoundStmt []})
-    let set_init (i:ForInit.t) (f:d_for) : t =
-      ForStmt {f with init = Some i}
+    let set_init (i:ForInit.t) (f:t) : t =
+      match f with
+      |ForStmt d -> 
+        ForStmt {d with init = Some i}
+      |_ -> f
     let set_cond (i:Expr.t) (f:t) : t =
       match f with
       |ForStmt d -> 

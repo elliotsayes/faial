@@ -1,22 +1,18 @@
-
 (tests
  (names
-   test_common
-   test_imp
-   test_locsplit
-   test_range
-   test_streamutil
-   test_ctype
-   test_slice
-   test_queries
-   test_poly
-   test_index_analysis
-   test_gv_parser
- )
- (libraries stage0 protocols drf inference oUnit bank_conflicts)
-)
+  test_common
+  test_imp
+  test_locsplit
+  test_range
+  test_streamutil
+  test_loop
+  test_ctype
+  test_slice
+  test_queries
+  test_poly
+  test_index_analysis
+  test_gv_parser)
+ (libraries stage0 protocols drf inference oUnit bank_conflicts))
 
 (cram
-  (deps ../index_dep/main.exe ../drf/bin/main.exe
-  )
-)
+ (deps ../index_dep/main.exe ../drf/bin/main.exe))
