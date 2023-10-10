@@ -56,6 +56,7 @@ let is_variable : D_lang.Expr.t -> bool =
   | NonTypeTemplateParmDecl _
   | ParmVarDecl _
   | VarDecl _
+  | EnumConstantDecl _
     -> true
   | _ -> false
 
@@ -150,6 +151,7 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
   | NonTypeTemplateParmDecl { name = v; _ }
   | ParmVarDecl { name = v; _ }
   | VarDecl { name = v; _ }
+  | EnumConstantDecl { name = v; _}
     -> ret_n (Var v)
   | SizeOfExpr ty ->
     (match C_lang.parse_type ty with
@@ -202,7 +204,6 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
   | CXXConstructExpr _
   | MemberExpr _
   | FunctionDecl _ 
-  | EnumConstantDecl _
   | CallExpr _ 
   | UnaryOperator _
   | CXXOperatorCallExpr _ ->
