@@ -2,7 +2,7 @@ open Inference
 open Protocols
 
 let analyze ~only_global (fname:string): unit =
-  let k = Protocol_parser.Silent.to_proto fname in
+  let k = Protocol_parser.Silent.to_proto ~abort_on_parsing_failure:false fname in
   k.kernels |> List.iter (fun k ->
     if only_global && not (Proto.Kernel.is_global k) then () else
     let open Proto in
