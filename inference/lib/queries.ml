@@ -820,7 +820,7 @@ module ForEach = struct
     to_seq s
     |> Seq.map (function
       | For r ->
-        let o = match D_to_imp.Default.infer_range r with
+        let o = match D_to_imp.Default.infer_for r with
         | Ok (Some r) -> Some r
         | _ -> None
         in

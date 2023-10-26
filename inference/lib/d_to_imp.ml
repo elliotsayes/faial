@@ -429,8 +429,8 @@ module ForRange = struct
   type t = {
     name: Variable.t;
     init: nexp;
-    cond: Loops.comparator unop;
-    inc: Loops.increment unop;
+    cond: Loop_infer.comparator unop;
+    inc: Loop_infer.increment unop;
   }
 
   let infer_bounds : t -> nexp * nexp * Range.direction =
@@ -460,7 +460,7 @@ module ForRange = struct
       Some (Range.Step.Mult (Num (Common.pow ~base:2 a)))
     | _ -> None
 
-  let infer (r:t) : Range.t option =
+  let to_range (r:t) : Range.t option =
     let (let*) = Option.bind in
     let (lb, ub, d) = infer_bounds r in
     let* step = infer_step r in
@@ -472,13 +472,13 @@ module ForRange = struct
       dir=d;
     }
 
-  let parse_unop (u:'a Loops.unop) : 'a unop option d_result =
+  let parse_unop (u:'a Loop_infer.unop) : 'a unop option d_result =
     let* arg = parse_exp u.arg in
     Ok (match Unknown.try_to_nexp arg with
       | Some arg -> Some {op=u.op; arg=arg}
       | None -> None)
 
-  let from_loop_infer (r:Loops.t) : t option d_result =
+  let from_loop_infer (r:Loop_infer.t) : t option d_result =
     let* init = parse_exp r.init in
     let* cond = parse_unop r.cond in
     let* inc = parse_unop r.inc in
@@ -489,11 +489,11 @@ module ForRange = struct
 
 end
 
-let infer_range (r:D_lang.Stmt.d_for) : Range.t option d_result =
-  match Loops.from_for r with
+let infer_for (r:D_lang.Stmt.d_for) : Range.t option d_result =
+  match Loop_infer.from_for r with
   | Some r ->
     let* r = ForRange.from_loop_infer r in
-    Ok (Option.bind r ForRange.infer)
+    Ok (Option.bind r ForRange.to_range)
   | None -> Ok None
 
 let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
@@ -581,7 +581,7 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
   | SExpr _ -> Ok []
 
   | ForStmt s ->
-    let* r = infer_range s in
+    let* r = infer_for s in
     let* b = with_msg "for.body" parse_stmt s.body in
     let open Imp in
     (match r with
