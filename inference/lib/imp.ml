@@ -359,17 +359,21 @@ let imp_to_post : Variable.Set.t * stmt -> Variable.Set.t * Post.t =
     | Write e -> ret (Acc (e.array, {index=e.index; mode=Wr e.payload}))
     | Read e ->
       fun (curr_id, globals) ->
+        (*
         let is_thread_local (e:nexp) : bool =
           Variable.Set.diff
             (Freenames.free_names_nexp e Variable.Set.empty)
             globals
           |> Variable.Set.is_empty
         in
+        *)
         let rd = Post.Acc (e.array, {index=e.index; mode=Rd}) in
+        (*
         if List.for_all is_thread_local e.index then
           let globals = Variable.Set.add e.target globals in
           (curr_id, globals, rd)
         else
+        *)
           (curr_id, globals, Decl (e.target, None, rd))
     | Block p -> imp_to_post_p p
     | If (b, s1, s2) ->
