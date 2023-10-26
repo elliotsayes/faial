@@ -328,14 +328,24 @@ module Stmt = struct
     | IfStmt of {cond: Expr.t; then_stmt: t; else_stmt: t}
     | CompoundStmt of t list
     | DeclStmt of Decl.t list
-    | WhileStmt of {cond: Expr.t; body: t}
+    | WhileStmt of d_cond
     | ForStmt of d_for
-    | DoStmt of {cond: Expr.t; body: t}
-    | SwitchStmt of {cond: Expr.t; body: t}
+    | DoStmt of d_cond
+    | SwitchStmt of d_cond
     | DefaultStmt of t
     | CaseStmt of {case: Expr.t; body: t}
     | SExpr of Expr.t
+  and d_cond = {cond: Expr.t; body: t}
   and d_for = {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: t}
+
+  let last: t -> t * t =
+    function
+    | CompoundStmt l ->
+      (match Common.last l with
+      | Some (l, x) -> CompoundStmt l, x
+      | None -> CompoundStmt [], CompoundStmt []
+      )
+    | i -> CompoundStmt [], i
 
   let to_string: t -> Indent.t list =
     let rec stmt_to_s : t -> Indent.t list =

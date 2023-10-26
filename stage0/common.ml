@@ -65,6 +65,19 @@ let split (c:char) (s:string) :  (string * string) option =
   | Some idx -> Some (String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1))
   | None -> None
 
+let last (l:'a list) : ('a list * 'a) option =
+  match l with
+  | [] -> None
+  | _ ->
+    let rec iter (l:'a list) =
+      match l with
+      | [x] -> [], x
+      | [] -> failwith "Does not support emptylist"
+      | x :: l ->
+        let (l, y) = iter l in
+        (x::l, y)
+    in
+    Some (iter l)
 
 let list_is_empty (l:'a list) : bool =
   match l with

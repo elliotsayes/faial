@@ -1,7 +1,5 @@
 open Protocols
 
-type variable = Variable.t
-
 type increment =
   | Plus
   | LShift
@@ -37,13 +35,13 @@ let parse_cmp (o:string) : comparator option =
 type 'a unop = {op: 'a; arg: D_lang.Expr.t}
 
 type t = {
-  name: variable;
+  name: Variable.t;
   init: D_lang.Expr.t;
   cond: comparator unop;
   inc: increment unop;
 }
 
-let parse_init: D_lang.ForInit.t option -> (variable*D_lang.Expr.t) option =
+let parse_init: D_lang.ForInit.t option -> (Variable.t * D_lang.Expr.t) option =
   function
   | Some (Decls ({ty_var={name=n; _}; init=Some (IExpr i); _}::_)) -> Some (n, i)
   | Some (Expr (BinaryOperator {lhs=l; opcode="="; rhs=i; _})) ->
@@ -52,7 +50,7 @@ let parse_init: D_lang.ForInit.t option -> (variable*D_lang.Expr.t) option =
     | _ -> None)
   | _ -> None
 
-let parse_cond (c:D_lang.Expr.t option) : (variable * comparator unop) option =
+let parse_cond (c:D_lang.Expr.t option) : (Variable.t * comparator unop) option =
   match c with
   | Some (BinaryOperator {lhs=l; opcode=o; rhs=r; _}) ->
     (match D_lang.Expr.to_variable l, parse_cmp o with
@@ -60,7 +58,7 @@ let parse_cond (c:D_lang.Expr.t option) : (variable * comparator unop) option =
     | _, _ -> None)
   | _ -> None
 
-  let rec parse_inc (i:D_lang.Expr.t option) : (variable * increment unop) option =
+  let rec parse_inc (i:D_lang.Expr.t option) : (Variable.t * increment unop) option =
   match i with
   | Some (BinaryOperator {opcode=","; lhs=l; _}) ->
     parse_inc (Some l)
@@ -99,6 +97,22 @@ let from_for (loop: D_lang.Stmt.d_for) : t option =
     inc = inc;
   }
 
+let from_while (loop: D_lang.Stmt.d_cond) : (t * D_lang.Stmt.t) option =
+  let (let*) = Option.bind in
+  let (body, inc) = D_lang.Stmt.last loop.body in
+  let inc = match inc with
+    | SExpr inc -> Some inc
+    | _ -> None
+  in
+  let* (x1, inc) = parse_inc inc in
+  let init = D_lang.Expr.from_variable x1 in
+  let* (_, cond) = parse_cond (Some loop.cond) in
+  Some ({
+    name = x1;
+    init = init;
+    cond = cond;
+    inc = inc;
+  }, body)
 
 let unop_to_s (f:'a -> string) (u:'a unop) : string =
   f u.op ^ " " ^ D_lang.Expr.to_string u.arg

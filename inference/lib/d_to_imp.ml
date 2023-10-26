@@ -496,6 +496,13 @@ let infer_for (r:D_lang.Stmt.d_for) : Range.t option d_result =
     Ok (Option.bind r ForRange.to_range)
   | None -> Ok None
 
+let infer_while (r:D_lang.Stmt.d_cond) : (Range.t * D_lang.Stmt.t) option d_result =
+  match Loop_infer.from_while r with
+  | Some (r, b) ->
+    let* r = ForRange.from_loop_infer r in
+    Ok (Option.bind r ForRange.to_range |> Option.map (fun r -> (r, b)))
+  | None -> Ok None
+
 let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
   Ok [Imp.Star (Block b)]
 
@@ -592,9 +599,17 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     let* body = with_msg "do.body" parse_stmt body in
     ret_loop body
 
-  | WhileStmt {body=body; _} ->
-    let* body = with_msg "while.body" parse_stmt body in
-    ret_loop body
+  | WhileStmt w ->
+    let* o = infer_while w in
+    (match o with
+    | Some (r, b) ->
+      let* b = with_msg "while.body" parse_stmt b in
+      let open Imp in
+      ret (For (r, Block b))
+    | None ->
+      let* b = with_msg "while.body" parse_stmt w.body in
+      ret_loop b
+    )
 
   | SwitchStmt s ->
     with_msg "switch.body" parse_stmt s.body
