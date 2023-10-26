@@ -51,6 +51,9 @@ module Expr = struct
     | UnresolvedLookupExpr {name=n; _} -> Some n
     | _ -> None
 
+  let from_variable (x:Variable.t) : t =
+    VarDecl {name=x; ty=C_type.j_int_type}
+
   let name =
     function
     | SizeOfExpr _ -> "SizeOfExpr"
