@@ -471,28 +471,28 @@ module ForRange = struct
       step=step;
       dir=d;
     }
-end
 
-let parse_unop (u:'a Loops.unop) : 'a unop option d_result =
-  let* arg = parse_exp u.arg in
-  Ok (match Unknown.try_to_nexp arg with
-    | Some arg -> Some {op=u.op; arg=arg}
-    | None -> None)
+  let parse_unop (u:'a Loops.unop) : 'a unop option d_result =
+    let* arg = parse_exp u.arg in
+    Ok (match Unknown.try_to_nexp arg with
+      | Some arg -> Some {op=u.op; arg=arg}
+      | None -> None)
 
-let infer_range (r:D_lang.Stmt.d_for) : Range.t option d_result =
-  let parse_for_range (r:Loops.d_for_range) : ForRange.t option d_result =
+  let from_loop_infer (r:Loops.t) : t option d_result =
     let* init = parse_exp r.init in
     let* cond = parse_unop r.cond in
     let* inc = parse_unop r.inc in
     Ok (match Unknown.try_to_nexp init, cond, inc with
     | Some init, Some cond, Some inc ->
-      let open ForRange in
       Some {name = r.name; init=init; cond=cond; inc=inc}
     | _, _, _ -> None)
-  in
-  match Loops.parse_for r with
+
+end
+
+let infer_range (r:D_lang.Stmt.d_for) : Range.t option d_result =
+  match Loops.from_for r with
   | Some r ->
-    let* r = parse_for_range r in
+    let* r = ForRange.from_loop_infer r in
     Ok (Option.bind r ForRange.infer)
   | None -> Ok None
 

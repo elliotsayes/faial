@@ -37,7 +37,7 @@ let parse_cmp (o:string) : comparator option =
 type 'a unop =
 	{op: 'a; arg: D_lang.Expr.t}
 
-type d_for_range = {
+type t = {
 	name: variable;
 	init: D_lang.Expr.t;
 	cond: comparator unop;
@@ -84,7 +84,7 @@ let rec parse_inc (i:D_lang.Expr.t option) : (variable * increment unop) option 
 	| _ -> None
 
 
-let parse_for (loop: D_lang.Stmt.d_for) : d_for_range option =
+let from_for (loop: D_lang.Stmt.d_for) : t option =
 	let (let*) = Option.bind in
 	let* (x1, init) = parse_init loop.init in
 	let* (_, cond) = parse_cond loop.cond in
@@ -120,7 +120,7 @@ let inc_to_s : increment -> string = function
   | RShift -> ">>"
   | Div -> "/"
 
-let for_range_to_s (l:d_for_range) : string =
+let to_string (l:t) : string =
 	"(" ^
 		Variable.name l.name ^
 		"= " ^ D_lang.Expr.to_string l.init ^
