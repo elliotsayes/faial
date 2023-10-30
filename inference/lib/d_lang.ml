@@ -51,6 +51,9 @@ module Expr = struct
     | UnresolvedLookupExpr {name=n; _} -> Some n
     | _ -> None
 
+  let from_variable (x:Variable.t) : t =
+    VarDecl {name=x; ty=C_type.j_int_type}
+
   let name =
     function
     | SizeOfExpr _ -> "SizeOfExpr"
@@ -325,14 +328,16 @@ module Stmt = struct
     | IfStmt of {cond: Expr.t; then_stmt: t; else_stmt: t}
     | CompoundStmt of t list
     | DeclStmt of Decl.t list
-    | WhileStmt of {cond: Expr.t; body: t}
+    | WhileStmt of d_cond
     | ForStmt of d_for
-    | DoStmt of {cond: Expr.t; body: t}
-    | SwitchStmt of {cond: Expr.t; body: t}
+    | DoStmt of d_cond
+    | SwitchStmt of d_cond
     | DefaultStmt of t
     | CaseStmt of {case: Expr.t; body: t}
     | SExpr of Expr.t
+  and d_cond = {cond: Expr.t; body: t}
   and d_for = {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: t}
+
   module For = struct
     let make ~init ~cond ~inc body : t = 
       ForStmt({init = Some(init); cond = Some(cond); inc = Some(inc); body = body})
@@ -354,6 +359,18 @@ module Stmt = struct
         ForStmt {d with inc = Some i}
       |_ -> f        
   end
+
+
+  let last: t -> t * t =
+    function
+    | CompoundStmt l ->
+      (match Common.last l with
+      | Some (l, x) -> CompoundStmt l, x
+      | None -> CompoundStmt [], CompoundStmt []
+      )
+    | i -> CompoundStmt [], i
+
+
   let to_string: t -> Indent.t list =
     let rec stmt_to_s : t -> Indent.t list =
       let ret l : Indent.t list =
