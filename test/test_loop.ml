@@ -1,19 +1,24 @@
 open OUnit2
 open Inference
-open Protocols
-open Loops    
 open D_lang
+open Protocols
 open C_type
-open Stmt
 
+let make_int ?(ty=(mk_j_type "int")) (var:string) =
+  TyVariable.make
+    ~name:(Variable.from_name var)
+    ~ty:ty
 
-let make_int ?(ty=(mk_j_type "int")) var =
-  TyVariable.make ~name:(Variable.from_name var) ~ty:ty
+let ty_var ?(mk_ty=("int")) (var:string) =  
+  TyVariable.make
+    ~name:(Variable.from_name var)
+    ~ty:(mk_j_type mk_ty)
 
-let make_decl ?(assignment=0) ?(ty="int") ?(var_name="x") () =
+(*let make_decl ?(assignment=0) ?(ty="int") ?(var_name="x") () =
   let ty_var = make_int ~ty:(mk_j_type ty) var_name in
   let init = Init.IExpr(D_lang.Expr.IntegerLiteral assignment) in
   Decl.from_init ty_var init 
+*)
 
 let make_init ?(assignment=0) ?(ty="int") ?(var_name="x") () =  
   let ty_var = make_int ~ty:(mk_j_type ty) var_name in
@@ -29,6 +34,33 @@ let make_cond ?(op="<") ?(lhs="x") rhs =
                       opcode = op;
                       ty = `Null}
 
+
+let make_op (op:string) (lhs:Expr.t) (rhs:Expr.t) =
+  Expr.BinaryOperator{
+    lhs = lhs;
+    rhs = rhs;
+    opcode = op;
+    ty = `Null
+  }
+  
+  
+let make_operation op lhs rhs =
+  let lhs = Expr.VarDecl (make_int lhs) in
+  Expr.BinaryOperator{
+    lhs = lhs;
+    rhs = rhs;
+    opcode = op;
+    ty = `Null}
+    
+let make_operation_int op lhs rhs =
+  let lhs = Expr.VarDecl (make_int lhs) in
+  let rhs = Expr.IntegerLiteral rhs in
+  Expr.BinaryOperator{
+    lhs = lhs;
+    rhs = rhs;
+    opcode = op;
+    ty = `Null}
+    
 let iteration l r opcode =
   Expr.BinaryOperator
     {
@@ -53,38 +85,102 @@ let make_iteration ?(opcode="+") ?(var_name="x") ?(change=1) () =
   
 
 let for_from_parts ?(init=None) ?(cond=None) ?(inc=None) () =
-    {
-      Stmt.init = init;
+  {      Stmt.init = init;
       Stmt.cond = cond;
       Stmt.inc = inc;
       Stmt.body = Stmt.ContinueStmt;
     }
+let while_from_parts cond body = {Stmt.cond = cond; Stmt.body = body}
 
 let tests = "loops" >::: [
-    "for_loop" >:: (fun _ ->
+    let open Loop_infer in
+    "for_loop" >:: (fun _ ->       
         (* for (x = 0; x < 100; x = x+1) *)        
         let parse_loop =
            for_from_parts
             ~init:(Some (make_init ()))
             ~cond:(Some (make_cond 100))
             ~inc:(Some (make_iteration ())) () |>
-           parse_for in
+           from_for in
         assert(parse_loop =
                Some{
                  init = (Expr.IntegerLiteral 0);
                  name = Variable.from_name "x";
                  cond =
                    {
-                     Loops.op = Loops.Lt;
-                     Loops.arg = D_lang.Expr.IntegerLiteral 100;
+                     op = Lt;
+                     arg = D_lang.Expr.IntegerLiteral 100;
                    };
                  inc =
                    {
-                     Loops.op = Loops.Plus;
-                     Loops.arg = Expr.IntegerLiteral 1;
+                     op = Plus;
+                     arg = Expr.IntegerLiteral 1;
                    }
                });
+        (*while(x < 100){x = x + 1}*)
+        let cond = (make_operation_int "<" "x" 100) in
+        let last = (make_operation "=" "x" (make_operation_int "+" "x" 1)) in
+        let compound = Stmt.CompoundStmt([Stmt.SExpr(last)]) in
+        let while_loop = while_from_parts cond compound in
+        let expected = Some({
+            name = Variable.from_name "x";
+            init = D_lang.Expr.from_variable (Variable.from_name "x");
+            cond = {
+              op = Lt;
+              arg = D_lang.Expr.IntegerLiteral 100;
+            };
+            inc = {
+              op = Plus;
+              arg = Expr.IntegerLiteral 1;
+            };
+          },Stmt.CompoundStmt([])) in
+        assert(from_while(while_loop) = expected);
 
+        (*while(x < 100) {my_sum = x + 30; x = x + 1;}*)
+        let cond = (make_operation_int "<" "x" 100) in
+        let last = (make_operation "=" "x" (make_operation_int "+" "x" 1)) in
+        let stmt1 = (make_operation "=" "my_sum" (make_operation_int "+" "x" 30)) in
+        let compound = Stmt.CompoundStmt([Stmt.SExpr(stmt1);Stmt.SExpr(last)]) in
+        let while_loop = while_from_parts cond compound in
+        let expected = Some({
+            name = Variable.from_name "x";
+            init = D_lang.Expr.from_variable (Variable.from_name "x");
+            cond = {
+              op = Lt;
+              arg = D_lang.Expr.IntegerLiteral 100;
+            };
+            inc = {
+              op = Plus;
+              arg = Expr.IntegerLiteral 1;
+            };
+          },Stmt.CompoundStmt([Stmt.SExpr(stmt1)])) in
+        assert(from_while(while_loop) = expected);
+
+        (*while(x < 100) {my_sum = x + 30.0; x = x + 2.5;}*)
+
+        let cond_arg = Expr.VarDecl(ty_var ~mk_ty:"float" "x") in
+        let cond = (make_op "<"
+                      cond_arg
+                      (Expr.FloatingLiteral(100.0))) in
+        let last = (make_operation "=" "x" (make_op "+" cond_arg (Expr.FloatingLiteral(2.5))))  in
+        let stmt1 = (make_operation "=" "my_sum" (make_op "+" cond_arg (Expr.FloatingLiteral(30.0)))) in
+        let compound = Stmt.CompoundStmt([Stmt.SExpr(stmt1);Stmt.SExpr(last)]) in
+        let while_loop = while_from_parts cond compound in
+        let expected = Some({
+            name = Variable.from_name "x";
+            init = D_lang.Expr.from_variable (Variable.from_name "x");
+            cond = {
+              op = Lt;
+              arg = Expr.FloatingLiteral 100.0;
+            };
+            inc = {
+              op = Plus;
+              arg = Expr.FloatingLiteral 2.5;
+            };
+          },Stmt.CompoundStmt([Stmt.SExpr(stmt1)])) in
+        assert(from_while(while_loop) = expected);
+        
+        (*
         (* for(x = 0; x<= 100; x = x+1) *)
         let parse_loop =
            for_from_parts
@@ -350,8 +446,8 @@ let tests = "loops" >::: [
          let stmt_list = [DeclStmt(split_decl);loop_no_init;DeclStmt(split_decl);loop_no_init;] in
          assert(for_init_fix(stmt_list) = [united_loop;united_loop]);
 
+        *)
       );
-         
-    
+            
   ]
 let _ = run_test_tt_main tests
