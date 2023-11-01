@@ -84,10 +84,10 @@ let parse_cond (c:D_lang.Expr.t option) : (Variable.t * comparator unop) option 
 let from_for (loop: D_lang.Stmt.d_for) : t option =
   let (let*) = Option.bind in
   let* (x1, inc) = parse_inc loop.inc in
-  let init =
+  let* init =
     match parse_init loop.init with
-    | Some (_, init) -> init
-    | None -> D_lang.Expr.from_variable x1
+    | Some (x2, init) -> if Variable.equal x1 x2 then Some init else None
+    | None -> Some (D_lang.Expr.from_variable x1)
   in
   let* (_, cond) = parse_cond loop.cond in
   Some {
