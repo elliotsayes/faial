@@ -320,10 +320,11 @@ let main
   (show_symbexp:bool)
   (logic:string option)
   (output_json:bool)
+  (ignore_parsing_errors:bool)
 :
   unit
 =
-  let parsed = Protocol_parser.Silent.to_proto fname in
+  let parsed = Protocol_parser.Silent.to_proto ~abort_on_parsing_failure:(not ignore_parsing_errors) fname in
   let grid_dim = parsed.options.grid_dim |> Vec3.from_dim3 in
   let block_dim = parsed.options.block_dim |> Vec3.from_dim3 in
   let ui = if output_json then jui else tui in
@@ -395,6 +396,10 @@ let output_json =
   let doc = "Output result as JSON." in
   Arg.(value & flag & info ["json"] ~doc)
 
+let ignore_parsing_errors =
+  let doc = "Ignore parsing errors." in
+  Arg.(value & flag & info ["ignore-parsing-errors"] ~doc)
+
 let main_t = Term.(
   const main
   $ get_fname
@@ -409,6 +414,7 @@ let main_t = Term.(
   $ show_symbexp
   $ logic
   $ output_json
+  $ ignore_parsing_errors
 )
 
 let info =
