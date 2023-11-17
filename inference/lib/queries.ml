@@ -821,14 +821,17 @@ module ForEach = struct
     |> Seq.map (function
       | For r ->
         let o = match D_to_imp.Default.infer_for r with
-        | Ok (Some r) -> Some r
-        | _ -> None
+          | Ok (Some r) -> Some r
+          | _ -> None
         in
         (For r, o)
       | Do _ as l -> (l, None)
-      | While _ as l ->
-        (* TODO *)
-        (l, None)
+      | While {cond;body} as r  ->
+       let o = match D_to_imp.Default.infer_while {cond;body} with
+          |Ok (Some(r,_)) -> Some r
+          |_ -> None
+        in
+        (r, o)
     )
 
   let summarize (s:Stmt.t) : json =
