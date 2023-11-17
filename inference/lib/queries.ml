@@ -825,7 +825,10 @@ module ForEach = struct
         | _ -> None
         in
         (For r, o)
-      | l -> (l, None)
+      | Do _ as l -> (l, None)
+      | While _ as l ->
+        (* TODO *)
+        (l, None)
     )
 
   let summarize (s:Stmt.t) : json =
