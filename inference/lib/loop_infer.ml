@@ -101,7 +101,8 @@ let from_while (loop: D_lang.Stmt.d_cond) : (t * D_lang.Stmt.t) option =
   let (let*) = Option.bind in
   let (body, inc) = D_lang.Stmt.last loop.body in
   let inc = match inc with
-    | SExpr inc -> Some inc
+    | SExpr inc ->
+      Some inc
     | _ -> None
   in
   let* (x1, inc) = parse_inc inc in

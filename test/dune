@@ -1,4 +1,3 @@
-
 (tests
  (names
    test_common
@@ -12,6 +11,8 @@
    test_poly
    test_index_analysis
    test_gv_parser
+   test_dlang
+   test_loop
  )
  (libraries stage0 protocols drf inference oUnit bank_conflicts)
 )
