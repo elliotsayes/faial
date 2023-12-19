@@ -321,12 +321,21 @@ let main
   (logic:string option)
   (output_json:bool)
   (ignore_parsing_errors:bool)
+  (block_dim:string option)
+  (grid_dim:string option)
 :
   unit
 =
   let parsed = Protocol_parser.Silent.to_proto ~abort_on_parsing_failure:(not ignore_parsing_errors) fname in
-  let grid_dim = parsed.options.grid_dim |> Vec3.from_dim3 in
-  let block_dim = parsed.options.block_dim |> Vec3.from_dim3 in
+  let parse_dim (given:string option) (parsed:Dim3.t) : Vec3.t =
+    (match given with
+    | Some x -> Dim3.parse x |> Result.value ~default:parsed
+    | None -> parsed
+    )
+    |> Vec3.from_dim3
+  in
+  let block_dim = parse_dim block_dim parsed.options.block_dim in
+  let grid_dim = parse_dim grid_dim parsed.options.grid_dim in
   let ui = if output_json then jui else tui in
   parsed.kernels
   |> App.make
@@ -400,6 +409,22 @@ let ignore_parsing_errors =
   let doc = "Ignore parsing errors." in
   Arg.(value & flag & info ["ignore-parsing-errors"] ~doc)
 
+let dim_help = {|
+  The value will be loaded from header if omitted.\
+  Examples (without quotes): "[2,2,2]" or "32"
+|}
+
+let block_dim =
+  let d = Gv_parser.default_block_dim |> Dim3.to_string in
+  let doc = "Sets the number of threads per block." ^ dim_help ^ "Default: " ^ d in
+  Arg.(value & opt (some string) None & info ["b"; "block-dim"; "blockDim"] ~docv:"DIM3" ~doc)
+
+let grid_dim =
+  let d = Gv_parser.default_grid_dim |> Dim3.to_string in
+  let doc = "Sets the number of blocks per grid." ^ dim_help ^ "Default: " ^ d in
+  Arg.(value & opt (some string) None & info ["g"; "grid-dim"; "gridDim"] ~docv:"DIM3" ~doc)
+
+
 let main_t = Term.(
   const main
   $ get_fname
@@ -415,6 +440,8 @@ let main_t = Term.(
   $ logic
   $ output_json
   $ ignore_parsing_errors
+  $ block_dim
+  $ grid_dim
 )
 
 let info =
