@@ -1,3 +1,5 @@
+open Stage0
+
 open Exp
 
 module Expr = Z3.Expr
@@ -67,6 +69,21 @@ end
 module W32 = struct
   let word_size = 32
   let decode_hex x = Int32.of_string x |> Int32.to_string
+end
+
+module SIGNED_32 = struct
+  let word_size = 32
+  let max_int32 = Int32.max_int |> Int64.of_int32
+
+  (*
+    Bit-vector maximization has no notion of signedness.
+    The following constrain guarantees that the goal being maximized
+    is a signed-positive number.
+
+    https://stackoverflow.com/questions/64484347/
+  *)
+  let decode_hex x =
+    Int64.(sub (sub (of_string x) max_int32) one |> to_string)
 end
 
 module W64 = struct
@@ -173,5 +190,54 @@ module CodeGen (N:NUMERIC_OPS) = struct
 		| Pred _ -> failwith "b_to_expr: invoke Predicates.inline to remove predicates"
 end
 
+module SignedBitVectorOps (W:WordSize) = struct
+  (*
+    Bit-vector maximization has no notion of signedness.
+    The following constrain guarantees that the goal being maximized
+    is a signed-positive number.
+
+    https://stackoverflow.com/questions/64484347/
+  *)
+  let offset = Common.pow ~base:2 (W.word_size - 1)
+  let mk_var ctx x = BitVector.mk_const_s ctx x W.word_size
+  let mk_num ctx n =
+    let n = n + offset in
+    BitVector.mk_numeral ctx (string_of_int n) W.word_size
+  let mk_bit_and = BitVector.mk_and
+  let mk_bit_or = BitVector.mk_or
+  let mk_bit_xor =  BitVector.mk_xor
+  let mk_left_shift = BitVector.mk_shl
+  let mk_right_shift = BitVector.mk_ashr
+  let mk_minus = BitVector.mk_sub
+  let mk_plus = BitVector.mk_add
+  let mk_mult = BitVector.mk_mul
+  let mk_div = BitVector.mk_sdiv
+  let mk_mod = BitVector.mk_smod
+  let mk_le = BitVector.mk_sle
+  let mk_ge = BitVector.mk_sge
+  let mk_gt = BitVector.mk_sgt
+  let mk_lt = BitVector.mk_slt
+  let parse_num x =
+    (* Input is: #x0000004000000000 *)
+    let offset n x = String.sub x n (String.length x - n) in
+    (* We need to remove the prefix #x *)
+    let x = offset 2 x in (* Removes the prefix: #x *)
+    (* Then we need to remove the prefix 0s,
+        otherwise Int32.of_string doesn't like it *)
+    let rec trim_0 x =
+      if String.length x > 0 && String.get x 0 = '0'
+      then trim_0 (offset 1 x)
+      else x
+    in
+    (* Prefix it with a 0x so that Int64.of_string knows it's an hex *)
+    let x = "0x" ^ trim_0 x in
+    (* Finally, convert it into an int64 (signed),
+        and then render it back to a string, as this is for display only *)
+    if x = "0x"
+    then (W.decode_hex "0x0")
+    else W.decode_hex x
+end
+
 module IntGen = CodeGen (ArithmeticOps)
 module Bv32Gen = CodeGen (BitVectorOps(W32))
+module SignedBv32Gen = CodeGen (SignedBitVectorOps(SIGNED_32))
