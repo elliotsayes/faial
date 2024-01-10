@@ -138,6 +138,8 @@ let n_rel o n1 n2 =
   | Num n1, Num n2 -> Bool (eval_nrel o n1 n2)
   | _, _ -> NRel (o, n1, n2)
 
+let num (n:int) : nexp = Num n
+
 let n_zero = Num 0
 
 let n_lt = n_rel NLt

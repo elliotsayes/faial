@@ -39,7 +39,7 @@ let tests = "Prob_exp" >::: [
   );
   "infer_dom_1" >:: (fun _ ->
     let x = Variable.from_name "x" in
-    let x_gt_0 = b_and (n_ge (Var x) (Num 0)) (n_lt (Var x) (num 10)) in
+    let x_gt_0 = b_and (n_ge (Var x) (Num 0)) (n_lt (Var x) (Num 10)) in
     match infer_dom x x_gt_0 with
     | Some (lo, hi) ->
       assert_equal (Int32.of_int 0) lo ~printer:Int32.to_string;
