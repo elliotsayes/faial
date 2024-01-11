@@ -120,7 +120,7 @@ module Make (L:Logger.Logger) = struct
             in
             Tick (idx_analysis e)
           | None -> Skip)
-      | Sync -> Skip
+      | Sync _ -> Skip
       | Decl (_, p)
       | Cond (_, p) -> from_p p
       | Loop (r, p) ->

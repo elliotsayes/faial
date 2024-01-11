@@ -30,7 +30,7 @@ let no_acc (p:Proto.Code.t) : bool =
 let rec is_data_exact (env:Variable.Set.t) : Proto.Code.t -> bool =
   function
   | Acc a -> typecheck_a env a
-  | Skip | Sync -> true
+  | Skip | Sync _ -> true
   | Seq (p, q) -> is_data_exact env p && is_data_exact env q
   | Cond (_, p) -> is_data_exact env p
   | Decl (_, p) -> is_data_exact env p
@@ -44,7 +44,7 @@ let rec is_data_exact (env:Variable.Set.t) : Proto.Code.t -> bool =
 
 let rec is_control_exact (env:Variable.Set.t) : Proto.Code.t -> bool =
   function
-  | Acc _ | Skip | Sync -> true
+  | Acc _ | Skip | Sync _ -> true
   | Seq (p, q) -> is_control_exact env p && is_control_exact env q
   | Cond (b, p) ->
     no_acc p || (

@@ -863,7 +863,7 @@ module Accesses = struct
     let rec cond_accesses (in_cond:bool) (s: stmt) : t Seq.t =
       match s with
       | Decl _
-      | Sync
+      | Sync _
       | Assert _
       | LocationAlias _ ->
         Seq.empty

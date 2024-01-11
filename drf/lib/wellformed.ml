@@ -33,7 +33,7 @@ let make_well_formed : Proto.Code.t -> Sync.t Streamutil.stream =
     function
     | Skip -> UInst Skip |> one
     | Acc e -> UInst (Acc e) |> one
-    | Sync -> SInst Sync.skip |> one
+    | Sync _ -> SInst Sync.skip |> one
     | Decl _ -> failwith "Invoke Proto.hoist_decls first."
     | Cond (b, p) ->
       infer in_loop p

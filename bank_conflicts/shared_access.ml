@@ -262,7 +262,7 @@ module Make (L:Logger.Logger) = struct
         | None ->
           Loop (r, p)
         )
-      | Sync -> Sync
+      | Sync l -> Sync l
       | Seq (p, q) -> Seq (simpl p, simpl q)
     in
     let arrays =
@@ -304,7 +304,7 @@ module Make (L:Logger.Logger) = struct
           in
           Seq.return (Index {shared_array=x; index=e})
         | None -> Seq.empty)
-      | Sync ->
+      | Sync _ ->
         Seq.empty
       | Decl (_, p) -> on_p p
       | Cond (b, p) ->

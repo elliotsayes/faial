@@ -22,7 +22,7 @@ let write_to_acc (w:write) : Variable.t * Access.t =
   (w.array, Access.{index=w.index; mode=Wr w.payload})
 
 type stmt =
-  | Sync
+  | Sync of Location.t option
   | Assert of bexp
   | Read of read
   | Write of write
@@ -47,7 +47,7 @@ type prog = stmt list
 
 let rec has_sync : stmt -> bool =
   function
-  | Sync -> true
+  | Sync _ -> true
   | If (_, p, q) -> has_sync p || has_sync q
   | Read _ | Write _ | Assert _ | LocationAlias _ | Decl _ -> false
   | Block l -> List.exists has_sync l
@@ -58,7 +58,7 @@ let fold : 'a. (stmt -> 'a -> 'a) -> stmt -> 'a -> 'a =
     let rec fold_i (s:stmt) (init:'a) : 'a =
       let init : 'a = f s init in
       match s with
-      | Sync
+      | Sync _
       | Assert _
       | Read _
       | Write _
@@ -93,7 +93,7 @@ let find_all (f: stmt -> bool) : stmt -> stmt Seq.t =
 module Post = struct
   type t =
   | Skip
-  | Sync
+  | Sync of Location.t option
   | Acc of (Variable.t * Access.t)
   | If of (bexp * t * t)
   | For of (Range.t * t)
@@ -104,7 +104,7 @@ module Post = struct
     let rec to_s : t -> Indent.t list =
       function
       | Skip -> [Line "skip;"]
-      | Sync -> [Line "sync;"]
+      | Sync _ -> [Line "sync;"]
       | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
       | Decl (x, n, p) ->
         let entry =
@@ -151,7 +151,7 @@ module Post = struct
     | Decl (x, o, l) -> Decl (x, o, loc_subst alias l)
     | If (b, s1, s2) -> If (b, loc_subst alias s1, loc_subst alias s2)
     | For (r, s) -> For (r, loc_subst alias s)
-    | Sync -> Sync
+    | Sync l -> Sync l
     | Skip -> Skip
     | Seq (p, q) ->
       Seq (loc_subst alias p, loc_subst alias q)
@@ -167,7 +167,7 @@ module Post = struct
       
     let rec subst (st:S.t) : t -> t =
       function
-      | Sync -> Sync
+      | Sync l -> Sync l
       | Skip -> Skip
       | Acc (x, a) -> Acc (x, M.a_subst st a)
       | Decl (x, o, p) ->
@@ -199,7 +199,7 @@ module Post = struct
       | Acc (x, _) as i ->
         if Variable.Map.mem x locs then i else Skip
       | Skip -> Skip
-      | Sync -> Sync
+      | Sync l -> Sync l
       | If (b, p1, p2) -> If (b, filter p1, filter p2)
       | For (r, p) -> For (r, filter p)
       | Decl (x, o, p) -> Decl (x, o, filter p)
@@ -210,7 +210,7 @@ module Post = struct
   let vars_distinct : t -> t =
     let rec distinct (vars:Variable.Set.t) (p: t) : Variable.Set.t * t =
       match p with
-      | Acc _ | Skip | Sync -> vars, p
+      | Acc _ | Skip | Sync _ -> vars, p
       | Seq (p, q) ->
         let (vars, p) = distinct vars p in
         let (vars, q) = distinct vars q in
@@ -276,7 +276,7 @@ module Post = struct
         (x, known, st)
       in
       match i with
-      | Sync -> Sync
+      | Sync l -> Sync l
       | Acc (x,e) -> Acc (x, a_subst st e)
       | Skip -> Skip
       | If (b, p1, p2) ->
@@ -355,7 +355,7 @@ let imp_to_post : Variable.Set.t * stmt -> Variable.Set.t * Post.t =
   in
   let rec imp_to_post_s : stmt -> (int * Variable.Set.t) -> int * Variable.Set.t * Post.t =
     function
-    | Sync -> ret Post.Sync
+    | Sync l -> ret (Post.Sync l)
     | Write e -> ret (Acc (e.array, {index=e.index; mode=Wr e.payload}))
     | Read e ->
       fun (curr_id, globals) ->
@@ -429,7 +429,7 @@ let imp_to_post : Variable.Set.t * stmt -> Variable.Set.t * Post.t =
 let rec post_to_proto : Post.t -> Proto.Code.t =
   let open Post in
   function
-  | Sync -> Sync
+  | Sync l -> Sync l
   | Acc (x,e) -> Acc (x, e)
   | Skip -> Skip
   | If (b, p1, p2) ->
@@ -472,7 +472,7 @@ let s_if (b:bexp) (p1:stmt) (p2:stmt) : stmt =
 let stmt_to_s: stmt -> Indent.t list =
   let rec stmt_to_s : stmt -> Indent.t list =
     function
-    | Sync -> [Line "sync;"]
+    | Sync _ -> [Line "sync;"]
     | Assert b -> [Line ("assert (" ^ b_to_string b ^ ");")]
     | Read r -> [Line (Variable.name r.target ^ " = ro " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
     | Write w ->

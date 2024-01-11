@@ -54,7 +54,7 @@ let free_names_list f l fns =
 let rec free_names_proto (i:Proto.Code.t) (fns:Variable.Set.t) : Variable.Set.t =
   match i with
   | Skip
-  | Sync -> fns
+  | Sync _ -> fns
   | Acc (_, a) -> free_names_access a fns
   | Cond (b, p1) ->
     free_names_bexp b fns
@@ -73,7 +73,7 @@ let rec free_names_proto (i:Proto.Code.t) (fns:Variable.Set.t) : Variable.Set.t 
 let rec free_locs_proto (i:Proto.Code.t) (fns:Variable.Set.t) =
   match i with
   | Skip
-  | Sync
+  | Sync _
     -> fns
   | Acc (x, _) -> Variable.Set.add x fns
   | Decl (_, p)

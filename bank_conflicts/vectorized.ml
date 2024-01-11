@@ -245,7 +245,7 @@ let add = NMap.pointwise (+)
 let eval ?(verbose=true) : Proto.Code.t -> t -> NMap.t =
   let rec eval (cost:NMap.t) (p:Proto.Code.t) (ctx:t) : NMap.t =
     match p with
-    | Sync
+    | Sync _
     | Skip -> cost
     | Acc (x, {index=[n]; _}) ->
       if ctx.use_array x then

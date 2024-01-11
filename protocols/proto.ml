@@ -8,7 +8,7 @@ module Code = struct
   (* The source instruction uses the base defined above *)
   type t =
     | Acc of (Variable.t * Access.t)
-    | Sync
+    | Sync of Location.t option
     | Cond of bexp * t
     | Loop of Range.t * t
     | Seq of t * t
@@ -18,7 +18,7 @@ module Code = struct
   let rec exists (f:t -> bool) (i: t) : bool =
     f i ||
     match i with
-    | Acc _ | Sync | Skip -> false
+    | Acc _ | Sync _ | Skip -> false
     | Cond (_, p) | Loop (_, p) | Decl (_, p) -> exists f p
     | Seq (p, q) -> exists f p || exists f q
 
@@ -31,7 +31,7 @@ module Code = struct
       | Skip -> Skip
       | Seq (p, q) -> Seq (subst s p, subst s q)
       | Acc (x, e) -> Acc (x, M.a_subst s e)
-      | Sync -> Sync
+      | Sync l -> Sync l
       | Cond (b, p) -> Cond (
           M.b_subst s b,
           subst s p
@@ -80,7 +80,7 @@ module Code = struct
     | Decl (x, p) -> Decl (x, opt p)
     | Seq (p, q) -> seq (opt p) (opt q)
     | Acc (x, e) -> Acc (x, Constfold.a_opt e)
-    | Sync -> Sync
+    | Sync l -> Sync l
     | Cond(b, p) -> cond (Constfold.b_opt b) (opt p)
     | Loop (r, p) -> loop (Constfold.r_opt r) (opt p)
 
@@ -107,7 +107,7 @@ module Code = struct
       match i with
       | Skip
       | Acc _
-      | Sync
+      | Sync _
         -> (i, xs)
       | Cond (b, p) ->
         let (p, xs) = uniq p xs in
@@ -147,7 +147,7 @@ module Code = struct
   let rec to_s : t -> Indent.t list =
     function
     | Skip -> [Line "skip;"]
-    | Sync -> [Line "sync;"]
+    | Sync _ -> [Line "sync;"]
     | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
     | Cond (b, p1) -> [
         Line ("if (" ^ b_to_string b ^ ") {");
@@ -285,7 +285,7 @@ module Kernel = struct
     let rec inline (vars:Variable.Set.t) (p:Code.t) : Variable.Set.t * Code.t =
       match p with
       | Decl (x, p) -> inline (Variable.Set.add x vars) p
-      | Acc _ | Skip | Sync -> (vars, p)
+      | Acc _ | Skip | Sync _ -> (vars, p)
       | Cond (b, p) ->
         let (vars, p) = inline vars p in
         (vars, Cond (b, p))
