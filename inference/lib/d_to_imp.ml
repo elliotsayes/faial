@@ -172,6 +172,16 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
     let* n1 = parse_e "then_expr" o.then_expr in
     let* n2 = parse_e "else_expr" o.else_expr in
     ret_n (NIf (b, n1, n2))
+
+  | CallExpr {func = FunctionDecl {name = n; _}; args = [n1; n2]; _}
+    when Variable.name n = "divUp" ->
+    let* n1 = parse_e "lhs" n1 in
+    let* n2 = parse_e "rhs" n2 in
+    (*  (n1 + n2 - 1)/n2 *)
+    let n2_minus_1 : i_nexp = Bin (Minus, n2, NExp (Num 1)) in
+    let n1_plus_n2_minus_1 : i_nexp = Bin (Plus, n1, NExp n2_minus_1) in
+    ret_n (Bin (Div, NExp n1_plus_n2_minus_1, n2))
+
   | CallExpr {func = FunctionDecl {name = f; _}; args = [n]; _} when Variable.name f = "__is_pow2" ->
     let* n = parse_e "arg" n in
     ret_b (Pred ("pow2", n))
