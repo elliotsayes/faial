@@ -142,6 +142,9 @@ module Post = struct
       then (
         match a.index with
         | [n] ->
+          (* use the inlined variable but with the location of the alias,
+             so that the error message appears in the right place. *)
+          let x = { alias.alias_source with location = x.location } in
           Acc (x, { a with index = [n_plus alias.alias_offset n] })
         | _ ->
           let idx = List.length a.index |> string_of_int in

@@ -410,7 +410,7 @@ let rec parse_load_expr (target:D_lang.Expr.t) (exp:D_lang.Expr.t)
   match exp with
   | VarDecl {ty=ty; _}
   | ParmVarDecl {ty=ty; _} when is_pointer ty ->
-    Left {source=exp; target=target; offset=IntegerLiteral 0}
+    Left {target=target; source=exp; offset=IntegerLiteral 0}
   | BinaryOperator ({lhs=l; _} as b) ->
     (match parse_load_expr target l with
     | Left l -> Left {l with offset =BinaryOperator {b with lhs=l.offset}}
@@ -426,8 +426,8 @@ let parse_location_alias (s:d_location_alias) : Imp.stmt list d_result =
   let* offset = with_msg "location_alias.offset" parse_exp s.offset in
   offset |> Unknown.ret_n (fun offset ->
     LocationAlias {
-      alias_source=source;
       alias_target=target;
+      alias_source=source;
       alias_offset=offset
     }
   )
