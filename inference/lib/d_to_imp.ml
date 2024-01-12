@@ -571,6 +571,20 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     let* l = with_msg "block" (cast_map parse_stmt) l in
     ret (Imp.Block (List.flatten l))
 
+  (* Support for location aliasing that declares a new variable *)
+  | DeclStmt ([{ty_var={ty=ty; _} as lhs; init=Some (IExpr rhs); _}] as l)
+    when is_pointer ty
+    ->
+    let lhs : D_lang.Expr.t = VarDecl lhs in
+    (match parse_load_expr lhs rhs with
+    | Left a ->
+      parse_location_alias a
+    | Right _ ->
+      (* fall back to the default parsing of decls *)
+      let* l = cast_map parse_decl l |> Result.map List.concat in
+      ret (Imp.Decl l)
+    )
+
   | DeclStmt l ->
     let* l = cast_map parse_decl l |> Result.map List.concat in
     ret (Imp.Decl l)
