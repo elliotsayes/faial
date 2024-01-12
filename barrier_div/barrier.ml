@@ -62,8 +62,8 @@ module Kernel = struct
 
   let divergent (k:t) : Location.t option list =
     let vars = Variable.Set.union k.local_variables Variable.tid_var_set in
-    List.map
-      (fun c -> if Code.is_uniform vars c then None else Code.location c)
+    List.filter_map
+      (fun c -> if Code.is_uniform vars c then None else Some (Code.location c))
       k.code
 
   let is_uniform (k:t) : bool =

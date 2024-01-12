@@ -1,6 +1,5 @@
 open Inference
-
-(* module T = ANSITerminal *)
+open Stage0
 
 let main
   (fname: string)
@@ -17,7 +16,12 @@ let main
   |> List.iter (fun k ->
     let k = Barrier.Kernel.from_proto k in
     let is_unif = Barrier.Kernel.is_uniform k in
-    print_endline (k.name ^ ": " ^ (if is_unif then "true" else "false"))
+    print_endline (k.name ^ ": " ^ (if is_unif then "true" else "false"));
+    Barrier.Kernel.divergent k |> List.iter (fun l ->
+      l |> Option.iter (fun i ->
+        print_endline (Location.to_string i)
+      )
+    )
   )
 
 
