@@ -41,6 +41,16 @@ module Expr = struct
     | UnresolvedLookupExpr of {name: Variable.t; tys: d_type list}
   and d_binary = {opcode: string; lhs: t; rhs: t; ty: d_type}
 
+  let is_variable : t -> bool =
+    function
+    | CXXMethodDecl _
+    | FunctionDecl _
+    | NonTypeTemplateParmDecl _
+    | ParmVarDecl _
+    | VarDecl _
+    | UnresolvedLookupExpr _ -> true
+    | _ -> false
+
   let to_variable : t -> Variable.t option =
     function
     | CXXMethodDecl {name=n; _}

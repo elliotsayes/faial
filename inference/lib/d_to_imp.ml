@@ -142,10 +142,12 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
 
   match e with
   (* ---------------- CUDA SPECIFIC ----------- *)
-  | MemberExpr {base=VarDecl{name=base; _}; name=dim; _}
-    when StringSet.mem (Variable.name base) cuda_base_vars && List.mem dim cuda_dims->
-    let x = Variable.name base ^ "." ^ dim |> Variable.from_name in
-    ret_n (Var x)
+  | MemberExpr {base=base; name=field; _}
+    when D_lang.Expr.is_variable base ->
+    (*when StringSet.mem (Variable.name base) cuda_base_vars && List.mem dim cuda_dims *)
+(*     let x = Variable.name base ^ "." ^ field |> Variable.from_name in *)
+    let base = D_lang.Expr.to_variable base |> Option.get in
+    ret_n (Var {base with name = base.name ^ "." ^ field})
 
   (* ------------------ nexp ------------------------ *)
   | NonTypeTemplateParmDecl { name = v; _ }
