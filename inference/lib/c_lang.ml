@@ -1452,7 +1452,9 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
   let parse_k (type_params:c_type_param list) (j:Yojson.Basic.t) : c_def list j_result =
     if is_kernel j then
       let* k = parse_kernel type_params j in
-      Ok [Kernel k]
+      (if k.code = CompoundStmt [] then Ok []
+      else
+        Ok [Kernel k])
     else Ok []
   in
   match k with
