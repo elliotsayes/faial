@@ -323,10 +323,15 @@ let main
   (ignore_parsing_errors:bool)
   (block_dim:string option)
   (grid_dim:string option)
+  (includes:string list)
 :
   unit
 =
-  let parsed = Protocol_parser.Silent.to_proto ~abort_on_parsing_failure:(not ignore_parsing_errors) fname in
+  let parsed = Protocol_parser.Silent.to_proto
+    ~abort_on_parsing_failure:(not ignore_parsing_errors)
+    ~includes
+    fname
+  in
   let parse_dim (given:string option) (parsed:Dim3.t) : Vec3.t =
     (match given with
     | Some x -> Dim3.parse x |> Result.value ~default:parsed
@@ -424,6 +429,9 @@ let grid_dim =
   let doc = "Sets the number of blocks per grid." ^ dim_help ^ "Default: " ^ d in
   Arg.(value & opt (some string) None & info ["g"; "grid-dim"; "gridDim"] ~docv:"DIM3" ~doc)
 
+let include_dir =
+  let doc = "Add the specified directory to the search path for include files." in
+  Arg.(value & opt_all string [] & info ["I"; "include-dir";] ~docv:"DIR" ~doc)
 
 let main_t = Term.(
   const main
@@ -442,6 +450,7 @@ let main_t = Term.(
   $ ignore_parsing_errors
   $ block_dim
   $ grid_dim
+  $ include_dir
 )
 
 let info =

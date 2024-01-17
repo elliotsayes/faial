@@ -14,11 +14,16 @@ module Make (L:Logger.Logger) = struct
     ?(abort_on_parsing_failure=true)
     ?(block_dim=None)
     ?(grid_dim=None)
+    ?(includes=[])
     (fname:string)
   :
     imp_kernel t
   =
-    let j = Cu_to_json.cu_to_json ~ignore_fail:(not abort_on_parsing_failure) fname in
+    let j = Cu_to_json.cu_to_json
+      ~ignore_fail:(not abort_on_parsing_failure)
+      ~includes
+      fname
+    in
     let options : Gv_parser.t = match Gv_parser.parse fname with
       | Some gv ->
         Logger.Colors.info ("Found GPUVerify args in source file: " ^ Gv_parser.to_string gv);
@@ -61,6 +66,7 @@ module Make (L:Logger.Logger) = struct
     ?(abort_on_parsing_failure=true)
     ?(block_dim=None)
     ?(grid_dim=None)
+    ?(includes=[])
     (fname:string)
   :
     proto_kernel t
@@ -70,6 +76,7 @@ module Make (L:Logger.Logger) = struct
       ~abort_on_parsing_failure
       ~block_dim
       ~grid_dim
+      ~includes
       fname
     in
     { parsed with
