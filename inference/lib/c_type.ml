@@ -107,6 +107,8 @@ let is_int (c:t) : bool =
   	"const long";
     "bool";
     "const bool";
+    "size_t";
+    "const size_t";
   ]
 
 (* ------------------------------------- *)
