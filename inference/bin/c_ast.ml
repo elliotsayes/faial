@@ -33,7 +33,7 @@ let main
     C_lang.print_program k1;
     print_endline "==================== STAGE 2: C with reads/writes as statements\n";
     D_lang.print_program k2;
-    print_endline "==================== STAGE 3: Memory access protocols\n";
+    print_endline "==================== STAGE 3: IMP\n";
     List.iter Imp.Kernel.print k3;
     print_endline "==================== STAGE 4: stats\n";
   );
