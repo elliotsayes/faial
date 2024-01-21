@@ -539,6 +539,10 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     when Variable.name n = "__syncthreads" ->
     ret (Imp.Sync n.location)
 
+  | SExpr (CallExpr {func=FunctionDecl{name=n; _}; args=[_]; _})
+    when Variable.name n = "sync" ->
+    ret (Imp.Sync n.location)
+
   | SExpr (CallExpr {func = FunctionDecl {name = n; _}; args = [b]; _})
     when Variable.name n = "__requires" ->
     ret_assert b
