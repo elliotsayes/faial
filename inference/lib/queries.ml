@@ -859,8 +859,8 @@ module Accesses = struct
 
   type t = Variable.t * Access.t
 
-  let cond_accesses (s: stmt) : t Seq.t =
-    let rec cond_accesses (in_cond:bool) (s: stmt) : t Seq.t =
+  let cond_accesses (s: Stmt.t) : t Seq.t =
+    let rec cond_accesses (in_cond:bool) (s: Stmt.t) : t Seq.t =
       match s with
       | Call _
       | Decl _
@@ -882,16 +882,16 @@ module Accesses = struct
     cond_accesses false s
 
   (* Search for all loops available *)
-  let all_accesses: stmt -> t Seq.t =
-    let f (s:stmt) =
+  let all_accesses: Stmt.t -> t Seq.t =
+    let f (s:Stmt.t) =
       match s with
       | Read r -> Some (Imp.read_to_acc r)
       | Write w -> Some (Imp.write_to_acc w)
       | _ -> None
     in
-    find_all_map f
+    Stmt.find_all_map f
 
-  let summarize (s:stmt) : json =
+  let summarize (s:Stmt.t) : json =
     let elems = all_accesses s |> List.of_seq in
     let cond_elems = cond_accesses s |> List.of_seq in
     let get_vars (x, y) = List.map fst x, List.map fst y in
@@ -917,28 +917,28 @@ end
 module Divergence = struct
   open Imp
 
-  type t = stmt
+  type t = Stmt.t
 
   (* Search for all loops available *)
-  let branch_with_tids: stmt -> t Seq.t =
-    let f (s:stmt) =
+  let branch_with_tids: Stmt.t -> t Seq.t =
+    let f (s:Stmt.t) =
       match s with
       | If (c, _, _) -> Freenames.contains_tid_bexp c
       | For (r, _) -> Freenames.contains_tid_range r
       | _ -> false
     in
-    find_all f
+    Stmt.find_all f
 
-  let summarize (s:stmt) : json =
+  let summarize (s:Stmt.t) : json =
     let elems = branch_with_tids s |> List.of_seq in
     let for_count =
       elems
-      |> List.filter is_for
+      |> List.filter Stmt.is_for
       |> List.length
     in
     let if_count =
       elems
-      |> List.filter is_if
+      |> List.filter Stmt.is_if
       |> List.length
     in
     `Assoc [

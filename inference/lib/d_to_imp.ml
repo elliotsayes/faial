@@ -349,26 +349,26 @@ module Unknown = struct
   let as_decls (xs:Variable.Set.t) : (Variable.t * nexp option) list =
     Variable.Set.elements xs |> List.map (fun x -> (x, None))
 
-  let decl_unknown (vars:Variable.Set.t) : Imp.stmt list =
+  let decl_unknown (vars:Variable.Set.t) : Imp.Stmt.t list =
     if Variable.Set.is_empty vars then []
     else
       [Decl (as_decls vars)]
 
-  let ret_u (vars:Variable.Set.t) (s:Imp.stmt) : Imp.stmt list d_result =
+  let ret_u (vars:Variable.Set.t) (s:Imp.Stmt.t) : Imp.Stmt.t list d_result =
     Ok (decl_unknown vars @ [s])
 
-  let ret_f ?(extra_vars=Variable.Set.empty) (f:'a -> Variable.Set.t * 'b) (handler:'b -> Imp.stmt) (n:'a) : Imp.stmt list d_result =
+  let ret_f ?(extra_vars=Variable.Set.empty) (f:'a -> Variable.Set.t * 'b) (handler:'b -> Imp.Stmt.t) (n:'a) : Imp.Stmt.t list d_result =
     let vars, n = f n in
     let vars = Variable.Set.union extra_vars vars in
     ret_u vars (handler n)
 
-  let ret_n ?(extra_vars=Variable.Set.empty): (nexp -> Imp.stmt) -> i_exp -> Imp.stmt list d_result =
+  let ret_n ?(extra_vars=Variable.Set.empty): (nexp -> Imp.Stmt.t) -> i_exp -> Imp.Stmt.t list d_result =
     ret_f ~extra_vars to_nexp
 
-  let ret_ns ?(extra_vars=Variable.Set.empty): (nexp list -> Imp.stmt) -> i_exp list -> Imp.stmt list d_result =
+  let ret_ns ?(extra_vars=Variable.Set.empty): (nexp list -> Imp.Stmt.t) -> i_exp list -> Imp.Stmt.t list d_result =
     ret_f ~extra_vars to_nexp_list
 
-  let ret_b ?(extra_vars=Variable.Set.empty): (bexp -> Imp.stmt) -> i_exp -> Imp.stmt list d_result =
+  let ret_b ?(extra_vars=Variable.Set.empty): (bexp -> Imp.Stmt.t) -> i_exp -> Imp.Stmt.t list d_result =
     ret_f ~extra_vars to_bexp
 
 
@@ -422,7 +422,7 @@ let rec parse_load_expr (target:D_lang.Expr.t) (exp:D_lang.Expr.t)
 
 
 
-let parse_location_alias (s:d_location_alias) : Imp.stmt list d_result =
+let parse_location_alias (s:d_location_alias) : Imp.Stmt.t list d_result =
   let* source = with_msg "location_alias.source" parse_var s.source in
   let* target = with_msg "location_alias.target" parse_var s.target in
   let* offset = with_msg "location_alias.offset" parse_exp s.offset in
@@ -515,20 +515,20 @@ let infer_while (r:D_lang.Stmt.d_cond) : (Range.t * D_lang.Stmt.t) option d_resu
     Ok (Option.bind r ForRange.to_range |> Option.map (fun r -> (r, b)))
   | None -> Ok None
 
-let ret_loop (b:Imp.stmt list) : Imp.stmt list d_result =
-  Ok [Imp.Star (Block b)]
+let ret_loop (b:Imp.Stmt.t list) : Imp.Stmt.t list d_result =
+  Ok [Imp.Stmt.Star (Block b)]
 
-let ret (s:Imp.stmt) : Imp.stmt list d_result = Ok [s]
+let ret (s:Imp.Stmt.t) : Imp.Stmt.t list d_result = Ok [s]
 
-let ret_skip : Imp.stmt list d_result = Ok []
+let ret_skip : Imp.Stmt.t list d_result = Ok []
 
-let ret_assert (b:D_lang.Expr.t) : Imp.stmt list d_result =
+let ret_assert (b:D_lang.Expr.t) : Imp.Stmt.t list d_result =
   let* b = with_msg "cond" parse_exp b in
   match Unknown.try_to_bexp b with
-  | Some b -> ret (Imp.Assert b)
+  | Some b -> ret (Assert b)
   | None -> ret_skip
 
-let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
+let rec parse_stmt (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
   let with_msg (m:string) f b = with_msg_ex (fun _ -> "parse_stmt: " ^ m ^ ": " ^ D_lang.Stmt.summarize c) f b in
   let ret_n = Unknown.ret_n in
   let ret_b = Unknown.ret_b in
@@ -537,11 +537,11 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
 
   | SExpr (CallExpr {func=FunctionDecl{name=n; _}; args=[]; _})
     when Variable.name n = "__syncthreads" ->
-    ret (Imp.Sync n.location)
+    ret (Sync n.location)
 
   | SExpr (CallExpr {func=FunctionDecl{name=n; _}; args=[_]; _})
     when Variable.name n = "sync" ->
-    ret (Imp.Sync n.location)
+    ret (Sync n.location)
 
   | SExpr (CallExpr {func = FunctionDecl {name = n; _}; args = [b]; _})
     when Variable.name n = "__requires" ->
@@ -570,12 +570,11 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     let* b = with_msg "if.cond" parse_exp c.cond in
     let* t = with_msg "if.then" parse_stmt c.then_stmt in
     let* e = with_msg "if.else" parse_stmt c.else_stmt in
-    let open Imp in
-    b |> ret_b (fun b -> s_if b (Block t) (Block e))
+    b |> ret_b (fun b -> Imp.Stmt.s_if b (Block t) (Block e))
 
   | CompoundStmt l ->
     let* l = with_msg "block" (cast_map parse_stmt) l in
-    ret (Imp.Block (List.flatten l))
+    ret (Block (List.flatten l))
 
   (* Support for location aliasing that declares a new variable *)
   | DeclStmt ([{ty_var={ty=ty; _} as lhs; init=Some (IExpr rhs); _}] as l)
@@ -588,12 +587,12 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     | Right _ ->
       (* fall back to the default parsing of decls *)
       let* l = cast_map parse_decl l |> Result.map List.concat in
-      ret (Imp.Decl l)
+      ret (Decl l)
     )
 
   | DeclStmt l ->
     let* l = cast_map parse_decl l |> Result.map List.concat in
-    ret (Imp.Decl l)
+    ret (Decl l)
 
   | SExpr ((BinaryOperator {opcode="="; lhs=VarDecl {ty=ty; _} as lhs; rhs=rhs; _}))
   | SExpr ((BinaryOperator {opcode="="; lhs=ParmVarDecl {ty=ty; _} as lhs; rhs=rhs; _}))
@@ -608,7 +607,6 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
   | SExpr (BinaryOperator {opcode="="; lhs=ParmVarDecl {name=v; _}; rhs=rhs; _})
     ->
     let* rhs = with_msg "assign.rhs" parse_exp rhs in
-    let open Imp in
     rhs |> ret_n (fun rhs -> Decl [v, Some rhs])
 
   | ContinueStmt
@@ -620,7 +618,6 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
   | ForStmt s ->
     let* r = infer_for s in
     let* b = with_msg "for.body" parse_stmt s.body in
-    let open Imp in
     (match r with
     | Some r -> ret (For (r, Block b))
     | None -> ret_loop b)
@@ -634,7 +631,6 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.stmt list d_result =
     (match o with
     | Some (r, b) ->
       let* b = with_msg "while.body" parse_stmt b in
-      let open Imp in
       ret (For (r, Block b))
     | None ->
       let* b = with_msg "while.body" parse_stmt w.body in
@@ -677,7 +673,7 @@ let parse_params (ps:C_lang.Param.t list) : (Variable.Set.t * Memory.t Variable.
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
   Ok (Variable.Set.of_list globals, Variable.MapUtil.from_list arrays)
 
-let cuda_preamble (tail:Imp.stmt) : Variable.Set.t * Imp.stmt =
+let cuda_preamble (tail:Imp.Stmt.t) : Variable.Set.t * Imp.Stmt.t =
   let open Exp in
   let mk_dims (name:string) : (Variable.t * nexp option) list =
     List.map (fun x -> (Variable.from_name (name ^ "." ^ x),  None) ) cuda_dims
@@ -801,7 +797,7 @@ let parse_kernel
       in
       add_type_params params l
   in
-  let open Imp in
+  let open Imp.Stmt in
   let globals, code =
     let assigns = Decl (List.map (fun (k,v) -> (k, Some v)) assigns) in
     cuda_preamble (Block (assigns :: code))
