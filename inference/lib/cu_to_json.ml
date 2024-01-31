@@ -1,6 +1,6 @@
 open Stage0
 
-let cu_to_json_opt
+let cu_to_json_res
   ?(exe="cu-to-json")
   ?(ignore_fail=false)
   ?(includes=[])
@@ -30,12 +30,15 @@ let cu_to_json
   ?(exe="cu-to-json")
   ?(ignore_fail=false)
   ?(includes=[])
+  (* If some integer is given, then we return that on exit, otherwise we return
+     whatever cu-to-json returns *)
+  ?(on_error=exit)
   (fname : string)
 :
   Yojson.Basic.t
 =
-  match cu_to_json_opt ~exe ~includes ~ignore_fail fname with
+  match cu_to_json_res ~exe ~includes ~ignore_fail fname with
   | Ok x -> x
   | Error (r, m) ->
     prerr_endline ("cu-to-json: " ^ m);
-    exit r
+    on_error r

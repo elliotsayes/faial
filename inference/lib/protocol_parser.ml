@@ -15,12 +15,14 @@ module Make (L:Logger.Logger) = struct
     ?(block_dim=None)
     ?(grid_dim=None)
     ?(includes=[])
+    ?(exit_status=2)
     (fname:string)
   :
     imp_kernel t
   =
     let j = Cu_to_json.cu_to_json
       ~ignore_fail:(not abort_on_parsing_failure)
+      ~on_error:(fun _ -> exit exit_status)
       ~includes
       fname
     in
@@ -55,18 +57,19 @@ module Make (L:Logger.Logger) = struct
           D_lang.print_program k2;
           print_endline "-------";
           D_to_imp.print_error e;
-          exit(-1)
+          exit(exit_status)
         )
 
     | Error e ->
       Rjson.print_error e;
-      exit(-1)
+      exit(exit_status)
 
   let to_proto
     ?(abort_on_parsing_failure=true)
     ?(block_dim=None)
     ?(grid_dim=None)
     ?(includes=[])
+    ?(exit_status=2)
     (fname:string)
   :
     proto_kernel t
@@ -77,6 +80,7 @@ module Make (L:Logger.Logger) = struct
       ~block_dim
       ~grid_dim
       ~includes
+      ~exit_status
       fname
     in
     { parsed with
