@@ -23,13 +23,13 @@ let write_to_acc (w:write) : Variable.t * Access.t =
 
 module Arg = struct
   type t =
-  | Expr of nexp
-  | Location of {array: Variable.t; offset: nexp}
+  | Scalar of nexp
+  | Array of {address: Variable.t; offset: nexp}
 
   let to_string : t -> string =
     function
-    | Expr e -> Exp.n_to_string e
-    | Location l -> Variable.name l.array ^ " + " ^ Exp.n_to_string l.offset
+    | Scalar e -> Exp.n_to_string e
+    | Array l -> Variable.name l.address ^ " + " ^ Exp.n_to_string l.offset
 end
 
 module Stmt = struct

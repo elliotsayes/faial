@@ -54,23 +54,28 @@ let main
     let open C_lang in
     function
     | Kernel k ->
-      let k2 = Hashtbl.find k2_ht k.name in
-      let k3 = Hashtbl.find k3_ht k.name in
-      (decls, `Assoc [
-        "function calls", Calls.summarize decls k;
-        "nested loops", NestedLoops.summarize k.code;
-        "loops", Loops.summarize k.code;
-        "loop inference", ForEach.summarize k2.code;
-        "mutated vars", MutatedVar.summarize k.code;
-        "declarations", Declarations.summarize k.code;
-        "conditionals", Conditionals.summarize k.code;
-        "variables", Variables.summarize k.code;
-        "params", Params.summarize k;
-        "accesses", Accesses.summarize k3.code;
-        "global decls", GlobalDeclArrays.summarize decls;
-        "divergence", Divergence.summarize k3.code;
-        "kernel", Queries.Kernel.summarize k3;
-      ] :: js)
+      (try
+        let k2 = Hashtbl.find k2_ht k.name in
+        let k3 = Hashtbl.find k3_ht k.name in
+        (decls, `Assoc [
+          "function calls", Calls.summarize decls k;
+          "nested loops", NestedLoops.summarize k.code;
+          "loops", Loops.summarize k.code;
+          "loop inference", ForEach.summarize k2.code;
+          "mutated vars", MutatedVar.summarize k.code;
+          "declarations", Declarations.summarize k.code;
+          "conditionals", Conditionals.summarize k.code;
+          "variables", Variables.summarize k.code;
+          "params", Params.summarize k;
+          "accesses", Accesses.summarize k3.code;
+          "global decls", GlobalDeclArrays.summarize decls;
+          "divergence", Divergence.summarize k3.code;
+          "kernel", Queries.Kernel.summarize k3;
+        ] :: js)
+      with
+      | Not_found ->
+        (decls, js)
+      )
     | Declaration d ->
       let decls =
         if Decl.is_array d then

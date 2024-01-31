@@ -144,8 +144,6 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
   (* ---------------- CUDA SPECIFIC ----------- *)
   | MemberExpr {base=base; name=field; _}
     when D_lang.Expr.is_variable base ->
-    (*when StringSet.mem (Variable.name base) cuda_base_vars && List.mem dim cuda_dims *)
-(*     let x = Variable.name base ^ "." ^ field |> Variable.from_name in *)
     let base = D_lang.Expr.to_variable base |> Option.get in
     ret_n (Var {base with name = base.name ^ "." ^ field})
 
@@ -225,8 +223,54 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
   | _ ->
     root_cause ("WARNING: parse_nexp: unsupported expression " ^ D_lang.Expr.name e ^ " : " ^ D_lang.Expr.to_string e)
 
+let parse_type (e:D_lang.d_type) : C_type.t d_result =
+  e
+  |> C_lang.parse_type
+  |> Result.map_error (fun e ->
+    Common.StackTrace.RootCause (Rjson.error_to_string e)
+  )
 
+module Arg = struct
+  type i_array = {address: Variable.t; offset: i_exp}
 
+  type t =
+  | Scalar of i_exp
+  | Array of i_array
+
+  let rec parse_loc (e: D_lang.Expr.t) : i_array d_result =
+    match D_lang.Expr.to_variable e with
+    | Some address -> Ok {address; offset=NExp (Num 0)}
+    | None ->
+      (match e with
+      | BinaryOperator o when o.opcode = "+" ->
+        let* lhs_ty = D_lang.Expr.to_type o.lhs |> parse_type in
+        let address, offset =
+          if C_type.is_array lhs_ty
+          then o.lhs, o.rhs
+          else o.rhs, o.lhs
+        in
+        let* l = with_msg "parse_loc.address" parse_loc address in
+        let* offset = with_msg "parse_loc.offset"parse_exp offset in
+        Ok {l with offset = NExp (Bin (Plus, offset, l.offset))}
+      | _ ->
+        root_cause (
+          "WARNING: parse_loc: unsupported expression " ^
+          D_lang.Expr.name e ^ " : " ^ D_lang.Expr.to_string e
+        )
+      )
+
+  let parse (e: D_lang.Expr.t) : t option d_result =
+    let* ty = D_lang.Expr.to_type e |> parse_type in
+    if C_type.is_array ty then (
+      match parse_loc e with
+      | Ok l -> Ok (Some (Array l))
+      | Error _ -> Ok None
+    ) else if C_type.is_int ty then (
+      (* Handle integer *)
+      let* e = with_msg "Arg.parse" parse_exp e in
+      Ok (Some (Scalar e))
+    ) else Ok None
+end
 (* -------------------------------------------------------------- *)
 
 
@@ -318,6 +362,18 @@ module Unknown = struct
   (* Convert a d_nexp into an nexp and get the set of unknowns *)
   let to_nexp: i_exp -> Variable.Set.t * nexp = convert handle_n
 
+  let handle_arg (u:t) : Arg.t -> (t * Imp.Arg.t) =
+    function
+    | Scalar e ->
+      let (u, e) = handle_n u e in
+      (u, Scalar e)
+    | Array {offset; address} ->
+      let (u, offset) = handle_n u offset in
+      (u, Array {address; offset})
+
+  let to_arg : Arg.t -> Variable.Set.t * Imp.Arg.t =
+    convert handle_arg
+
   (* Convert a d_bexp into an bexp and get the set of unknowns *)
   let to_bexp: i_exp -> Variable.Set.t * bexp = convert handle_b
 
@@ -331,6 +387,9 @@ module Unknown = struct
 
   let to_nexp_list: i_exp list -> Variable.Set.t * nexp list =
     convert (mmap handle_n)
+
+  let to_arg_list : Arg.t list -> Variable.Set.t * Imp.Arg.t list =
+    convert (mmap handle_arg)
 
   (* Convert a d_nexp into an nexp only if there are no unknowns *)
   let try_to_nexp (n:i_exp) : nexp option =
@@ -367,6 +426,9 @@ module Unknown = struct
 
   let ret_ns ?(extra_vars=Variable.Set.empty): (nexp list -> Imp.Stmt.t) -> i_exp list -> Imp.Stmt.t list d_result =
     ret_f ~extra_vars to_nexp_list
+
+  let ret_args ?(extra_vars=Variable.Set.empty): (Imp.Arg.t list -> Imp.Stmt.t) -> Arg.t list -> Imp.Stmt.t list d_result =
+    ret_f ~extra_vars to_arg_list
 
   let ret_b ?(extra_vars=Variable.Set.empty): (bexp -> Imp.Stmt.t) -> i_exp -> Imp.Stmt.t list d_result =
     ret_f ~extra_vars to_bexp
@@ -533,6 +595,8 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
   let ret_n = Unknown.ret_n in
   let ret_b = Unknown.ret_b in
   let ret_ns = Unknown.ret_ns in
+  let ret_args = Unknown.ret_args in
+
   match c with
 
   | SExpr (CallExpr {func=FunctionDecl{name=n; _}; args=[]; _})
@@ -546,6 +610,13 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
   | SExpr (CallExpr {func = FunctionDecl {name = n; _}; args = [b]; _})
     when Variable.name n = "__requires" ->
     ret_assert b
+
+  | SExpr (CallExpr {func = FunctionDecl {name = n; _}; args;_ }) ->
+    let* args = with_msg "call.args" (cast_map Arg.parse) args in
+    List.filter_map (fun x -> x) args
+    |> ret_args (fun args ->
+      Call (n, args)
+    )
 
   | WriteAccessStmt w ->
     let x = w.target.name |> Variable.set_location w.target.location in
