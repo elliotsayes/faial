@@ -21,6 +21,17 @@ let read_to_acc (r:read) : Variable.t * Access.t =
 let write_to_acc (w:write) : Variable.t * Access.t =
   (w.array, Access.{index=w.index; mode=Wr w.payload})
 
+module Arg = struct
+  type t =
+  | Expr of nexp
+  | Location of {array: Variable.t; offset: nexp}
+
+  let to_string : t -> string =
+    function
+    | Expr e -> Exp.n_to_string e
+    | Location l -> Variable.name l.array ^ " + " ^ Exp.n_to_string l.offset
+end
+
 type stmt =
   | Sync of Location.t option
   | Assert of bexp
@@ -32,6 +43,7 @@ type stmt =
   | If of (bexp * stmt * stmt)
   | For of (Range.t * stmt)
   | Star of stmt
+  | Call of (Variable.t * Arg.t list)
 
 let is_for : stmt -> bool =
   function
@@ -49,7 +61,7 @@ let rec has_sync : stmt -> bool =
   function
   | Sync _ -> true
   | If (_, p, q) -> has_sync p || has_sync q
-  | Read _ | Write _ | Assert _ | LocationAlias _ | Decl _ -> false
+  | Read _ | Write _ | Assert _ | LocationAlias _ | Decl _ | Call _ -> false
   | Block l -> List.exists has_sync l
   | For (_, p) | Star p -> has_sync p
 
@@ -63,7 +75,8 @@ let fold : 'a. (stmt -> 'a -> 'a) -> stmt -> 'a -> 'a =
       | Read _
       | Write _
       | Decl _
-      | LocationAlias _ ->
+      | LocationAlias _
+      | Call _ ->
         init
       | Block l ->
         fold_p l init
@@ -362,22 +375,9 @@ let imp_to_post : Variable.Set.t * stmt -> Variable.Set.t * Post.t =
     | Write e -> ret (Acc (e.array, {index=e.index; mode=Wr e.payload}))
     | Read e ->
       fun (curr_id, globals) ->
-        (*
-        let is_thread_local (e:nexp) : bool =
-          Variable.Set.diff
-            (Freenames.free_names_nexp e Variable.Set.empty)
-            globals
-          |> Variable.Set.is_empty
-        in
-        *)
         let rd = Post.Acc (e.array, {index=e.index; mode=Rd}) in
-        (*
-        if List.for_all is_thread_local e.index then
-          let globals = Variable.Set.add e.target globals in
-          (curr_id, globals, rd)
-        else
-        *)
-          (curr_id, globals, Decl (e.target, None, rd))
+        (curr_id, globals, Decl (e.target, None, rd))
+    | Call _ -> imp_to_post_p []
     | Block p -> imp_to_post_p p
     | If (b, s1, s2) ->
       bind (imp_to_post_p [s1]) (fun s1 ->
@@ -475,6 +475,9 @@ let s_if (b:bexp) (p1:stmt) (p2:stmt) : stmt =
 let stmt_to_s: stmt -> Indent.t list =
   let rec stmt_to_s : stmt -> Indent.t list =
     function
+    | Call (f, args) ->
+      let args = String.concat ", " (List.map Arg.to_string args) in
+      [Line (Variable.name f ^ "(" ^ args ^ ")")]
     | Sync _ -> [Line "sync;"]
     | Assert b -> [Line ("assert (" ^ b_to_string b ^ ");")]
     | Read r -> [Line (Variable.name r.target ^ " = ro " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
