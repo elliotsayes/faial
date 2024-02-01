@@ -44,18 +44,15 @@ type t = {
 let parse_init: D_lang.ForInit.t option -> (Variable.t * D_lang.Expr.t) option =
   function
   | Some (Decls ({ty_var={name=n; _}; init=Some (IExpr i); _}::_)) -> Some (n, i)
-  | Some (Expr (BinaryOperator {lhs=l; opcode="="; rhs=i; _})) ->
-    (match D_lang.Expr.to_variable l with
-    | Some v -> Some (v, i)
-    | _ -> None)
+  | Some (Expr (BinaryOperator {lhs=Ident d; opcode="="; rhs=i; _})) -> Some (d.name, i)
   | _ -> None
 
 let parse_cond (c:D_lang.Expr.t option) : (Variable.t * comparator unop) option =
   match c with
-  | Some (BinaryOperator {lhs=l; opcode=o; rhs=r; _}) ->
-    (match D_lang.Expr.to_variable l, parse_cmp o with
-    | Some l, Some o -> Some (l, {op=o; arg=r})
-    | _, _ -> None)
+  | Some (BinaryOperator {lhs=Ident d; opcode=o; rhs=r; _}) ->
+    (match parse_cmp o with
+    | Some o -> Some (d.name, {op=o; arg=r})
+    | _ -> None)
   | _ -> None
 
   let rec parse_inc (i:D_lang.Expr.t option) : (Variable.t * increment unop) option =
@@ -63,18 +60,17 @@ let parse_cond (c:D_lang.Expr.t option) : (Variable.t * comparator unop) option 
   | Some (BinaryOperator {opcode=","; lhs=l; _}) ->
     parse_inc (Some l)
   | Some (BinaryOperator {
-      lhs=l;
+      lhs=Ident l;
       opcode="=";
-      rhs=BinaryOperator{lhs=l'; opcode=o; rhs=r; _};
+      rhs=BinaryOperator{lhs=Ident l'; opcode=o; rhs=r; _};
       _
     }) ->
     begin
+      let l = l.name in
       match
-        D_lang.Expr.to_variable l,
-        D_lang.Expr.to_variable l',
         parse_inc_op o
       with
-      | Some l, Some l', Some o when Variable.equal l l' ->
+      | Some o when Variable.equal l l'.name ->
         Some (l, {op=o; arg=r})
       | _ -> None
     end
@@ -87,7 +83,7 @@ let from_for (loop: D_lang.Stmt.d_for) : t option =
   let* init =
     match parse_init loop.init with
     | Some (x2, init) -> if Variable.equal x1 x2 then Some init else None
-    | None -> Some (D_lang.Expr.from_variable x1)
+    | None -> Some (D_lang.Expr.ident x1)
   in
   let* (_, cond) = parse_cond loop.cond in
   Some {
@@ -106,7 +102,7 @@ let from_while (loop: D_lang.Stmt.d_cond) : (t * D_lang.Stmt.t) option =
     | _ -> None
   in
   let* (x1, inc) = parse_inc inc in
-  let init = D_lang.Expr.from_variable x1 in
+  let init = D_lang.Expr.ident x1 in
   let* (_, cond) = parse_cond (Some loop.cond) in
   Some ({
     name = x1;

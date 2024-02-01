@@ -15,6 +15,60 @@ type d_type = json
 let list_to_s (f:'a -> string) (l:'a list) : string =
   List.map f l |> Common.join ", "
 
+module DeclType = struct
+  type t =
+    | CXXMethod
+    | Function
+    | NonTypeTemplateParm
+    | EnumConstant
+    | Var
+    | ParmVar
+
+  let to_string : t -> string =
+    function
+    | CXXMethod -> "meth"
+    | Function -> "func"
+    | NonTypeTemplateParm -> "tmpl"
+    | EnumConstant -> "enum"
+    | Var -> "var"
+    | ParmVar -> "parm"
+end
+
+(* A program variable *)
+module DeclExpr = struct
+  type t = {name: Variable.t; ty: json; kind: DeclType.t}
+
+  let from_name
+    ?(ty=C_type.j_int_type)
+    ?(kind=DeclType.Var)
+    (name:Variable.t)
+  :
+    t
+  =
+    {name;ty;kind}
+
+  let from_ty_var
+    ?(kind=DeclType.Var)
+    (ty_var:TyVariable.t)
+  :
+    t
+  =
+    {name=ty_var.name; ty=ty_var.ty; kind}
+
+  let name (e:t) : Variable.t = e.name
+  let ty (e:t) : json = e.ty
+  let to_string ?(modifier:bool=false) (e:t) : string =
+    let attr : string =
+      if modifier
+      then "@" ^ (e.kind |> DeclType.to_string) ^ " "
+      else ""
+    in
+    let name = e.name |> Variable.name in
+    attr ^ name
+  let attr (e:t) : string = e.kind |> DeclType.to_string
+
+end
+
 module Expr = struct
   type t =
     | SizeOfExpr of d_type
@@ -27,42 +81,21 @@ module Expr = struct
     | ConditionalOperator of {cond: t; then_expr: t; else_expr: t; ty: d_type}
     | CXXConstructExpr of {args: t list; ty: d_type}
     | CXXBoolLiteralExpr of bool
-    | CXXMethodDecl of TyVariable.t
     | CXXOperatorCallExpr of {func: t; args: t list; ty: d_type}
     | FloatingLiteral of float
-    | FunctionDecl of TyVariable.t
     | IntegerLiteral of int
-    | NonTypeTemplateParmDecl of TyVariable.t
     | MemberExpr of {name: string; base: t; ty: d_type}
-    | ParmVarDecl of TyVariable.t
+    | Ident of DeclExpr.t
     | UnaryOperator of { opcode: string; child: t; ty: d_type}
-    | VarDecl of TyVariable.t
-    | EnumConstantDecl of TyVariable.t
     | UnresolvedLookupExpr of {name: Variable.t; tys: d_type list}
   and d_binary = {opcode: string; lhs: t; rhs: t; ty: d_type}
 
-  let is_variable : t -> bool =
-    function
-    | CXXMethodDecl _
-    | FunctionDecl _
-    | NonTypeTemplateParmDecl _
-    | ParmVarDecl _
-    | VarDecl _
-    | UnresolvedLookupExpr _ -> true
-    | _ -> false
-
-  let to_variable : t -> Variable.t option =
-    function
-    | CXXMethodDecl {name=n; _}
-    | FunctionDecl {name=n; _}
-    | NonTypeTemplateParmDecl {name=n; _}
-    | ParmVarDecl {name=n; _}
-    | VarDecl {name=n; _}
-    | UnresolvedLookupExpr {name=n; _} -> Some n
-    | _ -> None
-
-  let from_variable (x:Variable.t) : t =
-    VarDecl {name=x; ty=C_type.j_int_type}
+  let ident
+    ?(ty=C_type.j_int_type)
+    ?(kind=DeclType.Var)
+    (name:Variable.t)
+  =
+    Ident (DeclExpr.from_name ~ty ~kind name)
 
   let name =
     function
@@ -76,18 +109,13 @@ module Expr = struct
     | ConditionalOperator _ -> "ConditionalOperator"
     | CXXConstructExpr _ -> "CXXConstructExpr"
     | CXXBoolLiteralExpr _ -> "CXXBoolLiteralExpr"
-    | CXXMethodDecl _ -> "CXXMethodDecl"
     | CXXOperatorCallExpr _ -> "CXXOperatorCallExpr"
     | FloatingLiteral _ -> "FloatingLiteral"
-    | FunctionDecl _ -> "FunctionDecl"
     | IntegerLiteral _ -> "IntegerLiteral"
-    | NonTypeTemplateParmDecl _ -> "NonTypeTemplateParmDecl"
     | MemberExpr _ -> "MemberExpr"
-    | ParmVarDecl _ -> "ParmVarDecl"
-    | EnumConstantDecl _ -> "EnumConstantDecl"
     | UnaryOperator _ -> "UnaryOperator"
-    | VarDecl _ -> "VarDecl"
     | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
+    | Ident _ -> "Ident"
 
   let rec to_type :  t -> d_type =
     function
@@ -99,19 +127,14 @@ module Expr = struct
     | BinaryOperator a -> a.ty
     | ConditionalOperator c -> to_type c.then_expr
     | CXXBoolLiteralExpr _ -> C_type.j_bool_type
-    | CXXMethodDecl a -> a.ty
+    | Ident a -> DeclExpr.ty a
     | CXXConstructExpr c -> c.ty
     | FloatingLiteral _ -> C_type.j_float_type
-    | FunctionDecl a -> a.ty
     | IntegerLiteral _ -> C_type.j_int_type
-    | NonTypeTemplateParmDecl a -> a.ty
-    | ParmVarDecl a -> a.ty
     | UnaryOperator a -> a.ty
-    | VarDecl a -> a.ty
     | CallExpr c -> c.ty
     | CXXOperatorCallExpr a -> a.ty
     | MemberExpr a -> a.ty
-    | EnumConstantDecl a -> a.ty
     | UnresolvedLookupExpr _ -> C_type.mk_j_type "?"
 
 
@@ -140,14 +163,9 @@ module Expr = struct
         | UnaryOperator _
         | CXXNewExpr _
         | CXXDeleteExpr _
-        | FunctionDecl _
-        | ParmVarDecl _
-        | EnumConstantDecl _
-        | NonTypeTemplateParmDecl _
+        | Ident _
         | UnresolvedLookupExpr _
-        | VarDecl _
         | CallExpr _
-        | CXXMethodDecl _
         | CXXOperatorCallExpr _
         | CXXConstructExpr _
         | CXXBoolLiteralExpr _
@@ -175,14 +193,9 @@ module Expr = struct
       | CXXBoolLiteralExpr b -> if b then "true" else "false";
       | CXXConstructExpr c -> attr "ctor" ^ C_lang.type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")"
       | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
-      | CXXMethodDecl v -> attr "meth" ^ var_name v.name
+      | Ident v -> DeclExpr.to_string ~modifier v
       | CallExpr c -> par c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
-      | VarDecl v -> var_name v.name
       | UnresolvedLookupExpr v -> attr "unresolv" ^ var_name v.name
-      | NonTypeTemplateParmDecl v -> attr "tpl" ^ var_name v.name
-      | FunctionDecl v -> attr "func" ^ var_name v.name
-      | ParmVarDecl v -> attr "parm" ^ var_name v.name
-      | EnumConstantDecl v -> attr "enum" ^ var_name v.name
       | UnaryOperator u -> u.opcode ^ par u.child
     in
     exp_to_s
@@ -287,10 +300,8 @@ module ForInit = struct
       match e with
       | BinaryOperator {lhs=l; opcode=","; rhs=r; _} ->
         exp_var l |> Common.append_rev1 (exp_var r)
-      | BinaryOperator {lhs=l; opcode="="; _} ->
-        (match Expr.to_variable l with
-        | Some x -> [x]
-        | None -> [])
+      | BinaryOperator {lhs=Ident x; opcode="="; _} ->
+        [DeclExpr.name x]
       | _ -> []
     in
     function
@@ -549,16 +560,16 @@ module AccessState = struct
   let add_write (a:d_subscript) (source:Expr.t) (payload:int option) (st:t) : (t * Variable.t) =
     let wr x = Stmt.WriteAccessStmt {
       target=a;
-      source=VarDecl {name=x; ty=a.ty};
+      source=Ident {x with ty=a.ty};
       payload
     } in
     match source with
-    | VarDecl {name=x; _} ->
-      (add_stmt (wr x) st, x)
+    | Ident x ->
+      (add_stmt (wr x) st, DeclExpr.name x)
     | _ ->
       add_var (subscript_to_s a) (fun x ->
         [
-          wr x;
+          wr (DeclExpr.from_name x);
           let ty_var = TyVariable.make ~name:x ~ty:a.ty in
           DeclStmt [Decl.from_expr ty_var source];
         ]
@@ -646,12 +657,12 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     let (st, e) = rewrite_exp e st in
     state_pure (MemberExpr {base=e; name=o; ty=ty}) st
 
-  | EnumConstantDecl v -> state_pure (EnumConstantDecl v)
-  | VarDecl v -> state_pure (VarDecl v)
-  | ParmVarDecl v -> state_pure (ParmVarDecl v)
-  | FunctionDecl v -> state_pure (FunctionDecl v)
-  | CXXMethodDecl v -> state_pure (CXXMethodDecl v)
-  | NonTypeTemplateParmDecl v -> state_pure (NonTypeTemplateParmDecl v)
+  | EnumConstantDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:EnumConstant v))
+  | VarDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:Var v))
+  | ParmVarDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:ParmVar v))
+  | FunctionDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:Function v))
+  | CXXMethodDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:CXXMethod v))
+  | NonTypeTemplateParmDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:NonTypeTemplateParm v))
   | UnresolvedLookupExpr {name=n;tys=tys} -> state_pure (UnresolvedLookupExpr {name=n;tys=tys})
   | FloatingLiteral f -> state_pure (FloatingLiteral f)
   | IntegerLiteral i -> state_pure (IntegerLiteral i)
@@ -691,12 +702,12 @@ and rewrite_write (a:C_lang.Expr.c_array_subscript) (src:C_lang.Expr.t) : (Acces
       | _ -> None
     in
     let (st, x) = AccessState.add_write a src' payload st in
-  state_pure (Expr.VarDecl {name=x; ty=C_lang.Expr.to_type src}) st
+  state_pure (Expr.ident ~ty:(C_lang.Expr.to_type src) x) st
 and rewrite_read (a:C_lang.Expr.c_array_subscript): (AccessState.t, Expr.t) state =
   fun st ->
     let (st, a) = rewrite_subscript a st in
     let (st, x) = AccessState.add_read a st in
-    state_pure (Expr.VarDecl {name=x; ty=a.ty}) st
+    state_pure (Expr.ident ~ty:a.ty x) st
 
 let map_opt (f:'a -> ('s * 'b)) (o:'a option) : ('s * 'b option) =
   match o with
