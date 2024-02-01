@@ -242,6 +242,9 @@ module Arg = struct
     | Some address -> Ok {address; offset=NExp (Num 0)}
     | None ->
       (match e with
+      | UnaryOperator {opcode; child; _}
+        when D_lang.Expr.is_variable child && opcode = "&" ->
+        parse_loc child
       | BinaryOperator o when o.opcode = "+" ->
         let* lhs_ty = D_lang.Expr.to_type o.lhs |> parse_type in
         let address, offset =
