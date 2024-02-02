@@ -3,7 +3,6 @@ open Protocols
 
 module StackTrace = Common.StackTrace
 module KernelAttr = C_lang.KernelAttr
-module TyVariable = C_lang.TyVariable
 
 type json = Yojson.Basic.t
 type j_object = Rjson.j_object
@@ -14,60 +13,6 @@ type d_type = json
 
 let list_to_s (f:'a -> string) (l:'a list) : string =
   List.map f l |> Common.join ", "
-
-module DeclType = struct
-  type t =
-    | CXXMethod
-    | Function
-    | NonTypeTemplateParm
-    | EnumConstant
-    | Var
-    | ParmVar
-
-  let to_string : t -> string =
-    function
-    | CXXMethod -> "meth"
-    | Function -> "func"
-    | NonTypeTemplateParm -> "tmpl"
-    | EnumConstant -> "enum"
-    | Var -> "var"
-    | ParmVar -> "parm"
-end
-
-(* A program variable *)
-module DeclExpr = struct
-  type t = {name: Variable.t; ty: json; kind: DeclType.t}
-
-  let from_name
-    ?(ty=C_type.j_int_type)
-    ?(kind=DeclType.Var)
-    (name:Variable.t)
-  :
-    t
-  =
-    {name;ty;kind}
-
-  let from_ty_var
-    ?(kind=DeclType.Var)
-    (ty_var:TyVariable.t)
-  :
-    t
-  =
-    {name=ty_var.name; ty=ty_var.ty; kind}
-
-  let name (e:t) : Variable.t = e.name
-  let ty (e:t) : json = e.ty
-  let to_string ?(modifier:bool=false) (e:t) : string =
-    let attr : string =
-      if modifier
-      then "@" ^ (e.kind |> DeclType.to_string) ^ " "
-      else ""
-    in
-    let name = e.name |> Variable.name in
-    attr ^ name
-  let attr (e:t) : string = e.kind |> DeclType.to_string
-
-end
 
 module Expr = struct
   type t =
@@ -85,17 +30,17 @@ module Expr = struct
     | FloatingLiteral of float
     | IntegerLiteral of int
     | MemberExpr of {name: string; base: t; ty: d_type}
-    | Ident of DeclExpr.t
+    | Ident of Decl_expr.t
     | UnaryOperator of { opcode: string; child: t; ty: d_type}
     | UnresolvedLookupExpr of {name: Variable.t; tys: d_type list}
   and d_binary = {opcode: string; lhs: t; rhs: t; ty: d_type}
 
   let ident
     ?(ty=C_type.j_int_type)
-    ?(kind=DeclType.Var)
+    ?(kind=Decl_expr.Kind.Var)
     (name:Variable.t)
   =
-    Ident (DeclExpr.from_name ~ty ~kind name)
+    Ident (Decl_expr.from_name ~ty ~kind name)
 
   let name =
     function
@@ -127,7 +72,7 @@ module Expr = struct
     | BinaryOperator a -> a.ty
     | ConditionalOperator c -> to_type c.then_expr
     | CXXBoolLiteralExpr _ -> C_type.j_bool_type
-    | Ident a -> DeclExpr.ty a
+    | Ident a -> Decl_expr.ty a
     | CXXConstructExpr c -> c.ty
     | FloatingLiteral _ -> C_type.j_float_type
     | IntegerLiteral _ -> C_type.j_int_type
@@ -146,7 +91,7 @@ module Expr = struct
     in
     let opcode (o:string) (j:Yojson.Basic.t) : string =
       if types
-      then "(" ^ o ^ "." ^ C_lang.type_to_str j ^ ")"
+      then "(" ^ o ^ "." ^ C_type.j_to_string j ^ ")"
       else o
     in
     let var_name: Variable.t -> string =
@@ -178,8 +123,8 @@ module Expr = struct
           ->  exp_to_s e
       in
       function
-      | SizeOfExpr ty -> "sizeof(" ^ C_lang.type_to_str ty ^ ")"
-      | CXXNewExpr c -> "new " ^ C_lang.type_to_str c.ty ^ "(" ^ exp_to_s c.arg ^ ")"
+      | SizeOfExpr ty -> "sizeof(" ^ C_type.j_to_string ty ^ ")"
+      | CXXNewExpr c -> "new " ^ C_type.j_to_string c.ty ^ "(" ^ exp_to_s c.arg ^ ")"
       | CXXDeleteExpr c -> "del " ^ par c.arg
       | RecoveryExpr _ -> "?"
       | FloatingLiteral f -> string_of_float f
@@ -191,9 +136,9 @@ module Expr = struct
         par b.lhs ^ " " ^ opcode b.opcode b.ty ^ " " ^ par b.rhs
       | MemberExpr m -> par m.base  ^ "." ^ m.name
       | CXXBoolLiteralExpr b -> if b then "true" else "false";
-      | CXXConstructExpr c -> attr "ctor" ^ C_lang.type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")"
+      | CXXConstructExpr c -> attr "ctor" ^ C_type.j_to_string c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")"
       | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
-      | Ident v -> DeclExpr.to_string ~modifier v
+      | Ident v -> Decl_expr.to_string ~modifier v
       | CallExpr c -> par c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
       | UnresolvedLookupExpr v -> attr "unresolv" ^ var_name v.name
       | UnaryOperator u -> u.opcode ^ par u.child
@@ -231,7 +176,7 @@ end
 
 module Decl = struct
   type t = {
-    ty_var: TyVariable.t;
+    ty_var: Ty_variable.t;
     init: Init.t option;
     attrs: string list
   }
@@ -239,20 +184,20 @@ module Decl = struct
   let make ~ty_var ~init ~attrs : t =
     {ty_var; init; attrs}
 
-  let from_undef ?(attrs=[]) (ty_var:TyVariable.t) : t =
+  let from_undef ?(attrs=[]) (ty_var:Ty_variable.t) : t =
     {ty_var; init=None; attrs}
 
-  let from_init ?(attrs=[]) (ty_var:TyVariable.t) (init:Init.t) : t =
+  let from_init ?(attrs=[]) (ty_var:Ty_variable.t) (init:Init.t) : t =
     {ty_var; init=Some init; attrs}
 
-  let from_expr ?(attrs=[]) (ty_var:TyVariable.t) (expr:Expr.t) : t =
+  let from_expr ?(attrs=[]) (ty_var:Ty_variable.t) (expr:Expr.t) : t =
     from_init ~attrs ty_var (IExpr expr)
 
   let get_shared (d:t) : Memory.t option =
     if List.mem C_lang.c_attr_shared d.attrs
     then
-      let ty = d.ty_var |> TyVariable.ty in
-      match C_lang.parse_type ty with
+      let ty = d.ty_var |> Ty_variable.ty in
+      match C_type.from_json ty with
       | Ok ty ->
         Some {
           hierarchy = SharedMemory;
@@ -277,7 +222,7 @@ module Decl = struct
       let attrs = Common.join " " d.attrs |> String.trim in
       attrs ^ " "
     in
-    attr ^ TyVariable.to_string d.ty_var ^ i
+    attr ^ Ty_variable.to_string d.ty_var ^ i
 
 end
 
@@ -301,11 +246,11 @@ module ForInit = struct
       | BinaryOperator {lhs=l; opcode=","; rhs=r; _} ->
         exp_var l |> Common.append_rev1 (exp_var r)
       | BinaryOperator {lhs=Ident x; opcode="="; _} ->
-        [DeclExpr.name x]
+        [Decl_expr.name x]
       | _ -> []
     in
     function
-    | Decls l -> List.map (fun (d:Decl.t) -> d.ty_var |> TyVariable.name) l
+    | Decls l -> List.map (fun (d:Decl.t) -> d.ty_var |> Ty_variable.name) l
     | Expr e -> exp_var e
 
   let to_string : t -> string =
@@ -551,7 +496,7 @@ module AccessState = struct
   let add_expr (expr:Expr.t) (ty:d_type) (st:t) : t * Variable.t =
     add_var (Expr.to_string expr) (fun name ->
       [
-        let ty_var = TyVariable.make ~ty ~name in
+        let ty_var = Ty_variable.make ~ty ~name in
         DeclStmt [Decl.from_expr ty_var expr]
       ]
     ) st
@@ -565,12 +510,12 @@ module AccessState = struct
     } in
     match source with
     | Ident x ->
-      (add_stmt (wr x) st, DeclExpr.name x)
+      (add_stmt (wr x) st, Decl_expr.name x)
     | _ ->
       add_var (subscript_to_s a) (fun x ->
         [
-          wr (DeclExpr.from_name x);
-          let ty_var = TyVariable.make ~name:x ~ty:a.ty in
+          wr (Decl_expr.from_name x);
+          let ty_var = Ty_variable.make ~name:x ~ty:a.ty in
           DeclStmt [Decl.from_expr ty_var source];
         ]
       ) st
@@ -587,7 +532,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
   let open Expr in
   match c with
   | CXXOperatorCallExpr {
-      func=CXXMethodDecl{name=v; _};
+      func=Ident {name=v; _};
       args=[ArraySubscriptExpr a; src];
       _
     } when Variable.name v = "operator="
@@ -657,12 +602,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     let (st, e) = rewrite_exp e st in
     state_pure (MemberExpr {base=e; name=o; ty=ty}) st
 
-  | EnumConstantDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:EnumConstant v))
-  | VarDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:Var v))
-  | ParmVarDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:ParmVar v))
-  | FunctionDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:Function v))
-  | CXXMethodDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:CXXMethod v))
-  | NonTypeTemplateParmDecl v -> state_pure (Ident (DeclExpr.from_ty_var ~kind:NonTypeTemplateParm v))
+  | Ident v -> state_pure (Ident v)
   | UnresolvedLookupExpr {name=n;tys=tys} -> state_pure (UnresolvedLookupExpr {name=n;tys=tys})
   | FloatingLiteral f -> state_pure (FloatingLiteral f)
   | IntegerLiteral i -> state_pure (IntegerLiteral i)
@@ -682,9 +622,8 @@ and rewrite_subscript (c:C_lang.Expr.c_array_subscript) : (AccessState.t, d_subs
     | ArraySubscriptExpr a ->
       rewrite_subscript a indices loc st
 
-    | VarDecl {name=n; ty=ty}
-    | ParmVarDecl {name=n; ty=ty} ->
-      state_pure {name=n; index=indices; ty=ty; location=Option.get loc} st
+    | Ident {name; ty; _} ->
+      state_pure {name; index=indices; ty; location=Option.get loc} st
 
     | e ->
       let ty = C_lang.Expr.to_type e in

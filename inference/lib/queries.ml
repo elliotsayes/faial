@@ -50,31 +50,26 @@ module Variables = struct
     let open Expr.Visit in
     e |> map (
       function
-      | MemberExpr {base=VarDecl {name=x; ty=ty}; name=f; _} ->
-        let x = Variable.update_name (fun n -> n ^ "." ^ f) x in
-        ParmVarDecl {name=x; ty=ty}
+      | MemberExpr {base=Ident x; name=f; _} ->
+        Ident (Decl_expr.update_name (fun n -> n ^ "." ^ f) x)
       | e' -> e'
     )
 
   (* Returns all variables present in an expression *)
-  let from_expr (e:Expr.t) : TyVariable.t Seq.t =
+  let from_expr (e:Expr.t) : Variable.t Seq.t =
     let open Expr.Visit in
     e |> fold (function
-      | ParmVarDecl v
-      | VarDecl v
-        -> Seq.return v
+      | Ident v when v.kind = Var || v.kind = ParmVar ->
+        Seq.return v.name
 
       | CXXBoolLiteral _
       | SizeOf _
       | Recovery _
       | CharacterLiteral _
-      | CXXMethodDecl _
       | FloatingLiteral _
-      | FunctionDecl _
       | IntegerLiteral _
-      | NonTypeTemplateParmDecl _
-      | EnumConstantDecl _
       | UnresolvedLookup _
+      | Ident _
       -> Seq.empty
 
       | UnaryOperator {child=e; _}
@@ -103,9 +98,8 @@ module Variables = struct
     )
 
   (* Given a sequence of c_var, generate a set of variables *)
-  let to_set (s:TyVariable.t Seq.t) : VarSet.t =
+  let to_set (s:Variable.t Seq.t) : VarSet.t =
     s
-    |> Seq.map (fun (x:TyVariable.t) -> x.name)
     |> List.of_seq
     |> VarSet.of_list
 
@@ -119,7 +113,7 @@ module Variables = struct
       (* Get all variables *)
       |> Seq.concat_map from_expr
       (* Keep threadIdx.x *)
-      |> Seq.filter TyVariable.is_tid
+      |> Seq.filter Variable.is_tid
       |> to_set
       |> var_set_to_json
     in
@@ -163,7 +157,7 @@ module Declarations = struct
   let shared_arrays (s: Stmt.t) : VarSet.t =
     to_seq s
     |> Seq.filter Decl.is_shared
-    |> Seq.map Decl.ty_var
+    |> Seq.map (fun (x:Decl.t) -> (Decl.ty_var x).name)
     |> Variables.to_set
 
   let summarize (s: Stmt.t) : json =
@@ -175,13 +169,14 @@ module Declarations = struct
     let int_count =
       s
       |> Seq.map Decl.ty_var
-      |> Seq.filter (TyVariable.has_type C_type.is_int)
+      |> Seq.filter (Ty_variable.has_type C_type.is_int)
       |> Seq.length
     in
     let shared_arrays =
       s
       |> Seq.filter Decl.is_shared
       |> Seq.map Decl.ty_var
+      |> Seq.map Ty_variable.name
       |> Variables.to_set
       |> var_set_to_json
     in
@@ -198,20 +193,22 @@ module Calls = struct
   type t = {func: Expr.t; args: Expr.t list}
 
   let function_name (x:t) : Variable.t option =
-    Expr.to_variable x.func
+    match x.func with
+    | Ident x -> Some x.name
+    | _ -> None
 
   let expressions (x:t) : Expr.t Seq.t =
     Seq.return x.func
     |> Seq.append (List.to_seq x.args)
 
-  let variables (x:t) : TyVariable.t Seq.t =
+  let variables (x:t) : Variable.t Seq.t =
     expressions x
     |> Seq.concat_map Variables.from_expr
 
   let uses_vars (vs:VarSet.t) (x:t) : bool =
     x
     |> variables
-    |> Seq.exists (fun (x:TyVariable.t) -> VarSet.mem x.name vs)
+    |> Seq.exists (fun (x:Variable.t) -> VarSet.mem x vs)
 
   (* Returns all function calls in a statement, as
         a sequence. *)
@@ -229,14 +226,9 @@ module Calls = struct
       | SizeOfExpr _
       | RecoveryExpr _
       | CharacterLiteral _
-      | CXXMethodDecl _
+      | Ident _
       | FloatingLiteral _
-      | FunctionDecl _
       | IntegerLiteral _
-      | NonTypeTemplateParmDecl _
-      | ParmVarDecl _
-      | VarDecl _
-      | EnumConstantDecl _
       | UnresolvedLookupExpr _
       -> Seq.empty
 
@@ -270,7 +262,7 @@ module Calls = struct
       c.args
       |> List.exists (fun e ->
         Expr.to_type e
-        |> parse_type
+        |> C_type.from_json
         |> Result.map C_type.is_array
         |> Rjson.unwrap_or false
       )
@@ -282,7 +274,7 @@ module Calls = struct
        in the position of the function *)
     |> Seq.concat_map (fun c ->
       match c.func with
-      | FunctionDecl x -> Seq.return (Variable.name x.name)
+      | Ident x when x.kind = Function -> Seq.return (Variable.name x.name)
       | _ -> Seq.empty
     )
     (* Count how many times each name is used *)
@@ -314,7 +306,7 @@ module Calls = struct
     let uses_global =
       k.params
       |> List.filter (Param.has_type C_type.is_array)
-      |> List.map Param.ty_var
+      |> List.map (fun x -> Param.ty_var x |> Ty_variable.name)
       |> List.to_seq
       |> Variables.to_set
       |> VarSet.union (globals |> List.map Decl.var |> VarSet.of_list)
@@ -468,8 +460,8 @@ module NestedLoops = struct
         let uses_bound (e:Expr.t) : bool =
           (* Range over all variables used in e *)
           Variables.from_expr e
-          |> Seq.exists (fun (x:TyVariable.t) ->
-            VarSet.mem x.name bound
+          |> Seq.exists (fun (x:Variable.t) ->
+            VarSet.mem x bound
           )
         in
         let in_init =
@@ -524,11 +516,10 @@ module MutatedVar = struct
 
   let rec get_writes (e:Expr.t) (writes:VarSet.t) : VarSet.t =
     match e with
-    | BinaryOperator {lhs=ParmVarDecl{name=x; _}; opcode="="; rhs=s2; ty=ty}
-    | BinaryOperator {lhs=VarDecl{name=x; _}; opcode="="; rhs=s2; ty=ty}
-    ->
+    | BinaryOperator {lhs=Ident {name=x; kind; _}; opcode="="; rhs=s2; ty}
+      when kind=ParmVar || kind =Var ->
       let is_int =
-        match parse_type ty with
+        match C_type.from_json ty with
         | Ok ty -> C_type.is_int ty
         | Error _ -> false
       in
@@ -539,18 +530,13 @@ module MutatedVar = struct
     | CXXOperatorCallExpr {func=f; args=a; _}
     -> f::a |> List.fold_left (fun writes e -> get_writes e writes) writes
 
-    | ParmVarDecl _
-    | VarDecl _
+    | Ident _
     | CXXBoolLiteralExpr _
     | SizeOfExpr _
     | RecoveryExpr _
     | CharacterLiteral _
-    | CXXMethodDecl _
     | FloatingLiteral _
-    | FunctionDecl _
     | IntegerLiteral _
-    | NonTypeTemplateParmDecl _
-    | EnumConstantDecl _
     | UnresolvedLookupExpr _
     -> writes
 

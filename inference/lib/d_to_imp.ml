@@ -138,13 +138,13 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
   | Ident d ->
     ret_n (Var d.name)
   | SizeOfExpr ty ->
-    (match C_lang.parse_type ty with
+    (match C_type.from_json ty with
     | Ok ty ->
       let size = C_type.sizeof ty |> Option.value ~default:4 in
       L.warning ("sizeof(" ^ C_type.to_string ty ^ ") = " ^ string_of_int size);
       ret_n (Num size)
     | Error _ ->
-      L.warning ("could not parse type: sizeof(" ^ C_lang.type_to_str ty ^ ") = ?");
+      L.warning ("could not parse type: sizeof(" ^ C_type.j_to_string ty ^ ") = ?");
       Ok Unknown)
   | IntegerLiteral n
   | CharacterLiteral n -> ret_n (Num n)
@@ -208,7 +208,7 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
 
 let parse_type (e:D_lang.d_type) : C_type.t d_result =
   e
-  |> C_lang.parse_type
+  |> C_type.from_json
   |> Result.map_error (fun e ->
     Common.StackTrace.RootCause (Rjson.error_to_string e)
   )
@@ -428,7 +428,7 @@ let cast_map f = Rjson.map_all f (fun idx _ e ->
 
 let parse_decl (d:D_lang.Decl.t) : (Variable.t * nexp option) list d_result =
   let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
-  let* ty = match C_lang.parse_type d.ty_var.ty with
+  let* ty = match C_type.from_json d.ty_var.ty with
   | Ok ty -> Ok ty
   | Error _ -> root_cause ("parse_decl: error parsing type: " ^ Rjson.pp_js d.ty_var.ty)
   in
@@ -448,7 +448,7 @@ let parse_decl (d:D_lang.Decl.t) : (Variable.t * nexp option) list d_result =
   )
 
 let is_pointer (j:Yojson.Basic.t) =
-  match C_lang.parse_type j with
+  match C_type.from_json j with
   | Ok t -> C_type.is_pointer t
   | Error _ -> false
 
@@ -637,7 +637,7 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
   | DeclStmt ([{ty_var={ty=ty; _} as lhs; init=Some (IExpr rhs); _}] as l)
     when is_pointer ty
     ->
-    let lhs : D_lang.Expr.t = Ident (D_lang.DeclExpr.from_ty_var lhs) in
+    let lhs : D_lang.Expr.t = Ident (Decl_expr.from_ty_var lhs) in
     (match parse_load_expr lhs rhs with
     | Left a ->
       parse_location_alias a
@@ -714,7 +714,7 @@ let parse_param (p:C_lang.Param.t) : param option d_result =
       data_type = C_type.get_array_type ty;
     }
   in
-  let* ty = C_lang.parse_type p.ty_var.ty |> Result.map_error from_j_error in
+  let* ty = C_type.from_json p.ty_var.ty |> Result.map_error from_j_error in
   if C_type.is_int ty then
     Ok (Some (Either.Left p.ty_var.name))
   else if C_type.is_array ty then (
@@ -846,7 +846,7 @@ let parse_kernel
     | [] -> params
     | PTemplateTypeParmDecl _ :: l -> add_type_params params l
     | PNonTypeTemplateParmDecl x :: l ->
-      let params = match C_lang.parse_type x.ty with
+      let params = match C_type.from_json x.ty with
       | Ok ty when C_type.is_int ty -> Variable.Set.add x.name params
       | _ -> params
       in
@@ -885,7 +885,7 @@ let parse_program (p:D_lang.d_program) : Imp.Kernel.t list d_result =
     match p with
     | Declaration v :: l ->
       let (arrays, globals, assigns) =
-          match C_lang.parse_type v.ty_var.ty with
+          match C_type.from_json v.ty_var.ty with
           | Ok ty ->
             if List.mem C_lang.c_attr_shared v.attrs then
               (v.ty_var.name, mk_array SharedMemory ty)::arrays, globals, assigns
