@@ -54,7 +54,7 @@ module Make (L:Logger.Logger) = struct
         | Error e ->
           C_lang.print_program k1;
           print_endline "------";
-          D_lang.print_program k2;
+          D_lang.Program.print k2;
           print_endline "-------";
           D_to_imp.print_error e;
           exit(exit_status)

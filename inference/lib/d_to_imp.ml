@@ -877,12 +877,12 @@ let parse_kernel
     ;
   }
 
-let parse_program (p:D_lang.d_program) : Imp.Kernel.t list d_result =
+let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
   let rec parse_p
     (arrays:(Variable.t * Memory.t) list)
     (globals:Variable.t list)
     (assigns:(Variable.t * nexp) list)
-    (p:D_lang.d_program)
+    (p:D_lang.Program.t)
   : Imp.Kernel.t list d_result =
     match p with
     | Declaration v :: l ->

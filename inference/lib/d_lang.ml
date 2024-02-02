@@ -431,6 +431,22 @@ module Kernel = struct
   }
   let is_global (k:t) : bool =
     k.attribute |> KernelAttr.is_global
+
+
+  let to_s (k:t) : Indent.t list =
+    let tps = let open C_lang in if k.type_params <> [] then "[" ^
+        list_to_s Ty_param.to_string k.type_params ^
+      "]" else ""
+    in
+    let open Indent in
+    [
+      let open C_lang in
+      Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^ " " ^ tps ^
+      "(" ^ list_to_s Param.to_string k.params ^ ")");
+    ]
+    @
+    Stmt.to_string k.code
+
 end
 
 module Def = struct
@@ -442,9 +458,24 @@ module Def = struct
     function
     | Kernel k when Kernel.is_global k -> true
     | _ -> false
+
+  let to_s (d:t) : Indent.t list =
+    let open Indent in
+    match d with
+    | Declaration d -> [Line (Decl.to_string d ^ ";")]
+    | Kernel k -> Kernel.to_s k
+
 end
 
-type d_program = Def.t list
+module Program = struct
+  type t = Def.t list
+
+  let to_s (p:t) : Indent.t list =
+    List.concat_map (fun k -> Def.to_s k @ [Line ""]) p
+
+  let print (p:t) : unit =
+    Indent.print (to_s p)
+end
 
 (* ------------------------------------- *)
 
@@ -765,33 +796,5 @@ let rewrite_def (d:C_lang.c_def) : Def.t =
     let (_, d) = rewrite_decl d in
     Declaration d
 
-let rewrite_program: C_lang.c_program -> d_program =
+let rewrite_program: C_lang.c_program -> Program.t =
   List.map rewrite_def
-
-(* ------------------------------------------------------------------------ *)
-
-let kernel_to_s (k:Kernel.t) : Indent.t list =
-  let tps = let open C_lang in if k.type_params <> [] then "[" ^
-      list_to_s Ty_param.to_string k.type_params ^
-    "]" else ""
-  in
-  let open Indent in
-  [
-    let open C_lang in
-    Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^ " " ^ tps ^
-    "(" ^ list_to_s Param.to_string k.params ^ ")");
-  ]
-  @
-  Stmt.to_string k.code
-
-let def_to_s (d:Def.t) : Indent.t list =
-  let open Indent in
-  match d with
-  | Declaration d -> [Line (Decl.to_string d ^ ";")]
-  | Kernel k -> kernel_to_s k
-
-let program_to_s (p:d_program) : Indent.t list =
-  List.concat_map (fun k -> def_to_s k @ [Line ""]) p
-
-let print_program (p:d_program) : unit =
-  Indent.print (program_to_s p)

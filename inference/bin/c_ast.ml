@@ -2,7 +2,7 @@ open Stage0
 open Inference
 open Queries
 module Decl = C_lang.Decl
-let analyze (j:Yojson.Basic.t) : C_lang.c_program  * D_lang.d_program * (Imp.Kernel.t list) =
+let analyze (j:Yojson.Basic.t) : C_lang.c_program * D_lang.Program.t * (Imp.Kernel.t list) =
   match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = D_lang.rewrite_program k1 in
@@ -11,7 +11,7 @@ let analyze (j:Yojson.Basic.t) : C_lang.c_program  * D_lang.d_program * (Imp.Ker
       | Error e ->
         C_lang.print_program k1;
         print_endline "------";
-        D_lang.print_program k2;
+        D_lang.Program.print k2;
         print_endline "-------";
         D_to_imp.print_error e;
         exit(-1)
@@ -32,7 +32,7 @@ let main
     print_endline "\n==================== STAGE 1: C\n";
     C_lang.print_program k1;
     print_endline "==================== STAGE 2: C with reads/writes as statements\n";
-    D_lang.print_program k2;
+    D_lang.Program.print k2;
     print_endline "==================== STAGE 3: IMP\n";
     List.iter Imp.Kernel.print k3;
     print_endline "==================== STAGE 4: stats\n";
