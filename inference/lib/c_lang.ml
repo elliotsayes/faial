@@ -636,34 +636,6 @@ module Stmt = struct
 
 end
 
-module Param = struct
-  type t = {
-    ty_var : Ty_variable.t;
-    is_used: bool;
-    is_shared: bool;
-  }
-
-  let make ~ty_var ~is_used ~is_shared : t =
-    {ty_var; is_used; is_shared}
-
-  let ty_var (x:t) : Ty_variable.t = x.ty_var
-
-  let name (x:t) : Variable.t = x.ty_var.name
-
-  let has_type (type_of:C_type.t -> bool) (x:t) : bool =
-    Ty_variable.has_type type_of x.ty_var
-
-  let to_string (p:t) : string =
-    let used = if p.is_used then "" else " unsed" in
-    let shared = if p.is_shared then "shared " else "" in
-    used ^ shared ^ Ty_variable.to_string p.ty_var
-
-end
-
-type c_type_param =
-  | PTemplateTypeParmDecl of Variable.t
-  | PNonTypeTemplateParmDecl of {name: Variable.t; ty: c_type}
-
 module KernelAttr = struct
   type t =
     | Default
@@ -698,7 +670,7 @@ module Kernel = struct
   type t = {
     name: string;
     code: Stmt.t;
-    type_params: c_type_param list;
+    type_params: Ty_param.t list;
     params: Param.t list;
     attribute: KernelAttr.t;
   }
@@ -706,7 +678,7 @@ module Kernel = struct
     {name; code; type_params; params; attribute}
   let name (x:t) : string = x.name
   let params (x:t) : Param.t list = x.params
-  let type_params (x:t) : c_type_param list = x.type_params
+  let type_params (x:t) : Ty_param.t list = x.type_params
   let attribute (x:t) : KernelAttr.t = x.attribute
 end
 
@@ -1265,7 +1237,7 @@ let wrap_error (msg:string) (j:Yojson.Basic.t): 'a j_result -> 'a j_result =
     | Error e -> Rjson.because msg j e
 
 
-let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : Kernel.t j_result =
+let parse_kernel (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Kernel.t j_result =
   let open Rjson in
   (
     let* o = cast_object j in
@@ -1350,18 +1322,18 @@ let is_kernel (j:Yojson.Basic.t) : bool =
   in
   is_kernel |> unwrap_or false
 
-let parse_type_param (j:Yojson.Basic.t) : c_type_param option j_result =
+let parse_type_param (j:Yojson.Basic.t) : Ty_param.t option j_result =
   let open Rjson in
   let* o = cast_object j in
   let* k = get_kind o in
   match k with
   | "TemplateTypeParmDecl" ->
     let* name = parse_variable j in
-    Ok (Some (PTemplateTypeParmDecl name))
+    Ok (Some (Ty_param.TemplateType name))
   | "NonTypeTemplateParmDecl" ->
     let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (Some (PNonTypeTemplateParmDecl {name=name; ty=ty}))
+    Ok (Some (Ty_param.NonTypeTemplate {name=name; ty=ty}))
   | _ -> Ok None
 
 
@@ -1369,7 +1341,7 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
   let open Rjson in
   let* o = cast_object j in
   let* k = get_kind o in
-  let parse_k (type_params:c_type_param list) (j:Yojson.Basic.t) : c_def list j_result =
+  let parse_k (type_params:Ty_param.t list) (j:Yojson.Basic.t) : c_def list j_result =
     if is_kernel j then
       let* k = parse_kernel type_params j in
       (if k.code = CompoundStmt [] then Ok []
@@ -1386,7 +1358,7 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
        might even have some more parameters after the function
        declaration, but those are discarded, as I did not understand
        what they are for. *)
-    let rec handle (type_params:c_type_param list): Yojson.Basic.t list -> c_def list j_result =
+    let rec handle (type_params:Ty_param.t list): Yojson.Basic.t list -> c_def list j_result =
       function
       | [] -> root_cause "Error parsing FunctionTemplateDecl: no FunctionDecl found" j
       | j :: l ->
@@ -1525,16 +1497,9 @@ let parse_program ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : c_progra
 
 (* ------------------------------------------------------------------------ *)
 
-let type_param_to_s (p:c_type_param) : string =
-  let name = match p with
-  | PTemplateTypeParmDecl x -> x
-  | PNonTypeTemplateParmDecl x -> x.name
-  in
-  Variable.name name
-
 let kernel_to_s (k:Kernel.t) : Indent.t list =
   let tps = if k.type_params <> [] then "[" ^
-      list_to_s type_param_to_s k.type_params ^
+      list_to_s Ty_param.to_string k.type_params ^
     "]" else ""
   in
   let open Indent in

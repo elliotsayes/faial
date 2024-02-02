@@ -425,8 +425,8 @@ module Kernel = struct
   type t = {
     name: string;
     code: Stmt.t;
-    type_params: C_lang.c_type_param list;
-    params: C_lang.Param.t list;
+    type_params: Ty_param.t list;
+    params: Param.t list;
     attribute: KernelAttr.t;
   }
   let is_global (k:t) : bool =
@@ -772,7 +772,7 @@ let rewrite_program: C_lang.c_program -> d_program =
 
 let kernel_to_s (k:Kernel.t) : Indent.t list =
   let tps = let open C_lang in if k.type_params <> [] then "[" ^
-      list_to_s type_param_to_s k.type_params ^
+      list_to_s Ty_param.to_string k.type_params ^
     "]" else ""
   in
   let open Indent in

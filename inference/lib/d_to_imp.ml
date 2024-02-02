@@ -708,7 +708,7 @@ type param = (Variable.t, Variable.t * Memory.t) Either.t
 let from_j_error (e:Rjson.j_error) : d_error =
   RootCause (Rjson.error_to_string e)
 
-let parse_param (p:C_lang.Param.t) : param option d_result =
+let parse_param (p:Param.t) : param option d_result =
   let mk_array (h:Memory.Hierarchy.t) (ty:C_type.t) : Memory.t =
     {
       hierarchy = h;
@@ -724,7 +724,7 @@ let parse_param (p:C_lang.Param.t) : param option d_result =
     Ok (Some (Either.Right (p.ty_var.name, mk_array h ty)))
   ) else Ok None
 
-let parse_params (ps:C_lang.Param.t list) : (Variable.Set.t * Memory.t Variable.Map.t) d_result =
+let parse_params (ps:Param.t list) : (Variable.Set.t * Memory.t Variable.Map.t) d_result =
   let* params = Rjson.map_all parse_param
     (fun i _ e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
@@ -843,11 +843,11 @@ let parse_kernel
   let shared = parse_shared k.code
     |> Common.append_rev1 shared_params
     |> Variable.MapUtil.from_list in
-  let rec add_type_params (params:Variable.Set.t) : C_lang.c_type_param list -> Variable.Set.t =
+  let rec add_type_params (params:Variable.Set.t) : Ty_param.t list -> Variable.Set.t =
     function
     | [] -> params
-    | PTemplateTypeParmDecl _ :: l -> add_type_params params l
-    | PNonTypeTemplateParmDecl x :: l ->
+    | TemplateType _ :: l -> add_type_params params l
+    | NonTypeTemplate x :: l ->
       let params = match C_type.from_json x.ty with
       | Ok ty when C_type.is_int ty -> Variable.Set.add x.name params
       | _ -> params
