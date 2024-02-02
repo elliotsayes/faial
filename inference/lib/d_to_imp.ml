@@ -246,10 +246,7 @@ module Arg = struct
     if C_type.is_array ty then (
       match parse_loc e with
       | Ok l -> Ok (Array l)
-      | Error e ->
-        print_string ("-> ");
-        StackTrace.iter print_endline e;
-        Ok Unsupported
+      | Error _ -> Ok Unsupported
     ) else if C_type.is_int ty then (
       (* Handle integer *)
       let* e = with_msg "Arg.parse" parse_exp e in
@@ -576,7 +573,8 @@ let ret_assert (b:D_lang.Expr.t) : Imp.Stmt.t list d_result =
   | Some b -> ret (Assert b)
   | None -> ret_skip
 
-let rec parse_stmt (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
+let rec parse_stmt (sigs:Variable.t list Variable.Map.t) (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
+  let parse_stmt = parse_stmt sigs in
   let with_msg (m:string) f b = with_msg_ex (fun _ -> "parse_stmt: " ^ m ^ ": " ^ D_lang.Stmt.summarize c) f b in
   let ret_n = Unknown.ret_n in
   let ret_b = Unknown.ret_b in
@@ -597,13 +595,19 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
     when Variable.name n = "__requires" ->
     ret_assert b
 
-  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args;_ } as e) ->
-    let before = D_lang.Expr.to_string e in
-    let* args = with_msg "call.args" (cast_map Arg.parse) args in
-    args |> ret_args (fun args ->
-      let after = Imp.Stmt.Call (n, args) in
-      print_endline (before ^ " -> " ^ Imp.Stmt.to_string after);
-      after
+  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args;_ }) ->
+    (match Variable.Map.find_opt n sigs with
+    | Some params ->
+      if List.length params = List.length args then (
+        let* args = with_msg "call.args" (cast_map Arg.parse) args in
+        args |> ret_args (fun args ->
+          let args = List.map2 (fun x y -> (x, y)) params args in
+          Imp.Stmt.Call {kernel=n; args}
+        )
+      ) else
+        root_cause "Args mismatch!"
+    | None ->
+      ret (Block [])
     )
 
   | WriteAccessStmt w ->
@@ -828,12 +832,13 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
   find_shared [] s
 
 let parse_kernel
+  (sigs:Variable.t list Variable.Map.t)
   (shared_params:(Variable.t * Memory.t) list)
   (globals:Variable.t list)
   (assigns:(Variable.t * nexp) list)
   (k:D_lang.Kernel.t)
 : Imp.Kernel.t d_result =
-  let* code = parse_stmt k.code in
+  let* code = parse_stmt sigs k.code in
   let* (params, arrays) = parse_params k.params in
   let params =
     globals
@@ -878,6 +883,7 @@ let parse_kernel
   }
 
 let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
+  let sigs = D_lang.Program.kernel_signatures p in
   let rec parse_p
     (arrays:(Variable.t * Memory.t) list)
     (globals:Variable.t list)
@@ -910,7 +916,7 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
     | Kernel k :: l ->
       let* ks = parse_p arrays globals assigns l in
       if KernelAttr.is_global k.attribute then
-        let* k = parse_kernel arrays globals assigns k in
+        let* k = parse_kernel sigs arrays globals assigns k in
         Ok (k::ks)
       else
         Ok ks

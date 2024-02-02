@@ -13,3 +13,7 @@ let to_string (p:t) : string =
   in
   Variable.name name
 
+let name : t -> Variable.t =
+  function
+  | TemplateType x -> x
+  | NonTypeTemplate x -> x.name

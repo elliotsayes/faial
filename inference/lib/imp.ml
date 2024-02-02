@@ -25,14 +25,21 @@ module Arg = struct
   type t =
   | Scalar of nexp
   | Array of {address: Variable.t; offset: nexp}
+  | Unsupported
 
   let to_string : t -> string =
     function
+    | Unsupported -> "_"
     | Scalar e -> Exp.n_to_string e
-    | Array l -> Variable.name l.address ^ " + " ^ Exp.n_to_string l.offset
+    | Array l -> Variable.name l.address ^ ":(" ^ Exp.n_to_string l.offset ^ ")"
 end
 
 module Stmt = struct
+  type call = {
+    kernel: Variable.t;
+    args : (Variable.t * Arg.t) list
+  }
+
   type t =
   | Sync of Location.t option
   | Assert of bexp
@@ -44,7 +51,7 @@ module Stmt = struct
   | If of (bexp * t * t)
   | For of (Range.t * t)
   | Star of t
-  | Call of (Variable.t * Arg.t list)
+  | Call of call
 
   let is_for : t -> bool =
     function
@@ -132,9 +139,15 @@ module Stmt = struct
   let to_s: t -> Indent.t list =
     let rec stmt_to_s : t -> Indent.t list =
       function
-      | Call (f, args) ->
-        let args = String.concat ", " (List.map Arg.to_string args) in
-        [Line (Variable.name f ^ "(" ^ args ^ ")")]
+      | Call c ->
+        let args =
+          c.args
+          |> List.map (fun (k, a) ->
+            Variable.name k ^ "=" ^ Arg.to_string a
+          )
+          |> String.concat ", "
+        in
+        [Line (Variable.name c.kernel ^ "(" ^ args ^ ")")]
       | Sync _ -> [Line "sync;"]
       | Assert b -> [Line ("assert (" ^ b_to_string b ^ ");")]
       | Read r -> [Line (Variable.name r.target ^ " = ro " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
@@ -187,6 +200,8 @@ module Stmt = struct
     in
     stmt_to_s
 
+  let to_string (s: t) : string =
+    Indent.to_string (to_s s)
 end
 
 module Post = struct
