@@ -219,6 +219,7 @@ module Arg = struct
   type t =
   | Scalar of i_exp
   | Array of i_array
+  | Unsupported
 
   let rec parse_loc : D_lang.Expr.t -> i_array d_result =
     function
@@ -240,20 +241,20 @@ module Arg = struct
         "WARNING: parse_loc: unsupported expression: " ^ D_lang.Expr.to_string e
       )
 
-  let parse (e: D_lang.Expr.t) : t option d_result =
+  let parse (e: D_lang.Expr.t) : t d_result =
     let* ty = D_lang.Expr.to_type e |> parse_type in
     if C_type.is_array ty then (
       match parse_loc e with
-      | Ok l -> Ok (Some (Array l))
+      | Ok l -> Ok (Array l)
       | Error e ->
         print_string ("-> ");
         StackTrace.iter print_endline e;
-        Ok None
+        Ok Unsupported
     ) else if C_type.is_int ty then (
       (* Handle integer *)
       let* e = with_msg "Arg.parse" parse_exp e in
-      Ok (Some (Scalar e))
-    ) else Ok None
+      Ok (Scalar e)
+    ) else Ok Unsupported
 end
 (* -------------------------------------------------------------- *)
 
@@ -354,6 +355,8 @@ module Unknown = struct
     | Array {offset; address} ->
       let (u, offset) = handle_n u offset in
       (u, Array {address; offset})
+    | Unsupported ->
+      (u, Unsupported)
 
   let to_arg : Arg.t -> Variable.Set.t * Imp.Arg.t =
     convert handle_arg
@@ -597,8 +600,7 @@ let rec parse_stmt (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
   | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args;_ } as e) ->
     let before = D_lang.Expr.to_string e in
     let* args = with_msg "call.args" (cast_map Arg.parse) args in
-    List.filter_map (fun x -> x) args
-    |> ret_args (fun args ->
+    args |> ret_args (fun args ->
       let after = Imp.Stmt.Call (n, args) in
       print_endline (before ^ " -> " ^ Imp.Stmt.to_string after);
       after
