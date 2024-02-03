@@ -87,6 +87,7 @@ module Make (L:Logger.Logger) = struct
     { parsed with
       kernels =
       parsed.kernels
+      |> Imp.inline_calls
       |> List.map (fun p ->
         let p = Imp.Kernel.compile p in
         let key_vals =

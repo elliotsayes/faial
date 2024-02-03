@@ -581,12 +581,94 @@ let rec post_to_proto : Post.t -> Proto.Code.t =
     Proto.Code.seq (post_to_proto i) (post_to_proto p)
 
 
+module Preamble = struct
+
+  type t = {
+    globals: Variable.Set.t;
+    code: Stmt.t list;
+  }
+
+  let cuda_global_vars = [
+    ("blockIdx", 0);
+    ("blockDim", 1);
+    ("gridDim", 1);
+  ]
+
+  let cuda_local_vars = [("threadIdx", 0)]
+
+  let all_cuda_vars = cuda_local_vars @ cuda_global_vars
+
+  let cuda_base_vars : StringSet.t =
+    all_cuda_vars
+    |> List.map fst
+    |> StringSet.of_list
+
+  let cuda_dims = ["x"; "y"; "z"]
+
+  let cuda : t =
+    let open Exp in
+    let mk_dims (name:string) : (Variable.t * nexp option) list =
+      List.map (fun x -> (Variable.from_name (name ^ "." ^ x),  None) ) cuda_dims
+    in
+    let local_dims = List.concat_map mk_dims (List.map fst cuda_local_vars) in
+    let mk_var (name:string) (suffix:string) (x:string) : nexp =
+      Var (Variable.from_name (name ^ suffix ^ "." ^ x))
+    in
+    let all_vars_constraints : bexp list =
+      cuda_dims
+      |> List.concat_map (fun (x:string) ->
+        all_cuda_vars
+        |> List.map (fun (name, lower_bound) ->
+          n_ge (Var (Variable.from_name (name ^ "." ^ x))) (Num lower_bound)
+        )
+      )
+    in
+    let idx_lt_dim (name1, name2) : bexp list =
+      List.map (fun x ->
+        n_lt (mk_var name1 "Idx" x) (mk_var name2 "Dim" x)
+      ) cuda_dims
+    in
+    let var_list (vars : (string*int) list) : Variable.t list =
+      cuda_dims
+      |> List.concat_map (fun (x:string) ->
+        vars
+        |> List.map fst
+        |> List.map (fun (name:string) ->
+            Variable.from_name (name ^ "." ^ x)
+        )
+      )
+    in
+    let local_vars : Variable.t list = var_list cuda_local_vars in
+    let global_vars : Variable.Set.t =
+      cuda_global_vars
+      |> var_list
+      |> Variable.Set.of_list
+    in
+    {
+      globals = global_vars;
+      code=[
+        Decl local_dims;
+        Assert (
+          all_vars_constraints
+          @
+          (Exp.distinct local_vars ::
+            List.concat_map idx_lt_dim [("thread", "block"); ("block", "grid")]
+          )
+          |> b_and_ex
+        )
+      ];
+    }
+
+end
+
 module Kernel = struct
   type t = {
     (* The kernel name *)
     name: string;
     (* A kernel precondition of every phase. *)
     pre: bexp;
+    (* The GPU API being used (eg, CUDA) *)
+    preamble: Preamble.t;
     (* The shared locations that can be accessed in the kernel. *)
     arrays: Memory.t Variable.Map.t;
     (* The internal variables are used in the code of the kernel.  *)
@@ -616,7 +698,8 @@ module Kernel = struct
     Indent.print (to_s k)
 
   let compile (k:t) : Proto.Code.t Proto.Kernel.t =
-    let (globals, p) = imp_to_post (k.params, k.code) in
+    let globals = Variable.Set.union k.params k.preamble.globals in
+    let (globals, p) = imp_to_post (globals, Block (k.preamble.code @ [k.code])) in
     let p : Post.t =
       p
       |> Post.filter_locs k.arrays (* Remove unknown arrays *)

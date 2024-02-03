@@ -56,23 +56,6 @@ type d_location_alias = {
   offset: D_lang.Expr.t;
 }
 
-let cuda_global_vars = [
-  ("blockIdx", 0);
-  ("blockDim", 1);
-  ("gridDim", 1);
-]
-
-let cuda_local_vars = [("threadIdx", 0)]
-
-let all_cuda_vars = cuda_local_vars @ cuda_global_vars
-
-let cuda_base_vars : StringSet.t =
-  all_cuda_vars
-  |> List.map fst
-  |> StringSet.of_list
-
-let cuda_dims = ["x"; "y"; "z"]
-
 type i_nexp =
   | Var of Variable.t
   | Num of int
@@ -730,60 +713,6 @@ let parse_params (ps:Param.t list) : (Variable.Set.t * Memory.t Variable.Map.t) 
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
   Ok (Variable.Set.of_list globals, Variable.MapUtil.from_list arrays)
 
-let cuda_preamble (tail:Imp.Stmt.t) : Variable.Set.t * Imp.Stmt.t =
-  let open Exp in
-  let mk_dims (name:string) : (Variable.t * nexp option) list =
-    List.map (fun x -> (Variable.from_name (name ^ "." ^ x),  None) ) cuda_dims
-  in
-  let local_dims = List.concat_map mk_dims (List.map fst cuda_local_vars) in
-  let mk_var (name:string) (suffix:string) (x:string) : nexp =
-    Var (Variable.from_name (name ^ suffix ^ "." ^ x))
-  in
-  let all_vars_constraints : bexp list =
-    cuda_dims
-    |> List.concat_map (fun (x:string) ->
-      all_cuda_vars
-      |> List.map (fun (name, lower_bound) ->
-        n_ge (Var (Variable.from_name (name ^ "." ^ x))) (Num lower_bound)
-      )
-    )
-  in
-  let idx_lt_dim (name1, name2) : bexp list =
-    List.map (fun x ->
-      n_lt (mk_var name1 "Idx" x) (mk_var name2 "Dim" x)
-    ) cuda_dims
-  in
-  let var_list (vars : (string*int) list) : Variable.t list =
-    cuda_dims
-    |> List.concat_map (fun (x:string) ->
-      vars
-      |> List.map fst
-      |> List.map (fun (name:string) ->
-          Variable.from_name (name ^ "." ^ x)
-      )
-    )
-  in
-  let local_vars : Variable.t list = var_list cuda_local_vars in
-  let global_vars : Variable.Set.t =
-    cuda_global_vars
-    |> var_list
-    |> Variable.Set.of_list
-  in
-  let open Imp in
-  global_vars,
-  Block [
-    Decl local_dims;
-    Assert (
-      all_vars_constraints
-      @
-      (Exp.distinct local_vars ::
-        List.concat_map idx_lt_dim [("thread", "block"); ("block", "grid")]
-      )
-      |> b_and_ex
-    );
-    tail
-  ]
-
 let mk_array (h:Memory.Hierarchy.t) (ty:C_type.t) : Memory.t =
   {
     hierarchy = h;
@@ -856,17 +785,18 @@ let parse_kernel
       add_type_params params l
   in
   let open Imp.Stmt in
-  let globals, code =
+  let code =
     let assigns = Decl (List.map (fun (k,v) -> (k, Some v)) assigns) in
-    cuda_preamble (Block (assigns :: code))
+    Block (assigns :: code)
   in
   let params =
     add_type_params params k.type_params
-    |> Variable.Set.union globals
+    |> Variable.Set.union (Variable.Set.of_list globals)
   in
   let open Imp.Kernel in
   Ok {
     name = k.name;
+    preamble = Imp.Preamble.cuda;
     pre = Exp.b_true; (* TODO: implement this *)
     code = code;
     params = params;
