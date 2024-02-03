@@ -911,11 +911,8 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
       parse_p arrays globals assigns l
     | Kernel k :: l ->
       let* ks = parse_p arrays globals assigns l in
-      if KernelAttr.is_global k.attribute then
-        let* k = parse_kernel sigs arrays globals assigns k in
-        Ok (k::ks)
-      else
-        Ok ks
+      let* k = parse_kernel sigs arrays globals assigns k in
+      Ok (k::ks)
     | [] -> Ok []
   in
   parse_p [] [] [] p

@@ -70,6 +70,7 @@ module Make (L:Logger.Logger) = struct
     ?(grid_dim=None)
     ?(includes=[])
     ?(exit_status=2)
+    ?(only_globals=true)
     (fname:string)
   :
     proto_kernel t
@@ -98,6 +99,9 @@ module Make (L:Logger.Logger) = struct
         let key_vals = Gv_parser.to_assoc parsed.options @ key_vals in
         let p = Proto.Kernel.replace_constants key_vals p in
         p
+      )
+      |> List.filter (fun k ->
+        not only_globals || (only_globals && Proto.Kernel.is_global k)
       )
     }
 end
