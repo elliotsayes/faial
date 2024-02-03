@@ -472,11 +472,7 @@ let parse_location_alias (s:d_location_alias) : Imp.Stmt.t list d_result =
   let* target = with_msg "location_alias.target" parse_var s.target in
   let* offset = with_msg "location_alias.offset" parse_exp s.offset in
   offset |> Unknown.ret_n (fun offset ->
-    LocationAlias {
-      alias_target=target;
-      alias_source=source;
-      alias_offset=offset
-    }
+    LocationAlias { target; source; offset; }
   )
 
 type 'a unop =

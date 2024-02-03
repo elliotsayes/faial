@@ -11,7 +11,14 @@ type var_type = Location | Index
 
 type access_expr = {access_index: nexp list; access_mode: Access.Mode.t}
 
-type alias_expr = {alias_source: Variable.t; alias_target: Variable.t; alias_offset: nexp}
+module Alias = struct
+  type t = {source: Variable.t; target: Variable.t; offset: nexp}
+  let to_string (l:t) : string =
+    Variable.name l.target ^ " = " ^
+    Variable.name l.source ^ " + " ^
+    n_to_string l.offset ^ ";"
+end
+
 type read = {target: Variable.t; array: Variable.t; index: nexp list}
 type write = {array: Variable.t; index: nexp list; payload: int option}
 
@@ -21,37 +28,57 @@ let read_to_acc (r:read) : Variable.t * Access.t =
 let write_to_acc (w:write) : Variable.t * Access.t =
   (w.array, Access.{index=w.index; mode=Wr w.payload})
 
+module ArrayUse = struct
+  type t = {address: Variable.t; offset: nexp}
+  let to_string (l:t) : string =
+    Variable.name l.address ^ ":(" ^ Exp.n_to_string l.offset ^ ")"
+end
+
 module Arg = struct
   type t =
-  | Scalar of nexp
-  | Array of {address: Variable.t; offset: nexp}
-  | Unsupported
+    | Scalar of nexp
+    | Array of ArrayUse.t
+    | Unsupported
 
   let to_string : t -> string =
     function
     | Unsupported -> "_"
     | Scalar e -> Exp.n_to_string e
-    | Array l -> Variable.name l.address ^ ":(" ^ Exp.n_to_string l.offset ^ ")"
+    | Array l -> ArrayUse.to_string l
 end
 
-module Stmt = struct
-  type call = {
+module Call = struct
+  type t = {
     kernel: Variable.t;
     args : (Variable.t * Arg.t) list
   }
 
+  let to_string (c:t) : string =
+    let args =
+      c.args
+      |> List.map (fun (k, a) ->
+        Variable.name k ^ "=" ^ Arg.to_string a
+      )
+      |> String.concat ", "
+    in
+    Variable.name c.kernel ^ "(" ^ args ^ ")"
+
+end
+
+module Stmt = struct
+
   type t =
-  | Sync of Location.t option
-  | Assert of bexp
-  | Read of read
-  | Write of write
-  | Block of (t list)
-  | LocationAlias of alias_expr
-  | Decl of (Variable.t * nexp option) list
-  | If of (bexp * t * t)
-  | For of (Range.t * t)
-  | Star of t
-  | Call of call
+    | Sync of Location.t option
+    | Assert of bexp
+    | Read of read
+    | Write of write
+    | Block of (t list)
+    | LocationAlias of Alias.t
+    | Decl of (Variable.t * nexp option) list
+    | If of (bexp * t * t)
+    | For of (Range.t * t)
+    | Star of t
+    | Call of Call.t
 
   let is_for : t -> bool =
     function
@@ -139,15 +166,7 @@ module Stmt = struct
   let to_s: t -> Indent.t list =
     let rec stmt_to_s : t -> Indent.t list =
       function
-      | Call c ->
-        let args =
-          c.args
-          |> List.map (fun (k, a) ->
-            Variable.name k ^ "=" ^ Arg.to_string a
-          )
-          |> String.concat ", "
-        in
-        [Line (Variable.name c.kernel ^ "(" ^ args ^ ")")]
+      | Call c -> [Line (Call.to_string c)]
       | Sync _ -> [Line "sync;"]
       | Assert b -> [Line ("assert (" ^ b_to_string b ^ ");")]
       | Read r -> [Line (Variable.name r.target ^ " = ro " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
@@ -160,11 +179,7 @@ module Stmt = struct
       | Block [] -> []
       | Block l -> [Line "{"; Block (List.map stmt_to_s l |> List.flatten); Line "}"]
       | LocationAlias l ->
-        [Line ("alias " ^
-          Variable.name l.alias_target ^ " = " ^
-          Variable.name l.alias_source ^ " + " ^
-          n_to_string l.alias_offset ^ ";"
-        )]
+        [Line ("alias " ^ Alias.to_string l)]
       | Decl [] -> []
       | Decl l ->
         let entry (x, n) =
@@ -249,17 +264,17 @@ module Post = struct
     in
     fun p -> to_s p |> Indent.to_string
 
-  let rec loc_subst (alias:alias_expr) : t -> t =
+  let rec loc_subst (alias:Alias.t) : t -> t =
     function
     | Acc (x, a) as i ->
-      if Variable.equal x alias.alias_target
+      if Variable.equal x alias.target
       then (
         match a.index with
         | [n] ->
           (* use the inlined variable but with the location of the alias,
              so that the error message appears in the right place. *)
-          let x = { alias.alias_source with location = x.location } in
-          Acc (x, { a with index = [n_plus alias.alias_offset n] })
+          let x = { alias.source with location = x.location } in
+          Acc (x, { a with index = [n_plus alias.offset n] })
         | _ ->
           let idx = List.length a.index |> string_of_int in
           failwith ("Expecting an index with dimension 1, but got " ^ idx)
@@ -277,6 +292,7 @@ module Post = struct
 
   module SubstMake(S:Subst.SUBST) = struct
     module M = Subst.Make(S)
+
     let o_subst (st:S.t): nexp option -> nexp option =
       function
       | Some n -> Some (M.n_subst st n)
