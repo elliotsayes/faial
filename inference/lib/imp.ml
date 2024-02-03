@@ -1,6 +1,11 @@
 open Stage0
 open Protocols
 
+module StringMap = Common.StringMap
+module StringMapUtil = Common.StringMapUtil
+module StringSet = Common.StringSet
+
+
 let (@) = Common.append_tr
 
 open Exp
@@ -100,6 +105,18 @@ module Stmt = struct
     | Block l -> List.exists has_sync l
     | For (_, p) | Star p -> has_sync p
 
+  let calls : t -> StringSet.t =
+    let rec calls (cs:StringSet.t) : t -> StringSet.t =
+      function
+      | Decl _ | LocationAlias _ | Sync _ | Assert _ | Read _ | Write _ -> cs
+      | Block l -> List.fold_left calls cs l
+      | If (_, s1, s2) -> calls (calls cs s1) s2
+      | For (_, s) | Star s -> calls cs s
+      | Call c -> StringSet.add (Variable.name c.kernel) cs
+    in
+    calls StringSet.empty
+
+
   let fold : 'a. (t -> 'a -> 'a) -> t -> 'a -> 'a =
     fun (f: t -> 'a -> 'a) (p:t) (init:'a) ->
       let rec fold_i (s:t) (init:'a) : 'a =
@@ -137,7 +154,6 @@ module Stmt = struct
 
   let find_all (f: t -> bool) : t -> t Seq.t =
     find_all_map (fun x -> if f x then Some x else None)
-
 
   let s_block (l:t list) : t =
     Block (
@@ -636,6 +652,142 @@ module Kernel = struct
       visibility = k.visibility;
     }
 
+  let calls (k:t) : StringSet.t =
+    Stmt.calls k.code
+
+  let apply (args : (Variable.t * Arg.t) list) (k:t) : Stmt.t =
+    List.fold_left (fun s (x, a) ->
+      let i =
+        let open Arg in
+        match a with
+        | Scalar e -> Stmt.Decl [(x, Some e)]
+        | Unsupported -> Stmt.Decl [(x, None)]
+        | Array u -> Stmt.LocationAlias {
+            target = x;
+            source = u.address;
+            offset = u.offset;
+          }
+      in
+      Stmt.Block [i; s]
+    ) k.code args
+
+  let inline (funcs:t StringMap.t) (k:t) : t =
+    let rec inline (s:Stmt.t) : Stmt.t =
+      match s with
+      | Call c ->
+        (match StringMap.find_opt (Variable.name c.kernel) funcs with
+        | Some k -> apply c.args k
+        | None -> s
+        )
+      | Sync _ | Assert _ | Read _ | Write _ | Decl _ | LocationAlias _ ->
+        s
+      | Block l -> Block (List.map inline l)
+      | If (b, s1, s2) -> If (b, inline s1, inline s2)
+      | For (r, s) -> For (r, inline s)
+      | Star s -> Star (inline s)
+    in
+    { k with code = inline k.code }
 end
 
+let string_set (s:StringSet.t) =
+    "[" ^ (StringSet.elements s |> String.concat ", ") ^ "]"
+
+module Inliner = struct
+  type t = {
+    kernels: Kernel.t StringMap.t; (* Kernel name to kernel *)
+    targets: StringSet.t StringMap.t; (* For each kernel which other kernels it is calling *)
+    visited: StringSet.t;
+  }
+
+  let key_set (s:'a StringMap.t) : StringSet.t =
+    s
+    |> StringMap.bindings
+    |> List.map fst
+    |> StringSet.of_list
+
+  let to_string (s:t) : string =
+    "{\n" ^
+    "\tkernels = " ^ (key_set s.kernels |> string_set) ^ "\n" ^
+    "\ttargets = " ^ (String.concat ", " (s.targets |> StringMap.bindings |> List.map (fun (k,v) -> k ^"=" ^ string_set v))) ^ "\n" ^
+    "\tvisited = " ^ string_set s.visited ^ "\n" ^
+    "}"
+
+  let inline_kernels (kernels:StringSet.t) (s:t) : t =
+    (* Get the code of the kernels to call *)
+    let leaves =
+      StringMap.filter (fun k _ -> StringSet.mem k kernels) s.kernels
+    in
+    let leaf_set = key_set leaves in
+    (* Get the set of all kernels that call `kernel` *)
+    let to_inline : StringSet.t =
+      s.targets
+      |> StringMap.filter (fun _ x ->
+        (* any kernel that depends on a leaf *)
+        not (StringSet.is_empty (StringSet.inter leaf_set x))
+      )
+      |> key_set
+    in
+    {
+      (* inline each call to a leaf *)
+      kernels = StringMap.mapi (fun name k ->
+        (* if this kernel calls any of the leaves *)
+        if StringSet.mem name to_inline then
+          (* Inline leaves in k *)
+          Kernel.inline leaves k
+        else
+          (* nothing to do, leave kernel as is *)
+          k
+      ) s.kernels;
+      (* remove the leaves from all dependencies *)
+      targets =
+        StringMap.map (fun s -> StringSet.diff s leaf_set) s.targets
+      ;
+      (* add leaves to the set of all visited *)
+      visited = StringSet.union leaf_set s.visited;
+    }
+
+  (* Calculate the set of next possible kernels to inline *)
+  let next (s:t) : StringSet.t =
+    let possible =
+      s.targets
+      |> StringMap.filter (fun _ ts -> StringSet.is_empty ts)
+      |> key_set
+    in
+    StringSet.diff possible s.visited
+
+  let from_list (ks:Kernel.t list) : t =
+    {
+      targets =
+        ks
+        |> List.map (fun k -> (k.Kernel.name, Kernel.calls k))
+        |> StringMapUtil.from_list
+      ;
+      kernels =
+        ks
+        |> List.map (fun k -> (k.Kernel.name, k))
+        |> StringMapUtil.from_list
+      ;
+      visited = StringSet.empty;
+    }
+
+  let kernel_list (s:t) : Kernel.t list =
+    s.kernels
+    |> StringMap.bindings
+    |> List.map snd
+
+  let rec inline_all (s:t) : t =
+    let n = next s in
+    if StringSet.is_empty n then
+      (* we are done *)
+      s
+    else
+      (* inline more *)
+      inline_all (inline_kernels n s)
+end
+
+let inline_calls (l:Kernel.t list) : Kernel.t list =
+  l
+  |> Inliner.from_list
+  |> Inliner.inline_all
+  |> Inliner.kernel_list
 
