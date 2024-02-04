@@ -4,7 +4,7 @@ open Logger
 
 module StackTrace = Common.StackTrace
 module KernelAttr = C_lang.KernelAttr
-module StringSet = Common.StringSet
+module StringMap = Common.StringMap
 
 let (@) = Common.append_tr
 
@@ -552,7 +552,7 @@ let ret_assert (b:D_lang.Expr.t) : Imp.Stmt.t list d_result =
   | Some b -> ret (Assert b)
   | None -> ret_skip
 
-let rec parse_stmt (sigs:Variable.t list Variable.Map.t) (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
+let rec parse_stmt (sigs:Variable.t list StringMap.t) (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
   let parse_stmt = parse_stmt sigs in
   let with_msg (m:string) f b = with_msg_ex (fun _ -> "parse_stmt: " ^ m ^ ": " ^ D_lang.Stmt.summarize c) f b in
   let ret_n = Unknown.ret_n in
@@ -574,14 +574,17 @@ let rec parse_stmt (sigs:Variable.t list Variable.Map.t) (c:D_lang.Stmt.t) : Imp
     when Variable.name n = "__requires" ->
     ret_assert b
 
-  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args;_ }) ->
-    (match Variable.Map.find_opt n sigs with
+  | SExpr (CallExpr {func = Ident {name=n; kind=Function; ty}; args;_ }) ->
+    let kernel = Variable.name n in
+    let ty = C_type.j_to_string ty in
+    let kid = C_type.kernel_id ~kernel ~ty in
+    (match StringMap.find_opt kid sigs with
     | Some params ->
       if List.length params = List.length args then (
         let* args = with_msg "call.args" (cast_map Arg.parse) args in
         args |> ret_args (fun args ->
           let args = List.map2 (fun x y -> (x, y)) params args in
-          Imp.Stmt.Call {kernel=n; args}
+          Imp.Stmt.Call {kernel; ty; args}
         )
       ) else
         root_cause "Args mismatch!"
@@ -757,7 +760,7 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
   find_shared [] s
 
 let parse_kernel
-  (sigs:Variable.t list Variable.Map.t)
+  (sigs:Variable.t list StringMap.t)
   (shared_params:(Variable.t * Memory.t) list)
   (globals:Variable.t list)
   (assigns:(Variable.t * nexp) list)
@@ -796,6 +799,7 @@ let parse_kernel
   let open Imp.Kernel in
   Ok {
     name = k.name;
+    ty = k.ty;
     preamble = Imp.Preamble.cuda;
     pre = Exp.b_true; (* TODO: implement this *)
     code = code;

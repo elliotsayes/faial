@@ -113,6 +113,9 @@ let is_int (c:t) : bool =
 
 (* ------------------------------------- *)
 
+let kernel_id ~kernel ~ty : string =
+  kernel ^ ":" ^ ty
+
 let mk_j_type name =
   `Assoc[
     "qualType", `String name

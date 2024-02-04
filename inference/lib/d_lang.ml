@@ -3,6 +3,8 @@ open Protocols
 
 module StackTrace = Common.StackTrace
 module KernelAttr = C_lang.KernelAttr
+module StringMap = Common.StringMap
+module StringMapUtil = Common.StringMapUtil
 
 type json = Yojson.Basic.t
 type j_object = Rjson.j_object
@@ -423,12 +425,17 @@ let for_loop_vars (f:Stmt.d_for) : Variable.t list =
 
 module Kernel = struct
   type t = {
+    ty: string;
     name: string;
     code: Stmt.t;
     type_params: Ty_param.t list;
     params: Param.t list;
     attribute: KernelAttr.t;
   }
+
+  let unique_id (k:t) : string =
+    C_type.kernel_id ~kernel:k.name ~ty:k.ty
+
   let is_global (k:t) : bool =
     k.attribute |> KernelAttr.is_global
 
@@ -472,16 +479,16 @@ end
 module Program = struct
   type t = Def.t list
   (* Returns a map from kernel name to name of parameters *)
-  let kernel_signatures (p:t) : Variable.t list Variable.Map.t =
+  let kernel_signatures (p:t) : Variable.t list StringMap.t =
     let kernels = List.filter_map (
       let open Def in
       function
       | Kernel k ->
-        Some (Variable.from_name k.name, Kernel.signature k)
+        Some (Kernel.unique_id k, Kernel.signature k)
       | Declaration _ -> None
     ) p
     in
-    Variable.MapUtil.from_list kernels
+    StringMapUtil.from_list kernels
 
   let to_s (p:t) : Indent.t list =
     List.concat_map (fun k -> Def.to_s k @ [Line ""]) p
@@ -795,6 +802,7 @@ let rewrite_kernel (k:C_lang.Kernel.t) : Kernel.t =
     | l -> CompoundStmt l
   in
   {
+    ty = k.ty;
     name = k.name;
     code = rewrite_s k.code;
     params = k.params;

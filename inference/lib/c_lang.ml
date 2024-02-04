@@ -669,13 +669,14 @@ end
 module Kernel = struct
   type t = {
     name: string;
+    ty: string;
     code: Stmt.t;
     type_params: Ty_param.t list;
     params: Param.t list;
     attribute: KernelAttr.t;
   }
-  let make ~name ~code ~type_params ~params ~attribute =
-    {name; code; type_params; params; attribute}
+  let make ~ty ~name ~code ~type_params ~params ~attribute =
+    {name; ty; code; type_params; params; attribute}
   let name (x:t) : string = x.name
   let params (x:t) : Param.t list = x.params
   let type_params (x:t) : Ty_param.t list = x.type_params
@@ -1255,6 +1256,8 @@ let parse_kernel (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Kernel.t j_r
   let open Rjson in
   (
     let* o = cast_object j in
+    let* ty = get_field "type" o in
+    let ty = C_type.j_to_string ty in
     let* inner = with_field "inner" cast_list o in
     let attrs, inner =
       inner
@@ -1279,7 +1282,8 @@ let parse_kernel (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Kernel.t j_r
     (* Parameters may be faulty, recover: *)
     let ps = List.map parse_param ps |> List.concat_map Result.to_list in
     Ok (Kernel.make
-      ~name:name
+      ~ty
+      ~name
       ~code:body
       ~params:ps
       ~type_params:type_params

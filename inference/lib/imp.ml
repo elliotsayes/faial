@@ -54,9 +54,13 @@ end
 
 module Call = struct
   type t = {
-    kernel: Variable.t;
+    kernel: string;
+    ty: string;
     args : (Variable.t * Arg.t) list
   }
+
+  let unique_id (c:t) : string =
+    C_type.kernel_id ~kernel:c.kernel ~ty:c.ty
 
   let to_string (c:t) : string =
     let args =
@@ -66,7 +70,7 @@ module Call = struct
       )
       |> String.concat ", "
     in
-    Variable.name c.kernel ^ "(" ^ args ^ ")"
+    c.kernel ^ "(" ^ args ^ ")"
 
 end
 
@@ -112,7 +116,7 @@ module Stmt = struct
       | Block l -> List.fold_left calls cs l
       | If (_, s1, s2) -> calls (calls cs s1) s2
       | For (_, s) | Star s -> calls cs s
-      | Call c -> StringSet.add (Variable.name c.kernel) cs
+      | Call c -> StringSet.add (Call.unique_id c) cs
     in
     calls StringSet.empty
 
@@ -665,6 +669,8 @@ module Kernel = struct
   type t = {
     (* The kernel name *)
     name: string;
+    (* The type signature of the kernel *)
+    ty: string;
     (* A kernel precondition of every phase. *)
     pre: bexp;
     (* The GPU API being used (eg, CUDA) *)
@@ -678,6 +684,10 @@ module Kernel = struct
     (* Visibility *)
     visibility: Proto.Kernel.visible;
   }
+
+  (* Generate a unique id that pairs the name and type. *)
+  let unique_id (k:t) : string =
+    C_type.kernel_id ~kernel:k.name ~ty:k.ty
 
   let to_s (k:t) : Indent.t list =
     let pre = match k.pre with
@@ -758,7 +768,7 @@ module Kernel = struct
     let rec inline (s:Stmt.t) : Stmt.t =
       match s with
       | Call c ->
-        (match StringMap.find_opt (Variable.name c.kernel) funcs with
+        (match StringMap.find_opt (Call.unique_id c) funcs with
         | Some k -> apply c.args k
         | None -> s
         )
@@ -842,12 +852,12 @@ module Inliner = struct
     {
       targets =
         ks
-        |> List.map (fun k -> (k.Kernel.name, Kernel.calls k))
+        |> List.map (fun k -> (Kernel.unique_id k, Kernel.calls k))
         |> StringMapUtil.from_list
       ;
       kernels =
         ks
-        |> List.map (fun k -> (k.Kernel.name, k))
+        |> List.map (fun k -> (Kernel.unique_id k, k))
         |> StringMapUtil.from_list
       ;
       visited = StringSet.empty;
