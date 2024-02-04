@@ -18,6 +18,11 @@ type access_expr = {access_index: nexp list; access_mode: Access.Mode.t}
 
 module Alias = struct
   type t = {source: Variable.t; target: Variable.t; offset: nexp}
+
+  let is_trivial (a:t) : bool =
+    Variable.equal a.source a.target &&
+    a.offset = Num 0
+
   let to_string (l:t) : string =
     Variable.name l.target ^ " = " ^
     Variable.name l.source ^ " + " ^
@@ -284,30 +289,36 @@ module Post = struct
     in
     fun p -> to_s p |> Indent.to_string
 
-  let rec loc_subst (alias:Alias.t) : t -> t =
-    function
-    | Acc (x, a) as i ->
-      if Variable.equal x alias.target
-      then (
-        match a.index with
-        | [n] ->
-          (* use the inlined variable but with the location of the alias,
-             so that the error message appears in the right place. *)
-          let x = { alias.source with location = x.location } in
-          Acc (x, { a with index = [n_plus alias.offset n] })
-        | _ ->
-          let idx = List.length a.index |> string_of_int in
-          failwith ("Expecting an index with dimension 1, but got " ^ idx)
+  let loc_subst (alias:Alias.t) : t -> t =
+    let rec loc_subst : t -> t =
+      function
+      | Acc (x, a) as i ->
+        if Variable.equal x alias.target
+        then (
+          match a.index with
+          | [n] ->
+            (* use the inlined variable but with the location of the alias,
+              so that the error message appears in the right place. *)
+            let new_x = { alias.source with location = x.location } in
+            Acc (new_x, { a with index = [n_plus alias.offset n] })
+          | _ ->
+            let idx = List.length a.index |> string_of_int in
+            failwith ("Expecting an index with dimension 1, but got " ^ idx)
+        )
+        else i
+      | Decl (x, o, l) -> Decl (x, o, loc_subst l)
+      | If (b, s1, s2) -> If (b, loc_subst s1, loc_subst s2)
+      | For (r, s) -> For (r, loc_subst s)
+      | Sync l -> Sync l
+      | Skip -> Skip
+      | Seq (p, q) ->
+        Seq (loc_subst p, loc_subst q)
+    in
+    fun s ->
+      if Alias.is_trivial alias then s else (
+        print_endline (Alias.to_string alias);
+        loc_subst s
       )
-      else i
-    | Decl (x, o, l) -> Decl (x, o, loc_subst alias l)
-    | If (b, s1, s2) -> If (b, loc_subst alias s1, loc_subst alias s2)
-    | For (r, s) -> For (r, loc_subst alias s)
-    | Sync l -> Sync l
-    | Skip -> Skip
-    | Seq (p, q) ->
-      Seq (loc_subst alias p, loc_subst alias q)
-
   
 
   module SubstMake(S:Subst.SUBST) = struct
