@@ -315,11 +315,10 @@ module Post = struct
         Seq (loc_subst p, loc_subst q)
     in
     fun s ->
-      if Alias.is_trivial alias then s else (
-        print_endline (Alias.to_string alias);
+      if Alias.is_trivial alias then
+        s
+      else
         loc_subst s
-      )
-  
 
   module SubstMake(S:Subst.SUBST) = struct
     module M = Subst.Make(S)
