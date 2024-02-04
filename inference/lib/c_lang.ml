@@ -680,6 +680,20 @@ module Kernel = struct
   let params (x:t) : Param.t list = x.params
   let type_params (x:t) : Ty_param.t list = x.type_params
   let attribute (x:t) : KernelAttr.t = x.attribute
+
+  let to_s (k:t) : Indent.t list =
+    let tps = if k.type_params <> [] then "[" ^
+        list_to_s Ty_param.to_string k.type_params ^
+      "]" else ""
+    in
+    let open Indent in
+    [
+      Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^
+        " " ^ tps ^ "(" ^ list_to_s Param.to_string k.params ^ ")");
+    ]
+    @
+    Stmt.to_string k.code
+
 end
 
 type c_def =
@@ -1497,24 +1511,11 @@ let parse_program ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : c_progra
 
 (* ------------------------------------------------------------------------ *)
 
-let kernel_to_s (k:Kernel.t) : Indent.t list =
-  let tps = if k.type_params <> [] then "[" ^
-      list_to_s Ty_param.to_string k.type_params ^
-    "]" else ""
-  in
-  let open Indent in
-  [
-    Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^
-      " " ^ tps ^ "(" ^ list_to_s Param.to_string k.params ^ ")");
-  ]
-  @
-  Stmt.to_string k.code
-
 let def_to_s (d:c_def) : Indent.t list =
   let open Indent in
   match d with
   | Declaration d -> [Line (Decl.to_string d ^ ";")]
-  | Kernel k -> kernel_to_s k
+  | Kernel k -> Kernel.to_s k
 
 let program_to_s (p:c_program) : Indent.t list =
   List.concat_map (fun k -> def_to_s k @ [Line ""]) p
