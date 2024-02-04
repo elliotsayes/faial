@@ -12,12 +12,6 @@ let make_int ?(ty=(mk_j_type "int")) (var:string) =
 let mk_var ?(ty="int") x =
   Expr.Ident {name=Variable.from_name x; kind=Var; ty=mk_j_type ty}
 
-(*let make_decl ?(assignment=0) ?(ty="int") ?(var_name="x") () =
-  let ty_var = make_int ~ty:(mk_j_type ty) var_name in
-  let init = Init.IExpr(D_lang.Expr.IntegerLiteral assignment) in
-  Decl.from_init ty_var init 
-*)
-
 let make_init ?(assignment=0) ?(ty="int") ?(var_name="x") () =  
   let ty_var = make_int ~ty:(mk_j_type ty) var_name in
   let init = Init.IExpr(D_lang.Expr.IntegerLiteral assignment) in
