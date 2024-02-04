@@ -5,14 +5,12 @@ open Protocols
 open C_type
 
 let make_int ?(ty=(mk_j_type "int")) (var:string) =
-  TyVariable.make
+  Ty_variable.make
     ~name:(Variable.from_name var)
     ~ty:ty
 
-let ty_var ?(mk_ty=("int")) (var:string) =  
-  TyVariable.make
-    ~name:(Variable.from_name var)
-    ~ty:(mk_j_type mk_ty)
+let mk_var ?(ty="int") x =
+  Expr.Ident {name=Variable.from_name x; kind=Var; ty=mk_j_type ty}
 
 (*let make_decl ?(assignment=0) ?(ty="int") ?(var_name="x") () =
   let ty_var = make_int ~ty:(mk_j_type ty) var_name in
@@ -27,7 +25,7 @@ let make_init ?(assignment=0) ?(ty="int") ?(var_name="x") () =
   ForInit.Decls(decl :: [])   
 
 let make_cond ?(op="<") ?(lhs="x") rhs =
-  let lhs = Expr.VarDecl (make_int lhs) in
+  let lhs = mk_var lhs in
   let rhs = Expr.IntegerLiteral rhs in
   Expr.BinaryOperator{lhs = lhs;
                       rhs = rhs;
@@ -45,7 +43,7 @@ let make_op (op:string) (lhs:Expr.t) (rhs:Expr.t) =
   
   
 let make_operation op lhs rhs =
-  let lhs = Expr.VarDecl (make_int lhs) in
+  let lhs = mk_var lhs in
   Expr.BinaryOperator{
     lhs = lhs;
     rhs = rhs;
@@ -53,7 +51,7 @@ let make_operation op lhs rhs =
     ty = `Null}
     
 let make_operation_int op lhs rhs =
-  let lhs = Expr.VarDecl (make_int lhs) in
+  let lhs = mk_var lhs in
   let rhs = Expr.IntegerLiteral rhs in
   Expr.BinaryOperator{
     lhs = lhs;
@@ -79,7 +77,7 @@ let iteration l r opcode =
 
 
 let make_iteration ?(opcode="+") ?(var_name="x") ?(change=1) () =
-  let l = Expr.VarDecl(make_int var_name) in
+  let l = mk_var var_name in
   let r = Expr.IntegerLiteral change in
   iteration l r opcode
   
@@ -104,7 +102,7 @@ let tests = "loops" >::: [
            from_for in
         assert(parse_loop =
                Some{
-                 init = (Expr.IntegerLiteral 0);
+                 init = Expr.IntegerLiteral 0;
                  name = Variable.from_name "x";
                  cond =
                    {
@@ -124,7 +122,7 @@ let tests = "loops" >::: [
         let while_loop = while_from_parts cond compound in
         let expected = Some({
             name = Variable.from_name "x";
-            init = D_lang.Expr.from_variable (Variable.from_name "x");
+            init = mk_var "x";
             cond = {
               op = Lt;
               arg = D_lang.Expr.IntegerLiteral 100;
@@ -144,7 +142,7 @@ let tests = "loops" >::: [
         let while_loop = while_from_parts cond compound in
         let expected = Some({
             name = Variable.from_name "x";
-            init = D_lang.Expr.from_variable (Variable.from_name "x");
+            init = mk_var "x";
             cond = {
               op = Lt;
               arg = D_lang.Expr.IntegerLiteral 100;
@@ -158,7 +156,7 @@ let tests = "loops" >::: [
 
         (*while(x < 100) {my_sum = x + 30.0; x = x + 2.5;}*)
 
-        let cond_arg = Expr.VarDecl(ty_var ~mk_ty:"float" "x") in
+        let cond_arg = mk_var ~ty:"float" "x" in
         let cond = (make_op "<"
                       cond_arg
                       (Expr.FloatingLiteral(100.0))) in
@@ -168,7 +166,7 @@ let tests = "loops" >::: [
         let while_loop = while_from_parts cond compound in
         let expected = Some({
             name = Variable.from_name "x";
-            init = D_lang.Expr.from_variable (Variable.from_name "x");
+            init = mk_var "x";
             cond = {
               op = Lt;
               arg = Expr.FloatingLiteral 100.0;

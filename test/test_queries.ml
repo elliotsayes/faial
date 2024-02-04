@@ -8,7 +8,7 @@ open C_lang
 module VarSet = Variable.Set
 
 let parm_var_decl ?(ty=C_type.j_int_type) (name:string) : Expr.t =
-  ParmVarDecl {name=Variable.from_name name; ty=ty}
+  Ident {name=Variable.from_name name; ty=ty; kind=ParmVar}
 
 let tests = "tests" >::: [
 

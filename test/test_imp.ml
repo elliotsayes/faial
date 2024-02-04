@@ -23,9 +23,9 @@ let tests = "test_predicates" >::: [
       *)
     let id = Variable.from_name "id" in
     let sq = Variable.from_name "s_Q" in
-    let wr = Imp.(Write {array=sq; index=[Var id]; payload=None}) in
-    let inc (x:Variable.t) = Decl [(x, Some (n_plus (Num 32) (Var x)))] in
-    let p = Block [
+    let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
+    let inc (x:Variable.t) = Imp.Stmt.Decl [(x, Some (n_plus (Num 32) (Var x)))] in
+    let p = Imp.Stmt.Block [
       inc id;
       wr;
     ] in
@@ -77,15 +77,15 @@ let tests = "test_predicates" >::: [
     let id = Variable.from_name "id" in
     let tid = Variable.from_name "threadIdx.x" in
     let sq = Variable.from_name "s_Q" in
-    let wr = Imp.(Write {array=sq; index=[Var id]; payload=None}) in
-    let inc (x:Variable.t) = Decl [(x, Some (n_plus (Num 32) (Var x)))] in
-    let p = Block [
+    let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
+    let inc (x:Variable.t) = Imp.Stmt.Decl [(x, Some (n_plus (Num 32) (Var x)))] in
+    let p = Imp.Stmt.(Block [
       Decl[(tid, None)];
       Decl [(id, Some (Var tid))];
       wr;
       inc id;
       wr;
-    ] in
+    ]) in
     (* Translate: *)
     let (_, p) = imp_to_post (Variable.Set.empty, p) in
     (* Test: *)
@@ -129,15 +129,15 @@ let tests = "test_predicates" >::: [
     let id = Variable.from_name "id" in
     let tid = Variable.from_name "threadIdx.x" in
     let sq = Variable.from_name "s_Q" in
-    let wr = Imp.(Write {array=sq; index=[Var id]; payload=None}) in
-    let inc (x:Variable.t) = Decl [(x, Some (n_plus (Num 32) (Var x)))] in
-    let p = Block [
+    let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
+    let inc (x:Variable.t) = Imp.Stmt.Decl [(x, Some (n_plus (Num 32) (Var x)))] in
+    let p = Imp.Stmt.(Block [
       Decl[(tid, None)];
       Decl [(id, Some (Var tid))];
       wr;
       inc id;
       wr;
-    ] in
+    ]) in
     (* Translate: *)
     let (_, p) = imp_to_post (Variable.Set.empty, p) in
     let p : Proto.Code.t = p
@@ -179,9 +179,9 @@ let tests = "test_predicates" >::: [
     let k = Variable.from_name "k" in
     let id = Variable.from_name "id" in
     let sq = Variable.from_name "s_Q" in
-    let wr = Imp.(Write {array=sq; index=[Var id]; payload=None}) in
-    let inc (x:Variable.t) = Decl [(x, Some (n_plus (Num 32) (Var x)))] in
-    let p = Block [
+    let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
+    let inc (x:Variable.t) = Imp.Stmt.Decl [(x, Some (n_plus (Num 32) (Var x)))] in
+    let p = Imp.Stmt.(Block [
       Decl[(Variable.from_name "threadIdx.x", None)];
       Decl[(n, Some (Var (Variable.from_name "threadIdx.x")))];
       Decl[(k, Some (Var (Variable.from_name "blockIdx.x")))];
@@ -195,7 +195,7 @@ let tests = "test_predicates" >::: [
       inc id;
       wr;
       inc id;
-    ] in
+    ]) in
     (* Translate: *)
     let (_, p) = imp_to_post (Variable.Set.empty, p) in
     let p : Proto.Code.t = p
@@ -225,11 +225,11 @@ let tests = "test_predicates" >::: [
     let x = Variable.from_name "x" in
     let a = Variable.from_name "a" in
     let b = Variable.from_name "b" in
-    let wr = Imp.(Write {
+    let wr = Imp.Stmt.(Write {
       array=Variable.from_name "A";
       index=[Var a; Var b]; payload=None}
     ) in
-    let p = Block [
+    let p = Imp.Stmt.(Block [
       Decl [
         x, None;
         a, Some (Var x);
@@ -239,7 +239,7 @@ let tests = "test_predicates" >::: [
         b, Some (Var x);
       ];
       wr
-    ] in
+    ]) in
     let p1 =
       let open Post in
       Seq (
