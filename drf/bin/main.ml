@@ -324,12 +324,14 @@ let main
   (block_dim:string option)
   (grid_dim:string option)
   (includes:string list)
+  (ignore_calls:bool)
 :
   unit
 =
   let parsed = Protocol_parser.Silent.to_proto
     ~abort_on_parsing_failure:(not ignore_parsing_errors)
     ~includes
+    ~inline:(not ignore_calls)
     fname
   in
   let parse_dim (given:string option) (parsed:Dim3.t) : Vec3.t =
@@ -433,6 +435,10 @@ let include_dir =
   let doc = "Add the specified directory to the search path for include files." in
   Arg.(value & opt_all string [] & info ["I"; "include-dir";] ~docv:"DIR" ~doc)
 
+let ignore_calls =
+  let doc = "By default we inline kernel calls, this option skips that step." in
+  Arg.(value & flag & info ["ignore-calls"] ~doc)
+
 let main_t = Term.(
   const main
   $ get_fname
@@ -451,10 +457,11 @@ let main_t = Term.(
   $ block_dim
   $ grid_dim
   $ include_dir
+  $ ignore_calls
 )
 
 let info =
-  let doc = "Print the C-AST" in
+  let doc = "Verify if CUDA file is free from data races." in
   Cmd.info "faial-drf" ~version:"%%VERSION%%" ~doc
 
 let () =

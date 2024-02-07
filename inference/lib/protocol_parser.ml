@@ -70,6 +70,7 @@ module Make (L:Logger.Logger) = struct
     ?(grid_dim=None)
     ?(includes=[])
     ?(exit_status=2)
+    ?(inline=true)
     ?(only_globals=true)
     (fname:string)
   :
@@ -87,7 +88,7 @@ module Make (L:Logger.Logger) = struct
     { parsed with
       kernels =
       parsed.kernels
-      |> Imp.inline_calls
+      |> (if inline then Imp.inline_calls else fun x -> x)
       |> List.map (fun p ->
         let p = Imp.Kernel.compile p in
         let key_vals =
