@@ -162,6 +162,16 @@ module Proof = struct
     code: Flatacc.Code.t;
   }
 
+  let add_test_index (idx:int list) (p:t) : t =
+    let idx_eq =
+      idx
+      |> List.mapi (fun i v ->
+        assign_index Task1 i (Num v)
+      )
+      |> b_and_ex
+    in
+    { p with goal = b_and p.goal idx_eq }
+
   let labels (p:t) : (string * string) list =
     p.labels
 
@@ -277,7 +287,22 @@ module Proof = struct
       ~control_approx
 end
 
-let translate (stream:Flatacc.Kernel.t Streamutil.stream) : Proof.t Streamutil.stream =
+let add_test_index
+  (idx:int list)
+  (s:Proof.t Streamutil.stream)
+:
+  Proof.t Streamutil.stream
+=
+  if idx = [] then
+    s
+  else
+    Streamutil.map (Proof.add_test_index idx) s
+
+let translate
+  (stream:Flatacc.Kernel.t Streamutil.stream)
+:
+  Proof.t Streamutil.stream
+=
   Streamutil.mapi Proof.from_flat stream
 
 (* ------------------- SERIALIZE ---------------------- *)

@@ -125,6 +125,8 @@ module App = struct
     logic:string option;
     block_dim:Vec3.t;
     grid_dim:Vec3.t;
+    test_index:int list;
+    only_array:string option;
   }
   let make
     ~timeout
@@ -139,6 +141,8 @@ module App = struct
     ~logic
     ~block_dim
     ~grid_dim
+    ~test_index
+    ~only_array
     (kernels: Proto.Code.t Proto.Kernel.t list)
   :
     t
@@ -156,6 +160,8 @@ module App = struct
       block_dim;
       grid_dim;
       kernels;
+      test_index;
+      only_array;
     }
 
   let run (a:t) : Analysis.t list =
@@ -172,11 +178,11 @@ module App = struct
       show a.show_align (fun () -> Aligned.print_kernels p);
       let p = Phasesplit.translate p false in
       show a.show_phase_split (fun () -> Phasesplit.print_kernels p);
-      let p = Locsplit.translate p in
+      let p = Locsplit.translate p |> Locsplit.filter_array a.only_array in
       show a.show_loc_split (fun () -> Locsplit.print_kernels p);
       let p = Flatacc.translate p in
       show a.show_flat_acc (fun () -> Flatacc.print_kernels p);
-      let p = Symbexp.translate p in
+      let p = Symbexp.translate p |> Symbexp.add_test_index a.test_index in
       show a.show_symbexp (fun () -> Symbexp.print_kernels p);
       let open Z3_solver in
       let open Solution in
@@ -325,6 +331,8 @@ let main
   (grid_dim:string option)
   (includes:string list)
   (ignore_calls:bool)
+  (test_index:int list)
+  (only_array:string option)
 :
   unit
 =
@@ -358,6 +366,8 @@ let main
       ~logic
       ~block_dim
       ~grid_dim
+      ~test_index
+      ~only_array
   |> App.run
   |> ui
 
@@ -439,6 +449,32 @@ let ignore_calls =
   let doc = "By default we inline kernel calls, this option skips that step." in
   Arg.(value & flag & info ["ignore-calls"] ~doc)
 
+let test_index =
+  let parse =
+    fun s ->
+      let msg = "Invalid JSON format: Expected a list of ints, but got: " ^ s in
+      try
+        (match Yojson.Basic.from_string s with
+        | `List lst ->
+            `Ok (List.map (function
+              | `Int n -> n
+              | _ -> failwith msg
+            ) lst)
+        | _ -> failwith msg)
+      with _ ->
+        `Error msg
+  in
+  let print_list _ (l:int list) : unit =
+    "[" ^ (List.map string_of_int l |> String.concat ", ") ^ "]"
+    |> print_string
+  in
+  let doc = "Only check a specific index. Expects an integer, or a (JSON) list of integers. Example: 1 or [1,2]" in
+  Arg.(value & opt (parse, print_list) [] & info ["index"] ~docv:"LIST" ~doc)
+
+let only_array =
+  let doc = "Only check a specific array." in
+  Arg.(value & opt (some string) None & info ["array"] ~doc)
+
 let main_t = Term.(
   const main
   $ get_fname
@@ -458,6 +494,8 @@ let main_t = Term.(
   $ grid_dim
   $ include_dir
   $ ignore_calls
+  $ test_index
+  $ only_array
 )
 
 let info =

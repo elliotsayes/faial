@@ -59,6 +59,11 @@ let translate (stream:Phasesplit.Kernel.t Streamutil.stream) : Kernel.t Streamut
   (* We have a stream of streams, flatten it *)
   |> Streamutil.concat
 
+let filter_array (a:string option) (s : Kernel.t Streamutil.stream) :  Kernel.t Streamutil.stream =
+  match a with
+  | Some a -> Streamutil.filter (fun k -> a = k.Kernel.array_name) s
+  | None -> s
+
 let print_kernels (ks : Kernel.t Streamutil.stream) : unit =
   print_endline "; locsplit";
   let count = ref 0 in
