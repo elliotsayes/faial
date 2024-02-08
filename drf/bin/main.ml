@@ -125,7 +125,9 @@ module App = struct
     logic:string option;
     block_dim:Vec3.t;
     grid_dim:Vec3.t;
-    test_index:int list;
+    le_index:int list;
+    ge_index:int list;
+    eq_index:int list;
     only_array:string option;
   }
   let make
@@ -141,7 +143,9 @@ module App = struct
     ~logic
     ~block_dim
     ~grid_dim
-    ~test_index
+    ~ge_index
+    ~le_index
+    ~eq_index
     ~only_array
     (kernels: Proto.Code.t Proto.Kernel.t list)
   :
@@ -160,7 +164,9 @@ module App = struct
       block_dim;
       grid_dim;
       kernels;
-      test_index;
+      ge_index;
+      le_index;
+      eq_index;
       only_array;
     }
 
@@ -182,7 +188,13 @@ module App = struct
       show a.show_loc_split (fun () -> Locsplit.print_kernels p);
       let p = Flatacc.translate p in
       show a.show_flat_acc (fun () -> Flatacc.print_kernels p);
-      let p = Symbexp.translate p |> Symbexp.add_test_index a.test_index in
+      let p =
+        p
+        |> Symbexp.translate
+        |> Symbexp.add_rel_index Exp.NLe a.le_index
+        |> Symbexp.add_rel_index Exp.NGe a.ge_index
+        |> Symbexp.add_rel_index Exp.NEq a.eq_index
+      in
       show a.show_symbexp (fun () -> Symbexp.print_kernels p);
       let open Z3_solver in
       let open Solution in
@@ -331,7 +343,9 @@ let main
   (grid_dim:string option)
   (includes:string list)
   (ignore_calls:bool)
-  (test_index:int list)
+  (ge_index:int list)
+  (le_index:int list)
+  (eq_index:int list)
   (only_array:string option)
 :
   unit
@@ -366,7 +380,9 @@ let main
       ~logic
       ~block_dim
       ~grid_dim
-      ~test_index
+      ~ge_index
+      ~le_index
+      ~eq_index
       ~only_array
   |> App.run
   |> ui
@@ -449,7 +465,7 @@ let ignore_calls =
   let doc = "By default we inline kernel calls, this option skips that step." in
   Arg.(value & flag & info ["ignore-calls"] ~doc)
 
-let test_index =
+let conv_int_list =
   let parse =
     fun s ->
       let msg = "Invalid JSON format: Expected a list of ints, but got: " ^ s in
@@ -464,12 +480,23 @@ let test_index =
       with _ ->
         `Error msg
   in
-  let print_list _ (l:int list) : unit =
+  let print _ (l:int list) : unit =
     "[" ^ (List.map string_of_int l |> String.concat ", ") ^ "]"
     |> print_string
   in
-  let doc = "Only check a specific index. Expects an integer, or a (JSON) list of integers. Example: 1 or [1,2]" in
-  Arg.(value & opt (parse, print_list) [] & info ["index"] ~docv:"LIST" ~doc)
+  (parse, print)
+
+let eq_index =
+  let doc = "Check that each index is greater-or-equal than the argument. Expects an integer, or a (JSON) list of integers. Example: 1 or [1,2]" in
+  Arg.(value & opt conv_int_list [] & info ["index"] ~docv:"LIST" ~doc)
+
+let ge_index =
+  let doc = "Check that each index is greater-or-equal than the argument. Expects an integer, or a (JSON) list of integers. Example: 1 or [1,2]" in
+  Arg.(value & opt conv_int_list [] & info ["ge-index"] ~docv:"LIST" ~doc)
+
+let le_index =
+  let doc = "Check that each index is lesser-or-equal than the argument. Expects an integer, or a (JSON) list of integers. Example: 1 or [1,2]" in
+  Arg.(value & opt conv_int_list [] & info ["le-index"] ~docv:"LIST" ~doc)
 
 let only_array =
   let doc = "Only check a specific array." in
@@ -494,13 +521,15 @@ let main_t = Term.(
   $ grid_dim
   $ include_dir
   $ ignore_calls
-  $ test_index
+  $ ge_index
+  $ le_index
+  $ eq_index
   $ only_array
 )
 
 let info =
   let doc = "Verify if CUDA file is free from data races." in
-  Cmd.info "faial-drf" ~version:"%%VERSION%%" ~doc
+  Cmd.info "faial-drf" ~doc
 
 let () =
   Cmd.v info main_t

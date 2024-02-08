@@ -15,8 +15,8 @@ let prefix (t:task) = "$" ^ task_to_string t ^ "$"
 let mk_var (x:string) = Var (Variable.from_name x)
 let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
 
-let assign_index (t:task) (idx:int) (n:nexp) : bexp =
-  n_eq (mk_idx t idx) n
+let assign_index (op:Exp.nrel) (t:task) (idx:int) (n:nexp) : bexp =
+  n_rel op (mk_idx t idx) n
 
 (*
   For each thread-local variable x generate x$1 and x$2 to represent the
@@ -107,7 +107,7 @@ module SymAccess = struct
       assign_id :: (* assign identifier of the conditional access *)
       a.condition :: (* assign the pre-condition of the access *)
       assign_mode a.access.mode :: (* assign the mode *)
-      List.mapi (assign_index t) a.access.index (* assign the values of the index *)
+      List.mapi (assign_index Exp.NEq t) a.access.index (* assign the values of the index *)
     )
     |> b_and_ex
 
@@ -127,7 +127,7 @@ let cond_access_to_bexp (locals:Variable.Set.t) (t:task) (a:CondAccess.t) : bexp
   let a = project_access locals t a in
   (
     a.cond ::
-    List.mapi (assign_index t) a.access.index
+    List.mapi (assign_index Exp.NEq t) a.access.index
   )
   |> b_and_ex
 
@@ -162,11 +162,11 @@ module Proof = struct
     code: Flatacc.Code.t;
   }
 
-  let add_test_index (idx:int list) (p:t) : t =
+  let add_rel_index (o:Exp.nrel) (idx:int list) (p:t) : t =
     let idx_eq =
       idx
       |> List.mapi (fun i v ->
-        assign_index Task1 i (Num v)
+        assign_index o Task1 i (Num v)
       )
       |> b_and_ex
     in
@@ -287,7 +287,8 @@ module Proof = struct
       ~control_approx
 end
 
-let add_test_index
+let add_rel_index
+  (o:Exp.nrel)
   (idx:int list)
   (s:Proof.t Streamutil.stream)
 :
@@ -296,7 +297,7 @@ let add_test_index
   if idx = [] then
     s
   else
-    Streamutil.map (Proof.add_test_index idx) s
+    Streamutil.map (Proof.add_rel_index o idx) s
 
 let translate
   (stream:Flatacc.Kernel.t Streamutil.stream)
