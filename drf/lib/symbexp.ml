@@ -18,21 +18,17 @@ let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
 let assign_index (op:Exp.nrel) (t:task) (idx:int) (n:nexp) : bexp =
   n_rel op (mk_idx t idx) n
 
+let proj_var (t:task) (x:Variable.t) : Variable.t =
+  (* Add a suffix to all variables to make them unique. Use $ to ensure
+    these variables did not come from C *)
+  let task_suffix (t:task) = "$" ^ task_to_string t in
+  Variable.update_name (fun n -> n ^ task_suffix t) x
+
 (*
   For each thread-local variable x generate x$1 and x$2 to represent the
   thread-local assignments of each thread.
  *)
 let project_access (locals:Variable.Set.t) (t:task) (ca:CondAccess.t) : CondAccess.t =
-  (* Add a suffix to a variable *)
-  let var_append (x:Variable.t) (suffix:string) : Variable.t =
-    Variable.set_name (Variable.name x ^ suffix) x
-  in
-  (* Add a suffix to all variables to make them unique. Use $ to ensure
-    these variables did not come from C *)
-  let task_suffix (t:task) = "$" ^ task_to_string t in
-  let proj_var (t:task) (x:Variable.t) : Variable.t =
-    var_append x (task_suffix t)
-  in
   let rec inline_proj_n (t:task) (n: nexp) : nexp =
     match n with
     | Num _ -> n
@@ -172,6 +168,17 @@ module Proof = struct
     in
     { p with goal = b_and p.goal idx_eq }
 
+  let add_tid (tid:task) (idx:Dim3.t) (p:t) : t =
+    let goal =
+      b_and_ex [
+        n_eq (Var (proj_var tid Variable.tidx)) (Num idx.x);
+        n_eq (Var (proj_var tid Variable.tidy)) (Num idx.y);
+        n_eq (Var (proj_var tid Variable.tidz)) (Num idx.z);
+        p.goal
+      ]
+    in
+    { p with goal }
+
   let labels (p:t) : (string * string) list =
     p.labels
 
@@ -298,6 +305,19 @@ let add_rel_index
     s
   else
     Streamutil.map (Proof.add_rel_index o idx) s
+
+let add_tid
+  (tid:task)
+  (o:Dim3.t option)
+  (s:Proof.t Streamutil.stream)
+:
+  Proof.t Streamutil.stream
+=
+  match o with
+  | Some idx ->
+    Streamutil.map (Proof.add_tid tid idx) s
+  | None ->
+    s
 
 let translate
   (stream:Flatacc.Kernel.t Streamutil.stream)

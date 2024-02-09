@@ -1,19 +1,30 @@
 type t = {x : int; y: int; z: int;}
 let make ?(x=1) ?(y=1) ?(z=1) () : t = {x=x; y=y; z=z}
 
-let parse (s:string) : (t, string) Result.t =
+let one : t = {x=1; y=1; z=1}
+
+let zero : t = {x=0; y=0; z=0}
+
+let parse ?(default=one) (s:string) : (t, string) Result.t =
   try
     match Yojson.Basic.from_string s with
     | `List [`Int x; `Int y; `Int z] -> Ok ({x; y; z})
-    | `List [`Int x; `Int y] -> Ok {x; y; z=1}
-    | `List [`Int x] | `Int x -> Ok {x; y=1; z=1}
-    | `List [] -> Ok {x=1; y=1; z=1}
+    | `List [`Int x; `Int y] -> Ok {default with x; y;}
+    | `List [`Int x] | `Int x -> Ok {default with x}
+    | `List [] -> Ok default
     | _ -> Error ("Expecting a number of a list of up to 3 numbers (eg, [x,y,z])")
   with
     _ -> Error "Error parsing dim3"
 
 let to_list (d:t) : int list =
   [d.x; d.y; d.z]
+
+let compare (p1:t) (p2:t) : int =
+  let c = compare p1.x p2.x in
+  if c <> 0 then c else
+  let c = compare p1.y p2.y in
+  if c <> 0 then c else
+  compare p1.z p2.z
 
 let to_string (d:t) : string =
   match d with

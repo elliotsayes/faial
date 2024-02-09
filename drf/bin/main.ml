@@ -129,6 +129,8 @@ module App = struct
     ge_index:int list;
     eq_index:int list;
     only_array:string option;
+    thread_idx_1: Dim3.t option;
+    thread_idx_2: Dim3.t option;
   }
   let make
     ~timeout
@@ -147,10 +149,22 @@ module App = struct
     ~le_index
     ~eq_index
     ~only_array
+    ~thread_idx_1
+    ~thread_idx_2
     (kernels: Proto.Code.t Proto.Kernel.t list)
   :
     t
-  = {
+  =
+    (* We need to ensure that thread_idx_1 is GREATER THAN thread_idx_2,
+       otherwise, when they are both defined the matching will not find
+       a data-race. *)
+    let thread_idx_1, thread_idx_2 =
+      if Option.compare Dim3.compare thread_idx_1 thread_idx_2 < 0 then
+        (thread_idx_2, thread_idx_1)
+      else
+        (thread_idx_1, thread_idx_2)
+    in
+    {
       timeout;
       show_proofs;
       show_proto;
@@ -168,6 +182,8 @@ module App = struct
       le_index;
       eq_index;
       only_array;
+      thread_idx_1;
+      thread_idx_2;
     }
 
   let run (a:t) : Analysis.t list =
@@ -194,6 +210,8 @@ module App = struct
         |> Symbexp.add_rel_index Exp.NLe a.le_index
         |> Symbexp.add_rel_index Exp.NGe a.ge_index
         |> Symbexp.add_rel_index Exp.NEq a.eq_index
+        |> Symbexp.add_tid Task1 a.thread_idx_1
+        |> Symbexp.add_tid Task2 a.thread_idx_2
       in
       show a.show_symbexp (fun () -> Symbexp.print_kernels p);
       let open Z3_solver in
@@ -347,6 +365,8 @@ let main
   (le_index:int list)
   (eq_index:int list)
   (only_array:string option)
+  (thread_idx_1:Dim3.t option)
+  (thread_idx_2:Dim3.t option)
 :
   unit
 =
@@ -384,6 +404,8 @@ let main
       ~le_index
       ~eq_index
       ~only_array
+      ~thread_idx_1
+      ~thread_idx_2
   |> App.run
   |> ui
 
@@ -457,6 +479,28 @@ let grid_dim =
   let doc = "Sets the number of blocks per grid." ^ dim_help ^ "Default: " ^ d in
   Arg.(value & opt (some string) None & info ["g"; "grid-dim"; "gridDim"] ~docv:"DIM3" ~doc)
 
+let conv_dim3 default =
+  let parse =
+    fun s ->
+      match Dim3.parse ~default s with
+      | Ok e -> `Ok e
+      | Error e -> `Error e
+  in
+  let print _ (l:Dim3.t) : unit =
+    Dim3.to_string l
+    |> print_string
+  in
+  (parse, print)
+
+
+let thread_idx_1 =
+  let doc = "Sets the thread index for one thread." ^ dim_help ^ "Default: (none)" in
+  Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["thread-idx-1"] ~docv:"DIM3" ~doc)
+
+let thread_idx_2 =
+  let doc = "Sets the thread index for another thread." ^ dim_help ^ "Default: (none)" in
+  Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["thread-idx-2"] ~docv:"DIM3" ~doc)
+
 let include_dir =
   let doc = "Add the specified directory to the search path for include files." in
   Arg.(value & opt_all string [] & info ["I"; "include-dir";] ~docv:"DIR" ~doc)
@@ -525,6 +569,8 @@ let main_t = Term.(
   $ le_index
   $ eq_index
   $ only_array
+  $ thread_idx_1
+  $ thread_idx_2
 )
 
 let info =
