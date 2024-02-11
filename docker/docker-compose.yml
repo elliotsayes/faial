@@ -6,6 +6,11 @@ services:
             context: ..
         image: registry.gitlab.com/umb-svl/faial/faial:base
 
+    user:
+        build:
+            dockerfile: docker/user.Dockerfile
+            context: ..
+
     ci:
         build:
             dockerfile: docker/ci.Dockerfile
