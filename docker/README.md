@@ -7,3 +7,14 @@
 
 - `dev.Dockerfile` demos downloading and building the toolchain from
   scratch
+
+- `user.Dockerfile` a Docker container with the `faial` toolchain installed.
+
+
+Example:
+
+```
+$ docker-compose build user
+$ docker-compose run user
+# faial-drf saxpy.cu
+```
