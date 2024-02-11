@@ -320,6 +320,11 @@ let jui (output: Analysis.t list) : unit =
         )
         |> Common.either_split
       in
+      let approx_analysis (w:Witness.t) =
+        let dd = if Variable.Set.cardinal w.data_approx > 0 then "DD" else "DI" in
+        let cd = if Variable.Set.cardinal w.control_approx > 0 then "CD" else "CI" in
+        cd ^ dd
+      in
       let is_ok = (List.length unknowns + List.length errors) = 0 in
       `Assoc [
         "kernel_name", `String kernel_name;
@@ -329,6 +334,7 @@ let jui (output: Analysis.t list) : unit =
           `Assoc [
             "summary", Symbexp.Proof.to_json p;
             "counter_example", Witness.to_json w;
+            "approx_analysis", `String (approx_analysis w);
           ]
         ) errors);
       ]
