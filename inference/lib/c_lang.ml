@@ -1131,7 +1131,7 @@ let rec parse_stmt (j:json) : Stmt.t j_result =
         let* k = get_kind o in
         Ok (k = "TypedefDecl" || k = "EnumDecl" || k = "TypeAliasDecl")
       in
-      Rjson.unwrap_or false has_typedecl
+      Result.value ~default:false has_typedecl
     in
     if has_typedecl then
       Ok (CompoundStmt [])
