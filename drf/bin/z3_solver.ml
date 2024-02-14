@@ -58,16 +58,16 @@ module Environ = struct
     variables: (string * string) list;
   }
 
-	let to_json (env:t) : json =
-		`Assoc (
-			List.map (fun (k, v) -> (k, `String v)) env.variables
-		)
+  let to_json (env:t) : json =
+    `Assoc (
+      List.map (fun (k, v) -> (k, `String v)) env.variables
+    )
 
-	let to_string (e:t) : string =
-		let open Yojson.Basic in
-		e |> to_json |> pretty_to_string
+  let to_string (e:t) : string =
+    let open Yojson.Basic in
+    e |> to_json |> pretty_to_string
 
-	let get (x: string) (e:t) : string option =
+  let get (x: string) (e:t) : string option =
     List.assoc_opt x e.variables
 
   let label (x:string) (e:t) : string option =
@@ -101,10 +101,10 @@ module Environ = struct
 end
 
 module Vec3 = struct
-	type t = {x : string; y: string; z: string;}
-	let make ~x:x ~y:y ~z:z : t = {x=x; y=y; z=z}
+  type t = {x : string; y: string; z: string;}
+  let make ~x:x ~y:y ~z:z : t = {x=x; y=y; z=z}
 
-	let default : t = {x="?"; y="?"; z="?"}
+  let default : t = {x="?"; y="?"; z="?"}
 
   let to_assoc (v:t) : (string * string) list =
     [
@@ -114,26 +114,26 @@ module Vec3 = struct
     ]
 
     let to_json (v:t) : json =
-		`Assoc [
-			"x", `String v.x;
-			"y", `String v.y;
-			"z", `String v.z;
-		]
+    `Assoc [
+      "x", `String v.x;
+      "y", `String v.y;
+      "z", `String v.z;
+    ]
 
-	let to_string (v:t) =
-		let open Yojson.Basic in
-		to_json v |> pretty_to_string
+  let to_string (v:t) =
+    let open Yojson.Basic in
+    to_json v |> pretty_to_string
 
-	let parse (kvs:Environ.t) : (t * t) =
-		let parse_vec (suffix:string) : t =
-			let parse (x:string) : string =
-				kvs
-				|> Environ.get ("threadIdx." ^ x ^ "$T" ^ suffix)
-				|> Option.value ~default:"0"
-			in
-			{x=parse "x"; y=parse "y"; z=parse "z"}
-		in
-		(parse_vec "1", parse_vec "2")
+  let parse (kvs:Environ.t) : (t * t) =
+    let parse_vec (suffix:string) : t =
+      let parse (x:string) : string =
+        kvs
+        |> Environ.get ("threadIdx." ^ x ^ "$T" ^ suffix)
+        |> Option.value ~default:"0"
+      in
+      {x=parse "x"; y=parse "y"; z=parse "z"}
+    in
+    (parse_vec "1", parse_vec "2")
 
   let from_dim3 (d:Dim3.t) : t =
     let x = string_of_int d.x in
@@ -188,55 +188,55 @@ module Witness = struct
     let (t1, t2) = x.tasks in
     Task.can_conflict t1 t2
 
-	let to_json (x:t) : json =
-		let (t1, t2) = x.tasks in
-		`Assoc [
-			"task1", Task.to_json t1;
-			"task2", Task.to_json t2;
-			"blockDim", Vec3.to_json x.block_dim;
-			"blockIdx", Vec3.to_json x.block_idx;
-			"gridDim", Vec3.to_json x.grid_dim;
-			"indices", `List (List.map (fun x -> `String x) x.indices);
-			"globals", Environ.to_json x.globals;
-		]
+  let to_json (x:t) : json =
+    let (t1, t2) = x.tasks in
+    `Assoc [
+      "task1", Task.to_json t1;
+      "task2", Task.to_json t2;
+      "blockDim", Vec3.to_json x.block_dim;
+      "blockIdx", Vec3.to_json x.block_idx;
+      "gridDim", Vec3.to_json x.grid_dim;
+      "indices", `List (List.map (fun x -> `String x) x.indices);
+      "globals", Environ.to_json x.globals;
+    ]
 
-	let to_string (v:t) : string =
-		let open Yojson.Basic in
-		to_json v |> pretty_to_string
+  let to_string (v:t) : string =
+    let open Yojson.Basic in
+    to_json v |> pretty_to_string
 
 
-	let parse_vec3 (d:Vec3.t) (prefix:string) (g:Environ.t) : Environ.t * Vec3.t =
-		let (env, globals) = List.partition (fun (k, _) -> String.starts_with ~prefix:(prefix ^ ".") k) g.variables in
-		let get ~default (x:string) : string =
+  let parse_vec3 (d:Vec3.t) (prefix:string) (g:Environ.t) : Environ.t * Vec3.t =
+    let (env, globals) = List.partition (fun (k, _) -> String.starts_with ~prefix:(prefix ^ ".") k) g.variables in
+    let get ~default (x:string) : string =
       let z = List.assoc_opt (prefix ^ "." ^ x) env in
       Option.value z ~default
-		in
-		let v = Vec3.{
-			x = get ~default:d.x "x";
-			y = get ~default:d.y "y";
-			z = get ~default:d.z "z";
-		} in
-		({g with variables=globals}, v)
+    in
+    let v = Vec3.{
+      x = get ~default:d.x "x";
+      y = get ~default:d.y "y";
+      z = get ~default:d.z "z";
+    } in
+    ({g with variables=globals}, v)
 
-	let parse_indices (e:Environ.t) : string list =
+  let parse_indices (e:Environ.t) : string list =
     let kvs = e.variables in
-		(*
-		$T1$idx$0: 1
-		$T2$idx$0: 1
-		*)
-		(* get the maximum integer, in this case 0 *)
-		let biggest_idx =
-			List.split kvs
-			|> fst
-			|> List.filter (fun k -> Common.contains ~substring:"$idx$" k)
-			|> List.map (fun k ->
-					match Common.rsplit '$' k with
-					| Some (_, idx) -> int_of_string idx
-					| None -> failwith "unexpected"
-			)
-			|> List.fold_left Int.max 0
-		in
-		(* Parse a single index, in this case 1 *)
+    (*
+    $T1$idx$0: 1
+    $T2$idx$0: 1
+    *)
+    (* get the maximum integer, in this case 0 *)
+    let biggest_idx =
+      List.split kvs
+      |> fst
+      |> List.filter (fun k -> Common.contains ~substring:"$idx$" k)
+      |> List.map (fun k ->
+          match Common.rsplit '$' k with
+          | Some (_, idx) -> int_of_string idx
+          | None -> failwith "unexpected"
+      )
+      |> List.fold_left Int.max 0
+    in
+    (* Parse a single index, in this case 1 *)
     let parse_idx (idx:int) : string =
       let parse (tid:task) : string option =
         List.assoc_opt (Symbexp.Ids.index tid idx) kvs
