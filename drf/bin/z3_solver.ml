@@ -237,23 +237,21 @@ module Witness = struct
 			|> List.fold_left Int.max 0
 		in
 		(* Parse a single index, in this case 1 *)
-		let parse_idx (idx:string) : string =
-			let parse (prefix:string) : string option =
-				List.assoc_opt ("$T" ^ prefix ^ "$idx$" ^ idx) kvs
-			in
-			match parse "1" with
-			| Some v -> v
-			| None ->
-				(match parse "2" with
-					| Some v -> v
-					| None -> failwith "Index malformed!")
-		in
-		(* Range over all indices *)
-		Common.range biggest_idx
-		(* Convert them to strings *)
-		|> List.map string_of_int
-		(* And look them up using parse_idx *)
-		|> List.map parse_idx 
+    let parse_idx (idx:int) : string =
+      let parse (tid:task) : string option =
+        List.assoc_opt (Symbexp.Ids.index tid idx) kvs
+      in
+      match parse Task1 with
+      | Some v -> v
+      | None ->
+        (match parse Task2 with
+          | Some v -> v
+          | None -> failwith "Index malformed!")
+    in
+    (* Range over all indices *)
+    Common.range biggest_idx
+    (* And look them up using parse_idx *)
+    |> List.map parse_idx
 
   let parse_meta (e:Environ.t) : (Environ.t * string list) =
     let (kvs, env) = List.partition (fun (k, _) ->
@@ -271,13 +269,13 @@ module Witness = struct
       Environ.parse (Proof.labels proof) parse_num m
     in
     let inst1, inst2 =
-      let parse_inst_id (tid:string) : int =
+      let parse_inst_id (tid:task) : int =
         env
-        |> Environ.get ("$T" ^ tid ^ "$id")
+        |> Environ.get (Symbexp.Ids.access_id tid)
         |> Option.get
         |> int_of_string
       in
-      parse_inst_id "1", parse_inst_id "2"
+      parse_inst_id Task1, parse_inst_id Task2
     in
     let acc (idx:int) : Location.t * Access.t * Variable.Set.t * Variable.Set.t =
       let acc = Symbexp.Proof.get idx proof in

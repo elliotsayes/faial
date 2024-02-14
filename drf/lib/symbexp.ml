@@ -11,18 +11,69 @@ open Common
 open Exp
 open Flatacc
 
-let prefix (t:task) = "$" ^ task_to_string t ^ "$"
-let mk_var (x:string) = Var (Variable.from_name x)
-let mk_idx (t:task) (n:int) = mk_var (prefix t ^ "idx$" ^ string_of_int n)
 
-let assign_index (op:Exp.nrel) (t:task) (idx:int) (n:nexp) : bexp =
-  n_rel op (mk_idx t idx) n
+module Ids = struct
+  let prefix (t:task) : string = "$" ^ task_to_string t ^ "$"
+  (* Variable representing index accessing the array *)
+  let index (t:task) (n:int) : string = prefix t ^ "idx$" ^ string_of_int n
+  (* The access identifier *)
+  let access_id (t:task) : string = prefix t ^ "id"
+end
 
-let proj_var (t:task) (x:Variable.t) : Variable.t =
-  (* Add a suffix to all variables to make them unique. Use $ to ensure
-    these variables did not come from C *)
-  let task_suffix (t:task) = "$" ^ task_to_string t in
-  Variable.update_name (fun n -> n ^ task_suffix t) x
+module Gen = struct
+  let var (x:string) : nexp = Var (Variable.from_name x)
+  let index (t:task) (n:int) : nexp = Ids.index t n |> var
+  (* Access mode *)
+  let mode (t:task) : nexp = var (Ids.prefix t ^ "mode")
+  let assign_mode (t:task) (m:Access.Mode.t): bexp =
+    let mode_to_nexp (m:Access.Mode.t) : nexp =
+      Num (match m with
+      | Rd -> 0
+      | Wr _ -> 1)
+    in
+    let this_mode_v : nexp = mode t in
+    let other_mode_v : nexp = mode (other_task t) in
+    let b = n_eq this_mode_v (mode_to_nexp m) in
+    if Access.Mode.is_read m then
+      n_eq other_mode_v (mode_to_nexp (Wr None))
+      |> b_and b
+    else b
+
+  let access_id (t:task) : nexp = Ids.access_id t |> var
+  (* assign identifier of the conditional access *)
+  let assign_access_id (t:task) (aid:int) : bexp =
+    n_eq (access_id t) (Num aid)
+
+  let assign_index (op:Exp.nrel) (t:task) (idx:int) (n:nexp) : bexp =
+    n_rel op (index t idx) n
+
+  (* Constrains the indices to be all non-negative and match for both threads. *)
+  let assign_dim (dim:int) : bexp =
+    (* Make sure all indices match *)
+    (* idx0$T1 = idx0$T2  /\ idx1$T1 = idx1$T2 ... /\ idxn$T1 = idxn$T2 /\
+      idx0$T1 >= 0 /\ ... /\ idxn$T1 >= 0
+    *)
+    range (dim - 1)
+    |> List.map (fun i ->
+      let t1 = index Task1 i in
+      let t2 = index Task2 i in
+      b_and_ex [
+        n_eq t1 t2;
+        n_ge t1 (Num 0);
+      ]
+    )
+    |> b_and_ex
+
+
+  let project (t:task) (x:Variable.t) : Variable.t =
+    (* Add a suffix to all variables to make them unique. Use $ to ensure
+      these variables did not come from C *)
+    let task_suffix (t:task) = "$" ^ task_to_string t in
+    Variable.update_name (fun n -> n ^ task_suffix t) x
+
+end
+
+
 
 (*
   For each thread-local variable x generate x$1 and x$2 to represent the
@@ -32,7 +83,7 @@ let project_access (locals:Variable.Set.t) (t:task) (ca:CondAccess.t) : CondAcce
   let rec inline_proj_n (t:task) (n: nexp) : nexp =
     match n with
     | Num _ -> n
-    | Var x when Variable.Set.mem x locals -> Var (proj_var t x)
+    | Var x when Variable.Set.mem x locals -> Var (Gen.project t x)
     | Var _ -> n
     | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
     | NIf (b, n1, n2) -> NIf (inline_proj_b t b, inline_proj_n t n1, inline_proj_n t n2)
@@ -78,32 +129,14 @@ module SymAccess = struct
   }
 
 
-  let mode_to_nexp (m:Access.Mode.t) : nexp =
-    Num (match m with
-    | Rd -> 0
-    | Wr _ -> 1)
-
-  let mk_mode (t:task) = mk_var (prefix t ^ "mode")
-  let mk_id (t:task) = mk_var (prefix t ^ "id")
-
   (* Given a task generator serialize a conditional access *)
   let to_bexp (t:task) (a:t) : bexp =
-    let this_mode_v : nexp = mk_mode t in
-    let other_mode_v : nexp = mk_mode (other_task t) in
-    let assign_mode (m:Access.Mode.t): bexp =
-      let b = n_eq this_mode_v (mode_to_nexp m) in
-      if Access.Mode.is_read m then
-        n_eq other_mode_v (mode_to_nexp (Wr None))
-        |> b_and b
-      else b
-    in
-    let assign_id : bexp = n_eq (mk_id t) (Num a.id)
-    in
+
     (
-      assign_id :: (* assign identifier of the conditional access *)
+      Gen.assign_access_id t a.id ::
       a.condition :: (* assign the pre-condition of the access *)
-      assign_mode a.access.mode :: (* assign the mode *)
-      List.mapi (assign_index Exp.NEq t) a.access.index (* assign the values of the index *)
+      Gen.assign_mode t a.access.mode :: (* assign the mode *)
+      List.mapi (Gen.assign_index Exp.NEq t) a.access.index (* assign the values of the index *)
     )
     |> b_and_ex
 
@@ -123,26 +156,10 @@ let cond_access_to_bexp (locals:Variable.Set.t) (t:task) (a:CondAccess.t) : bexp
   let a = project_access locals t a in
   (
     a.cond ::
-    List.mapi (assign_index Exp.NEq t) a.access.index
+    List.mapi (Gen.assign_index Exp.NEq t) a.access.index
   )
   |> b_and_ex
 
-
-let assign_indices (dim:int) : bexp =
-  (* Make sure all indices match *)
-  (* idx0$T1 = idx0$T2  /\ idx1$T1 = idx1$T2 ... /\ idxn$T1 = idxn$T2 /\
-     idx0$T1 >= 0 /\ ... /\ idxn$T1 >= 0
-  *)
-  range (dim - 1)
-  |> List.map (fun i ->
-    let t1 = mk_idx Task1 i in
-    let t2 = mk_idx Task2 i in
-    b_and_ex [
-      n_eq t1 t2;
-      n_ge t1 (Num 0);
-    ]
-  )
-  |> b_and_ex
 
 module Proof = struct
   type t = {
@@ -162,7 +179,7 @@ module Proof = struct
     let idx_eq =
       idx
       |> List.mapi (fun i v ->
-        assign_index o Task1 i (Num v)
+        Gen.assign_index o Task1 i (Num v)
       )
       |> b_and_ex
     in
@@ -171,9 +188,9 @@ module Proof = struct
   let add_tid (tid:task) (idx:Dim3.t) (p:t) : t =
     let goal =
       b_and_ex [
-        n_eq (Var (proj_var tid Variable.tidx)) (Num idx.x);
-        n_eq (Var (proj_var tid Variable.tidy)) (Num idx.y);
-        n_eq (Var (proj_var tid Variable.tidz)) (Num idx.z);
+        n_eq (Var (Gen.project tid Variable.tidx)) (Num idx.x);
+        n_eq (Var (Gen.project tid Variable.tidy)) (Num idx.y);
+        n_eq (Var (Gen.project tid Variable.tidz)) (Num idx.z);
         p.goal
       ]
     in
@@ -260,11 +277,11 @@ module Proof = struct
       (* There is no need to try out all combinations of ids,
          so this contrain ensures that Task1 is never a larger access than
          Task2. *)
-      n_le (SymAccess.mk_id Task1) (SymAccess.mk_id Task2);
+      n_le (Gen.access_id Task1) (Gen.access_id Task2);
       (*
         All indices of task1 are equal to the indices of task2
       *)
-      Code.dim code |> Option.get |> assign_indices
+      Code.dim code |> Option.get |> Gen.assign_dim
     ]
 
   let from_flat (proof_id:int) (k:Flatacc.Kernel.t) : t =
