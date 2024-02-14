@@ -773,6 +773,15 @@ let is_invalid (o: j_object) : bool =
   |> unwrap_or None
   |> Option.value ~default:false
 
+
+let expect_kind (k:string) (o:j_object) : unit j_result =
+  let open Rjson in
+  let* obtained : string = get_kind o in
+  if obtained = k then
+    Ok ()
+  else
+    root_cause ("Expecting kind '"^ k ^"' but got '" ^ obtained ^ "'") (`Assoc o)
+
 let rec parse_exp (j:json) : Expr.t j_result =
   let open Rjson in
   let open Expr in
@@ -1133,11 +1142,31 @@ let rec parse_stmt (j:json) : Stmt.t j_result =
       in
       Result.value ~default:false has_typedecl
     in
-    if has_typedecl then
-      Ok (CompoundStmt [])
-    else
-      let* children = with_field "inner" (cast_map parse_decl) o in
-      Ok (DeclStmt (children |> Common.flatten_opt))
+    if has_typedecl then Ok (CompoundStmt []) else
+    let static_assert : Stmt.t option =
+      o
+      |> with_field "inner" (cast_list_1 (fun j ->
+          (* Ensure the expected kind *)
+          let* o = cast_object j in
+          let* _ = expect_kind "StaticAssertDecl" o in
+          let* args = with_field "inner" (cast_map parse_exp) o in
+          let static_assert : Decl_expr.t = {
+            name = Variable.from_name "static_assert";
+            ty=C_type.j_void_type;
+            kind=Decl_expr.Kind.Function
+          } in
+          let func = Ident static_assert in
+          Ok (SExpr (CallExpr {func;args;ty=C_type.j_void_type}))
+        )
+      )
+      |> Result.to_option
+    in
+      (match static_assert with
+        | Some e -> Ok e
+        | None ->
+          let* children = with_field "inner" (cast_map parse_decl) o in
+          Ok (DeclStmt (children |> Common.flatten_opt))
+      )
   | Some "DefaultStmt" ->
     let* c = with_field "inner" (cast_list_1 parse_stmt) o in
     Ok (DefaultStmt c)

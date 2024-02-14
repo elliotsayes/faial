@@ -125,6 +125,7 @@ let j_int_type = mk_j_type "int"
 let j_char_type = mk_j_type "char"
 let j_bool_type = mk_j_type "bool"
 let j_float_type = mk_j_type "float"
+let j_void_type = mk_j_type "void"
 
 type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result

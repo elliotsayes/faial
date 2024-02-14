@@ -570,6 +570,15 @@ let rec parse_stmt (sigs:Variable.t list StringMap.t) (c:D_lang.Stmt.t) : Imp.St
     when Variable.name n = "sync" ->
     ret (Sync n.location)
 
+    (* Static assert may have a message as second argument *)
+  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = [b; _]; _})
+    when Variable.name n = "static_assert" ->
+    ret_assert b
+
+  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = [b]; _})
+    when Variable.name n = "static_assert" ->
+    ret_assert b
+
   | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = [b]; _})
     when Variable.name n = "__requires" ->
     ret_assert b
