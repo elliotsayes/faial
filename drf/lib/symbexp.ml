@@ -128,6 +128,11 @@ module SymAccess = struct
     access: Access.t
   }
 
+  let to_string (a:t) : string =
+    "{ access_id = " ^ string_of_int a.id ^
+    " condition = " ^ Exp.b_to_string a.condition ^
+    " access = " ^ Access.to_string a.access ^
+    " }"
 
   (* Given a task generator serialize a conditional access *)
   let to_bexp (t:task) (a:t) : bexp =
@@ -228,7 +233,7 @@ module Proof = struct
       data_approx; control_approx;
     }
 
-  let to_string (p:t) : Indent.t list =
+  let to_s (p:t) : Indent.t list =
     let open Common in
     let open Indent in
     let preds =
@@ -237,6 +242,7 @@ module Proof = struct
       |> join ", "
     in
     [
+        Line ("id: " ^ string_of_int p.id);
         Line ("array: " ^ p.array_name);
         Line ("data approx:");
         Block (List.map (fun x -> Line ("[" ^ Variable.set_to_string x ^ "]")) p.data_approx);
@@ -249,6 +255,9 @@ module Proof = struct
         Block (b_to_s p.goal);
         Line (";")
     ]
+
+  let to_string (p:t) : string =
+    to_s p |> Indent.to_string
 
   let from_code
     (locals:Variable.Set.t)
@@ -348,11 +357,8 @@ let translate
 
 let print_kernels (ks : Proof.t Streamutil.stream) : unit =
   print_endline "; symbexp";
-  let count = ref 0 in
   Streamutil.iter (fun (p:Proof.t) ->
-    let curr = !count + 1 in
-    count := curr;
-    print_endline ("; bool " ^ (string_of_int curr));
-    Proof.to_string p |> Indent.print
+    print_endline ("; proof");
+    Proof.to_string p |> print_endline
   ) ks;
   print_endline "; end of symbexp"

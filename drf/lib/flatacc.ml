@@ -40,6 +40,8 @@ module CondAccess = struct
       Block (b_to_s a.cond);
       Line ";";
     ]
+  let to_string (a:t) : string =
+    to_s a |> Indent.to_string
 end
 
 module Code = struct
