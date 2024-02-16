@@ -165,19 +165,25 @@ let cond_access_to_bexp (locals:Variable.Set.t) (t:task) (a:CondAccess.t) : bexp
   )
   |> b_and_ex
 
+module AccessSummary = struct
+  type t = {
+    location: Location.t;
+    access: Access.t;
+    data_approx: Variable.Set.t;
+    control_approx: Variable.Set.t;
+  }
+end
 
 module Proof = struct
   type t = {
     id: int;
-    data_approx: Variable.Set.t list;
-    control_approx: Variable.Set.t list;
     kernel_name: string;
     array_name: string;
     preds: Predicates.t list;
     decls: string list;
     labels: (string * string) list;
     goal: bexp;
-    code: Flatacc.Code.t;
+    accesses: AccessSummary.t list;
   }
 
   let add_rel_index (o:Exp.nrel) (idx:int list) (p:t) : t =
@@ -211,10 +217,18 @@ module Proof = struct
       "array_name", `String p.array_name;
     ]
 
-  let get (idx:int) (p:t) : CondAccess.t =
-    List.nth p.code idx
+  let get ~access_id (p:t) : AccessSummary.t =
+    List.nth p.accesses access_id
 
-  let make ~kernel_name ~array_name ~id ~goal ~code ~data_approx ~control_approx : t =
+  let make:
+    kernel_name:string ->
+    array_name:string ->
+    id:int ->
+    accesses:AccessSummary.t list ->
+    goal:bexp ->
+    t
+  =
+    fun ~kernel_name ~array_name ~id ~accesses ~goal ->
     let goal = Constfold.b_opt goal (* Optimize the output expression *) in
     let fns =
       Freenames.free_names_bexp goal Variable.Set.empty
@@ -229,8 +243,7 @@ module Proof = struct
     ) fns in
     let preds = Predicates.get_predicates goal in
     {
-      id; preds; decls; goal; array_name; kernel_name; labels; code;
-      data_approx; control_approx;
+      id; preds; decls; goal; array_name; kernel_name; labels; accesses;
     }
 
   let to_s (p:t) : Indent.t list =
@@ -244,10 +257,6 @@ module Proof = struct
     [
         Line ("id: " ^ string_of_int p.id);
         Line ("array: " ^ p.array_name);
-        Line ("data approx:");
-        Block (List.map (fun x -> Line ("[" ^ Variable.set_to_string x ^ "]")) p.data_approx);
-        Line ("control approx:");
-        Block (List.map (fun x -> Line ("[" ^ Variable.set_to_string x ^ "]")) p.control_approx);
         Line ("kernel: " ^ p.kernel_name);
         Line ("predicates: " ^ preds ^ ";");
         Line ("decls: " ^ (p.decls |> join ", ") ^ ";");
@@ -294,13 +303,6 @@ module Proof = struct
     ]
 
   let from_flat (proof_id:int) (k:Flatacc.Kernel.t) : t =
-    let (data_approx, control_approx) =
-      let locals = k.approx_local_variables in
-      (
-        List.map (CondAccess.data_approx locals) k.code,
-        List.map (CondAccess.control_approx locals k.pre) k.code
-      )
-    in
     let goal =
       let locals =
         Variable.Set.union
@@ -310,14 +312,27 @@ module Proof = struct
       from_code locals k.code
       |> b_and k.pre
     in
+    let pre_approx = Freenames.free_names_bexp k.pre Variable.Set.empty in
+    let accesses = List.map (fun (a:CondAccess.t) ->
+      let open AccessSummary in
+      {
+        location=a.location;
+        access=a.access;
+        data_approx=CondAccess.data_approx k.approx_local_variables a;
+        control_approx=
+          Variable.Set.empty
+          |> Freenames.free_names_bexp a.cond
+          |> Variable.Set.inter k.approx_local_variables
+          |> Variable.Set.union pre_approx
+      }
+    ) k.code
+    in
     make
       ~id:proof_id
       ~kernel_name:k.name
       ~array_name:k.array_name
       ~goal
-      ~code:k.code
-      ~data_approx
-      ~control_approx
+      ~accesses
 end
 
 let add_rel_index

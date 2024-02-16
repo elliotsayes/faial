@@ -277,15 +277,8 @@ module Witness = struct
       in
       parse_inst_id Task1, parse_inst_id Task2
     in
-    let acc (idx:int) : Location.t * Access.t * Variable.Set.t * Variable.Set.t =
-      let acc = Symbexp.Proof.get idx proof in
-      (Flatacc.CondAccess.location acc,
-      Flatacc.CondAccess.access acc,
-      List.nth proof.data_approx idx,
-      List.nth proof.control_approx idx)
-    in
-    let (t1_loc, t1_acc, t1_data, t1_ctrl) = acc inst1 in
-    let (t2_loc, t2_acc, t2_data, t2_ctrl) = acc inst2 in
+    let a1 = Symbexp.Proof.get ~access_id:inst1 proof in
+    let a2 = Symbexp.Proof.get ~access_id:inst2 proof in
     (* put all special variables in kvs
       $T2$loc: 0
       $T1$mode: 0
@@ -335,14 +328,14 @@ module Witness = struct
     let t1 = Task.{
       thread_idx = t1_tid;
       locals = {variables=t1_locals;labels=t1_labels};
-      access = t1_acc;
-      location = Some t1_loc;
+      access = a1.access;
+      location = Some a1.location;
     } in
     let t2 = Task.{
       thread_idx = t2_tid;
       locals = {variables=t2_locals;labels=t2_labels};
-      access = t2_acc;
-      location = Some t2_loc;
+      access = a2.access;
+      location = Some a2.location;
     }
     in
     {
@@ -353,8 +346,8 @@ module Witness = struct
       indices = idx;
       tasks = t1, t2;
       globals = globals;
-      data_approx = Variable.Set.union t1_data t2_data;
-      control_approx = Variable.Set.union t1_ctrl t2_ctrl;
+      data_approx = Variable.Set.union a1.data_approx a2.data_approx;
+      control_approx = Variable.Set.union a1.control_approx a2.control_approx;
     }
 end
 
