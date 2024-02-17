@@ -169,9 +169,22 @@ module AccessSummary = struct
   type t = {
     location: Location.t;
     access: Access.t;
+    globals: Variable.Set.t;
     data_approx: Variable.Set.t;
     control_approx: Variable.Set.t;
   }
+
+  let variables (a:t) : Variable.Set.t =
+    a.globals
+    |> Variable.Set.union a.data_approx
+    |> Variable.Set.union a.control_approx
+
+  let to_string (a:t) : string =
+    "{access=" ^ Access.to_string a.access ^
+    ", data=[" ^ Variable.set_to_string a.data_approx ^
+    "], ctrl=[" ^ Variable.set_to_string a.control_approx ^
+    "], globals=[" ^ Variable.set_to_string a.globals ^
+    "]}"
 end
 
 module Proof = struct
@@ -260,6 +273,7 @@ module Proof = struct
         Line ("kernel: " ^ p.kernel_name);
         Line ("predicates: " ^ preds ^ ";");
         Line ("decls: " ^ (p.decls |> join ", ") ^ ";");
+        Line ("accesses: " ^ (List.map AccessSummary.to_string p.accesses |> String.concat ", "));
         Line ("goal:");
         Block (b_to_s p.goal);
         Line (";")
@@ -303,27 +317,28 @@ module Proof = struct
     ]
 
   let from_flat (proof_id:int) (k:Flatacc.Kernel.t) : t =
+    let locals =
+      Variable.Set.union
+        k.exact_local_variables
+        k.approx_local_variables
+    in
     let goal =
-      let locals =
-        Variable.Set.union
-          k.exact_local_variables
-          k.approx_local_variables
-      in
       from_code locals k.code
       |> b_and k.pre
     in
-    let pre_approx = Freenames.free_names_bexp k.pre Variable.Set.empty in
+    let pre_fns = Freenames.free_names_bexp k.pre Variable.Set.empty in
     let accesses = List.map (fun (a:CondAccess.t) ->
       let open AccessSummary in
+      let cond_fns = Freenames.free_names_bexp a.cond Variable.Set.empty in
+      let data_fns = Freenames.free_names_access a.access Variable.Set.empty in
+      let ctrl_fns = Variable.Set.union pre_fns cond_fns in
+      let all_fns = Variable.Set.union data_fns ctrl_fns in
       {
-        location=a.location;
-        access=a.access;
-        data_approx=CondAccess.data_approx k.approx_local_variables a;
-        control_approx=
-          Variable.Set.empty
-          |> Freenames.free_names_bexp a.cond
-          |> Variable.Set.inter k.approx_local_variables
-          |> Variable.Set.union pre_approx
+        location = a.location;
+        access = a.access;
+        globals = Variable.Set.diff all_fns locals;
+        data_approx = Variable.Set.inter k.approx_local_variables data_fns;
+        control_approx = Variable.Set.inter k.approx_local_variables ctrl_fns;
       }
     ) k.code
     in

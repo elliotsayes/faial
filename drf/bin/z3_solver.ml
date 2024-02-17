@@ -58,6 +58,11 @@ module Environ = struct
     variables: (string * string) list;
   }
 
+  let filter_variables (vars:Variable.Set.t) (env:t) : t =
+    { env with variables = List.filter (fun (n, _) ->
+      let n = Variable.from_name n in
+      Variable.Set.mem n vars) env.variables }
+
   let to_json (env:t) : json =
     `Assoc (
       List.map (fun (k, v) -> (k, `String v)) env.variables
@@ -154,6 +159,9 @@ module Task = struct
   let can_conflict (x1:t) (x2:t) : bool =
     Access.can_conflict x1.access x2.access
 
+  let filter_variables (vars:Variable.Set.t) (e:t) : t =
+    { e with locals = Environ.filter_variables vars e.locals }
+
   let to_json (x:t) : json =
     `Assoc [
       "threadIdx", Vec3.to_json x.thread_idx;
@@ -183,6 +191,13 @@ module Witness = struct
     grid_dim: Vec3.t;
     globals: Environ.t;
   }
+
+  let filter_variables (vars:Variable.Set.t) (w:t) : t =
+    let (t1, t2) = w.tasks in
+    { w with
+      tasks = (Task.filter_variables vars t1, Task.filter_variables vars t2);
+      globals = Environ.filter_variables vars w.globals;
+    }
 
   let can_conflict (x:t) : bool =
     let (t1, t2) = x.tasks in
@@ -279,6 +294,10 @@ module Witness = struct
     in
     let a1 = Symbexp.Proof.get ~access_id:inst1 proof in
     let a2 = Symbexp.Proof.get ~access_id:inst2 proof in
+    let all_vars =
+      Symbexp.AccessSummary.variables a1
+      |> Variable.Set.union (Symbexp.AccessSummary.variables a2)
+    in
     (* put all special variables in kvs
       $T2$loc: 0
       $T1$mode: 0
@@ -349,6 +368,8 @@ module Witness = struct
       data_approx = Variable.Set.union a1.data_approx a2.data_approx;
       control_approx = Variable.Set.union a1.control_approx a2.control_approx;
     }
+    (* Make sure that we only show the variables that we have defined *)
+    |> filter_variables all_vars
 end
 
 module Solution = struct
