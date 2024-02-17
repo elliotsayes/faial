@@ -102,7 +102,7 @@ end
 
 module Vec3 = struct
   type t = {x : string; y: string; z: string;}
-  let make ~x:x ~y:y ~z:z : t = {x=x; y=y; z=z}
+  let make ~x ~y ~z : t = {x; y; z}
 
   let default : t = {x="?"; y="?"; z="?"}
 
