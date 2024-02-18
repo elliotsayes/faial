@@ -15,12 +15,24 @@ module Code = struct
     | Skip
     | Decl of Variable.t * t
 
+  let rec filter (f:t -> bool) (p:t) : t =
+    if not (f p) then Skip else
+    match p with
+    | Sync _
+    | Skip
+    | Acc _ -> p
+    | Seq (p, q) -> Seq (filter f p, filter f q)
+    | Cond (b, p) -> Cond (b, filter f p)
+    | Decl (x, p) -> Decl (x, filter f p)
+    | Loop (r, p) -> Loop (r, filter f p)
+
   let rec exists (f:t -> bool) (i: t) : bool =
     f i ||
     match i with
     | Acc _ | Sync _ | Skip -> false
     | Cond (_, p) | Loop (_, p) | Decl (_, p) -> exists f p
     | Seq (p, q) -> exists f p || exists f q
+
 
   (** Replace variables by constants. *)
 

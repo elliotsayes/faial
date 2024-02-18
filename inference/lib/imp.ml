@@ -594,6 +594,24 @@ let rec post_to_proto : Post.t -> Proto.Code.t =
   | Seq (i, p) ->
     Proto.Code.seq (post_to_proto i) (post_to_proto p)
 
+module Architecture = struct
+  type t =
+    | CUDA_GridLevel
+    | CUDA_BlockLevel
+
+  let filter_arrays (a:t) (m:Memory.t Variable.Map.t) : Memory.t Variable.Map.t =
+    match a with
+    | CUDA_GridLevel ->
+      Variable.Map.filter (fun _ a -> Memory.is_global a) m
+    | CUDA_BlockLevel -> m
+
+  let filter_code (a:t) (s:Proto.Code.t) : Proto.Code.t =
+    match a with
+    | CUDA_GridLevel -> Proto.Code.filter ( function
+    | Sync _ -> false
+    | _ -> true) s
+    | CUDA_BlockLevel -> s
+end
 
 module Preamble = struct
 
@@ -619,12 +637,11 @@ module Preamble = struct
 
   let cuda_dims = ["x"; "y"; "z"]
 
-  let cuda : t =
-    let open Exp in
+  let make_cuda ~locals ~distinct ~globals : t =
     let mk_dims (name:string) : (Variable.t * nexp option) list =
-      List.map (fun x -> (Variable.from_name (name ^ "." ^ x),  None) ) cuda_dims
+      List.map (fun x -> (Variable.from_name (name ^ "." ^ x), None) ) cuda_dims
     in
-    let local_dims = List.concat_map mk_dims (List.map fst cuda_local_vars) in
+    let local_dims = List.concat_map mk_dims locals in
     let mk_var (name:string) (suffix:string) (x:string) : nexp =
       Var (Variable.from_name (name ^ suffix ^ "." ^ x))
     in
@@ -642,19 +659,17 @@ module Preamble = struct
         n_lt (mk_var name1 "Idx" x) (mk_var name2 "Dim" x)
       ) cuda_dims
     in
-    let var_list (vars : (string*int) list) : Variable.t list =
+    let var_list (vars : string list) : Variable.t list =
       cuda_dims
       |> List.concat_map (fun (x:string) ->
         vars
-        |> List.map fst
         |> List.map (fun (name:string) ->
             Variable.from_name (name ^ "." ^ x)
         )
       )
     in
-    let local_vars : Variable.t list = var_list cuda_local_vars in
     let global_vars : Variable.Set.t =
-      cuda_global_vars
+      globals
       |> var_list
       |> Variable.Set.of_list
     in
@@ -665,7 +680,7 @@ module Preamble = struct
         Assert (
           all_vars_constraints
           @
-          (Exp.distinct local_vars ::
+          (Exp.distinct (var_list distinct) ::
             List.concat_map idx_lt_dim [("thread", "block"); ("block", "grid")]
           )
           |> b_and_ex
@@ -673,6 +688,16 @@ module Preamble = struct
       ];
     }
 
+  let block_level : t =
+    make_cuda ~locals:["threadIdx"] ~distinct:["threadIdx"] ~globals:["blockIdx"; "blockDim"; "gridDim"]
+
+  let grid_level : t =
+    make_cuda ~locals:["threadIdx"; "blockIdx"] ~distinct:["blockIdx"] ~globals:["blockDim"; "gridDim"]
+
+  let from_arch : Architecture.t -> t =
+    function
+    | CUDA_BlockLevel -> block_level
+    | CUDA_GridLevel -> grid_level
 end
 
 module Kernel = struct
@@ -681,8 +706,6 @@ module Kernel = struct
     name: string;
     (* The type signature of the kernel *)
     ty: string;
-    (* The GPU API being used (eg, CUDA) *)
-    preamble: Preamble.t;
     (* The shared locations that can be accessed in the kernel. *)
     arrays: Memory.t Variable.Map.t;
     (* The internal variables are used in the code of the kernel.  *)
@@ -710,12 +733,14 @@ module Kernel = struct
   let print (k: t) : unit =
     Indent.print (to_s k)
 
-  let compile (k:t) : Proto.Code.t Proto.Kernel.t =
-    let globals = Variable.Set.union k.params k.preamble.globals in
-    let (globals, p) = imp_to_post (globals, Block (k.preamble.code @ [k.code])) in
+  let compile (arch:Architecture.t) (k:t) : Proto.Code.t Proto.Kernel.t =
+    let pre = Preamble.from_arch arch in
+    let globals = Variable.Set.union k.params pre.globals in
+    let (globals, p) = imp_to_post (globals, Block (pre.code @ [k.code])) in
+    let arrays = Architecture.filter_arrays arch k.arrays in
     let p : Post.t =
       p
-      |> Post.filter_locs k.arrays (* Remove unknown arrays *)
+      |> Post.filter_locs arrays (* Remove unknown arrays *)
       (* Inline local variable assignment and ensure variables are distinct*)
       |> Post.inline_assigns k.params
     in
@@ -741,10 +766,10 @@ module Kernel = struct
     {
       name = k.name;
       pre = pre;
-      arrays = k.arrays;
+      arrays = arrays;
       local_variables = locals;
       global_variables = globals;
-      code = p;
+      code = Architecture.filter_code arch p;
       visibility = k.visibility;
     }
 
@@ -817,7 +842,7 @@ module Inliner = struct
     (* Get the set of all kernels that call `kernel` *)
     let to_inline : StringSet.t =
       s.targets
-      |> StringMap.filter (fun _ x ->
+        |> StringMap.filter (fun _ x ->
         (* any kernel that depends on a leaf *)
         not (StringSet.is_empty (StringSet.inter leaf_set x))
       )

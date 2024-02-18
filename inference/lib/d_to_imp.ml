@@ -820,7 +820,6 @@ let parse_kernel
   Ok {
     name = k.name;
     ty = k.ty;
-    preamble = Imp.Preamble.cuda;
     code = code;
     params = params;
     arrays = Variable.Map.union (fun _ _ r -> Some r) arrays shared;

@@ -45,7 +45,7 @@ let main (fname : string) : unit =
     let c_ast = parsed_json |> C_lang.parse_program |> Result.get_ok in
     let d_ast = c_ast |> D_lang.rewrite_program in
     let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
-    let proto = imp |> List.map Imp.Kernel.compile in
+    let proto = imp |> List.map (Imp.Kernel.compile Imp.Architecture.CUDA_BlockLevel) in
     let env = load_data "env.json" in
     (try
       List.iter (fun p ->

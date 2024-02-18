@@ -72,6 +72,7 @@ module Make (L:Logger.Logger) = struct
     ?(exit_status=2)
     ?(inline=true)
     ?(only_globals=true)
+    ?(arch=Imp.Architecture.CUDA_BlockLevel)
     (fname:string)
   :
     proto_kernel t
@@ -90,7 +91,7 @@ module Make (L:Logger.Logger) = struct
       parsed.kernels
       |> (if inline then Imp.inline_calls else fun x -> x)
       |> List.map (fun p ->
-        let p = Imp.Kernel.compile p in
+        let p = Imp.Kernel.compile arch p in
         let key_vals =
           Proto.Kernel.constants p
           |> List.filter (fun (x,_) ->

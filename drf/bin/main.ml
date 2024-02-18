@@ -394,6 +394,7 @@ let main
   (only_array:string option)
   (thread_idx_1:Dim3.t option)
   (thread_idx_2:Dim3.t option)
+  (grid_level:bool)
 :
   unit
 =
@@ -401,6 +402,7 @@ let main
     ~abort_on_parsing_failure:(not ignore_parsing_errors)
     ~includes
     ~inline:(not ignore_calls)
+    ~arch:(if grid_level then Imp.Architecture.CUDA_GridLevel else Imp.Architecture.CUDA_BlockLevel)
     fname
   in
   let parse_dim (given:string option) (parsed:Dim3.t) : Vec3.t =
@@ -536,6 +538,11 @@ let ignore_calls =
   let doc = "By default we inline kernel calls, this option skips that step." in
   Arg.(value & flag & info ["ignore-calls"] ~doc)
 
+let grid_level =
+  let doc = "By default we perform block-level verification, this option performs grid-level verification." in
+  Arg.(value & flag & info ["grid-level"] ~doc)
+
+
 let conv_int_list =
   let parse =
     fun s ->
@@ -598,6 +605,7 @@ let main_t = Term.(
   $ only_array
   $ thread_idx_1
   $ thread_idx_2
+  $ grid_level
 )
 
 let info =
