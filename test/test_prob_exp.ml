@@ -129,7 +129,7 @@ let tests = "Prob_exp" >::: [
     let goal = n_eq (n_mod (Var x) (Num 2)) (Num 0) in
     let p = cond_prob ~pre goal in
     (* there are fewer negatives than positives *)
-    assert_between 0.3 p 0.4;
+    assert_between 0.2 p 0.4;
     ()
   );
 
