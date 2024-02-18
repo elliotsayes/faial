@@ -33,6 +33,7 @@ let rec n_eval_res ?(env=default_env) (n:Exp.nexp) : (Int32.t, string) Result.t 
     let* n1 = n_eval_res ~env n1 in
     let* n2 = n_eval_res ~env n2 in
     Ok (eval_nbin o n1 n2)
+  | Other _ -> Error ("n_eval: other")
   | NCall (x,_) -> Error ("n_eval: call " ^ x)
   | NIf (b, n1, n2) ->
     let* b = b_eval_res ~env b in
@@ -53,7 +54,6 @@ and b_eval_res ?(env=default_env) (b: Exp.bexp) : (bool, string) Result.t =
   | BNot b ->
     let* b = b_eval_res ~env b in
     Ok (not b)
-  | ThreadEqual _ -> Error "n_eval: thread_equal"
   | Pred (x, _) ->
     Error ("b_eval: pred " ^ x)
 

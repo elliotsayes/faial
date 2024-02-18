@@ -62,6 +62,7 @@ type i_nexp =
   | Bin of nbin * i_exp * i_exp
   | NCall of string * i_exp
   | NIf of i_exp * i_exp * i_exp
+  | Other of i_exp
 
 and i_bexp =
   | Bool of bool
@@ -69,12 +70,14 @@ and i_bexp =
   | BRel of brel * i_exp * i_exp
   | BNot of i_exp
   | Pred of string * i_exp
-  | ThreadEqual of i_exp
 
 and i_exp =
   | NExp of i_nexp
   | BExp of i_bexp
   | Unknown
+
+let thread_equal (e:i_exp) : i_bexp =
+  NRel (NEq, e, NExp (Other e))
 
 module Make (L: Logger) = struct
 
@@ -148,6 +151,14 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
     let n2_minus_1 : i_nexp = Bin (Minus, n2, NExp (Num 1)) in
     let n1_plus_n2_minus_1 : i_nexp = Bin (Plus, n1, NExp n2_minus_1) in
     ret_n (Bin (Div, NExp n1_plus_n2_minus_1, n2))
+
+  | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__other_int" ->
+    let* n = parse_e "arg" n in
+    ret_n (Other n)
+
+  | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__uniform_int" ->
+    let* n = parse_e "arg" n in
+    ret_b (thread_equal n)
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__is_pow2" ->
     let* n = parse_e "arg" n in
@@ -276,9 +287,12 @@ module Unknown = struct
         let (u, n1) = handle_n u n1 in
         let (u, n2) = handle_n u n2 in
         (u, Exp.Bin (o, n1, n2))
+      | Other n ->
+        let (u, n) = handle_n u n in
+        (u, Exp.Other n)
       | NCall (x, n) ->
         let (u, n) = handle_n u n in
-        (u, Exp.NCall (x, n)) 
+        (u, Exp.NCall (x, n))
       | NIf (b, n1, n2) ->
         let (u, b) = handle_b u b in
         let (u, n1) = handle_n u n1 in
@@ -307,9 +321,6 @@ module Unknown = struct
       | BNot b ->
         let (u, b) = handle_b u b in
         (u, BNot b)
-      | ThreadEqual n ->
-        let (u, n) = handle_n u n in
-        (u, ThreadEqual n)
       | Pred (x, n) ->
         let (u, n) = handle_n u n in
         (u, Pred (x, n)))

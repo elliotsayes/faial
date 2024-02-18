@@ -168,26 +168,26 @@ module CodeGen (N:NUMERIC_OPS) = struct
 		| BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
 
 	let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr = match n with
-		| Var x -> Variable.name x |> N.mk_var ctx
-		| NCall _ ->
-				failwith "b_to_expr: invoke Predicates.inline to remove predicates"
-		| Num (n:int) -> N.mk_num ctx n
-		| Bin (op, n1, n2) ->
-		    (nbin_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
-		| NIf (b, n1, n2) -> Boolean.mk_ite ctx
-		    (b_to_expr ctx b) (n_to_expr ctx n1) (n_to_expr ctx n2)
+    | Var x -> Variable.name x |> N.mk_var ctx
+		| Other n ->
+		    let n : string = Exp.n_to_string n in
+		    raise (Not_implemented ("n_to_expr: not implemented for Other of " ^ n))
+    | NCall _ ->
+        failwith "b_to_expr: invoke Predicates.inline to remove predicates"
+    | Num (n:int) -> N.mk_num ctx n
+    | Bin (op, n1, n2) ->
+        (nbin_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
+    | NIf (b, n1, n2) -> Boolean.mk_ite ctx
+        (b_to_expr ctx b) (n_to_expr ctx n1) (n_to_expr ctx n2)
 
 	and b_to_expr (ctx:Z3.context) (b:bexp) : Expr.expr = match b with
-		| ThreadEqual n ->
-		    let n : string = Exp.n_to_string n in
-		    raise (Not_implemented ("b_to_expr: not implemented for ThreadEqual of " ^ n))
-		| Bool (b:bool) -> Boolean.mk_val ctx b
-		| NRel (op, n1, n2) ->
-		    (nrel_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
-		| BRel (op, b1, b2) ->
-		    (brel_to_expr op) ctx (b_to_expr ctx b1) (b_to_expr ctx b2)
-		| BNot (b:bexp) -> Boolean.mk_not ctx (b_to_expr ctx b)
-		| Pred _ -> failwith "b_to_expr: invoke Predicates.inline to remove predicates"
+    | Bool (b:bool) -> Boolean.mk_val ctx b
+    | NRel (op, n1, n2) ->
+        (nrel_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
+    | BRel (op, b1, b2) ->
+        (brel_to_expr op) ctx (b_to_expr ctx b1) (b_to_expr ctx b2)
+    | BNot (b:bexp) -> Boolean.mk_not ctx (b_to_expr ctx b)
+    | Pred _ -> failwith "b_to_expr: invoke Predicates.inline to remove predicates"
 end
 
 module SignedBitVectorOps (W:WordSize) = struct

@@ -166,6 +166,7 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
     | None -> failwith ("n_eval: undefined: " ^ Variable.name x))
 
   | Num n -> NMap.constant ~count:ctx.warp_count ~value:n
+
   | Bin (o, n1, n2) ->
     let o = Exp.eval_nbin o in
     let n1 = n_eval n1 ctx in
@@ -175,13 +176,17 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
     with
       Division_by_zero ->
         failwith ("n_eval: division by zero: " ^ Exp.n_to_string n))
-  | NCall (x,_) -> failwith ("n_eval: call " ^ x)
+
   | NIf (b, n1, n2) ->
     n_map3
       (fun b x1 x2 -> if b then x1 else x2)
       (b_eval b ctx)
       (n_eval n1 ctx)
       (n_eval n2 ctx)
+
+  | NCall (x,_) -> failwith ("n_eval: call " ^ x)
+
+  | Other _ -> failwith "n_eval: other"
 
 and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
   match b with
@@ -202,8 +207,6 @@ and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
   | BNot b ->
     b_eval b ctx |> BMap.map (fun x -> not x)
 
-  | ThreadEqual _ ->
-    failwith ("b_eval: thread_equal")
   | Pred (x, _) ->
     failwith ("b_eval: pred " ^ x)
 
