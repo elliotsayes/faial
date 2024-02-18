@@ -681,8 +681,6 @@ module Kernel = struct
     name: string;
     (* The type signature of the kernel *)
     ty: string;
-    (* A kernel precondition of every phase. *)
-    pre: bexp;
     (* The GPU API being used (eg, CUDA) *)
     preamble: Preamble.t;
     (* The shared locations that can be accessed in the kernel. *)
@@ -700,16 +698,11 @@ module Kernel = struct
     C_type.kernel_id ~kernel:k.name ~ty:k.ty
 
   let to_s (k:t) : Indent.t list =
-    let pre = match k.pre with
-    | Bool true -> ""
-    | _ -> " if (" ^ b_to_string k.pre ^ ")"
-    in
     [
       Line (
         k.name ^
         " (" ^ Memory.map_to_string k.arrays ^ ", " ^
-        Variable.set_to_string k.params ^ ")" ^
-        pre ^ " {");
+        Variable.set_to_string k.params ^ ") {");
       Block (Stmt.to_s k.code);
       Line "}"
     ]
