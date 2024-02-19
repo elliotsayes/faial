@@ -84,15 +84,8 @@ module LocalState = struct
         |> Variable.Set.of_list
       in
       let all_vars = Variable.Set.union (vars s1) (vars s2) in
-      let control_dependent =
-        all_vars
-        |> Variable.Set.inter control_approx
-        |> Variable.Set.is_empty
-      in
-      let data_dependent =
-        all_vars
-        |> Variable.Set.inter data_approx
-        |> Variable.Set.is_empty
+      let is_in (vs:Variable.Set.t) : bool =
+        Variable.Set.cardinal (Variable.Set.inter vs all_vars) > 0
       in
       let to_string s =
         s
@@ -103,7 +96,11 @@ module LocalState = struct
         )
         |> String.concat " | "
       in
-      (ident, {control_dependent; data_dependent; state=(to_string s1, to_string s2)})
+      (ident, {
+        control_dependent = is_in control_approx;
+        data_dependent = is_in data_approx;
+        state=(to_string s1, to_string s2)
+      })
     )
 
   let parse_scalars
@@ -119,10 +116,12 @@ module LocalState = struct
     |> Environ.variables
     |> List.map (fun (k, v1) ->
       let ident = Option.value ~default:k (Environ.label k t1.locals) in
-      let data_dependent = Variable.Set.mem (Variable.from_name k) data_approx in
-      let control_dependent = Variable.Set.mem (Variable.from_name k) control_approx in
-      let state = (v1, Environ.get k t2.locals |> Option.value ~default:"?") in
-      (ident, {control_dependent; data_dependent; state})
+      let is_in = Variable.Set.mem (Variable.from_name k) in
+      (ident, {
+        control_dependent = is_in control_approx;
+        data_dependent = is_in data_approx;
+        state = (v1, Environ.get k t2.locals |> Option.value ~default:"?")
+      })
     )
 end
 
