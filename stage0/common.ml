@@ -56,14 +56,16 @@ let join (sep:string) (elems:string list) : string =
   List.fold_left on_elem "" (List.rev elems)
 
 let rsplit (c:char) (s:string) :  (string * string) option =
-  match String.rindex_opt s c with
-  | Some idx -> Some (String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1))
-  | None -> None
+  String.rindex_opt s c
+  |> Option.map (fun idx ->
+    String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1)
+  )
 
 let split (c:char) (s:string) :  (string * string) option =
-  match String.index_opt s c with
-  | Some idx -> Some (String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1))
-  | None -> None
+  String.index_opt s c
+  |> Option.map (fun idx ->
+    String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1)
+  )
 
 let last (l:'a list) : ('a list * 'a) option =
   match l with

@@ -53,7 +53,7 @@ let add
 module Environ = struct
   open Common
 
-	type t = {
+  type t = {
     labels: string StringMap.t;
     variables: (string * string) list;
   }
@@ -87,8 +87,28 @@ module Environ = struct
       (e |> label k |> Option.value ~default:k, v)
     )
 
-	let parse (labels:(string*string) list) (parse_num:string -> string) (m:Model.model) : t =
-		let variables =
+  let remove_structs (e:t) : t =
+    { e with variables =
+      e.variables
+      |> List.filter (fun (k, _) ->
+        String.index_opt k '.' |> Option.is_none
+      )
+    }
+
+  let parse_structs (e:t) : (string StringMap.t) StringMap.t =
+    e.variables
+    |> List.fold_left (fun accum (k, v) ->
+      match Common.split '.' k with
+      | Some (id, field) ->
+        StringMap.update id (function
+          | None -> Some (StringMap.singleton field v)
+          | Some values -> Some (StringMap.add field v values)
+        ) accum
+      | None -> accum
+    ) StringMap.empty
+
+  let parse (labels:(string*string) list) (parse_num:string -> string) (m:Model.model) : t =
+    let variables =
       Model.get_const_decls m
       |> List.map (fun d ->
         let key: string = FuncDecl.get_name d |> Symbol.get_string in
@@ -104,6 +124,8 @@ module Environ = struct
     { labels; variables }
 
 end
+
+
 
 module Vec3 = struct
   type t = {x : string; y: string; z: string;}

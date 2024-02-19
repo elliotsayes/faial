@@ -5,6 +5,7 @@ open Drf
 
 module Environ = Z3_solver.Environ
 module Witness = Z3_solver.Witness
+module StringMap = Common.StringMap
 module Vec3 = Z3_solver.Vec3
 module Task = Z3_solver.Task
 module T = ANSITerminal
@@ -42,31 +43,109 @@ let box_idx key ~idx ~dim =
   if idx = "" then []
   else [key, idx]
 
+module LocalState = struct
+  type t = {
+    control_dependent: bool;
+    data_dependent: bool;
+    state: string * string;
+  }
+
+  let parse_structs
+    ~data_approx:(data_approx:Variable.Set.t)
+    ~control_approx:(control_approx:Variable.Set.t)
+    ~t1:(t1:Task.t)
+    ~t2:(t2:Task.t)
+  :
+    (string * t) list
+  =
+    let t1_s = Environ.parse_structs t1.locals in
+    let t2_s = Environ.parse_structs t2.locals in
+    (* Merge both maths, so we get identifier to struct, where a struct
+       is a map from field to value. A value is a pair for each thread's local
+       state *)
+    StringMap.merge (fun _ v1 v2 ->
+    match v1, v2 with
+    | Some v, None -> Some (v, StringMap.empty)
+    | None, Some v -> Some (StringMap.empty, v)
+    | Some v1, Some v2 -> Some (v1, v2)
+    | None, None -> None
+    ) t1_s t2_s
+    |> StringMap.bindings
+    (* At this point we have the map of structs *)
+    |> List.map (fun (ident, (s1, s2)) ->
+      (* Calculuate the local variables, of a particular struct *)
+      let vars (s:string StringMap.t) : Variable.Set.t =
+        s
+        |> StringMap.bindings
+        |> List.map (fun (field, _) ->
+          ident ^ "." ^ field
+          |> Variable.from_name
+        )
+        |> Variable.Set.of_list
+      in
+      let all_vars = Variable.Set.union (vars s1) (vars s2) in
+      let control_dependent =
+        all_vars
+        |> Variable.Set.inter control_approx
+        |> Variable.Set.is_empty
+      in
+      let data_dependent =
+        all_vars
+        |> Variable.Set.inter data_approx
+        |> Variable.Set.is_empty
+      in
+      let to_string s =
+        s
+        |> StringMap.bindings
+        |> List.sort (fun (k1, _) (k2, _) -> String.compare k1 k2)
+        |> List.map (fun (f, v) ->
+          f ^ " = " ^ v
+        )
+        |> String.concat " | "
+      in
+      (ident, {control_dependent; data_dependent; state=(to_string s1, to_string s2)})
+    )
+
+  let parse_scalars
+    ~data_approx:(data_approx:Variable.Set.t)
+    ~control_approx:(control_approx:Variable.Set.t)
+    ~t1:(t1:Task.t)
+    ~t2:(t2:Task.t)
+  :
+    (string * t) list
+  =
+    t1.locals
+    |> Environ.remove_structs
+    |> Environ.variables
+    |> List.map (fun (k, v1) ->
+      let ident = Option.value ~default:k (Environ.label k t1.locals) in
+      let data_dependent = Variable.Set.mem (Variable.from_name k) data_approx in
+      let control_dependent = Variable.Set.mem (Variable.from_name k) control_approx in
+      let state = (v1, Environ.get k t2.locals |> Option.value ~default:"?") in
+      (ident, {control_dependent; data_dependent; state})
+    )
+end
 
 let box_tasks ~data_approx ~control_approx (block_dim:Vec3.t) (t1:Task.t) (t2:Task.t) : PrintBox.t =
   let open PrintBox in
   let locals =
-    t1.locals
-    |> Environ.variables
-    |> List.map (fun (k, v1) ->
-      let lbl = Option.value ~default:k (Environ.label k t1.locals) in
-      let is_dd = Variable.Set.mem (Variable.from_name k) data_approx in
-      let is_cd = Variable.Set.mem (Variable.from_name k) control_approx in
-      let is_approx = is_cd || is_dd in
+    (LocalState.parse_structs ~data_approx ~control_approx ~t1 ~t2
+    @
+    LocalState.parse_scalars ~data_approx ~control_approx ~t1 ~t2)
+    |> List.sort (fun (i1, _) (i2, _) -> String.compare i1 i2)
+    |> List.map (fun ((ident, ls):string * LocalState.t) ->
+      let is_approx = ls.data_dependent || ls.control_dependent in
       let style = if is_approx then Style.bold else Style.default in
-      let lbl =
+      let ident =
         if is_approx then
-          let msg = if is_cd then "C" else "" in
-          let msg = msg ^ (if is_dd then "D" else "") in
-          lbl ^ " (" ^ msg ^ ")"
+          let msg = if ls.control_dependent then "C" else "" in
+          let msg = msg ^ (if ls.data_dependent then "D" else "") in
+          ident ^ " (" ^ msg ^ ")"
         else
-          lbl
+          ident
       in
-      [|
-        text_with_style style lbl;
-        text v1;
-        text (Environ.get k t2.locals |> Option.value ~default:"?")
-      |]
+      let (s1, s2) = ls.state in
+      [| text_with_style style ident; text s1; text s2; |]
     )
   in
   let locals =
