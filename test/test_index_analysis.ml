@@ -19,7 +19,7 @@ let assert_offset ~expected ~given : unit =
 let tests = "test_predicates" >::: [
   "imp_to_post_1" >:: (fun _ ->
     let open Exp in
-    let tidx = Var Variable.tidx in
+    let tidx = Var Variable.tid_x in
     assert_index ~expected:tidx ~given:tidx;
     assert_offset ~expected:(Num 10) ~given:(Num 10);
     assert_offset ~expected:(Bin (Plus, Num 10, Num 20)) ~given:(Bin (Plus, Num 10, Num 20));
