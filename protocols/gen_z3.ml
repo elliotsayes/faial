@@ -19,46 +19,46 @@ type binop = Z3.context -> Expr.expr -> Expr.expr -> Expr.expr
 type unop = Z3.context -> Expr.expr -> Expr.expr
 
 (* We define an abstract module to handle numeric operations
-	 so that we can support arbitrary backends. *)
+   so that we can support arbitrary backends. *)
 module type NUMERIC_OPS = sig
-	val mk_var: Z3.context -> string -> Expr.expr
-	val mk_num: Z3.context -> int -> Expr.expr
-	val mk_bit_and: binop
-	val mk_bit_or: binop
-	val mk_bit_xor: binop
-	val mk_left_shift: binop
-	val mk_right_shift: binop
-	val mk_plus: binop
-	val mk_minus: binop
-	val mk_mult: binop
-	val mk_div: binop
-	val mk_mod: binop
-	val mk_le: binop
-	val mk_ge: binop
-	val mk_gt: binop
-	val mk_lt: binop
+  val mk_var: Z3.context -> string -> Expr.expr
+  val mk_num: Z3.context -> int -> Expr.expr
+  val mk_bit_and: binop
+  val mk_bit_or: binop
+  val mk_bit_xor: binop
+  val mk_left_shift: binop
+  val mk_right_shift: binop
+  val mk_plus: binop
+  val mk_minus: binop
+  val mk_mult: binop
+  val mk_div: binop
+  val mk_mod: binop
+  val mk_le: binop
+  val mk_ge: binop
+  val mk_gt: binop
+  val mk_lt: binop
   val parse_num: string -> string
 end
 
 module ArithmeticOps : NUMERIC_OPS = struct
-	let missing (name:string) : binop = fun _ _ _ -> raise (Not_implemented name)
-	let mk_var = Integer.mk_const_s
-	let mk_num = Arithmetic.Integer.mk_numeral_i
-	let mk_bit_and = missing "&"
-	let mk_bit_or = missing "|"
-	let mk_bit_xor =  missing "^"
-	let mk_left_shift = missing "<<"
-	let mk_right_shift = missing ">>"
-	let mk_plus ctx n1 n2 = Arithmetic.mk_add ctx [n1; n2]
-	let mk_minus ctx n1 n2 = Arithmetic.mk_sub ctx [n1; n2]
-	let mk_mult ctx n1 n2 = Arithmetic.mk_mul ctx [n1; n2]
-	let mk_div = Arithmetic.mk_div
-	let mk_mod = Arithmetic.Integer.mk_mod
-	let mk_le = Arithmetic.mk_le
-	let mk_ge = Arithmetic.mk_ge
-	let mk_gt = Arithmetic.mk_gt
-	let mk_lt = Arithmetic.mk_lt
-	let parse_num (x:string) = x
+  let missing (name:string) : binop = fun _ _ _ -> raise (Not_implemented name)
+  let mk_var = Integer.mk_const_s
+  let mk_num = Arithmetic.Integer.mk_numeral_i
+  let mk_bit_and = missing "&"
+  let mk_bit_or = missing "|"
+  let mk_bit_xor =  missing "^"
+  let mk_left_shift = missing "<<"
+  let mk_right_shift = missing ">>"
+  let mk_plus ctx n1 n2 = Arithmetic.mk_add ctx [n1; n2]
+  let mk_minus ctx n1 n2 = Arithmetic.mk_sub ctx [n1; n2]
+  let mk_mult ctx n1 n2 = Arithmetic.mk_mul ctx [n1; n2]
+  let mk_div = Arithmetic.mk_div
+  let mk_mod = Arithmetic.Integer.mk_mod
+  let mk_le = Arithmetic.mk_le
+  let mk_ge = Arithmetic.mk_ge
+  let mk_gt = Arithmetic.mk_gt
+  let mk_lt = Arithmetic.mk_lt
+  let parse_num (x:string) = x
 end
 
 module type WordSize = sig
