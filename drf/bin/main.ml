@@ -37,12 +37,6 @@ let idx_to_s ~idx ~dim =
   |> List.filter (fun (k, _) -> List.mem k pos_fields)
   |> struct_to_s
 
-
-let box_idx key ~idx ~dim =
-  let idx = idx_to_s ~idx ~dim in
-  if idx = "" then []
-  else [key, idx]
-
 module LocalState = struct
   type t = {
     control_dependent: bool;
@@ -174,7 +168,6 @@ let box_globals (w:Witness.t) : PrintBox.t =
     "index", Common.join " │ " w.indices;
   ]
   @ box_dim "gridDim" w.grid_dim
-  @ box_idx "blockIdx" ~idx:w.block_idx ~dim:w.grid_dim
   @ box_dim "blockDim" w.block_dim
   @ w.globals.variables
   }

@@ -208,7 +208,6 @@ module Witness = struct
     data_approx: Variable.Set.t;
     control_approx: Variable.Set.t;
     tasks : Task.t * Task.t;
-    block_idx: Vec3.t;
     block_dim: Vec3.t;
     grid_dim: Vec3.t;
     globals: Environ.t;
@@ -231,7 +230,6 @@ module Witness = struct
       "task1", Task.to_json t1;
       "task2", Task.to_json t2;
       "blockDim", Vec3.to_json x.block_dim;
-      "blockIdx", Vec3.to_json x.block_idx;
       "gridDim", Vec3.to_json x.grid_dim;
       "indices", `List (List.map (fun x -> `String x) x.indices);
       "globals", Environ.to_json x.globals;
@@ -319,6 +317,8 @@ module Witness = struct
     let all_vars =
       Symbexp.AccessSummary.variables a1
       |> Variable.Set.union (Symbexp.AccessSummary.variables a2)
+      |> Variable.Set.union Variable.bid_var_set
+      |> Variable.Set.union Variable.tid_var_set
     in
     (* put all special variables in kvs
       $T2$loc: 0
@@ -342,7 +342,6 @@ module Witness = struct
     ) locals
     in
     let globals = {env with variables=globals} in
-    let (globals, block_idx) = parse_vec3 Vec3.default "blockIdx" globals in
     let (globals, block_dim) = parse_vec3 block_dim "blockDim" globals in
     let (globals, grid_dim) = parse_vec3 grid_dim "gridDim" globals in
     let labels_of suffix =
@@ -381,7 +380,6 @@ module Witness = struct
     in
     {
       proof_id = proof.id;
-      block_idx = block_idx;
       block_dim = block_dim;
       grid_dim = grid_dim;
       indices = idx;
