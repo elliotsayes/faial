@@ -13,11 +13,11 @@ let label (x:t) =
 
 let label_opt (x:t) = x.label
 
-let tidx : t = from_name "threadIdx.x"
+let tid_x : t = from_name "threadIdx.x"
 
-let tidy : t = from_name "threadIdx.y"
+let tid_y : t = from_name "threadIdx.y"
 
-let tidz : t = from_name "threadIdx.z"
+let tid_z : t = from_name "threadIdx.z"
 
 let update_name (f: string -> string) (v:t) : t =
   { v with name = f v.name }
@@ -90,14 +90,14 @@ let fresh (xs:Set.t) (x:t) : t =
   else x
 
 let is_tid (x:t) : bool =
-  equal x tidx || equal x tidy || equal x tidz
+  equal x tid_x || equal x tid_y || equal x tid_z
 
-let tid_var_list : t list = [tidx; tidy; tidz]
+let tid_var_list : t list = [tid_x; tid_y; tid_z]
 
 let tid_var_set : Set.t = Set.of_list tid_var_list
 
 let contains_tids (vs:Set.t) : bool =
-  Set.mem tidx vs ||
-  Set.mem tidy vs ||
-  Set.mem tidz vs
+  Set.mem tid_x vs ||
+  Set.mem tid_y vs ||
+  Set.mem tid_z vs
 

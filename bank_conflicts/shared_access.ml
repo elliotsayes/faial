@@ -99,9 +99,9 @@ module Make (L:Logger.Logger) = struct
           https://stackoverflow.com/questions/64484347/
         *)
         b_to_expr (n_ge x (Num 0));
-        restrict Variable.tidx block_dim.x;
-        restrict Variable.tidy block_dim.y;
-        restrict Variable.tidz block_dim.z;
+        restrict Variable.tid_x block_dim.x;
+        restrict Variable.tid_y block_dim.y;
+        restrict Variable.tid_z block_dim.z;
       ]
     ;
     match solve opt (n_to_expr x) (fun m ->
@@ -142,9 +142,9 @@ module Make (L:Logger.Logger) = struct
     | None ->
         (L.error ("could not maximize expression: " ^ Exp.n_to_string n);
         [
-          Variable.tidx, Num 0;
-          Variable.tidy, Num 0;
-          Variable.tidz, Num 0
+          Variable.tid_x, Num 0;
+          Variable.tid_y, Num 0;
+          Variable.tid_z, Num 0
         ])
   (*
    Given a range, makes that range uniform according to tids.

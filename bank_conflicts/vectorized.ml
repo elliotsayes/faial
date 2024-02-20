@@ -154,9 +154,9 @@ let put_tids (block_dim:Dim3.t) (ctx:t) : t =
     (id / (block_dim.x * block_dim.y)) mod block_dim.z) wids
   in
   ctx
-  |> put Variable.tidx n_tidx
-  |> put Variable.tidy n_tidy
-  |> put Variable.tidz n_tidz
+  |> put Variable.tid_x n_tidx
+  |> put Variable.tid_y n_tidy
+  |> put Variable.tid_z n_tidz
 
 let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
   match n with

@@ -211,9 +211,9 @@ module Proof = struct
   let add_tid (tid:task) (idx:Dim3.t) (p:t) : t =
     let goal =
       b_and_ex [
-        n_eq (Var (Gen.project tid Variable.tidx)) (Num idx.x);
-        n_eq (Var (Gen.project tid Variable.tidy)) (Num idx.y);
-        n_eq (Var (Gen.project tid Variable.tidz)) (Num idx.z);
+        n_eq (Var (Gen.project tid Variable.tid_x)) (Num idx.x);
+        n_eq (Var (Gen.project tid Variable.tid_y)) (Num idx.y);
+        n_eq (Var (Gen.project tid Variable.tid_z)) (Num idx.z);
         p.goal
       ]
     in
