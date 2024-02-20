@@ -19,6 +19,12 @@ let tid_y : t = from_name "threadIdx.y"
 
 let tid_z : t = from_name "threadIdx.z"
 
+let bid_x : t = from_name "blockIdx.x"
+
+let bid_y : t = from_name "blockIdx.y"
+
+let bid_z : t = from_name "blockIdx.z"
+
 let update_name (f: string -> string) (v:t) : t =
   { v with name = f v.name }
 
@@ -95,6 +101,10 @@ let is_tid (x:t) : bool =
 let tid_var_list : t list = [tid_x; tid_y; tid_z]
 
 let tid_var_set : Set.t = Set.of_list tid_var_list
+
+let bid_var_list : t list = [bid_x; bid_y; bid_z]
+
+let bid_var_set : Set.t = Set.of_list bid_var_list
 
 let contains_tids (vs:Set.t) : bool =
   Set.mem tid_x vs ||
