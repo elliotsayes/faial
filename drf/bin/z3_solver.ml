@@ -18,7 +18,6 @@ module StringMap = Common.StringMap
 type json = Yojson.Basic.t
 
 let add
-  ?(add_block_dim=false)
   (b_to_expr : Z3.context -> bexp -> Expr.expr)
   (s:Solver.solver)
   (ctx:Z3.context)
@@ -26,11 +25,7 @@ let add
 :
   unit
 =
-  let assign x n =
-    n_eq (Var (Variable.from_name x)) (Num n)
-    |> b_to_expr ctx
-	in
-	let vars : Expr.expr list =
+  let vars : Expr.expr list =
     p.decls
     |> List.map (fun (x:string) ->
       n_le (Var (Variable.from_name x)) (Num 2147483647)
@@ -38,12 +33,6 @@ let add
     )
   in
   vars
-  @
-  (if add_block_dim then [
-    assign "blockDim.y" 1;
-    assign "blockDim.z" 1;
-  ]
-  else [])
   @
   [
     b_to_expr ctx (Predicates.inline p.goal)
@@ -317,8 +306,6 @@ module Witness = struct
     let all_vars =
       Symbexp.AccessSummary.variables a1
       |> Variable.Set.union (Symbexp.AccessSummary.variables a2)
-      |> Variable.Set.union Variable.bid_var_set
-      |> Variable.Set.union Variable.tid_var_set
     in
     (* put all special variables in kvs
       $T2$loc: 0
@@ -457,7 +444,7 @@ module Solution = struct
               | Some logic ->
                 Solver.mk_solver_s ctx logic
           in
-          add ~add_block_dim:(Option.is_none block_dim) !b_to_expr s ctx p;
+          add !b_to_expr s ctx p;
           s
         in
         try
