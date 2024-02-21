@@ -72,7 +72,7 @@ module Make (L:Logger.Logger) = struct
     ?(exit_status=2)
     ?(inline=true)
     ?(only_globals=true)
-    ?(arch=Imp.Architecture.CUDA_BlockLevel)
+    ?(arch=Architecture.Block)
     (fname:string)
   :
     proto_kernel t

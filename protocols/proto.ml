@@ -61,6 +61,16 @@ module Code = struct
         )
   end
 
+  let apply_arch : Architecture.t -> t -> t =
+    function
+    | Grid ->
+      filter (
+        function
+        | Sync _ -> false
+        | _ -> true
+      )
+    | Block -> fun s -> s
+
   module PSubstAssoc = Make(Subst.SubstAssoc)
   module PSubstPair = Make(Subst.SubstPair)
 
@@ -207,6 +217,25 @@ module Kernel = struct
     (* The kernel's visibility *)
     visibility : visible;
   }
+
+  let apply_arch (a:Architecture.t) (k:Code.t t) : Code.t t =
+    let d = Architecture.to_defaults a in
+    { k with
+      arrays = (match a with
+        | Grid ->
+          Variable.Map.filter
+            (fun _ a -> Memory.is_global a)
+            k.arrays
+        | Block -> k.arrays);
+      code = Code.apply_arch a k.code;
+      global_variables =
+        Variable.Set.union k.global_variables d.globals
+      ;
+      local_variables =
+        Variable.Set.union k.local_variables d.locals
+      ;
+      pre = b_and (Architecture.Defaults.to_bexp d) k.pre;
+    }
 
   let is_global (k: 'a t) : bool =
     k.visibility = Global

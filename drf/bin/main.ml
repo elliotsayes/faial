@@ -6,7 +6,6 @@ open Drf
 module Environ = Z3_solver.Environ
 module Witness = Z3_solver.Witness
 module StringMap = Common.StringMap
-module Vec3 = Z3_solver.Vec3
 module Task = Z3_solver.Task
 module T = ANSITerminal
 
@@ -16,26 +15,7 @@ let box_environ (e:Environ.t) : PrintBox.t =
     |> frame
   )
 
-let struct_to_s (l:(string * string) list) : string =
-  l
-  |> List.map (fun (key, elem) -> (key ^ " = " ^ elem))
-  |> Common.join " | "
 
-let dim_to_s (v: Vec3.t) : string =
-  ["x", v.x; "y", v.y; "z", v.z]
-  |> List.filter (fun (_, v) -> v <> "1")
-  |> struct_to_s
-
-
-let idx_to_s ~idx ~dim =
-  let pos_fields =
-    Vec3.to_assoc dim
-    |> List.filter_map (fun (k, v) -> if v = "1" then None else Some k)
-  in
-  idx
-  |> Vec3.to_assoc
-  |> List.filter (fun (k, _) -> List.mem k pos_fields)
-  |> struct_to_s
 
 module LocalState = struct
   type t = {
@@ -119,7 +99,7 @@ module LocalState = struct
     )
 end
 
-let box_tasks ~data_approx ~control_approx (block_dim:Vec3.t) (t1:Task.t) (t2:Task.t) : PrintBox.t =
+let box_tasks ~data_approx ~control_approx (t1:Task.t) (t2:Task.t) : PrintBox.t =
   let open PrintBox in
   let locals =
     (LocalState.parse_structs ~data_approx ~control_approx ~t1 ~t2
@@ -141,33 +121,15 @@ let box_tasks ~data_approx ~control_approx (block_dim:Vec3.t) (t1:Task.t) (t2:Ta
       [| text_with_style style ident; text s1; text s2; |]
     )
   in
-  let locals =
-    [|
-      text "threadIdx";
-      text @@ idx_to_s ~idx:t1.thread_idx ~dim:block_dim;
-      text @@ idx_to_s ~idx:t2.thread_idx ~dim:block_dim;
-    |] :: locals
-    |> Array.of_list
-  in
+  let locals = Array.of_list locals in
   grid locals |> frame
 
 let box_globals (w:Witness.t) : PrintBox.t =
-  let dim x = if x = "1" then 0 else 1 in
-  let dim_len v =
-    let open Vec3 in
-    dim v.x + dim v.y + dim v.z
-  in
-  let box_dim name v =
-    if dim_len v = 0 then []
-    else
-      [name, dim_to_s v]
-  in
   { w.globals with
   variables=
   [
     "index", Common.join " │ " w.indices;
   ]
-  @ box_dim "blockDim" w.block_dim
   @ w.globals.variables
   }
   |> box_environ
@@ -177,7 +139,7 @@ let box_locals (w:Witness.t) : PrintBox.t =
   box_tasks
     ~data_approx:w.data_approx
     ~control_approx:w.control_approx
-    w.block_dim t1 t2
+    t1 t2
 
 let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
@@ -202,8 +164,6 @@ module App = struct
     show_flat_acc:bool;
     show_symbexp:bool;
     logic:string option;
-    block_dim:Vec3.t;
-    grid_dim:Vec3.t;
     le_index:int list;
     ge_index:int list;
     eq_index:int list;
@@ -222,8 +182,6 @@ module App = struct
     ~show_flat_acc
     ~show_symbexp
     ~logic
-    ~block_dim
-    ~grid_dim
     ~ge_index
     ~le_index
     ~eq_index
@@ -254,8 +212,6 @@ module App = struct
       show_flat_acc;
       show_symbexp;
       logic;
-      block_dim;
-      grid_dim;
       kernels;
       ge_index;
       le_index;
@@ -295,11 +251,9 @@ module App = struct
       show a.show_symbexp (fun () -> Symbexp.print_kernels p);
       let open Z3_solver in
       let open Solution in
-      let _ = a.grid_dim in (* TODO: use a.grid_dim *)
       let report =
         p
         |> solve
-            ~block_dim:(Some a.block_dim)
             ~timeout:a.timeout
             ~show_proofs:a.show_proofs
             ~logic:a.logic
@@ -454,8 +408,8 @@ let main
   (logic:string option)
   (output_json:bool)
   (ignore_parsing_errors:bool)
-  (block_dim:string option)
-  (grid_dim:string option)
+  (block_dim:Dim3.t option)
+  (grid_dim:Dim3.t option)
   (includes:string list)
   (ignore_calls:bool)
   (ge_index:int list)
@@ -471,19 +425,12 @@ let main
   let parsed = Protocol_parser.Silent.to_proto
     ~abort_on_parsing_failure:(not ignore_parsing_errors)
     ~includes
+    ~block_dim
+    ~grid_dim
     ~inline:(not ignore_calls)
-    ~arch:(if grid_level then Imp.Architecture.CUDA_GridLevel else Imp.Architecture.CUDA_BlockLevel)
+    ~arch:(if grid_level then Architecture.Grid else Architecture.Block)
     fname
   in
-  let parse_dim (given:string option) (parsed:Dim3.t) : Vec3.t =
-    (match given with
-    | Some x -> Dim3.parse x |> Result.value ~default:parsed
-    | None -> parsed
-    )
-    |> Vec3.from_dim3
-  in
-  let block_dim = parse_dim block_dim parsed.options.block_dim in
-  let grid_dim = parse_dim grid_dim parsed.options.grid_dim in
   let ui = if output_json then jui else tui in
   parsed.kernels
   |> App.make
@@ -497,8 +444,6 @@ let main
       ~show_flat_acc
       ~show_symbexp
       ~logic
-      ~block_dim
-      ~grid_dim
       ~ge_index
       ~le_index
       ~eq_index
@@ -568,16 +513,6 @@ let dim_help = {|
   Examples (without quotes): "[2,2,2]" or "32"
 |}
 
-let block_dim =
-  let d = Gv_parser.default_block_dim |> Dim3.to_string in
-  let doc = "Sets the number of threads per block." ^ dim_help ^ "Default: " ^ d in
-  Arg.(value & opt (some string) None & info ["b"; "block-dim"; "blockDim"] ~docv:"DIM3" ~doc)
-
-let grid_dim =
-  let d = Gv_parser.default_grid_dim |> Dim3.to_string in
-  let doc = "Sets the number of blocks per grid." ^ dim_help ^ "Default: " ^ d in
-  Arg.(value & opt (some string) None & info ["g"; "grid-dim"; "gridDim"] ~docv:"DIM3" ~doc)
-
 let conv_dim3 default =
   let parse =
     fun s ->
@@ -590,6 +525,16 @@ let conv_dim3 default =
     |> print_string
   in
   (parse, print)
+
+let block_dim =
+  let d = Gv_parser.default_block_dim |> Dim3.to_string in
+  let doc = "Sets the number of threads per block." ^ dim_help ^ "Default: " ^ d in
+  Arg.(value & opt (some (conv_dim3 Dim3.one)) None & info ["b"; "block-dim"; "blockDim"] ~docv:"DIM3" ~doc)
+
+let grid_dim =
+  let d = Gv_parser.default_grid_dim |> Dim3.to_string in
+  let doc = "Sets the number of blocks per grid." ^ dim_help ^ "Default: " ^ d in
+  Arg.(value & opt (some (conv_dim3 Dim3.one)) None & info ["g"; "grid-dim"; "gridDim"] ~docv:"DIM3" ~doc)
 
 
 let thread_idx_1 =

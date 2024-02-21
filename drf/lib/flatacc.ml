@@ -85,7 +85,7 @@ module Kernel = struct
     ]
 
   let from_loc_split (k:Locsplit.Kernel.t) : t =
-    let ids = Variable.Set.union Variable.tid_var_set Variable.bid_var_set in
+    let ids = Variable.tid_var_set in
     let approx_local_variables =
       Variable.Set.diff k.local_variables ids
       |> Unsync.unsafe_binders k.code

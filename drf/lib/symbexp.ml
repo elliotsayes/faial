@@ -168,18 +168,15 @@ module AccessSummary = struct
   type t = {
     location: Location.t;
     access: Access.t;
+    variables: Variable.Set.t;
     globals: Variable.Set.t;
     data_approx: Variable.Set.t;
     control_approx: Variable.Set.t;
   }
 
-  let variables (a:t) : Variable.Set.t =
-    a.globals
-    |> Variable.Set.union a.data_approx
-    |> Variable.Set.union a.control_approx
-
   let to_string (a:t) : string =
     "{access=" ^ Access.to_string a.access ^
+    ", variables=[" ^ Variable.set_to_string a.variables ^
     ", data=[" ^ Variable.set_to_string a.data_approx ^
     "], ctrl=[" ^ Variable.set_to_string a.control_approx ^
     "], globals=[" ^ Variable.set_to_string a.globals ^
@@ -335,6 +332,7 @@ module Proof = struct
       {
         location = a.location;
         access = a.access;
+        variables = all_fns;
         globals = Variable.Set.diff all_fns locals;
         data_approx = Variable.Set.inter k.approx_local_variables data_fns;
         control_approx = Variable.Set.inter k.approx_local_variables ctrl_fns;

@@ -14,16 +14,20 @@ let label (x:t) =
 let label_opt (x:t) = x.label
 
 let tid_x : t = from_name "threadIdx.x"
-
 let tid_y : t = from_name "threadIdx.y"
-
 let tid_z : t = from_name "threadIdx.z"
 
 let bid_x : t = from_name "blockIdx.x"
-
 let bid_y : t = from_name "blockIdx.y"
-
 let bid_z : t = from_name "blockIdx.z"
+
+let bdim_x : t = from_name "blockDim.x"
+let bdim_y : t = from_name "blockDim.y"
+let bdim_z : t = from_name "blockDim.z"
+
+let gdim_x : t = from_name "gridDim.x"
+let gdim_y : t = from_name "gridDim.y"
+let gdim_z : t = from_name "gridDim.z"
 
 let update_name (f: string -> string) (v:t) : t =
   { v with name = f v.name }
@@ -99,12 +103,16 @@ let is_tid (x:t) : bool =
   equal x tid_x || equal x tid_y || equal x tid_z
 
 let tid_var_list : t list = [tid_x; tid_y; tid_z]
-
 let tid_var_set : Set.t = Set.of_list tid_var_list
 
 let bid_var_list : t list = [bid_x; bid_y; bid_z]
-
 let bid_var_set : Set.t = Set.of_list bid_var_list
+
+let bdim_var_list : t list = [bdim_x; bdim_y; bdim_z]
+let bdim_var_set : Set.t = Set.of_list bdim_var_list
+
+let gdim_var_list : t list = [gdim_x; gdim_y; gdim_z]
+let gdim_var_set : Set.t = Set.of_list gdim_var_list
 
 let contains_tids (vs:Set.t) : bool =
   Set.mem tid_x vs ||

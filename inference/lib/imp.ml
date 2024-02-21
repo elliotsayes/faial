@@ -594,112 +594,6 @@ let rec post_to_proto : Post.t -> Proto.Code.t =
   | Seq (i, p) ->
     Proto.Code.seq (post_to_proto i) (post_to_proto p)
 
-module Architecture = struct
-  type t =
-    | CUDA_GridLevel
-    | CUDA_BlockLevel
-
-  let filter_arrays (a:t) (m:Memory.t Variable.Map.t) : Memory.t Variable.Map.t =
-    match a with
-    | CUDA_GridLevel ->
-      Variable.Map.filter (fun _ a -> Memory.is_global a) m
-    | CUDA_BlockLevel -> m
-
-  let filter_code (a:t) (s:Proto.Code.t) : Proto.Code.t =
-    match a with
-    | CUDA_GridLevel -> Proto.Code.filter ( function
-    | Sync _ -> false
-    | _ -> true) s
-    | CUDA_BlockLevel -> s
-end
-
-module Preamble = struct
-
-  type t = {
-    globals: Variable.Set.t;
-    code: Stmt.t list;
-  }
-
-  let cuda_global_vars = [
-    ("blockIdx", 0);
-    ("blockDim", 1);
-    ("gridDim", 1);
-  ]
-
-  let cuda_local_vars = [("threadIdx", 0)]
-
-  let all_cuda_vars = cuda_local_vars @ cuda_global_vars
-
-  let cuda_base_vars : StringSet.t =
-    all_cuda_vars
-    |> List.map fst
-    |> StringSet.of_list
-
-  let cuda_dims = ["x"; "y"; "z"]
-
-  let make_cuda ~locals ~distinct ~globals : t =
-    let mk_dims (name:string) : (Variable.t * nexp option) list =
-      List.map (fun x -> (Variable.from_name (name ^ "." ^ x), None) ) cuda_dims
-    in
-    let local_dims = List.concat_map mk_dims locals in
-    let mk_var (name:string) (suffix:string) (x:string) : nexp =
-      Var (Variable.from_name (name ^ suffix ^ "." ^ x))
-    in
-    let all_vars_constraints : bexp list =
-      cuda_dims
-      |> List.concat_map (fun (x:string) ->
-        all_cuda_vars
-        |> List.map (fun (name, lower_bound) ->
-          n_ge (Var (Variable.from_name (name ^ "." ^ x))) (Num lower_bound)
-        )
-      )
-    in
-    let idx_lt_dim (name1, name2) : bexp list =
-      List.map (fun x ->
-        n_lt (mk_var name1 "Idx" x) (mk_var name2 "Dim" x)
-      ) cuda_dims
-    in
-    let var_list (vars : string list) : Variable.t list =
-      cuda_dims
-      |> List.concat_map (fun (x:string) ->
-        vars
-        |> List.map (fun (name:string) ->
-            Variable.from_name (name ^ "." ^ x)
-        )
-      )
-    in
-    let global_vars : Variable.Set.t =
-      globals
-      |> var_list
-      |> Variable.Set.of_list
-    in
-    {
-      globals = global_vars;
-      code=[
-        Decl local_dims;
-        Assert (
-          all_vars_constraints
-          @
-          (Exp.distinct (var_list distinct) ::
-            List.concat_map idx_lt_dim [("thread", "block"); ("block", "grid")]
-          )
-          |> b_and_ex
-        )
-      ];
-    }
-
-  let block_level : t =
-    make_cuda ~locals:["threadIdx"] ~distinct:["threadIdx"] ~globals:["blockIdx"; "blockDim"; "gridDim"]
-
-  let grid_level : t =
-    make_cuda ~locals:["threadIdx"; "blockIdx"] ~distinct:["blockIdx"] ~globals:["blockDim"; "gridDim"]
-
-  let from_arch : Architecture.t -> t =
-    function
-    | CUDA_BlockLevel -> block_level
-    | CUDA_GridLevel -> grid_level
-end
-
 module Kernel = struct
   type t = {
     (* The kernel name *)
@@ -734,13 +628,11 @@ module Kernel = struct
     Indent.print (to_s k)
 
   let compile (arch:Architecture.t) (k:t) : Proto.Code.t Proto.Kernel.t =
-    let pre = Preamble.from_arch arch in
-    let globals = Variable.Set.union k.params pre.globals in
-    let (globals, p) = imp_to_post (globals, Block (pre.code @ [k.code])) in
-    let arrays = Architecture.filter_arrays arch k.arrays in
+    let globals = k.params in
+    let (globals, p) = imp_to_post (globals, k.code) in
     let p : Post.t =
       p
-      |> Post.filter_locs arrays (* Remove unknown arrays *)
+      |> Post.filter_locs k.arrays (* Remove unknown arrays *)
       (* Inline local variable assignment and ensure variables are distinct*)
       |> Post.inline_assigns k.params
     in
@@ -766,12 +658,12 @@ module Kernel = struct
     {
       name = k.name;
       pre = pre;
-      arrays = arrays;
+      arrays = k.arrays;
       local_variables = locals;
       global_variables = globals;
-      code = Architecture.filter_code arch p;
+      code = p;
       visibility = k.visibility;
-    }
+    } |> Proto.Kernel.apply_arch arch
 
   let calls (k:t) : StringSet.t =
     Stmt.calls k.code

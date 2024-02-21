@@ -161,7 +161,6 @@ end
 
 module Task = struct
   type t = {
-    thread_idx: Vec3.t;
     locals: Environ.t;
     access: Access.t;
     location: Location.t option;
@@ -175,7 +174,6 @@ module Task = struct
 
   let to_json (x:t) : json =
     `Assoc [
-      "threadIdx", Vec3.to_json x.thread_idx;
       "locals", Environ.to_json x.locals;
       "mode", `String (Access.Mode.to_string x.access.mode);
       "location",
@@ -197,7 +195,6 @@ module Witness = struct
     data_approx: Variable.Set.t;
     control_approx: Variable.Set.t;
     tasks : Task.t * Task.t;
-    block_dim: Vec3.t;
     globals: Environ.t;
   }
 
@@ -217,7 +214,6 @@ module Witness = struct
     `Assoc [
       "task1", Task.to_json t1;
       "task2", Task.to_json t2;
-      "blockDim", Vec3.to_json x.block_dim;
       "indices", `List (List.map (fun x -> `String x) x.indices);
       "globals", Environ.to_json x.globals;
     ]
@@ -285,7 +281,7 @@ module Witness = struct
       parse_indices {e with variables=kvs}
     )
 
-  let parse (parse_num:string -> string) ~proof ~block_dim (m:Model.model) : t =
+  let parse (parse_num:string -> string) ~proof (m:Model.model) : t =
     let env =
       let open Symbexp in
       Environ.parse (Proof.labels proof) parse_num m
@@ -301,10 +297,7 @@ module Witness = struct
     in
     let a1 = Symbexp.Proof.get ~access_id:inst1 proof in
     let a2 = Symbexp.Proof.get ~access_id:inst2 proof in
-    let all_vars =
-      Symbexp.AccessSummary.variables a1
-      |> Variable.Set.union (Symbexp.AccessSummary.variables a2)
-    in
+    let all_vars = Variable.Set.union a1.variables a2.variables in
     (* put all special variables in kvs
       $T2$loc: 0
       $T1$mode: 0
@@ -314,20 +307,15 @@ module Witness = struct
       $T2$idx$0: 1
     *)
     let (env, idx) = parse_meta env in
-    let (tids, globals) = List.partition (fun (k, _) ->
-        String.starts_with ~prefix:"threadIdx." k
-    ) env.variables
-    in
     let (locals, globals) = List.partition (fun (k, _) ->
       String.contains k '$'
-    ) globals
+    ) env.variables
     in
     let t1_locals, t2_locals = List.partition (fun (k, _) ->
       String.ends_with ~suffix:"$T1" k
     ) locals
     in
     let globals = {env with variables=globals} in
-    let (globals, block_dim) = parse_vec3 block_dim "blockDim" globals in
     let labels_of suffix =
       StringMap.filter (fun x _ -> String.ends_with ~suffix x) globals.labels
     in
@@ -348,15 +336,12 @@ module Witness = struct
     let t2_locals = fix_locals t2_locals in
     let t1_labels = fix_labels (labels_of "$T1") in
     let t2_labels = fix_labels (labels_of "$T2") in
-    let (t1_tid, t2_tid) = Vec3.parse {globals with variables=tids} in
     let t1 = Task.{
-      thread_idx = t1_tid;
       locals = {variables=t1_locals;labels=t1_labels};
       access = a1.access;
       location = Some a1.location;
     } in
     let t2 = Task.{
-      thread_idx = t2_tid;
       locals = {variables=t2_locals;labels=t2_labels};
       access = a2.access;
       location = Some a2.location;
@@ -364,7 +349,6 @@ module Witness = struct
     in
     {
       proof_id = proof.id;
-      block_dim = block_dim;
       indices = idx;
       tasks = t1, t2;
       globals = globals;
@@ -396,7 +380,6 @@ module Solution = struct
     ?(timeout=None)
     ?(show_proofs=false)
     ?(logic=None)
-    ~block_dim
     (ps:Symbexp.Proof.t Streamutil.stream)
   :
     (Symbexp.Proof.t * t) Streamutil.stream
@@ -455,13 +438,12 @@ module Solution = struct
         let body = Solver.to_string s ^ "(check-sat)\n(get-model)\n" in
         Tui.print_frame ~title ~body
       ) else ());
-      let block_dim = block_dim |> Option.value ~default:Vec3.default in
       let r = match Solver.check s [] with
       | UNSATISFIABLE -> Drf
       | SATISFIABLE ->
         (match Solver.get_model s with
         | Some m ->
-          let w = Witness.parse !parse_num ~block_dim ~proof:p m in
+          let w = Witness.parse !parse_num ~proof:p m in
           if Witness.can_conflict w then Racy w else Drf
         | None -> failwith "INVALID")
       | UNKNOWN -> Unknown
