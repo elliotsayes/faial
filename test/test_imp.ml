@@ -55,12 +55,12 @@ let tests = "test_predicates" >::: [
     let p : Post.t =
       let open Post in
       Decl (id, Some (n_plus (Num 32) (Var id)), (* local id = 32 + id; *)
-        Acc (sq, {index=[Var id]; mode = Wr None}) (* rw s_Q[id]; *)
+        Acc (sq, {index=[Var id]; mode = Write None}) (* rw s_Q[id]; *)
       )
     in
     let p : Post.t = Post.inline_assigns Variable.Set.empty p in
     match p with
-    | Post.Acc (_, {index=[e]; mode = Wr None}) (* rw s_Q[32 + id]; *)
+    | Post.Acc (_, {index=[e]; mode = Write None}) (* rw s_Q[32 + id]; *)
       ->
       assert_nexp (n_plus (Num 32) (Var id)) e;
       ()

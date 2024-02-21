@@ -30,13 +30,17 @@ module Alias = struct
 end
 
 type read = {target: Variable.t; array: Variable.t; index: nexp list}
+type atomic = read
 type write = {array: Variable.t; index: nexp list; payload: int option}
 
 let read_to_acc (r:read) : Variable.t * Access.t =
-  (r.array, Access.{index=r.index; mode=Rd})
+  (r.array, Access.{index=r.index; mode=Read})
+
+let atomic_to_acc (a:atomic) : Variable.t * Access.t =
+  (a.array, Access.{index=a.index; mode=Atomic})
 
 let write_to_acc (w:write) : Variable.t * Access.t =
-  (w.array, Access.{index=w.index; mode=Wr w.payload})
+  (w.array, Access.{index=w.index; mode=Write w.payload})
 
 module ArrayUse = struct
   type t = {address: Variable.t; offset: nexp}
@@ -85,6 +89,7 @@ module Stmt = struct
     | Sync of Location.t option
     | Assert of bexp
     | Read of read
+    | Atomic of atomic
     | Write of write
     | Block of (t list)
     | LocationAlias of Alias.t
@@ -110,14 +115,16 @@ module Stmt = struct
     function
     | Sync _ -> true
     | If (_, p, q) -> has_sync p || has_sync q
-    | Read _ | Write _ | Assert _ | LocationAlias _ | Decl _ | Call _ -> false
+    | Atomic _ | Read _ | Write _ | Assert _ | LocationAlias _ | Decl _ | Call _ -> false
     | Block l -> List.exists has_sync l
     | For (_, p) | Star p -> has_sync p
 
   let calls : t -> StringSet.t =
     let rec calls (cs:StringSet.t) : t -> StringSet.t =
       function
-      | Decl _ | LocationAlias _ | Sync _ | Assert _ | Read _ | Write _ -> cs
+      | Decl _ | LocationAlias _ | Sync _ | Assert _
+      | Read _ | Write _ | Atomic _ ->
+        cs
       | Block l -> List.fold_left calls cs l
       | If (_, s1, s2) -> calls (calls cs s1) s2
       | For (_, s) | Star s -> calls cs s
@@ -134,6 +141,7 @@ module Stmt = struct
         | Sync _
         | Assert _
         | Read _
+        | Atomic _
         | Write _
         | Decl _
         | LocationAlias _
@@ -194,7 +202,8 @@ module Stmt = struct
       | Call c -> [Line (Call.to_string c)]
       | Sync _ -> [Line "sync;"]
       | Assert b -> [Line ("assert (" ^ b_to_string b ^ ");")]
-      | Read r -> [Line (Variable.name r.target ^ " = ro " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
+      | Atomic r -> [Line (Variable.name r.target ^ " = atomic " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
+      | Read r -> [Line (Variable.name r.target ^ " = rd " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
       | Write w ->
         let payload :string = match w.payload with
           | None -> ""
@@ -519,10 +528,14 @@ let imp_to_post : Variable.Set.t * Stmt.t -> Variable.Set.t * Post.t =
   let rec imp_to_post_s : Stmt.t -> (int * Variable.Set.t) -> int * Variable.Set.t * Post.t =
     function
     | Sync l -> ret (Post.Sync l)
-    | Write e -> ret (Acc (e.array, {index=e.index; mode=Wr e.payload}))
+    | Write e -> ret (Acc (e.array, {index=e.index; mode=Write e.payload}))
     | Read e ->
       fun (curr_id, globals) ->
-        let rd = Post.Acc (e.array, {index=e.index; mode=Rd}) in
+        let rd = Post.Acc (e.array, {index=e.index; mode=Read}) in
+        (curr_id, globals, Decl (e.target, None, rd))
+    | Atomic e ->
+      fun (curr_id, globals) ->
+        let rd = Post.Acc (e.array, {index=e.index; mode=Atomic}) in
         (curr_id, globals, Decl (e.target, None, rd))
     | Call _ -> imp_to_post_p []
     | Block p -> imp_to_post_p p
@@ -692,7 +705,7 @@ module Kernel = struct
         | Some k -> apply c.args k
         | None -> s
         )
-      | Sync _ | Assert _ | Read _ | Write _ | Decl _ | LocationAlias _ ->
+      | Sync _ | Assert _ | Read _ | Write _ | Atomic _ | Decl _ | LocationAlias _ ->
         s
       | Block l -> Block (List.map inline l)
       | If (b, s1, s2) -> If (b, inline s1, inline s2)

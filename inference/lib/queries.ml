@@ -785,6 +785,7 @@ module ForEach = struct
       Seq.return (Do {body=s; cond=c})
     | WriteAccessStmt _
     | ReadAccessStmt _
+    | AtomicAccessStmt _
     | BreakStmt
     | GotoStmt
     | ContinueStmt
@@ -854,6 +855,8 @@ module Accesses = struct
       | Assert _
       | LocationAlias _ ->
         Seq.empty
+      | Atomic a ->
+        if in_cond then (Seq.return (Imp.atomic_to_acc a)) else Seq.empty
       | Read r ->
         if in_cond then (Seq.return (Imp.read_to_acc r)) else Seq.empty
       | Write w ->

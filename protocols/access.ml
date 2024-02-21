@@ -2,33 +2,40 @@ open Stage0
 
 module Mode = struct
   type t =
-    | Rd
+    | Read
     (* The payload of the write is used
        to detect benign data-races.
        See can-conflict for potentially
        racy accesses. *)
-    | Wr of int option
+    | Write of int option
+    | Atomic
 
   let to_string : t -> string =
     function
-    | Rd -> "ro"
-    | Wr (Some n) -> "rw(" ^ string_of_int n ^ ")"
-    | Wr None -> "rw"
+    | Read -> "ro"
+    | Write (Some n) -> "rw(" ^ string_of_int n ^ ")"
+    | Write None -> "rw"
+    | Atomic -> "atomic"
 
   let is_read : t -> bool =
     function
-    | Rd -> true
-    | Wr _ -> false
+    | Read -> true
+    | _ -> false
 
   let is_write : t -> bool =
     function
-    | Rd -> false
-    | Wr _ -> true
+    | Write _ -> true
+    | _ -> false
+
+  let is_atomic : t -> bool =
+    function
+    | Atomic -> true
+    | _ -> false
 
   let can_conflict (m1:t) (m2:t) : bool =
     match m1, m2 with
-    | Rd, Rd -> false
-    | Wr (Some x), Wr (Some y) -> x <> y
+    | Read, Read | Atomic, Atomic -> false
+    | Write (Some x), Write (Some y) -> x <> y
     | _, _ -> true
 end
 
@@ -58,10 +65,13 @@ let to_string ?(name="") (a:t) : string =
   Mode.to_string a.mode ^ " " ^ name ^ index_to_string a.index
 
 let write (index:Exp.nexp list) (v:int option) : t =
-  { index = index; mode = Wr v}
+  { index = index; mode = Write v}
 
 let read (index:Exp.nexp list) : t =
-  { index = index; mode = Rd }
+  { index = index; mode = Read }
+
+let atomic (index:Exp.nexp list) : t =
+  { index = index; mode = Atomic }
 
 let can_conflict (a1:t) (a2:t) =
   Mode.can_conflict a1.mode a2.mode

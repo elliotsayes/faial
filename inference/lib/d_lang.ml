@@ -272,6 +272,9 @@ type d_subscript = {name: Variable.t; index: Expr.t list; ty: d_type; location: 
 let subscript_to_s (s:d_subscript) : string =
   Variable.name s.name ^ "[" ^ list_to_s Expr.to_string s.index ^ "]"
 
+let make_subscript ~name ~index ~ty ~location : d_subscript =
+  {name; index; ty; location}
+
 type d_write = {
   (* The index *)
   target: d_subscript;
@@ -284,11 +287,13 @@ type d_write = {
   payload: int option
 }
 type d_read = {target: Variable.t; source: d_subscript}
+type d_atomic = d_read
 
 module Stmt = struct
   type t =
     | WriteAccessStmt of d_write
     | ReadAccessStmt of d_read
+    | AtomicAccessStmt of d_atomic
     | BreakStmt
     | GotoStmt
     | ReturnStmt
@@ -326,8 +331,9 @@ module Stmt = struct
       in
       let block (s:t) : Indent.t list = ret (stmt_to_s s) in
       function
-      | WriteAccessStmt w -> [Line ("rw " ^ subscript_to_s w.target ^ " = " ^ Expr.to_string w.source)]
-      | ReadAccessStmt r -> [Line ("ro " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
+      | WriteAccessStmt w -> [Line ("wr " ^ subscript_to_s w.target ^ " = " ^ Expr.to_string w.source)]
+      | ReadAccessStmt r -> [Line ("rd " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
+      | AtomicAccessStmt r -> [Line ("atomic " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
       | ReturnStmt -> [Line "return"]
       | GotoStmt -> [Line "goto"]
       | ContinueStmt -> [Line "continue"]
@@ -378,11 +384,12 @@ module Stmt = struct
     let stmt_to_s : t -> string =
       function
       | WriteAccessStmt w ->
-        "rw " ^
+        "wr " ^
         subscript_to_s w.target ^
         " = " ^
         Expr.to_string w.source ^ ";"
-      | ReadAccessStmt r -> "ro " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source ^ ";"
+      | ReadAccessStmt r -> "rd " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source ^ ";"
+      | AtomicAccessStmt r -> "atomic " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source ^ ";"
       | ReturnStmt -> "return;"
       | GotoStmt -> "goto;"
       | BreakStmt -> "break;"
@@ -577,11 +584,72 @@ module AccessState = struct
         ReadAccessStmt {target=x; source=a};
       ]
     ) st
+
+  let add_atomic (a:d_subscript) (st:t) : (t * Variable.t) =
+    add_var (subscript_to_s a) (fun x ->
+      [
+        AtomicAccessStmt {target=x; source=a};
+      ]
+    ) st
 end
+
+let atomics : Variable.Set.t =
+  [
+    "atomicInc";
+    "atomicDec";
+    "atomicAdd";
+    "atomicAdd_block";
+    "atomicAdd_system";
+    "atomicCAS";
+    "atomicAnd";
+    "atomicOr";
+    "atomicXor";
+    "atomicMin";
+    "atomicMax";
+    "atomicExch";
+    "atomicSub";
+  ]
+  |> List.map Variable.from_name
+  |> Variable.Set.of_list
 
 let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
   let open Expr in
   match c with
+
+  (* When an atomic happens *)
+  | CallExpr {func=Ident f; args=e::args; ty}
+    when Variable.Set.mem f.name atomics ->
+    fun st ->
+    let (st, e) = rewrite_exp e st in
+    (* we want to make sure we extract any reads from the other arguments,
+       but we can safely discard the arguments, as we only care that an
+       atomic happened, not exactly what was done by the atomic. *)
+    let (st, args) = state_map rewrite_exp args st in
+    (match e with
+    | Ident x ->
+      rewrite_atomic (
+        make_subscript
+          ~name:x.name
+          ~index:[IntegerLiteral 0]
+          ~location:(Variable.location f.name)
+          ~ty
+      ) st
+    | BinaryOperator {lhs=Ident x; rhs=e; opcode="+"; _} ->
+      rewrite_atomic (
+        make_subscript
+          ~name:x.name
+          ~index:[e]
+          ~location:(Variable.location f.name)
+          ~ty
+      ) st
+    | _ ->
+      (st, CallExpr {func=Ident f; args=e::args; ty})
+    )
+
+  (* When a write happens *)
+  | BinaryOperator {lhs=ArraySubscriptExpr a; rhs=src; opcode="="; _} ->
+    rewrite_write a src
+
   | CXXOperatorCallExpr {
       func=Ident {name=v; _};
       args=[ArraySubscriptExpr a; src];
@@ -589,16 +657,14 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     } when Variable.name v = "operator="
     -> rewrite_write a src
 
+  (* When a read happens *)
+  | ArraySubscriptExpr a -> rewrite_read a
+
   | SizeOfExpr ty ->
     fun st -> (st, SizeOfExpr ty)
 
   | RecoveryExpr ty ->
     fun st -> (st, RecoveryExpr ty)
-
-  | BinaryOperator {lhs=ArraySubscriptExpr a; rhs=src; opcode="="; _} ->
-    rewrite_write a src
-
-  | ArraySubscriptExpr a -> rewrite_read a
 
   | BinaryOperator {lhs=l; rhs=r; opcode=o; ty=ty} ->
     fun st ->
@@ -683,6 +749,7 @@ and rewrite_subscript (c:C_lang.Expr.c_array_subscript) : (AccessState.t, d_subs
       state_pure {name=x; index=indices; ty=ty; location=Option.get loc} st
   in
   rewrite_subscript c [] None
+
 and rewrite_write (a:C_lang.Expr.c_array_subscript) (src:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
   fun st ->
     let (st, src') = rewrite_exp src st in
@@ -693,10 +760,16 @@ and rewrite_write (a:C_lang.Expr.c_array_subscript) (src:C_lang.Expr.t) : (Acces
     in
     let (st, x) = AccessState.add_write a src' payload st in
   state_pure (Expr.ident ~ty:(C_lang.Expr.to_type src) x) st
+
 and rewrite_read (a:C_lang.Expr.c_array_subscript): (AccessState.t, Expr.t) state =
   fun st ->
     let (st, a) = rewrite_subscript a st in
     let (st, x) = AccessState.add_read a st in
+    state_pure (Expr.ident ~ty:a.ty x) st
+
+and rewrite_atomic (a:d_subscript) : (AccessState.t, Expr.t) state =
+  fun st ->
+    let (st, x) = AccessState.add_atomic a st in
     state_pure (Expr.ident ~ty:a.ty x) st
 
 let map_opt (f:'a -> ('s * 'b)) (o:'a option) : ('s * 'b option) =

@@ -627,6 +627,14 @@ let rec parse_stmt (sigs:Variable.t list StringMap.t) (c:D_lang.Stmt.t) : Imp.St
       Read {target=r.target; array=x; index=idx}
     )
 
+  | AtomicAccessStmt r ->
+    let x = r.source.name |> Variable.set_location r.source.location in
+    let* idx = with_msg "atomic.idx" (cast_map parse_exp) r.source.index in
+    idx
+    |> ret_ns (fun idx ->
+      Atomic {target=r.target; array=x; index=idx}
+    )
+
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 
   | IfStmt {cond=b;then_stmt=ReturnStmt;else_stmt=CompoundStmt[]} ->
     ret_assert (UnaryOperator {opcode="!"; child=b; ty=D_lang.Expr.to_type b})
@@ -758,6 +766,7 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
       |> Common.append_tr arrays
     | WriteAccessStmt _
     | ReadAccessStmt _
+    | AtomicAccessStmt _
     | GotoStmt
     | ReturnStmt
     | ContinueStmt

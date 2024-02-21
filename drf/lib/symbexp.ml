@@ -28,16 +28,35 @@ module Gen = struct
   let assign_mode (t:task) (m:Access.Mode.t): bexp =
     let mode_to_nexp (m:Access.Mode.t) : nexp =
       Num (match m with
-      | Rd -> 0
-      | Wr _ -> 1)
+      | Read -> 0
+      | Write _ -> 1
+      | Atomic -> 2)
     in
     let this_mode_v : nexp = mode t in
     let other_mode_v : nexp = mode (other_task t) in
     let b = n_eq this_mode_v (mode_to_nexp m) in
-    if Access.Mode.is_read m then
-      n_eq other_mode_v (mode_to_nexp (Wr None))
-      |> b_and b
-    else b
+    match m with
+    | Read ->
+      (* since two reads are safe, make sure we
+         enforce that the other access is not a read *)
+      let not_read =
+        (* either a write *)
+        b_or (n_eq other_mode_v (mode_to_nexp (Write None)))
+        (* or an atomic *)
+             (n_eq other_mode_v (mode_to_nexp Atomic))
+      in
+      b_and b not_read
+    | Atomic ->
+      (* since two atomics are safe, make sure we
+         enforce that the other access is not an atomic *)
+      let not_atomic =
+        (* either a write *)
+        b_or (n_eq other_mode_v (mode_to_nexp (Write None)))
+        (* or a read *)
+             (n_eq other_mode_v (mode_to_nexp Read))
+      in
+      b_and b not_atomic
+    | Write _ -> b
 
   let access_id (t:task) : nexp = Ids.access_id t |> var
   (* assign identifier of the conditional access *)
