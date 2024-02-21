@@ -167,7 +167,6 @@ let box_globals (w:Witness.t) : PrintBox.t =
   [
     "index", Common.join " │ " w.indices;
   ]
-  @ box_dim "gridDim" w.grid_dim
   @ box_dim "blockDim" w.block_dim
   @ w.globals.variables
   }
@@ -296,10 +295,10 @@ module App = struct
       show a.show_symbexp (fun () -> Symbexp.print_kernels p);
       let open Z3_solver in
       let open Solution in
+      let _ = a.grid_dim in (* TODO: use a.grid_dim *)
       let report =
         p
         |> solve
-            ~grid_dim:(Some a.grid_dim)
             ~block_dim:(Some a.block_dim)
             ~timeout:a.timeout
             ~show_proofs:a.show_proofs

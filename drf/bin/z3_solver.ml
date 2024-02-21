@@ -198,7 +198,6 @@ module Witness = struct
     control_approx: Variable.Set.t;
     tasks : Task.t * Task.t;
     block_dim: Vec3.t;
-    grid_dim: Vec3.t;
     globals: Environ.t;
   }
 
@@ -219,7 +218,6 @@ module Witness = struct
       "task1", Task.to_json t1;
       "task2", Task.to_json t2;
       "blockDim", Vec3.to_json x.block_dim;
-      "gridDim", Vec3.to_json x.grid_dim;
       "indices", `List (List.map (fun x -> `String x) x.indices);
       "globals", Environ.to_json x.globals;
     ]
@@ -287,7 +285,7 @@ module Witness = struct
       parse_indices {e with variables=kvs}
     )
 
-  let parse (parse_num:string -> string) ~proof ~block_dim ~grid_dim (m:Model.model) : t =
+  let parse (parse_num:string -> string) ~proof ~block_dim (m:Model.model) : t =
     let env =
       let open Symbexp in
       Environ.parse (Proof.labels proof) parse_num m
@@ -330,7 +328,6 @@ module Witness = struct
     in
     let globals = {env with variables=globals} in
     let (globals, block_dim) = parse_vec3 block_dim "blockDim" globals in
-    let (globals, grid_dim) = parse_vec3 grid_dim "gridDim" globals in
     let labels_of suffix =
       StringMap.filter (fun x _ -> String.ends_with ~suffix x) globals.labels
     in
@@ -368,7 +365,6 @@ module Witness = struct
     {
       proof_id = proof.id;
       block_dim = block_dim;
-      grid_dim = grid_dim;
       indices = idx;
       tasks = t1, t2;
       globals = globals;
@@ -401,7 +397,6 @@ module Solution = struct
     ?(show_proofs=false)
     ?(logic=None)
     ~block_dim
-    ~grid_dim
     (ps:Symbexp.Proof.t Streamutil.stream)
   :
     (Symbexp.Proof.t * t) Streamutil.stream
@@ -461,13 +456,12 @@ module Solution = struct
         Tui.print_frame ~title ~body
       ) else ());
       let block_dim = block_dim |> Option.value ~default:Vec3.default in
-      let grid_dim = grid_dim |> Option.value ~default:Vec3.default in
       let r = match Solver.check s [] with
       | UNSATISFIABLE -> Drf
       | SATISFIABLE ->
         (match Solver.get_model s with
         | Some m ->
-          let w = Witness.parse !parse_num ~block_dim ~grid_dim ~proof:p m in
+          let w = Witness.parse !parse_num ~block_dim ~proof:p m in
           if Witness.can_conflict w then Racy w else Drf
         | None -> failwith "INVALID")
       | UNKNOWN -> Unknown
