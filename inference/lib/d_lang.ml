@@ -596,18 +596,48 @@ end
 let atomics : Variable.Set.t =
   [
     "atomicInc";
+    "atomicInc_block";
+    "atomicInc_system";
+
     "atomicDec";
+    "atomicDec_block";
+    "atomicDec_system";
+
     "atomicAdd";
     "atomicAdd_block";
     "atomicAdd_system";
+
     "atomicCAS";
+    "atomicCAS_block";
+    "atomicCAS_system";
+
     "atomicAnd";
+    "atomicAnd_block";
+    "atomicAnd_system";
+
     "atomicOr";
+    "atomicOr_block";
+    "atomicOr_system";
+
     "atomicXor";
+    "atomicXor_block";
+    "atomicXor_system";
+
     "atomicMin";
+    "atomicMin_block";
+    "atomicMin_system";
+
     "atomicMax";
+    "atomicMax_block";
+    "atomicMax_system";
+
     "atomicExch";
+    "atomicExch_block";
+    "atomicExch_system";
+
     "atomicSub";
+    "atomicSub_block";
+    "atomicSub_system";
   ]
   |> List.map Variable.from_name
   |> Variable.Set.of_list
