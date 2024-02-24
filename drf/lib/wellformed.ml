@@ -39,10 +39,7 @@ let make_well_formed : Proto.Code.t -> Sync.t Streamutil.stream =
       infer in_loop p
       |> flat_map (
         function
-        | Both _ when in_loop ->
-          failwith "We do not support synchronized conditionals inside loops"
-        | SInst _ when in_loop ->
-          failwith "We do not support synchronized conditionals inside loops"
+        (* TODO: why should we reject synchronized conditionals inside loops? *)
         | SInst p ->
           [
             UInst (Assert (b_not b));
