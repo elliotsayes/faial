@@ -8,6 +8,7 @@ let split_array_type (x:string) : (string * string) option =
   | None -> (
     match Common.rsplit ' ' x with
     | Some (_, "*") as o -> o
+    | Some (e, "*__restrict") -> Some (e, "*")
     | _ -> None
   )
 
@@ -37,6 +38,7 @@ let parse_array_dim_opt (x:string) : int list option =
   | Some (_, x) -> (
       let x  = match Common.rsplit ' ' x with
       | Some (x, "*") -> x
+      | Some (x, "*__restrict") -> x
       | _ -> x
       in
       (try Some (parse_dim x) with
@@ -57,7 +59,12 @@ let to_string (c:t) : string =
   | CType x -> x
 
 let is_pointer (c:t) =
-  to_string c |> String.ends_with ~suffix:" *"
+  let c = to_string c in
+  (String.ends_with ~suffix:" *" c)
+  || (String.ends_with ~suffix:" *__restrict" c)
+
+let is_void (c:t) =
+  to_string c = "void"
 
 let get_array_length (c:t) : int list =
   to_string c

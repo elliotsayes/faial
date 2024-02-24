@@ -24,7 +24,7 @@ module Expr = struct
     | RecoveryExpr of d_type
     | CharacterLiteral of int
     | BinaryOperator of d_binary
-    | CallExpr of {func: t; args: t list; ty: d_type}
+    | CallExpr of d_call
     | ConditionalOperator of {cond: t; then_expr: t; else_expr: t; ty: d_type}
     | CXXConstructExpr of {args: t list; ty: d_type}
     | CXXBoolLiteralExpr of bool
@@ -36,6 +36,7 @@ module Expr = struct
     | UnaryOperator of { opcode: string; child: t; ty: d_type}
     | UnresolvedLookupExpr of {name: Variable.t; tys: d_type list}
   and d_binary = {opcode: string; lhs: t; rhs: t; ty: d_type}
+  and d_call = {func: t; args: t list; ty: d_type}
 
   let ident
     ?(ty=C_type.j_int_type)
@@ -593,6 +594,15 @@ module AccessState = struct
         AtomicAccessStmt {target=x; source=a};
       ]
     ) st
+
+  let add_call (c:Expr.d_call) (st:t) : (t * Variable.t) =
+    let e = Expr.CallExpr c in
+    add_var (Expr.to_string e) (fun x ->
+      [
+        let ty = Ty_variable.make ~name:x ~ty:(Expr.to_type e) in
+        DeclStmt [Decl.from_expr ty e]
+      ]
+    ) st
 end
 
 let atomics : Variable.Set.t =
@@ -643,6 +653,11 @@ let atomics : Variable.Set.t =
   ]
   |> List.map Variable.from_name
   |> Variable.Set.of_list
+
+let is_void (j:Yojson.Basic.t) =
+  match C_type.from_json j with
+  | Ok t -> C_type.is_void t
+  | Error _ -> false
 
 let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
   let open Expr in
@@ -727,11 +742,18 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     let (st, args) = state_map rewrite_exp args st in
     (st, CXXOperatorCallExpr {func=f; args=args; ty=ty})
 
-  | CallExpr {func=f; args=args; ty=ty} ->
+  | CallExpr {func=f; args=args; ty=ty} when is_void ty ->
     fun st ->
     let (st, f) = rewrite_exp f st in
     let (st, args) = state_map rewrite_exp args st in
     (st, CallExpr {func=f; args=args; ty=ty})
+
+  | CallExpr {func=f; args=args; ty=ty} ->
+    fun st ->
+    let (st, f) = rewrite_exp f st in
+    let (st, args) = state_map rewrite_exp args st in
+    let c:d_call = {func=f; args=args; ty=ty} in
+    rewrite_call c st
 
   | CXXConstructExpr c ->
     fun st ->
@@ -802,6 +824,11 @@ and rewrite_read (a:C_lang.Expr.c_array_subscript): (AccessState.t, Expr.t) stat
 and rewrite_atomic (a:d_subscript) : (AccessState.t, Expr.t) state =
   fun st ->
     let (st, x) = AccessState.add_atomic a st in
+    state_pure (Expr.ident ~ty:a.ty x) st
+
+and rewrite_call (a:Expr.d_call) : (AccessState.t, Expr.t) state =
+  fun st ->
+    let (st, x) = AccessState.add_call a st in
     state_pure (Expr.ident ~ty:a.ty x) st
 
 let map_opt (f:'a -> ('s * 'b)) (o:'a option) : ('s * 'b option) =

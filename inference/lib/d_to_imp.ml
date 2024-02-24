@@ -452,9 +452,26 @@ let rec parse_load_expr (target:D_lang.Expr.t) (exp:D_lang.Expr.t)
   match exp with
   | Ident {ty=ty; _} when is_pointer ty ->
     Left {target=target; source=exp; offset=IntegerLiteral 0}
+  | CXXOperatorCallExpr {func=UnresolvedLookupExpr {name=n; _}; args=[lhs;rhs]; ty}
+  | CXXOperatorCallExpr {func=Ident {name=n; _}; args=[lhs;rhs]; ty}
+    when Variable.name n = "operator+" ->
+    (match parse_load_expr target lhs with
+    | Left l ->
+      let offset : D_lang.Expr.t = BinaryOperator {
+        opcode = "+";
+        lhs = l.offset;
+        rhs = rhs;
+        ty;
+      } in
+      Left {l with offset}
+    | Right _ -> Right exp)
+  | CXXOperatorCallExpr _ ->
+    Right exp
   | BinaryOperator ({lhs=l; _} as b) ->
     (match parse_load_expr target l with
-    | Left l -> Left {l with offset =BinaryOperator {b with lhs=l.offset}}
+    | Left l ->
+      let offset : D_lang.Expr.t = BinaryOperator {b with lhs=l.offset} in
+      Left {l with offset}
     | Right _ -> Right exp)
   | _ ->
     Right exp
@@ -593,6 +610,25 @@ let rec parse_stmt (sigs:Variable.t list StringMap.t) (c:D_lang.Stmt.t) : Imp.St
   | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = [b]; _})
     when Variable.name n = "__requires" ->
     ret_assert b
+
+  | DeclStmt ([{init=Some (IExpr (CallExpr {func = UnresolvedLookupExpr {name=n; tys=[ty]}; args;_ } ) ); _}])
+  | DeclStmt ([{init=Some (IExpr (CallExpr {func = Ident {name=n; kind=Function; ty}; args;_ }) ); _}]) ->
+    let kernel = Variable.name n in
+    let ty = C_type.j_to_string ty in
+    let kid = C_type.kernel_id ~kernel ~ty in
+    (match StringMap.find_opt kid sigs with
+    | Some params ->
+      if List.length params = List.length args then (
+        let* args = with_msg "call.args" (cast_map Arg.parse) args in
+        args |> ret_args (fun args ->
+          let args = List.map2 (fun x y -> (x, y)) params args in
+          Imp.Stmt.Call {kernel; ty; args}
+        )
+      ) else
+        root_cause "Args mismatch!"
+    | None ->
+      ret (Block [])
+    )
 
   | SExpr (CallExpr {func = Ident {name=n; kind=Function; ty}; args;_ }) ->
     let kernel = Variable.name n in

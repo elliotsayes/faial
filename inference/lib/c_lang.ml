@@ -1331,15 +1331,11 @@ let has_array_type (j:Yojson.Basic.t) : bool =
   let open Rjson in
   let is_array =
     let* o = cast_object j in
-    let is_used = match List.assoc_opt "isUsed" o with
-      | Some (`Bool true) -> true
-      | _ -> false
-    in
     let* ty = get_field "type" o in
     let* ty = C_type.from_json ty in
-    Ok (is_used && C_type.is_array ty)
+    Ok (C_type.is_array ty)
   in
-  is_array |> Rjson.unwrap_or false
+  is_array |> Result.value ~default:false
 
 
 let is_kernel (j:Yojson.Basic.t) : bool =
@@ -1357,7 +1353,7 @@ let is_kernel (j:Yojson.Basic.t) : bool =
       let attrs = attrs
         |> List.filter_map (fun j ->
           parse_attr j >>= (fun a -> Ok (Some a))
-          |> unwrap_or None
+          |> Result.value ~default:None
         )
       in
       let params, _ =
@@ -1373,7 +1369,7 @@ let is_kernel (j:Yojson.Basic.t) : bool =
       )
     ) else Ok false
   in
-  is_kernel |> unwrap_or false
+  is_kernel |> Result.value ~default:false
 
 let parse_type_param (j:Yojson.Basic.t) : Ty_param.t option j_result =
   let open Rjson in
@@ -1395,12 +1391,12 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
   let* o = cast_object j in
   let* k = get_kind o in
   let parse_k (type_params:Ty_param.t list) (j:Yojson.Basic.t) : c_def list j_result =
-    if is_kernel j then
+    if is_kernel j then (
       let* k = parse_kernel type_params j in
       (if k.code = CompoundStmt [] then Ok []
       else
         Ok [Kernel k])
-    else Ok []
+    ) else Ok []
   in
   match k with
   | "FunctionTemplateDecl" ->
@@ -1418,7 +1414,8 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
         let* p = parse_type_param j in
         (match p with
         | Some p -> handle (p::type_params) l
-        | None -> parse_k type_params j)
+        | None ->
+          parse_k (List.rev type_params) j)
     in
     let* inner = with_field "inner" cast_list o in
     handle [] inner
