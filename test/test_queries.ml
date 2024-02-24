@@ -77,12 +77,12 @@ let tests = "tests" >::: [
       e_for 0 ~body:[
         e_for 1
       ] ~data:[
-        ReturnStmt;
+        ReturnStmt None;
         g_for 1 ~body:[]
       ]
     ] (
       g_for ~body:[
-        ReturnStmt;
+        ReturnStmt None;
         g_for 1 ~body:[]
       ] 0
     )
@@ -94,7 +94,7 @@ let tests = "tests" >::: [
         init=None;
         cond=None;
         inc=None;
-        data=ReturnStmt;
+        data=ReturnStmt None;
         body=[]
       }
     ]
