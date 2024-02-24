@@ -443,14 +443,8 @@ module Kernel = struct
     attribute: KernelAttr.t;
   }
 
-  let unique_id (k:t) : string =
-    C_type.kernel_id ~kernel:k.name ~ty:k.ty
-
   let is_global (k:t) : bool =
     k.attribute |> KernelAttr.is_global
-
-  let signature (k:t) : Variable.t list =
-    List.map Param.name k.params
 
   let to_s (k:t) : Indent.t list =
     let tps = let open C_lang in if k.type_params <> [] then "[" ^
@@ -488,17 +482,6 @@ end
 
 module Program = struct
   type t = Def.t list
-  (* Returns a map from kernel name to name of parameters *)
-  let kernel_signatures (p:t) : Variable.t list StringMap.t =
-    let kernels = List.filter_map (
-      let open Def in
-      function
-      | Kernel k ->
-        Some (Kernel.unique_id k, Kernel.signature k)
-      | Declaration _ -> None
-    ) p
-    in
-    StringMapUtil.from_list kernels
 
   let to_s (p:t) : Indent.t list =
     List.concat_map (fun k -> Def.to_s k @ [Line ""]) p
@@ -506,6 +489,85 @@ module Program = struct
   let print (p:t) : unit =
     Indent.print (to_s p)
 end
+
+module SignatureDB = struct
+  module Signature = struct
+    type t = {kernel: string; ty: string; params: Variable.t list}
+    let to_string (s:t) : string =
+      s.kernel ^ "(" ^ Variable.list_to_string s.params ^ "):" ^ s.ty
+    let from_kernel (k:Kernel.t) : t =
+      let open Kernel in
+      {
+        kernel=k.name;
+        ty=k.ty;
+        params=List.map Param.name k.params
+      }
+  end
+
+  type t = Kernel.t StringMap.t StringMap.t
+
+  let add (k:Kernel.t) (db:t) : t =
+    let sigs : Kernel.t StringMap.t =
+      db
+      |> StringMap.find_opt k.name
+      |> Option.value ~default:StringMap.empty
+    in
+    let sigs : Kernel.t StringMap.t =
+      StringMap.add k.ty k sigs
+    in
+    StringMap.add k.name sigs db
+
+  let to_string (db:t) : string =
+    let curr =
+      db
+      |> StringMap.bindings
+      |> List.map snd
+      |> List.concat_map (fun tys ->
+        tys
+        |> StringMap.bindings
+        |> List.map snd
+        |> List.map Signature.from_kernel
+        |> List.map Signature.to_string
+      )
+      |> String.concat ", "
+    in
+    "[" ^ curr ^ "]"
+
+  let get ~kernel ~ty (db:t) : Kernel.t option =
+    db
+    |> StringMap.find_opt kernel
+    |> Option.map (fun sigs ->
+      match StringMap.find_opt ty sigs with
+      | Some e -> Some e
+      | None ->
+        StringMap.choose_opt sigs |> Option.map snd
+      )
+    |> Option.join
+
+  let lookup (e: Expr.t) (db:t) : Signature.t option =
+    let (let*) = Option.bind in
+    let* (kernel, ty) =
+      match e with
+      | UnresolvedLookupExpr {name=n; _} ->
+        Some (Variable.name n, "?")
+      | Ident {name=n; kind=Function; ty} ->
+        Some (Variable.name n, C_type.j_to_string ty)
+      | _ -> None
+    in
+    get ~kernel ~ty db
+    |> Option.map Signature.from_kernel
+
+  (* Returns a map from kernel name to name of parameters *)
+  let from_program (p:Program.t) : t =
+    List.fold_left (fun kernels d ->
+      let open Def in
+      match d with
+      | Kernel k -> add k kernels
+      | Declaration _ -> kernels
+    ) StringMap.empty p
+
+end
+
 
 (* ------------------------------------- *)
 

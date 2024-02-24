@@ -580,7 +580,7 @@ let ret_assert (b:D_lang.Expr.t) : Imp.Stmt.t list d_result =
   | Some b -> ret (Assert b)
   | None -> ret_skip
 
-let rec parse_stmt (sigs:Variable.t list StringMap.t) (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
+let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
   let parse_stmt = parse_stmt sigs in
   let with_msg (m:string) f b = with_msg_ex (fun _ -> "parse_stmt: " ^ m ^ ": " ^ D_lang.Stmt.summarize c) f b in
   let ret_n = Unknown.ret_n in
@@ -611,36 +611,14 @@ let rec parse_stmt (sigs:Variable.t list StringMap.t) (c:D_lang.Stmt.t) : Imp.St
     when Variable.name n = "__requires" ->
     ret_assert b
 
-  | DeclStmt ([{init=Some (IExpr (CallExpr {func = UnresolvedLookupExpr {name=n; tys=[ty]}; args;_ } ) ); _}])
-  | DeclStmt ([{init=Some (IExpr (CallExpr {func = Ident {name=n; kind=Function; ty}; args;_ }) ); _}]) ->
-    let kernel = Variable.name n in
-    let ty = C_type.j_to_string ty in
-    let kid = C_type.kernel_id ~kernel ~ty in
-    (match StringMap.find_opt kid sigs with
-    | Some params ->
-      if List.length params = List.length args then (
+  | DeclStmt ([{init=Some (IExpr (CallExpr {func = f; args;_ }) ); _}]) ->
+    (match D_lang.SignatureDB.lookup f sigs with
+    | Some s ->
+      if List.length s.params = List.length args then (
         let* args = with_msg "call.args" (cast_map Arg.parse) args in
         args |> ret_args (fun args ->
-          let args = List.map2 (fun x y -> (x, y)) params args in
-          Imp.Stmt.Call {kernel; ty; args}
-        )
-      ) else
-        root_cause "Args mismatch!"
-    | None ->
-      ret (Block [])
-    )
-
-  | SExpr (CallExpr {func = Ident {name=n; kind=Function; ty}; args;_ }) ->
-    let kernel = Variable.name n in
-    let ty = C_type.j_to_string ty in
-    let kid = C_type.kernel_id ~kernel ~ty in
-    (match StringMap.find_opt kid sigs with
-    | Some params ->
-      if List.length params = List.length args then (
-        let* args = with_msg "call.args" (cast_map Arg.parse) args in
-        args |> ret_args (fun args ->
-          let args = List.map2 (fun x y -> (x, y)) params args in
-          Imp.Stmt.Call {kernel; ty; args}
+          let args = List.map2 (fun x y -> (x, y)) s.params args in
+          Imp.Stmt.Call {kernel=s.kernel; ty=s.ty; args}
         )
       ) else
         root_cause "Args mismatch!"
@@ -825,7 +803,7 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
   find_shared [] s
 
 let parse_kernel
-  (sigs:Variable.t list StringMap.t)
+  (sigs:D_lang.SignatureDB.t)
   (shared_params:(Variable.t * Memory.t) list)
   (globals:Variable.t list)
   (assigns:(Variable.t * nexp) list)
@@ -876,7 +854,7 @@ let parse_kernel
   }
 
 let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
-  let sigs = D_lang.Program.kernel_signatures p in
+  let sigs = D_lang.SignatureDB.from_program p in
   let rec parse_p
     (arrays:(Variable.t * Memory.t) list)
     (globals:Variable.t list)
