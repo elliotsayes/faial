@@ -296,7 +296,7 @@ module Stmt = struct
     | AtomicAccessStmt of d_atomic
     | BreakStmt
     | GotoStmt
-    | ReturnStmt
+    | ReturnStmt of Expr.t option
     | ContinueStmt
     | IfStmt of {cond: Expr.t; then_stmt: t; else_stmt: t}
     | CompoundStmt of t list
@@ -334,7 +334,8 @@ module Stmt = struct
       | WriteAccessStmt w -> [Line ("wr " ^ subscript_to_s w.target ^ " = " ^ Expr.to_string w.source)]
       | ReadAccessStmt r -> [Line ("rd " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
       | AtomicAccessStmt r -> [Line ("atomic " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
-      | ReturnStmt -> [Line "return"]
+      | ReturnStmt None -> [Line "return"]
+      | ReturnStmt (Some e)-> [Line ("return " ^ Expr.to_string e)]
       | GotoStmt -> [Line "goto"]
       | ContinueStmt -> [Line "continue"]
       | BreakStmt -> [Line "break"]
@@ -390,7 +391,8 @@ module Stmt = struct
         Expr.to_string w.source ^ ";"
       | ReadAccessStmt r -> "rd " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source ^ ";"
       | AtomicAccessStmt r -> "atomic " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source ^ ";"
-      | ReturnStmt -> "return;"
+      | ReturnStmt None -> "return;"
+      | ReturnStmt (Some e) -> "return " ^ Expr.to_string e ^ ";"
       | GotoStmt -> "goto;"
       | BreakStmt -> "break;"
       | ContinueStmt -> "continue;"
@@ -854,7 +856,12 @@ let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t list =
   match s with
   | BreakStmt -> [BreakStmt]
   | GotoStmt -> [GotoStmt]
-  | ReturnStmt -> [ReturnStmt]
+  | ReturnStmt None -> [ReturnStmt None]
+  | ReturnStmt (Some e) ->
+    let (pre, e) = rewrite_exp e  in
+    decl pre (
+      ReturnStmt (Some e)
+    )
   | ContinueStmt -> [ContinueStmt]
   | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
     let (pre, c) = rewrite_exp c in

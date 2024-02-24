@@ -378,7 +378,7 @@ module Stmt = struct
   type t =
     | BreakStmt
     | GotoStmt
-    | ReturnStmt
+    | ReturnStmt of Expr.t option
     | ContinueStmt
     | IfStmt of t if_t
     | CompoundStmt of t list
@@ -408,7 +408,8 @@ module Stmt = struct
     let rec stmt_to_s : t -> Indent.t list =
       let block (s:t) : Indent.t list = ret (stmt_to_s s) in
       function
-      | ReturnStmt -> [Line "return"]
+      | ReturnStmt None -> [Line "return"]
+      | ReturnStmt (Some e) -> [Line ("return" ^ Expr.to_string e)]
       | GotoStmt -> [Line "goto"]
       | BreakStmt -> [Line "break"]
       | ContinueStmt -> [Line "continue"]
@@ -465,7 +466,7 @@ module Stmt = struct
     type 'a t =
       | Break
       | Goto
-      | Return
+      | Return of Expr.t option
       | Continue
       | If of 'a if_t
       | Compound of 'a list
@@ -482,7 +483,7 @@ module Stmt = struct
       function
       | BreakStmt -> f Break
       | GotoStmt -> f Goto
-      | ReturnStmt -> f Return
+      | ReturnStmt e -> f (Return e)
       | ContinueStmt -> f Continue
       | IfStmt c -> f (If {
           cond=c.cond;
@@ -518,7 +519,7 @@ module Stmt = struct
         function
         | Break -> f BreakStmt
         | Goto -> f GotoStmt
-        | Return -> f ReturnStmt
+        | Return e -> f (ReturnStmt e)
         | Continue -> f ContinueStmt
         | If c -> f (IfStmt c)
         | Compound l -> f (CompoundStmt l)
@@ -534,7 +535,8 @@ module Stmt = struct
 
     let to_expr_seq: c_stmt -> Expr.t Seq.t =
       fold (function
-        | Break | Goto | Return | Continue -> Seq.empty
+        | Break | Goto | Return None | Continue -> Seq.empty
+        | Return (Some e) -> Seq.return e
         | If {cond=c; then_stmt=s1; else_stmt=s2} ->
           Seq.return c
           |> Seq.append s1
@@ -567,7 +569,7 @@ module Stmt = struct
     match s with
     | BreakStmt
     | GotoStmt
-    | ReturnStmt
+    | ReturnStmt _
     | ContinueStmt
     | DeclStmt _
     | SExpr _ ->
@@ -603,7 +605,7 @@ module Stmt = struct
     match s with
     | BreakStmt
     | GotoStmt
-    | ReturnStmt
+    | ReturnStmt _
     | ContinueStmt
     | DeclStmt _
     | SExpr _ ->
@@ -1191,7 +1193,11 @@ let rec parse_stmt (j:json) : Stmt.t j_result =
     (* TODO: do not parse LabelStmt *) 
     with_field "inner" (cast_list_1 parse_stmt) o
   | Some "ReturnStmt" ->
-    Ok ReturnStmt
+    let* e = with_field_or "inner" (
+      cast_list_1 (fun j -> parse_exp j |> Result.map Option.some)
+      ) None o
+    in
+    Ok (ReturnStmt e)
   | Some "GotoStmt" ->
     Ok GotoStmt
   | Some "BreakStmt" ->
@@ -1481,9 +1487,11 @@ let rewrite_shared_arrays: c_program -> c_program =
       match s with
       | BreakStmt
       | GotoStmt
-      | ReturnStmt
-      | ContinueStmt
-        -> (vars, s)
+      | ReturnStmt None
+      | ContinueStmt ->
+        (vars, s)
+      | ReturnStmt (Some e) ->
+        (vars, ReturnStmt (Some (rw_e e)))
       | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
         (vars, IfStmt {cond=rw_e c; then_stmt=ret s1; else_stmt=ret s2})
       | CompoundStmt l ->

@@ -635,8 +635,8 @@ let rec parse_stmt (sigs:Variable.t list StringMap.t) (c:D_lang.Stmt.t) : Imp.St
       Atomic {target=r.target; array=x; index=idx}
     )
 
-  | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt];else_stmt=CompoundStmt[]} 
-  | IfStmt {cond=b;then_stmt=ReturnStmt;else_stmt=CompoundStmt[]} ->
+  | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt None];else_stmt=CompoundStmt[]}
+  | IfStmt {cond=b;then_stmt=ReturnStmt None;else_stmt=CompoundStmt[]} ->
     ret_assert (UnaryOperator {opcode="!"; child=b; ty=D_lang.Expr.to_type b})
 
   | IfStmt c ->
@@ -683,7 +683,7 @@ let rec parse_stmt (sigs:Variable.t list StringMap.t) (c:D_lang.Stmt.t) : Imp.St
   | ContinueStmt
   | BreakStmt
   | GotoStmt
-  | ReturnStmt 
+  | ReturnStmt _
   | SExpr _ -> Ok []
 
   | ForStmt s ->
@@ -768,7 +768,7 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
     | ReadAccessStmt _
     | AtomicAccessStmt _
     | GotoStmt
-    | ReturnStmt
+    | ReturnStmt _
     | ContinueStmt
     | BreakStmt
     | SExpr _

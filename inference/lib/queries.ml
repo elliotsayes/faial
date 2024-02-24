@@ -135,7 +135,7 @@ module Declarations = struct
 
       | Break
       | Goto
-      | Return
+      | Return _
       | Continue
       | SExpr _
         -> Seq.empty
@@ -366,7 +366,7 @@ module NestedLoops = struct
         }]
       | BreakStmt
       | GotoStmt
-      | ReturnStmt
+      | ReturnStmt _
       | ContinueStmt
       | DeclStmt _
       | SExpr _
@@ -604,6 +604,7 @@ module MutatedVar = struct
           let (env, vars) = typecheck (scope + 1) env s in
           (env, VarSet.union (typecheck_e e) vars)
 
+        | ReturnStmt (Some e)
         | SExpr e ->
           (env, typecheck_e e)
 
@@ -619,7 +620,7 @@ module MutatedVar = struct
 
         | BreakStmt
         | GotoStmt
-        | ReturnStmt
+        | ReturnStmt None
         | ContinueStmt
         -> (env, VarSet.empty)
 
@@ -719,7 +720,7 @@ module Loops = struct
       function
       | BreakStmt
       | GotoStmt
-      | ReturnStmt
+      | ReturnStmt _
       | ContinueStmt ->
         true
       | _ ->
@@ -789,7 +790,7 @@ module ForEach = struct
     | BreakStmt
     | GotoStmt
     | ContinueStmt
-    | ReturnStmt
+    | ReturnStmt _
     | DeclStmt _
     | SExpr _
       -> Seq.empty
