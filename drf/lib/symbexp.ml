@@ -30,7 +30,7 @@ module Gen = struct
       Num (match m with
       | Read -> 0
       | Write _ -> 1
-      | Atomic -> 2)
+      | Atomic _ -> 2)
     in
     let this_mode_v : nexp = mode t in
     let other_mode_v : nexp = mode (other_task t) in
@@ -43,10 +43,10 @@ module Gen = struct
         (* either a write *)
         b_or (n_eq other_mode_v (mode_to_nexp (Write None)))
         (* or an atomic *)
-             (n_eq other_mode_v (mode_to_nexp Atomic))
+             (n_eq other_mode_v (mode_to_nexp (Atomic Atomics.atomic_inc)))
       in
       b_and b not_read
-    | Atomic ->
+    | Atomic _ ->
       (* since two atomics are safe, make sure we
          enforce that the other access is not an atomic *)
       let not_atomic =

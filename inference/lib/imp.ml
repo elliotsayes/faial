@@ -30,14 +30,14 @@ module Alias = struct
 end
 
 type read = {target: Variable.t; array: Variable.t; index: nexp list}
-type atomic = read
+type atomic = {target: Variable.t; atomic: Variable.t; array: Variable.t; index: nexp list}
 type write = {array: Variable.t; index: nexp list; payload: int option}
 
 let read_to_acc (r:read) : Variable.t * Access.t =
   (r.array, Access.{index=r.index; mode=Read})
 
 let atomic_to_acc (a:atomic) : Variable.t * Access.t =
-  (a.array, Access.{index=a.index; mode=Atomic})
+  (a.array, Access.{index=a.index; mode=Atomic a.atomic})
 
 let write_to_acc (w:write) : Variable.t * Access.t =
   (w.array, Access.{index=w.index; mode=Write w.payload})
@@ -535,7 +535,7 @@ let imp_to_post : Variable.Set.t * Stmt.t -> Variable.Set.t * Post.t =
         (curr_id, globals, Decl (e.target, None, rd))
     | Atomic e ->
       fun (curr_id, globals) ->
-        let rd = Post.Acc (e.array, {index=e.index; mode=Atomic}) in
+        let rd = Post.Acc (e.array, {index=e.index; mode=Atomic e.atomic}) in
         (curr_id, globals, Decl (e.target, None, rd))
     | Call _ -> imp_to_post_p []
     | Block p -> imp_to_post_p p

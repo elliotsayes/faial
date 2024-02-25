@@ -645,8 +645,8 @@ let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t li
     let x = r.source.name |> Variable.set_location r.source.location in
     let* idx = with_msg "atomic.idx" (cast_map parse_exp) r.source.index in
     idx
-    |> ret_ns (fun idx ->
-      Atomic {target=r.target; array=x; index=idx}
+    |> ret_ns (fun index ->
+      Atomic {target=r.target; array=x; index; atomic=r.atomic}
     )
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt None];else_stmt=CompoundStmt[]}

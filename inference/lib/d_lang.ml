@@ -288,7 +288,7 @@ type d_write = {
   payload: int option
 }
 type d_read = {target: Variable.t; source: d_subscript}
-type d_atomic = d_read
+type d_atomic = {target: Variable.t; source: d_subscript; atomic: Variable.t}
 
 module Stmt = struct
   type t =
@@ -650,10 +650,10 @@ module AccessState = struct
       ]
     ) st
 
-  let add_atomic (a:d_subscript) (st:t) : (t * Variable.t) =
+  let add_atomic (name:Variable.t) (a:d_subscript) (st:t) : (t * Variable.t) =
     add_var (subscript_to_s a) (fun x ->
       [
-        AtomicAccessStmt {target=x; source=a};
+        AtomicAccessStmt {target=x; source=a; atomic=name};
       ]
     ) st
 
@@ -667,55 +667,6 @@ module AccessState = struct
     ) st
 end
 
-let atomics : Variable.Set.t =
-  [
-    "atomicInc";
-    "atomicInc_block";
-    "atomicInc_system";
-
-    "atomicDec";
-    "atomicDec_block";
-    "atomicDec_system";
-
-    "atomicAdd";
-    "atomicAdd_block";
-    "atomicAdd_system";
-
-    "atomicCAS";
-    "atomicCAS_block";
-    "atomicCAS_system";
-
-    "atomicAnd";
-    "atomicAnd_block";
-    "atomicAnd_system";
-
-    "atomicOr";
-    "atomicOr_block";
-    "atomicOr_system";
-
-    "atomicXor";
-    "atomicXor_block";
-    "atomicXor_system";
-
-    "atomicMin";
-    "atomicMin_block";
-    "atomicMin_system";
-
-    "atomicMax";
-    "atomicMax_block";
-    "atomicMax_system";
-
-    "atomicExch";
-    "atomicExch_block";
-    "atomicExch_system";
-
-    "atomicSub";
-    "atomicSub_block";
-    "atomicSub_system";
-  ]
-  |> List.map Variable.from_name
-  |> Variable.Set.of_list
-
 let is_void (j:Yojson.Basic.t) =
   match C_type.from_json j with
   | Ok t -> C_type.is_void t
@@ -727,7 +678,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
 
   (* When an atomic happens *)
   | CallExpr {func=Ident f; args=e::args; ty}
-    when Variable.Set.mem f.name atomics ->
+    when Atomics.is_atomic f.name ->
     fun st ->
     let (st, e) = rewrite_exp e st in
     (* we want to make sure we extract any reads from the other arguments,
@@ -736,7 +687,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     let (st, args) = state_map rewrite_exp args st in
     (match e with
     | Ident x ->
-      rewrite_atomic (
+      rewrite_atomic f.name (
         make_subscript
           ~name:x.name
           ~index:[IntegerLiteral 0]
@@ -744,7 +695,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
           ~ty
       ) st
     | BinaryOperator {lhs=Ident x; rhs=e; opcode="+"; _} ->
-      rewrite_atomic (
+      rewrite_atomic f.name (
         make_subscript
           ~name:x.name
           ~index:[e]
@@ -883,9 +834,9 @@ and rewrite_read (a:C_lang.Expr.c_array_subscript): (AccessState.t, Expr.t) stat
     let (st, x) = AccessState.add_read a st in
     state_pure (Expr.ident ~ty:a.ty x) st
 
-and rewrite_atomic (a:d_subscript) : (AccessState.t, Expr.t) state =
+and rewrite_atomic (name:Variable.t) (a:d_subscript) : (AccessState.t, Expr.t) state =
   fun st ->
-    let (st, x) = AccessState.add_atomic a st in
+    let (st, x) = AccessState.add_atomic name a st in
     state_pure (Expr.ident ~ty:a.ty x) st
 
 and rewrite_call (a:Expr.d_call) : (AccessState.t, Expr.t) state =
