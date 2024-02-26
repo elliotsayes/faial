@@ -170,6 +170,7 @@ module App = struct
     only_array:string option;
     thread_idx_1: Dim3.t option;
     thread_idx_2: Dim3.t option;
+    arch: Architecture.t;
   }
   let make
     ~timeout
@@ -188,6 +189,7 @@ module App = struct
     ~only_array
     ~thread_idx_1
     ~thread_idx_2
+    ~arch
     (kernels: Proto.Code.t Proto.Kernel.t list)
   :
     t
@@ -219,6 +221,7 @@ module App = struct
       only_array;
       thread_idx_1;
       thread_idx_2;
+      arch;
     }
 
   let run (a:t) : Analysis.t list =
@@ -237,11 +240,11 @@ module App = struct
       show a.show_phase_split (fun () -> Phasesplit.print_kernels p);
       let p = Locsplit.translate p |> Locsplit.filter_array a.only_array in
       show a.show_loc_split (fun () -> Locsplit.print_kernels p);
-      let p = Flatacc.translate p in
+      let p = Flatacc.translate a.arch p in
       show a.show_flat_acc (fun () -> Flatacc.print_kernels p);
       let p =
         p
-        |> Symbexp.translate
+        |> Symbexp.translate a.arch
         |> Symbexp.add_rel_index Exp.NLe a.le_index
         |> Symbexp.add_rel_index Exp.NGe a.ge_index
         |> Symbexp.add_rel_index Exp.NEq a.eq_index
@@ -422,13 +425,14 @@ let main
 :
   unit
 =
+  let arch = if grid_level then Architecture.Grid else Architecture.Block in
   let parsed = Protocol_parser.Silent.to_proto
     ~abort_on_parsing_failure:(not ignore_parsing_errors)
     ~includes
     ~block_dim
     ~grid_dim
     ~inline:(not ignore_calls)
-    ~arch:(if grid_level then Architecture.Grid else Architecture.Block)
+    ~arch
     fname
   in
   let ui = if output_json then jui else tui in
@@ -450,6 +454,7 @@ let main
       ~only_array
       ~thread_idx_1
       ~thread_idx_2
+      ~arch
   |> App.run
   |> ui
 

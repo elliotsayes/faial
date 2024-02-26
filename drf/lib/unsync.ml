@@ -72,7 +72,7 @@ let rec write_locations (p:t) (known:Variable.Set.t) =
   match p with
   | Skip | Assert _ -> known
   | Seq (p, q) -> write_locations p known |> write_locations q
-  | Acc (x,a) -> if Access.is_write a then Variable.Set.add x known else known
+  | Acc (x,a) -> if not (Access.is_read a) then Variable.Set.add x known else known
   | Loop (_, p) | Cond (_, p) -> write_locations p known
 
 

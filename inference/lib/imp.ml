@@ -30,7 +30,7 @@ module Alias = struct
 end
 
 type read = {target: Variable.t; array: Variable.t; index: nexp list}
-type atomic = {target: Variable.t; atomic: Variable.t; array: Variable.t; index: nexp list}
+type atomic = {target: Variable.t; atomic: Atomic.t; array: Variable.t; index: nexp list}
 type write = {array: Variable.t; index: nexp list; payload: int option}
 
 let read_to_acc (r:read) : Variable.t * Access.t =

@@ -9,6 +9,9 @@ let to_string : t -> string =
   | Grid -> "grid"
   | Block -> "block"
 
+let is_grid (x:t) : bool =
+  x = Grid
+
 module Defaults = struct
   type t = {
     globals: Variable.Set.t;

@@ -8,14 +8,14 @@ module Mode = struct
        See can-conflict for potentially
        racy accesses. *)
     | Write of int option
-    | Atomic of Variable.t
+    | Atomic of Atomic.t
 
   let to_string : t -> string =
     function
     | Read -> "ro"
     | Write (Some n) -> "rw(" ^ string_of_int n ^ ")"
     | Write None -> "rw"
-    | Atomic x -> Variable.name x
+    | Atomic x -> Atomic.to_string x
 
   let is_read : t -> bool =
     function
@@ -34,7 +34,7 @@ module Mode = struct
 
   let can_conflict (m1:t) (m2:t) : bool =
     match m1, m2 with
-    | Read, Read | Atomic _, Atomic _ -> false
+    | Read, Read -> false
     | Write (Some x), Write (Some y) -> x <> y
     | _, _ -> true
 end
@@ -70,8 +70,11 @@ let write (index:Exp.nexp list) (v:int option) : t =
 let read (index:Exp.nexp list) : t =
   { index = index; mode = Read }
 
-let atomic (name:Variable.t) (index:Exp.nexp list) : t =
-  { index = index; mode = Atomic name }
+let atomic (name:Variable.t) (index:Exp.nexp list) : t option =
+  Atomic.from_name name
+  |> Option.map (fun a ->
+    { index; mode = Atomic a }
+  )
 
 let can_conflict (a1:t) (a2:t) =
   Mode.can_conflict a1.mode a2.mode

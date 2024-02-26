@@ -22,6 +22,7 @@ module Phased = struct
   let from_aligned (pre:bexp) : Aligned.t -> t stream =
     let rec phase: Aligned.t -> t stream =
       function
+      | Sync Skip -> Streamutil.empty
         (* ^P; sync |> { P } *)
       | Sync u ->
         {

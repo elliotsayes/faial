@@ -25,40 +25,27 @@ module Gen = struct
   let index (t:task) (n:int) : nexp = Ids.index t n |> var
   (* Access mode *)
   let mode (t:task) : nexp = var (Ids.prefix t ^ "mode")
-  let assign_mode (t:task) (m:Access.Mode.t): bexp =
-    let mode_to_nexp (m:Access.Mode.t) : nexp =
-      Num (match m with
-      | Read -> 0
-      | Write _ -> 1
-      | Atomic _ -> 2)
-    in
-    let this_mode_v : nexp = mode t in
-    let other_mode_v : nexp = mode (other_task t) in
-    let b = n_eq this_mode_v (mode_to_nexp m) in
+
+  let mode_read : nexp = Num 0
+  let mode_write : nexp = Num 1
+  let mode_atomic_dev : nexp = Num 2
+  let mode_atomic_block : nexp = Num 3
+
+  let mode_to_nexp (m:Access.Mode.t) : nexp =
     match m with
-    | Read ->
-      (* since two reads are safe, make sure we
-         enforce that the other access is not a read *)
-      let not_read =
-        (* either a write *)
-        b_or (n_eq other_mode_v (mode_to_nexp (Write None)))
-        (* or an atomic *)
-             (n_eq other_mode_v (mode_to_nexp (Atomic Atomics.atomic_inc)))
-      in
-      b_and b not_read
-    | Atomic _ ->
-      (* since two atomics are safe, make sure we
-         enforce that the other access is not an atomic *)
-      let not_atomic =
-        (* either a write *)
-        b_or (n_eq other_mode_v (mode_to_nexp (Write None)))
-        (* or a read *)
-             (n_eq other_mode_v (mode_to_nexp Read))
-      in
-      b_and b not_atomic
-    | Write _ -> b
+    | Read -> mode_read
+    | Write _ -> mode_write
+    | Atomic x ->
+      (match x.scope with
+        | Device | System -> mode_atomic_dev
+        | Block -> mode_atomic_block
+      )
+
+  let assign_mode (t:task) (m:Access.Mode.t): bexp =
+    n_eq (mode t) (mode_to_nexp m)
 
   let access_id (t:task) : nexp = Ids.access_id t |> var
+
   (* assign identifier of the conditional access *)
   let assign_access_id (t:task) (aid:int) : bexp =
     n_eq (access_id t) (Num aid)
@@ -83,12 +70,43 @@ module Gen = struct
     )
     |> b_and_ex
 
-
   let project (t:task) (x:Variable.t) : Variable.t =
     (* Add a suffix to all variables to make them unique. Use $ to ensure
       these variables did not come from C *)
     let task_suffix (t:task) = "$" ^ task_to_string t in
     Variable.update_name (fun n -> n ^ task_suffix t) x
+
+  let mode_spec arch : bexp =
+    let mode1 : nexp = mode Task1 in
+    let mode2 : nexp = mode Task2 in
+    [
+      (* when first is a read, then the second cannot be a read *)
+      b_and (n_eq mode1 mode_read) (n_neq mode2 mode_read);
+      (* data-race when both are writes *)
+      n_eq mode1 mode_write;
+      (* when the first is an atomic dev *)
+      (if Architecture.is_grid arch then
+        b_and
+          (n_eq mode1 mode_atomic_dev)
+          (n_neq mode2 mode_atomic_dev)
+      else
+        b_and (n_eq mode1 mode_atomic_dev) (
+          b_or
+            (n_eq mode2 mode_read)
+            (n_eq mode2 mode_write)
+        )
+      );
+      (if Architecture.is_grid arch then
+        n_eq mode1 mode_atomic_block
+      else
+        b_and (n_eq mode1 mode_atomic_block) (
+          b_or
+            (n_eq mode2 mode_read)
+            (n_eq mode2 mode_write)
+        )
+      );
+    ]
+    |> b_or_ex
 
 end
 
@@ -196,7 +214,7 @@ module AccessSummary = struct
   let to_string (a:t) : string =
     "{access=" ^ Access.to_string a.access ^
     ", variables=[" ^ Variable.set_to_string a.variables ^
-    ", data=[" ^ Variable.set_to_string a.data_approx ^
+    "], data=[" ^ Variable.set_to_string a.data_approx ^
     "], ctrl=[" ^ Variable.set_to_string a.control_approx ^
     "], globals=[" ^ Variable.set_to_string a.globals ^
     "]}"
@@ -298,6 +316,7 @@ module Proof = struct
     to_s p |> Indent.to_string
 
   let from_code
+    (arch:Architecture.t)
     (locals:Variable.Set.t)
     (code:Flatacc.Code.t)
   :
@@ -328,17 +347,19 @@ module Proof = struct
       (*
         All indices of task1 are equal to the indices of task2
       *)
-      Code.dim code |> Option.get |> Gen.assign_dim
+      Code.dim code |> Option.get |> Gen.assign_dim;
+      (* mode spec *)
+      Gen.mode_spec arch
     ]
 
-  let from_flat (proof_id:int) (k:Flatacc.Kernel.t) : t =
+  let from_flat (arch:Architecture.t) (proof_id:int) (k:Flatacc.Kernel.t) : t =
     let locals =
       Variable.Set.union
         k.exact_local_variables
         k.approx_local_variables
     in
     let goal =
-      from_code locals k.code
+      from_code arch locals k.code
       |> b_and k.pre
     in
     let pre_fns = Freenames.free_names_bexp k.pre Variable.Set.empty in
@@ -392,11 +413,12 @@ let add_tid
     s
 
 let translate
+  (arch:Architecture.t)
   (stream:Flatacc.Kernel.t Streamutil.stream)
 :
   Proof.t Streamutil.stream
 =
-  Streamutil.mapi Proof.from_flat stream
+  Streamutil.mapi (Proof.from_flat arch) stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 

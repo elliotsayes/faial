@@ -288,7 +288,7 @@ type d_write = {
   payload: int option
 }
 type d_read = {target: Variable.t; source: d_subscript}
-type d_atomic = {target: Variable.t; source: d_subscript; atomic: Variable.t}
+type d_atomic = {target: Variable.t; source: d_subscript; atomic: Atomic.t}
 
 module Stmt = struct
   type t =
@@ -650,10 +650,10 @@ module AccessState = struct
       ]
     ) st
 
-  let add_atomic (name:Variable.t) (a:d_subscript) (st:t) : (t * Variable.t) =
-    add_var (subscript_to_s a) (fun x ->
+  let add_atomic (atomic:Atomic.t) (source:d_subscript) (st:t) : (t * Variable.t) =
+    add_var (subscript_to_s source) (fun target ->
       [
-        AtomicAccessStmt {target=x; source=a; atomic=name};
+        AtomicAccessStmt {target; source; atomic};
       ]
     ) st
 
@@ -678,7 +678,8 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
 
   (* When an atomic happens *)
   | CallExpr {func=Ident f; args=e::args; ty}
-    when Atomics.is_atomic f.name ->
+    when Atomic.is_valid f.name ->
+    let atomic = Atomic.from_name f.name |> Option.get in
     fun st ->
     let (st, e) = rewrite_exp e st in
     (* we want to make sure we extract any reads from the other arguments,
@@ -687,7 +688,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     let (st, args) = state_map rewrite_exp args st in
     (match e with
     | Ident x ->
-      rewrite_atomic f.name (
+      rewrite_atomic atomic (
         make_subscript
           ~name:x.name
           ~index:[IntegerLiteral 0]
@@ -695,7 +696,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
           ~ty
       ) st
     | BinaryOperator {lhs=Ident x; rhs=e; opcode="+"; _} ->
-      rewrite_atomic f.name (
+      rewrite_atomic atomic (
         make_subscript
           ~name:x.name
           ~index:[e]
@@ -834,9 +835,9 @@ and rewrite_read (a:C_lang.Expr.c_array_subscript): (AccessState.t, Expr.t) stat
     let (st, x) = AccessState.add_read a st in
     state_pure (Expr.ident ~ty:a.ty x) st
 
-and rewrite_atomic (name:Variable.t) (a:d_subscript) : (AccessState.t, Expr.t) state =
+and rewrite_atomic (atomic:Atomic.t) (a:d_subscript) : (AccessState.t, Expr.t) state =
   fun st ->
-    let (st, x) = AccessState.add_atomic name a st in
+    let (st, x) = AccessState.add_atomic atomic a st in
     state_pure (Expr.ident ~ty:a.ty x) st
 
 and rewrite_call (a:Expr.d_call) : (AccessState.t, Expr.t) state =

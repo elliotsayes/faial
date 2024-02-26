@@ -84,8 +84,13 @@ module Kernel = struct
         Line "}"
     ]
 
-  let from_loc_split (k:Locsplit.Kernel.t) : t =
-    let ids = Variable.tid_var_set in
+  let from_loc_split (arch:Architecture.t) (k:Locsplit.Kernel.t) : t =
+    let ids =
+      (match arch with
+      | Grid -> Variable.bid_var_set
+      | Block -> Variable.Set.empty)
+      |> Variable.Set.union Variable.tid_var_set
+    in
     let approx_local_variables =
       Variable.Set.diff k.local_variables ids
       |> Unsync.unsafe_binders k.code
@@ -106,9 +111,9 @@ module Kernel = struct
 end
 
 
-let translate (stream:Locsplit.Kernel.t Streamutil.stream) : Kernel.t Streamutil.stream =
+let translate (arch:Architecture.t) (stream:Locsplit.Kernel.t Streamutil.stream) : Kernel.t Streamutil.stream =
   let open Streamutil in
-  map Kernel.from_loc_split stream
+  map (Kernel.from_loc_split arch) stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 
