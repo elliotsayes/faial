@@ -1,0 +1,26 @@
+
+2024-02:
+- Better support for analyzing templated kernels with type-parameters.
+- Added support for analyzing memory accesses in a return statement.
+- Added initial support for scoped atomic operations (no support for
+  threadfence yet).
+- Added support for grid-level analysis (with approximation analysis support).
+- Reworked the UI of approximation analysis.
+- Improved the approximation analysis to be more precise per report.
+- Added support for static_assert.
+- Added support for only checking DRF for two specific threadIdx.
+- Added support for only checking DRF for a single array.
+- Added support for only checking DRF for a single index location (equality,
+  less-equal-than, greater-equal-than).
+- Made kernel calls optional (enabled by default).
+- Added support for calling kernels with overloaded types.
+- Improved the array aliasing analysis.
+- Added support for calling other kernels with __device__ modifiers.
+- Added support for array aliasing via the & operator.
+
+2024-01:
+- Returns a return status of 2 when there is a parsing error.
+- Basic support for function `sync` of cooperative_groups (ignores scopes).
+- Added support for size_t.
+- Allowed passing include directories to the C parser with -I.
+- Added support for array aliasing with variable declarations.
