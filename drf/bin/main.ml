@@ -514,9 +514,9 @@ let ignore_parsing_errors =
   Arg.(value & flag & info ["ignore-parsing-errors"] ~doc)
 
 let dim_help = {|
-  The value will be loaded from header if omitted.\
-  Examples (without quotes): "[2,2,2]" or "32"
-|}
+The value will be loaded from header if omitted.
+Examples (without quotes): "[2,2,2]" or "32".
+|} |> Common.replace ~substring:"\n" ~by:""
 
 let conv_dim3 default =
   let parse =
@@ -533,21 +533,21 @@ let conv_dim3 default =
 
 let block_dim =
   let d = Gv_parser.default_block_dim |> Dim3.to_string in
-  let doc = "Sets the number of threads per block." ^ dim_help ^ "Default: " ^ d in
+  let doc = "Sets the number of threads per block." ^ dim_help ^ " Default: " ^ d in
   Arg.(value & opt (some (conv_dim3 Dim3.one)) None & info ["b"; "block-dim"; "blockDim"] ~docv:"DIM3" ~doc)
 
 let grid_dim =
   let d = Gv_parser.default_grid_dim |> Dim3.to_string in
-  let doc = "Sets the number of blocks per grid." ^ dim_help ^ "Default: " ^ d in
+  let doc = "Sets the number of blocks per grid." ^ dim_help ^ " Default: " ^ d in
   Arg.(value & opt (some (conv_dim3 Dim3.one)) None & info ["g"; "grid-dim"; "gridDim"] ~docv:"DIM3" ~doc)
 
 
 let thread_idx_1 =
-  let doc = "Sets the thread index for one thread." ^ dim_help ^ "Default: (none)" in
+  let doc = "Sets the thread index for one thread." ^ dim_help ^ " Default: (none)" in
   Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["thread-idx-1"] ~docv:"DIM3" ~doc)
 
 let thread_idx_2 =
-  let doc = "Sets the thread index for another thread." ^ dim_help ^ "Default: (none)" in
+  let doc = "Sets the thread index for another thread." ^ dim_help ^ " Default: (none)" in
   Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["thread-idx-2"] ~docv:"DIM3" ~doc)
 
 let include_dir =
@@ -578,9 +578,9 @@ let conv_int_list =
       with _ ->
         `Error msg
   in
-  let print _ (l:int list) : unit =
-    "[" ^ (List.map string_of_int l |> String.concat ", ") ^ "]"
-    |> print_string
+  let print f (l:int list) : unit =
+    let s = "[" ^ (List.map string_of_int l |> String.concat ", ") ^ "]" in
+    Format.fprintf f "%s" s
   in
   (parse, print)
 
