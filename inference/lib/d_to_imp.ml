@@ -56,32 +56,73 @@ type d_location_alias = {
   offset: D_lang.Expr.t;
 }
 
-type i_nexp =
-  | Var of Variable.t
-  | Num of int
-  | Bin of nbin * i_exp * i_exp
-  | NCall of string * i_exp
-  | NIf of i_exp * i_exp * i_exp
-  | Other of i_exp
+module IExp = struct
+  type n =
+    | Var of Variable.t
+    | Num of int
+    | Bin of nbin * t * t
+    | NCall of string * t
+    | NIf of t * t * t
+    | Other of t
 
-and i_bexp =
-  | Bool of bool
-  | NRel of nrel * i_exp * i_exp
-  | BRel of brel * i_exp * i_exp
-  | BNot of i_exp
-  | Pred of string * i_exp
+  and b =
+    | Bool of bool
+    | NRel of nrel * t * t
+    | BRel of brel * t * t
+    | BNot of t
+    | Pred of string * t
 
-and i_exp =
-  | NExp of i_nexp
-  | BExp of i_bexp
-  | Unknown
+  and t =
+    | NExp of n
+    | BExp of b
+    | Unknown of string
 
-let thread_equal (e:i_exp) : i_bexp =
-  NRel (NEq, e, NExp (Other e))
+  let rec to_string : t -> string =
+    function
+    | NExp e -> to_n_string e
+    | BExp e -> to_b_string e
+    | Unknown x -> x
+
+  and to_n_string : n -> string =
+    function
+    | Var x -> Variable.name x
+    | Num x -> string_of_int x
+    | Bin (o, l, r) ->
+      "(" ^ to_string l ^ ") " ^ nbin_to_string o ^ " (" ^ to_string r ^ ")"
+    | NCall (o, e) -> o ^ "(" ^ to_string e ^ ")"
+    | NIf (e1, e2, e3) ->
+      let e1 = to_string e1 in
+      let e2 = to_string e2 in
+      let e3 = to_string e3 in
+      "(" ^ e1 ^ ") ? (" ^ e2 ^ ") : (" ^ e3 ^ ")"
+    | Other e -> "$other(" ^ to_string e ^ ")"
+
+  and to_b_string : b -> string =
+    function
+    | Bool b -> if b then "true" else "false"
+    | NRel (o, e1, e2) ->
+      let o = nrel_to_string o in
+      let e1 = to_string e1 in
+      let e2 = to_string e2 in
+      "(" ^ e1 ^ ") " ^ o ^ " (" ^ e2 ^ ")"
+    | BRel (o, e1, e2) ->
+      let o = brel_to_string o in
+      let e1 = to_string e1 in
+      let e2 = to_string e2 in
+      "(" ^ e1 ^ ") " ^ o ^ " (" ^ e2 ^ ")"
+    | BNot e ->
+      "!(" ^ to_string e ^ ")"
+    | Pred (o, e) ->
+      o ^ "(" ^ to_string e ^ ")"
+
+  let thread_equal (e:t) : b =
+    NRel (NEq, e, NExp (Other e))
+
+end
 
 module Make (L: Logger) = struct
 
-let parse_bin (op:string) (l:i_exp) (r:i_exp) : i_exp =
+let parse_bin (op:string) (l:IExp.t) (r:IExp.t) : IExp.t =
   match op with
   (* bool -> bool -> bool *)
   | "||" -> BExp (BRel (BOr, l, r))
@@ -106,12 +147,15 @@ let parse_bin (op:string) (l:i_exp) (r:i_exp) : i_exp =
   | "&" -> NExp (Bin (BitAnd, l, r))
   | _ ->
     L.warning ("parse_bin: rewriting to unknown binary operator: " ^ op);
-    Unknown
+    let lbl =
+    "(" ^ IExp.to_string l ^ ") " ^ op ^ " " ^
+    "(" ^ IExp.to_string r ^ ")" in
+    Unknown lbl
 
-let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
+let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
   let parse_e m e = with_exp m e parse_exp e in
-  let ret_n (n:i_nexp) : i_exp d_result = Ok (NExp n) in
-  let ret_b (b:i_bexp) : i_exp d_result = Ok (BExp b) in
+  let ret_n (n:IExp.n) : IExp.t d_result = Ok (NExp n) in
+  let ret_b (b:IExp.b) : IExp.t d_result = Ok (BExp b) in
 
 
   match e with
@@ -130,8 +174,9 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
       L.warning ("sizeof(" ^ C_type.to_string ty ^ ") = " ^ string_of_int size);
       ret_n (Num size)
     | Error _ ->
-      L.warning ("could not parse type: sizeof(" ^ C_type.j_to_string ty ^ ") = ?");
-      Ok Unknown)
+      let lbl = "sizeof(" ^ C_type.j_to_string ty ^ ")" in
+      L.warning ("could not parse type: " ^ lbl ^ " = ?");
+      Ok (Unknown lbl))
   | IntegerLiteral n
   | CharacterLiteral n -> ret_n (Num n)
   | FloatingLiteral n -> 
@@ -148,8 +193,8 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
     (*  (n1 + n2 - 1)/n2 *)
-    let n2_minus_1 : i_nexp = Bin (Minus, n2, NExp (Num 1)) in
-    let n1_plus_n2_minus_1 : i_nexp = Bin (Plus, n1, NExp n2_minus_1) in
+    let n2_minus_1 : IExp.n = Bin (Minus, n2, NExp (Num 1)) in
+    let n1_plus_n2_minus_1 : IExp.n = Bin (Plus, n1, NExp n2_minus_1) in
     ret_n (Bin (Div, NExp n1_plus_n2_minus_1, n2))
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__other_int" ->
@@ -158,7 +203,7 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__uniform_int" ->
     let* n = parse_e "arg" n in
-    ret_b (thread_equal n)
+    ret_b (IExp.thread_equal n)
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__is_pow2" ->
     let* n = parse_e "arg" n in
@@ -194,8 +239,9 @@ let rec parse_exp (e: D_lang.Expr.t) : i_exp d_result =
   | CallExpr _ 
   | UnaryOperator _
   | CXXOperatorCallExpr _ ->
-    L.warning ("WARNING: parse_exp: rewriting to unknown: " ^ D_lang.Expr.to_string e);
-    Ok Unknown
+    let lbl = D_lang.Expr.to_string e in
+    L.warning ("WARNING: parse_exp: rewriting to unknown: " ^ lbl);
+    Ok (Unknown lbl)
 
   | _ ->
     root_cause ("WARNING: parse_nexp: unsupported expression " ^ D_lang.Expr.name e ^ " : " ^ D_lang.Expr.to_string e)
@@ -208,10 +254,10 @@ let parse_type (e:D_lang.d_type) : C_type.t d_result =
   )
 
 module Arg = struct
-  type i_array = {address: Variable.t; offset: i_exp}
+  type i_array = {address: Variable.t; offset: IExp.t}
 
   type t =
-  | Scalar of i_exp
+  | Scalar of IExp.t
   | Array of i_array
   | Unsupported
 
@@ -265,8 +311,9 @@ module Unknown = struct
 
   let get_var (st:t) = Variable.from_name ("__unk" ^ string_of_int st)
 
-  let create (st:t) : t * Variable.t =
-    (st + 1, get_var st)
+  let create (label:string) (st:t) : t * Variable.t =
+    let x = get_var st in
+    (st + 1, { x with label = Some label })
 
   let get (st:t) : Variable.Set.t =
     let rec add (c:int) : Variable.Set.t =
@@ -277,7 +324,7 @@ module Unknown = struct
     in
     add st
 
-  let rec handle_n (u:t) (e:i_exp) : (t * nexp) =
+  let rec handle_n (u:t) (e:IExp.t) : (t * nexp) =
     match e with
     | NExp n ->
       (match n with
@@ -301,11 +348,11 @@ module Unknown = struct
     | BExp _ ->
       let (u, b) = handle_b u e in
       (u, Exp.NIf (b, Num 1, Num 0))
-    | Unknown ->
-      let (u, x) = create u in
+    | Unknown lbl ->
+      let (u, x) = create lbl u in
       (u, Exp.Var x)
 
-  and handle_b (u:t) (e:i_exp) : (t * bexp) =
+  and handle_b (u:t) (e:IExp.t) : (t * bexp) =
     match e with
     | BExp b ->
       (match b with
@@ -327,8 +374,8 @@ module Unknown = struct
     | NExp _ ->
       let (u, n) = handle_n u e in
       (u, NRel (NNeq, n, Num 0))
-    | Unknown ->
-      let (u, x) = create u in
+    | Unknown lbl ->
+      let (u, x) = create lbl u in
       (u, NRel (NNeq, Var x, Num 0))
 
   let convert (handler:t -> 'a -> t * 'b) (n:'a) : Variable.Set.t * 'b =
@@ -336,7 +383,7 @@ module Unknown = struct
     (get u, n)
 
   (* Convert a d_nexp into an nexp and get the set of unknowns *)
-  let to_nexp: i_exp -> Variable.Set.t * nexp = convert handle_n
+  let to_nexp: IExp.t -> Variable.Set.t * nexp = convert handle_n
 
   let handle_arg (u:t) : Arg.t -> (t * Imp.Arg.t) =
     function
@@ -353,7 +400,7 @@ module Unknown = struct
     convert handle_arg
 
   (* Convert a d_bexp into an bexp and get the set of unknowns *)
-  let to_bexp: i_exp -> Variable.Set.t * bexp = convert handle_b
+  let to_bexp: IExp.t -> Variable.Set.t * bexp = convert handle_b
 
   let rec mmap (f:t -> 'a -> t * 'b) (st:t) : 'a list -> (t * 'b list) =
     function
@@ -363,21 +410,21 @@ module Unknown = struct
       let (st, l) = mmap f st l in
       (st, x :: l) 
 
-  let to_nexp_list: i_exp list -> Variable.Set.t * nexp list =
+  let to_nexp_list: IExp.t list -> Variable.Set.t * nexp list =
     convert (mmap handle_n)
 
   let to_arg_list : Arg.t list -> Variable.Set.t * Imp.Arg.t list =
     convert (mmap handle_arg)
 
   (* Convert a d_nexp into an nexp only if there are no unknowns *)
-  let try_to_nexp (n:i_exp) : nexp option =
+  let try_to_nexp (n:IExp.t) : nexp option =
     let (u, n) = handle_n make n in
     if u = 0
     then Some n
     else None
 
   (* Convert a d_bexp into an bexp only if there are no unknowns *)
-  let try_to_bexp (n:i_exp) : bexp option =
+  let try_to_bexp (n:IExp.t) : bexp option =
     let (u, b) = handle_b make n in
     if u = 0
     then Some b
@@ -399,16 +446,16 @@ module Unknown = struct
     let vars = Variable.Set.union extra_vars vars in
     ret_u vars (handler n)
 
-  let ret_n ?(extra_vars=Variable.Set.empty): (nexp -> Imp.Stmt.t) -> i_exp -> Imp.Stmt.t list d_result =
+  let ret_n ?(extra_vars=Variable.Set.empty): (nexp -> Imp.Stmt.t) -> IExp.t -> Imp.Stmt.t list d_result =
     ret_f ~extra_vars to_nexp
 
-  let ret_ns ?(extra_vars=Variable.Set.empty): (nexp list -> Imp.Stmt.t) -> i_exp list -> Imp.Stmt.t list d_result =
+  let ret_ns ?(extra_vars=Variable.Set.empty): (nexp list -> Imp.Stmt.t) -> IExp.t list -> Imp.Stmt.t list d_result =
     ret_f ~extra_vars to_nexp_list
 
   let ret_args ?(extra_vars=Variable.Set.empty): (Imp.Arg.t list -> Imp.Stmt.t) -> Arg.t list -> Imp.Stmt.t list d_result =
     ret_f ~extra_vars to_arg_list
 
-  let ret_b ?(extra_vars=Variable.Set.empty): (bexp -> Imp.Stmt.t) -> i_exp -> Imp.Stmt.t list d_result =
+  let ret_b ?(extra_vars=Variable.Set.empty): (bexp -> Imp.Stmt.t) -> IExp.t -> Imp.Stmt.t list d_result =
     ret_f ~extra_vars to_bexp
 
 
