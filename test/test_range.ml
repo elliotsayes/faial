@@ -67,6 +67,7 @@ let range ~lb ~ub ~step : Range.t =
     upper_bound=Num ub;
     step;
     dir;
+    ty=C_type.int;
   }
 
 let assert_int n1 n2 ~msg : unit =

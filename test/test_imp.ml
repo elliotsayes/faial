@@ -147,9 +147,9 @@ let tests = "test_predicates" >::: [
     (* Test: *)
     begin
       match p with
-      | Decl (_, Seq (
+      | Decl {body=Seq (
           Acc (_, {index=[e1]; _}),
-          Acc (_, {index=[e2]; _}))) ->
+          Acc (_, {index=[e2]; _})); _} ->
         let inc e = n_plus (Num 32) e in
         let tid = Var tid in
         assert_nexp tid e1;
@@ -205,11 +205,11 @@ let tests = "test_predicates" >::: [
     (* Test: *)
     begin
       match p with
-      | Decl (y, Seq (
+      | Decl {var=y; body=Seq (
           Acc (_, {index=[e1]; _}),
           Seq (
           Acc (_, {index=[e2]; _}),
-          Acc (_, {index=[e3]; _})))) when Variable.name y = "threadIdx.x" ->
+          Acc (_, {index=[e3]; _}))); _} when Variable.name y = "threadIdx.x" ->
         let tid = Var (Variable.from_name "threadIdx.x") in
         let inc e = Bin (Plus, Num 32, e) in
         assert_nexp tid e1;
@@ -292,8 +292,8 @@ let tests = "test_predicates" >::: [
       |> post_to_proto
     in
     match p with
-    | Decl (y1,
-        Decl (y2, Acc (_, {index=[x1; x2]; _})))
+    | Decl {var=y1;
+        body=Decl {var=y2; body=Acc (_, {index=[x1; x2]; _}); _}; _}
         when Variable.name y1 = "x" && Variable.name y2 = "x1" ->
       assert_nexp (Var (Variable.from_name "x")) x1;
       assert_nexp (Var (Variable.from_name "x1")) x2;

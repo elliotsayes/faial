@@ -54,6 +54,8 @@ type t = CType: string -> t
 let make (ty:string) : t =
   CType ty
 
+let int : t = make "int"
+
 let to_string (c:t) : string =
   match c with
   | CType x -> x
@@ -98,7 +100,6 @@ let sizeof (x:t) : int option =
   else if x = "float" then Some 4
   else if x = "double" then Some 8
   else None
-
 
 let is_int (c:t) : bool =
   List.mem (to_string c) [

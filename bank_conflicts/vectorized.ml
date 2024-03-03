@@ -257,7 +257,7 @@ let eval ?(verbose=true) : Proto.Code.t -> t -> NMap.t =
         cost
     | Acc _ ->
       failwith ("Unsupported access")
-    | Decl (_, p) -> eval cost p ctx
+    | Decl {body=p; _} -> eval cost p ctx
     | Cond (b, p) ->
       restrict b ctx |> eval cost p
     | Loop (r, body) ->

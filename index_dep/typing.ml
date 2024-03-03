@@ -33,7 +33,7 @@ let rec is_data_exact (env:Variable.Set.t) : Proto.Code.t -> bool =
   | Skip | Sync _ -> true
   | Seq (p, q) -> is_data_exact env p && is_data_exact env q
   | Cond (_, p) -> is_data_exact env p
-  | Decl (_, p) -> is_data_exact env p
+  | Decl {body=p; _} -> is_data_exact env p
   | Loop (r, p) ->
     no_acc p || (* If there are no accesses, then we can trivially accept *)
     is_data_exact env p ||
@@ -51,7 +51,7 @@ let rec is_control_exact (env:Variable.Set.t) : Proto.Code.t -> bool =
       typecheck_b env b &&
       is_control_exact env p
     )
-  | Decl (_, p) -> is_control_exact env p
+  | Decl {body=p; _} -> is_control_exact env p
   | Loop (r, p) ->
     no_acc p ||
     (

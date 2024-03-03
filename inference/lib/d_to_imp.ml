@@ -576,6 +576,7 @@ module ForRange = struct
       upper_bound=ub;
       step=step;
       dir=d;
+      ty=C_type.int;
     }
 
   let parse_unop (u:'a Loop_infer.unop) : 'a unop option d_result =

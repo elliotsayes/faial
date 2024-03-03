@@ -13,7 +13,7 @@ module Code = struct
     | Loop of Range.t * t
     | Seq of t * t
     | Skip
-    | Decl of Variable.t * t
+    | Decl of {var: Variable.t; ty:C_type.t; body: t}
 
   let rec filter (f:t -> bool) (p:t) : t =
     if not (f p) then Skip else
@@ -23,14 +23,14 @@ module Code = struct
     | Acc _ -> p
     | Seq (p, q) -> Seq (filter f p, filter f q)
     | Cond (b, p) -> Cond (b, filter f p)
-    | Decl (x, p) -> Decl (x, filter f p)
+    | Decl d -> Decl { d with body = filter f d.body }
     | Loop (r, p) -> Loop (r, filter f p)
 
   let rec exists (f:t -> bool) (i: t) : bool =
     f i ||
     match i with
     | Acc _ | Sync _ | Skip -> false
-    | Cond (_, p) | Loop (_, p) | Decl (_, p) -> exists f p
+    | Cond (_, p) | Loop (_, p) | Decl {body=p; _} -> exists f p
     | Seq (p, q) -> exists f p || exists f q
 
 
@@ -48,10 +48,10 @@ module Code = struct
           M.b_subst s b,
           subst s p
         )
-      | Decl (x, p) ->
-        M.add s x (function
-          | Some s -> Decl (x, subst s p)
-          | None -> Decl (x, p)
+      | Decl d ->
+        M.add s d.var (function
+          | Some s -> Decl { d with body = subst s d.body }
+          | None -> Decl d
         )
       | Loop (r, p) ->
         let r = M.r_subst s r in
@@ -91,15 +91,15 @@ module Code = struct
     | Num lb, Num ub, _ when lb >= ub -> Skip
     | _, _, _ -> Loop (r, p)
 
-  let decl (x:Variable.t) (p:t) : t =
-    match p with
+  let decl ?(ty=C_type.int) (var:Variable.t) : t -> t =
+    function
     | Skip -> Skip
-    | _ -> Decl (x, p)
+    | body -> Decl {var; ty; body}
 
   let rec opt : t -> t =
     function
     | Skip -> Skip
-    | Decl (x, p) -> Decl (x, opt p)
+    | Decl d -> Decl { d with body = opt d.body }
     | Seq (p, q) -> seq (opt p) (opt q)
     | Acc (x, e) -> Acc (x, Constfold.a_opt e)
     | Sync l -> Sync l
@@ -134,17 +134,19 @@ module Code = struct
       | Cond (b, p) ->
         let (p, xs) = uniq p xs in
         (Cond (b, p), xs)
-      | Decl (x, p) ->
+      | Decl d ->
+        let x = d.var in
+        let p = d.body in
         if Variable.Set.mem x xs then (
           let new_x : Variable.t = Variable.fresh xs x in
           let new_xs = Variable.Set.add new_x xs in
           let s = Subst.SubstPair.make (x, Var new_x) in
           let new_p = PSubstPair.subst s p in
           let (p, new_xs) = uniq new_p new_xs in
-          Decl (new_x, p), new_xs
+          Decl {var = new_x; body=p; ty=d.ty; }, new_xs
         ) else (
           let (p, new_xs) = uniq p (Variable.Set.add x xs) in
-          Decl (x, p), new_xs
+          Decl {var=x; body=p; ty=d.ty}, new_xs
         )
       | Loop (r, p) ->
         let x = r.var in
@@ -176,9 +178,11 @@ module Code = struct
         Block (to_s p1);
         Line "}"
       ]
-    | Decl (x, p) ->
-      (Line ("var " ^ Variable.name x ^ ";"))
-      :: to_s p
+    | Decl d ->
+      let var = Variable.name d.var in
+      let ty = C_type.to_string d.ty in
+      (Line ("var " ^ var ^ ": " ^ ty ^ " ;"))
+      :: to_s d.body
     | Loop (r, p) ->
       [
         Line ("foreach (" ^ Range.to_string r ^ ") {");
@@ -324,7 +328,7 @@ module Kernel = struct
   let hoist_decls : Code.t t -> Code.t t =
     let rec inline (vars:Variable.Set.t) (p:Code.t) : Variable.Set.t * Code.t =
       match p with
-      | Decl (x, p) -> inline (Variable.Set.add x vars) p
+      | Decl {var=x; body=p; _} -> inline (Variable.Set.add x vars) p
       | Acc _ | Skip | Sync _ -> (vars, p)
       | Cond (b, p) ->
         let (vars, p) = inline vars p in

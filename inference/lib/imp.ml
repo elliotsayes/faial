@@ -511,6 +511,7 @@ let unknown_range (x:Variable.t) : Range.t =
     lower_bound=Num 1;
     upper_bound=Var x;
     step=Step.plus (Num 1);
+    ty=C_type.int;
   }
 
 type stateful = (int * Variable.Set.t) -> int * Variable.Set.t * Post.t
@@ -662,7 +663,7 @@ module Kernel = struct
         fun (p, locals, pre) ->
         match p with
         | Cond (b, p) -> inline_header (p, locals, b_and b pre)
-        | Decl (x, p) -> inline_header (p, Variable.Set.add x locals, pre)
+        | Decl {var=x; body=p; _} -> inline_header (p, Variable.Set.add x locals, pre)
         | _ -> (p, locals, pre)
       in
       inline_header (p, Variable.Set.empty, Bool true)

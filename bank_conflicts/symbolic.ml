@@ -38,6 +38,7 @@ module Interval = struct
       upper_bound = Exp.n_inc b.last_elem;
       step = Plus (Num 1);
       dir = Range.Increase;
+      ty = C_type.int;
     }
 end
 

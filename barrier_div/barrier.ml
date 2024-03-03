@@ -3,7 +3,7 @@ open Stage0
 
 module Code = struct
   type t =
-    | Decl of Variable.t * t
+    | Decl of {ty:C_type.t; var: Variable.t; body: t}
     | Loop of Range.t * t
     | Cond of Exp.bexp * t
     | Barrier of Location.t option
@@ -13,7 +13,8 @@ module Code = struct
     | Skip
     | Acc _ -> Seq.empty
     | Sync l -> Seq.return (Barrier l)
-    | Decl (x, s) -> from_proto s |> Seq.map (fun s -> Decl (x, s))
+    | Decl {ty; var; body=s} ->
+      from_proto s |> Seq.map (fun body -> Decl {ty; body; var})
     | Cond (b, s) -> from_proto s |> Seq.map (fun s -> Cond (b, s))
     | Seq (s1, s2) -> from_proto s1 |> Seq.append (from_proto s2)
     | Loop (r, s) -> from_proto s |> Seq.map (fun s -> Loop (r, s))
@@ -29,14 +30,14 @@ module Code = struct
   let rec is_uniform (thread_locals:Variable.Set.t) : t -> bool =
     function
     | Barrier _ -> true
-    | Decl (x, s) -> is_uniform (Variable.Set.add x thread_locals) s
+    | Decl {var=x; body=s; _} -> is_uniform (Variable.Set.add x thread_locals) s
     | Loop (r, s) -> r_is_uniform thread_locals r && is_uniform thread_locals s
     | Cond (b, s) -> b_is_uniform thread_locals b && is_uniform thread_locals s
 
   let rec location : t -> Location.t option =
     function
     | Barrier l -> l
-    | Decl (_, s) | Cond (_, s) | Loop (_, s) -> location s
+    | Decl {body=s; _} | Cond (_, s) | Loop (_, s) -> location s
 
 end
 

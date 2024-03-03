@@ -56,6 +56,7 @@ type direction =
 
 type t = {
   var: Variable.t;
+  ty: C_type.t;
   dir: direction;
   lower_bound: nexp;
   upper_bound: nexp;
@@ -63,6 +64,8 @@ type t = {
 }
 
 let var (r:t) : Variable.t = r.var
+
+let ty (r:t) : C_type.t = r.ty
 
 let to_string (r : t) : string =
   let x = Variable.name r.var in
@@ -92,15 +95,13 @@ let make
   ?(lower_bound=Num 0)
   ?(step:Step.t=Plus (Num 1))
   ?(dir = Increase)
-  (x:Variable.t)
-  (ub:nexp) =
-  {
-    var = x;
-    lower_bound = lower_bound;
-    upper_bound = ub;
-    step = step;
-    dir = dir;
-  }
+  ?(ty=C_type.int)
+  (var:Variable.t)
+  (upper_bound:nexp)
+:
+  t
+=
+  {var; lower_bound; upper_bound; step; dir; ty;}
 
 let eq_nums x l : bexp =
   List.map (fun i -> n_eq x (Num i)) l
