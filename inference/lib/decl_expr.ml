@@ -22,7 +22,7 @@ module Kind = struct
 end
 
 (* A program variable *)
-type t = {name: Variable.t; ty: json; kind: Kind.t}
+type t = {name: Variable.t; ty: J_type.t; kind: Kind.t}
 
 let from_name
   ?(ty=J_type.int)
@@ -43,7 +43,7 @@ let from_ty_var
 
 let name (e:t) : Variable.t = e.name
 
-let ty (e:t) : json = e.ty
+let ty (e:t) : J_type.t = e.ty
 
 let to_string ?(modifier:bool=false) (e:t) : string =
   let attr : string =

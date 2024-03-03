@@ -20,7 +20,6 @@ let float = from_string "float"
 let void = from_string "void"
 let unknown = from_string "?"
 
-type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
 let to_c_type (j:t) : C_type.t j_result =

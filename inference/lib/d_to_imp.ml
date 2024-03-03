@@ -471,7 +471,7 @@ let parse_decl (d:D_lang.Decl.t) : (Variable.t * nexp option) list d_result =
   let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
   let* ty = match J_type.to_c_type d.ty_var.ty with
   | Ok ty -> Ok ty
-  | Error _ -> root_cause ("parse_decl: error parsing type: " ^ Rjson.pp_js d.ty_var.ty)
+  | Error _ -> root_cause ("parse_decl: error parsing type: " ^ J_type.to_string d.ty_var.ty)
   in
   if C_type.is_int ty
   then (
@@ -484,7 +484,7 @@ let parse_decl (d:D_lang.Decl.t) : (Variable.t * nexp option) list d_result =
     in
     Ok ((d.ty_var.name, n) :: Unknown.as_decls vars )
   ) else (
-    L.warning ("parse_decl: skipping non-int local variable '" ^ Variable.name d.ty_var.name ^ "' type: " ^ Rjson.pp_js d.ty_var.ty);
+    L.warning ("parse_decl: skipping non-int local variable '" ^ Variable.name d.ty_var.name ^ "' type: " ^ J_type.to_string d.ty_var.ty);
     Ok []
   )
 

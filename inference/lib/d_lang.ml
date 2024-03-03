@@ -11,7 +11,7 @@ type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
 type array_t = Protocols.Memory.t
-type d_type = json
+type d_type = J_type.t
 
 let list_to_s (f:'a -> string) (l:'a list) : string =
   List.map f l |> Common.join ", "
@@ -92,7 +92,7 @@ module Expr = struct
       then "@" ^ s ^ " "
       else ""
     in
-    let opcode (o:string) (j:Yojson.Basic.t) : string =
+    let opcode (o:string) (j:J_type.t) : string =
       if types
       then "(" ^ o ^ "." ^ J_type.to_string j ^ ")"
       else o

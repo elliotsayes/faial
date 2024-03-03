@@ -63,7 +63,7 @@ module Expr = struct
       then "@" ^ s ^ " "
       else ""
     in
-    let opcode (o:string) (j:Yojson.Basic.t) : string =
+    let opcode (o:string) (j:J_type.t) : string =
       if types
       then "(" ^ o ^ "." ^ J_type.to_string j ^ ")"
       else o
@@ -793,7 +793,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
   | _ when is_invalid o ->
     (* Unknown value *)
     let* ty = get_field "type" o in
-    Ok (RecoveryExpr ty)
+    Ok (RecoveryExpr (J_type.from_json ty))
 
   | "CXXDefaultArgExpr"
   | "ImplicitValueInitExpr"
@@ -803,7 +803,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
   | "RecoveryExpr" ->
     (* Unknown value *)
     let* ty = get_field "type" o in
-    Ok (RecoveryExpr ty)
+    Ok (RecoveryExpr (J_type.from_json ty))
 
   | "CharacterLiteral" ->
     let* i = with_field "value" cast_int o in
@@ -829,7 +829,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
       | Error e -> Error e
     ) o in
     let* ty = get_field "type" o in
-    Ok (MemberExpr {name=n; base=b; ty=ty})
+    Ok (MemberExpr {name=n; base=b; ty=J_type.from_json ty})
 
   | "DeclRefExpr" ->
     with_field "referencedDecl" (fun new_j ->
@@ -857,78 +857,79 @@ let rec parse_exp (j:json) : Expr.t j_result =
     let* n = with_field "name" cast_string o in
     let* b = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
-    Ok (MemberExpr {name=n; base=b; ty=ty})
+    Ok (MemberExpr {name=n; base=b; ty=J_type.from_json ty})
 
   | "EnumConstantDecl" ->
     let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (Ident {name; ty; kind=EnumConstant})
+    Ok (Ident {name; ty=J_type.from_json ty; kind=EnumConstant})
 
   | "VarDecl" ->
     let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (Ident {name; ty; kind=Var})
+    Ok (Ident {name; ty=J_type.from_json ty; kind=Var})
     
   | "FunctionDecl" ->
     let* v = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (Ident {name=v; ty=ty; kind=Function})
+    Ok (Ident {name=v; ty=J_type.from_json ty; kind=Function})
 
   | "CXXMethodDecl" ->
     let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (Ident {name; ty; kind=CXXMethod})
+    Ok (Ident {name; ty=J_type.from_json ty; kind=CXXMethod})
 
   | "ConditionalOperator" ->
     let* (c, t, e) = with_field "inner"
       (cast_list_3 parse_exp parse_exp parse_exp) o
     in
     let* ty = get_field "type" o in
-    Ok (ConditionalOperator {cond=c; then_expr=t; else_expr=e; ty=ty})
+    Ok (ConditionalOperator
+      {cond=c; then_expr=t; else_expr=e; ty=J_type.from_json ty})
 
   | "UnaryExprOrTypeTraitExpr" ->
     let* ty = get_field "type" o in
-    Ok (SizeOfExpr ty)
+    Ok (SizeOfExpr (J_type.from_json  ty))
 
   | "ParmVarDecl" ->
     let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (Ident {name; ty; kind=ParmVar})
+    Ok (Ident {name; ty=J_type.from_json ty; kind=ParmVar})
 
   | "NonTypeTemplateParmDecl" ->
     let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (Ident {name; ty; kind=NonTypeTemplateParm})
+    Ok (Ident {name; ty=J_type.from_json ty; kind=NonTypeTemplateParm})
 
   | "UnresolvedLookupExpr" ->
     let* v = parse_variable j in
     let* tys = get_field "lookups" o >>= cast_list in
-    Ok (UnresolvedLookupExpr {name=v; tys=tys})
+    Ok (UnresolvedLookupExpr {name=v; tys=List.map J_type.from_json tys})
 
   | "CXXNewExpr" ->
     let* arg = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
-    Ok (CXXNewExpr {arg=arg; ty=ty})
+    Ok (CXXNewExpr {arg=arg; ty=J_type.from_json ty})
 
   | "CXXDeleteExpr" ->
     let* arg = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
-    Ok (CXXDeleteExpr {arg=arg; ty=ty})
+    Ok (CXXDeleteExpr {arg=arg; ty=J_type.from_json ty})
 
   | "UnaryOperator" ->
     let* op = with_field "opcode" cast_string o in
     let* c = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
     let inc o =
-      BinaryOperator {ty=ty; opcode="="; lhs=c;
-        rhs=BinaryOperator{ty=ty; opcode=o; lhs=c; rhs=IntegerLiteral 1}}
+      BinaryOperator {ty=J_type.from_json ty; opcode="="; lhs=c;
+        rhs=BinaryOperator{ty=J_type.from_json ty; opcode=o; lhs=c; rhs=IntegerLiteral 1}}
     in
     Ok (match op with
     | "++" -> inc "+"
     | "--" -> inc "-"
     | "+" -> c
-    | "-" -> BinaryOperator {ty=ty; opcode=op; lhs=IntegerLiteral 0; rhs=c}
-    | _ -> UnaryOperator {ty=ty; opcode=op; child=c})
+    | "-" -> BinaryOperator {ty=J_type.from_json ty; opcode=op; lhs=IntegerLiteral 0; rhs=c}
+    | _ -> UnaryOperator {ty=J_type.from_json ty; opcode=op; child=c})
 
   | "CompoundAssignOperator" ->
     (* Convert: x += e into x = x + y *)
@@ -936,11 +937,14 @@ let rec parse_exp (j:json) : Expr.t j_result =
     let* lhs, rhs = with_field "inner" (cast_list_2 parse_exp parse_exp) o in
     let* opcode = with_field "opcode" cast_string o in
     (match Common.rsplit '=' opcode with
-      | Some (opcode, "") -> Ok (compound ty lhs opcode rhs)
+      | Some (opcode, "") -> Ok (compound (J_type.from_json ty) lhs opcode rhs)
       | _ -> root_cause "ERROR: parse_exp" j)
 
   | "BinaryOperator" ->
-    let ty = List.assoc_opt "type" o |> Option.value ~default:J_type.int in
+    let ty = List.assoc_opt "type" o
+      |> Option.map J_type.from_json
+      |> Option.value ~default:J_type.int
+    in
     let* opcode = with_field "opcode" cast_string o in
     let* lhs, rhs = with_field "inner"
       (cast_list_2 parse_exp parse_exp) o
@@ -954,7 +958,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
     in
     let* loc = with_field "range" parse_location o in
     Ok (ArraySubscriptExpr {
-      ty=ty;
+      ty=J_type.from_json ty;
       lhs=lhs;
       rhs=rhs;
       location=Location.set_length (Location.length loc + 1) loc
@@ -975,6 +979,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
         BinaryOperator {lhs=lhs; opcode="="; rhs=rhs; ty=to_type lhs}
       | (UnresolvedLookupExpr {name=n; _}, [lhs; rhs])
       | (Ident {name=n; kind=Function; _}, [lhs; rhs]) ->
+        let ty = J_type.from_json ty in
         (match Variable.name n with
           | "operator-=" -> compound ty lhs "-" rhs  
           | "operator+=" -> compound ty lhs "+" rhs  
@@ -988,7 +993,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
           | "operator>>=" -> compound ty lhs ">>" rhs
           | _ -> CXXOperatorCallExpr {func=func; args=args; ty=ty}
         )
-      | _ -> CXXOperatorCallExpr {func=func; args=args; ty=ty}
+      | _ -> CXXOperatorCallExpr {func=func; args=args; ty=J_type.from_json ty}
     )
 
   | "CallExpr" ->
@@ -999,7 +1004,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
       Ok (func, args)
     ) o in
     let* ty = get_field "type" o in
-    Ok (CallExpr {func=func; args=args; ty=ty})
+    Ok (CallExpr {func=func; args=args; ty=J_type.from_json ty})
 
   | "CXXBindTemporaryExpr"
   | "CXXFunctionalCastExpr"
@@ -1013,7 +1018,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
   | "CXXConstructExpr" ->
     let* ty = get_field "type" o in
     let* args = with_field_or "inner" (cast_map parse_exp) [] o in
-    Ok (CXXConstructExpr {args=args; ty=ty})
+    Ok (CXXConstructExpr {args=args; ty=J_type.from_json ty})
 
 
   | "CXXBoolLiteralExpr" ->
@@ -1033,7 +1038,7 @@ let parse_init (j:json) : Init.t j_result =
     let* ty = get_field "type" o in
     let* args = with_field_or "inner" (cast_map parse_exp) [] o in
     let open Init in
-    Ok (InitListExpr {ty=ty; args=args})
+    Ok (InitListExpr {ty=J_type.from_json ty; args=args})
 
   | _ ->
     let* e = parse_exp j in
@@ -1086,7 +1091,7 @@ let parse_decl (j:json) : Decl.t option j_result =
       let open StackTrace in
       Error (Because (("Field 'init'", j), RootCause (msg, `List inner)))
     in
-    let ty_var = Ty_variable.make ~name ~ty in
+    let ty_var = Ty_variable.make ~name ~ty:(J_type.from_json ty) in
     Ok (Some (Decl.make ~ty_var ~init ~attrs))
   )
 
@@ -1265,7 +1270,7 @@ let parse_param (j:json) : Param.t j_result =
   let* is_used =  with_field_or "isUsed" cast_bool false o in
   let* is_shared = with_field_or "shared" cast_bool false o in
 
-  let ty_var : Ty_variable.t = Ty_variable.make ~ty ~name in
+  let ty_var : Ty_variable.t = Ty_variable.make ~ty:(J_type.from_json ty) ~name in
   Ok (Param.make
     ~is_used:(is_refed || is_used)
     ~ty_var:ty_var
@@ -1291,7 +1296,7 @@ let parse_kernel (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Kernel.t j_r
   let open Rjson in
   (
     let* o = cast_object j in
-    let* ty = get_field "type" o in
+    let* ty = get_field "type" o |> Result.map J_type.from_json in
     let ty = J_type.to_string ty in
     let* inner = with_field "inner" cast_list o in
     let attrs, inner =
@@ -1331,7 +1336,7 @@ let has_array_type (j:Yojson.Basic.t) : bool =
   let open Rjson in
   let is_array =
     let* o = cast_object j in
-    let* ty = get_field "type" o in
+    let* ty = get_field "type" o |> Result.map J_type.from_json in
     let* ty = J_type.to_c_type ty in
     Ok (C_type.is_array ty)
   in
@@ -1382,7 +1387,7 @@ let parse_type_param (j:Yojson.Basic.t) : Ty_param.t option j_result =
   | "NonTypeTemplateParmDecl" ->
     let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (Some (Ty_param.NonTypeTemplate {name=name; ty=ty}))
+    Ok (Some (Ty_param.NonTypeTemplate {name=name; ty=J_type.from_json ty}))
   | _ -> Ok None
 
 

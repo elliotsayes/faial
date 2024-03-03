@@ -1,10 +1,8 @@
 open Protocols
 
-type json = Yojson.Basic.t
-
 type t =
   | TemplateType of Variable.t
-  | NonTypeTemplate of {name: Variable.t; ty: json}
+  | NonTypeTemplate of {name: Variable.t; ty: J_type.t}
 
 let to_string (p:t) : string =
   let name = match p with

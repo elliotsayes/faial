@@ -23,7 +23,7 @@ let make_cond ?(op="<") ?(lhs="x") rhs =
   Expr.BinaryOperator{lhs = lhs;
                       rhs = rhs;
                       opcode = op;
-                      ty = `Null}
+                      ty =J_type.bool}
 
 
 let make_op (op:string) (lhs:Expr.t) (rhs:Expr.t) =
@@ -31,7 +31,7 @@ let make_op (op:string) (lhs:Expr.t) (rhs:Expr.t) =
     lhs = lhs;
     rhs = rhs;
     opcode = op;
-    ty = `Null
+    ty = J_type.unknown
   }
   
   
@@ -41,7 +41,7 @@ let make_operation op lhs rhs =
     lhs = lhs;
     rhs = rhs;
     opcode = op;
-    ty = `Null}
+    ty = J_type.unknown}
     
 let make_operation_int op lhs rhs =
   let lhs = mk_var lhs in
@@ -50,7 +50,7 @@ let make_operation_int op lhs rhs =
     lhs = lhs;
     rhs = rhs;
     opcode = op;
-    ty = `Null}
+    ty = J_type.int}
     
 let iteration l r opcode =
   Expr.BinaryOperator
@@ -63,9 +63,9 @@ let iteration l r opcode =
             lhs = l;
             rhs = r;
             opcode = opcode;
-            ty = `Null
+            ty = J_type.int
           };
-      ty = `Null
+      ty = J_type.int
     }
 
 
