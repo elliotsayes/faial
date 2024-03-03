@@ -118,33 +118,3 @@ let is_int (c:t) : bool =
     "const size_t";
   ]
 
-(* ------------------------------------- *)
-
-let kernel_id ~kernel ~ty : string =
-  kernel ^ ":" ^ ty
-
-let mk_j_type name =
-  `Assoc[
-    "qualType", `String name
-  ]
-
-let j_int_type = mk_j_type "int"
-let j_char_type = mk_j_type "char"
-let j_bool_type = mk_j_type "bool"
-let j_float_type = mk_j_type "float"
-let j_void_type = mk_j_type "void"
-
-type j_object = Rjson.j_object
-type 'a j_result = 'a Rjson.j_result
-
-let from_json (j:Yojson.Basic.t) : t j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* ty = with_field "qualType" cast_string o in
-  Ok (make ty)
-
-let j_to_string (j:Yojson.Basic.t) : string =
-  match from_json j with
-  | Ok ty -> to_string ty
-  | Error _ -> "?"
-

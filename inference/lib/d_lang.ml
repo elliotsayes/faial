@@ -39,7 +39,7 @@ module Expr = struct
   and d_call = {func: t; args: t list; ty: d_type}
 
   let ident
-    ?(ty=C_type.j_int_type)
+    ?(ty=J_type.int)
     ?(kind=Decl_expr.Kind.Var)
     (name:Variable.t)
   =
@@ -67,23 +67,23 @@ module Expr = struct
 
   let rec to_type :  t -> d_type =
     function
-    | SizeOfExpr _ -> C_type.j_int_type
+    | SizeOfExpr _ -> J_type.int
     | CXXNewExpr c -> c.ty
     | CXXDeleteExpr c -> c.ty
     | RecoveryExpr ty -> ty
-    | CharacterLiteral _ -> C_type.j_char_type
+    | CharacterLiteral _ -> J_type.char
     | BinaryOperator a -> a.ty
     | ConditionalOperator c -> to_type c.then_expr
-    | CXXBoolLiteralExpr _ -> C_type.j_bool_type
+    | CXXBoolLiteralExpr _ -> J_type.bool
     | Ident a -> Decl_expr.ty a
     | CXXConstructExpr c -> c.ty
-    | FloatingLiteral _ -> C_type.j_float_type
-    | IntegerLiteral _ -> C_type.j_int_type
+    | FloatingLiteral _ -> J_type.float
+    | IntegerLiteral _ -> J_type.int
     | UnaryOperator a -> a.ty
     | CallExpr c -> c.ty
     | CXXOperatorCallExpr a -> a.ty
     | MemberExpr a -> a.ty
-    | UnresolvedLookupExpr _ -> C_type.mk_j_type "?"
+    | UnresolvedLookupExpr _ -> J_type.unknown
 
 
   let to_string ?(modifier:bool=false) ?(provenance:bool=false) ?(types:bool=false) : t -> string =
@@ -94,7 +94,7 @@ module Expr = struct
     in
     let opcode (o:string) (j:Yojson.Basic.t) : string =
       if types
-      then "(" ^ o ^ "." ^ C_type.j_to_string j ^ ")"
+      then "(" ^ o ^ "." ^ J_type.to_string j ^ ")"
       else o
     in
     let var_name: Variable.t -> string =
@@ -126,8 +126,8 @@ module Expr = struct
           ->  exp_to_s e
       in
       function
-      | SizeOfExpr ty -> "sizeof(" ^ C_type.j_to_string ty ^ ")"
-      | CXXNewExpr c -> "new " ^ C_type.j_to_string c.ty ^ "(" ^ exp_to_s c.arg ^ ")"
+      | SizeOfExpr ty -> "sizeof(" ^ J_type.to_string ty ^ ")"
+      | CXXNewExpr c -> "new " ^ J_type.to_string c.ty ^ "(" ^ exp_to_s c.arg ^ ")"
       | CXXDeleteExpr c -> "del " ^ par c.arg
       | RecoveryExpr _ -> "?"
       | FloatingLiteral f -> string_of_float f
@@ -139,7 +139,7 @@ module Expr = struct
         par b.lhs ^ " " ^ opcode b.opcode b.ty ^ " " ^ par b.rhs
       | MemberExpr m -> par m.base  ^ "." ^ m.name
       | CXXBoolLiteralExpr b -> if b then "true" else "false";
-      | CXXConstructExpr c -> attr "ctor" ^ C_type.j_to_string c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")"
+      | CXXConstructExpr c -> attr "ctor" ^ J_type.to_string c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")"
       | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
       | Ident v -> Decl_expr.to_string ~modifier v
       | CallExpr c -> par c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
@@ -200,7 +200,7 @@ module Decl = struct
     if List.mem C_lang.c_attr_shared d.attrs
     then
       let ty = d.ty_var |> Ty_variable.ty in
-      match C_type.from_json ty with
+      match J_type.to_c_type ty with
       | Ok ty ->
         Some {
           hierarchy = SharedMemory;
@@ -551,7 +551,7 @@ module SignatureDB = struct
       | UnresolvedLookupExpr {name=n; _} ->
         Some (Variable.name n, "?")
       | Ident {name=n; kind=Function; ty} ->
-        Some (Variable.name n, C_type.j_to_string ty)
+        Some (Variable.name n, J_type.to_string ty)
       | _ -> None
     in
     get ~kernel ~ty db
@@ -667,11 +667,6 @@ module AccessState = struct
     ) st
 end
 
-let is_void (j:Yojson.Basic.t) =
-  match C_type.from_json j with
-  | Ok t -> C_type.is_void t
-  | Error _ -> false
-
 let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
   let open Expr in
   match c with
@@ -756,11 +751,11 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     let (st, args) = state_map rewrite_exp args st in
     (st, CXXOperatorCallExpr {func=f; args=args; ty=ty})
 
-  | CallExpr {func=f; args=args; ty=ty} when is_void ty ->
+  | CallExpr {func; args; ty} when J_type.matches C_type.is_void ty ->
     fun st ->
-    let (st, f) = rewrite_exp f st in
+    let (st, func) = rewrite_exp func st in
     let (st, args) = state_map rewrite_exp args st in
-    (st, CallExpr {func=f; args=args; ty=ty})
+    (st, CallExpr {func; args; ty})
 
   | CallExpr {func=f; args=args; ty=ty} ->
     fun st ->

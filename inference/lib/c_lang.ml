@@ -8,7 +8,7 @@ type json = Yojson.Basic.t
 type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
-type c_type = json
+type c_type = J_type.t
 
 let list_to_s (f:'a -> string) (l:'a list) : string =
   List.map f l |> Common.join ", "
@@ -38,23 +38,23 @@ module Expr = struct
 
   let rec to_type : t -> c_type =
     function
-    | SizeOfExpr _ -> C_type.j_int_type
+    | SizeOfExpr _ -> J_type.int
     | CXXNewExpr c -> c.ty
     | CXXDeleteExpr c -> c.ty
     | CXXConstructExpr c -> c.ty
-    | CharacterLiteral _ -> C_type.j_char_type
+    | CharacterLiteral _ -> J_type.char
     | ArraySubscriptExpr a -> a.ty
     | BinaryOperator a -> a.ty
     | ConditionalOperator c -> to_type c.then_expr
-    | CXXBoolLiteralExpr _ -> C_type.j_bool_type
-    | FloatingLiteral _ -> C_type.j_float_type
+    | CXXBoolLiteralExpr _ -> J_type.bool
+    | FloatingLiteral _ -> J_type.float
     | Ident a -> a.ty
-    | IntegerLiteral _ -> C_type.j_int_type
+    | IntegerLiteral _ -> J_type.int
     | UnaryOperator a -> a.ty
     | CallExpr c -> c.ty
     | CXXOperatorCallExpr a -> a.ty
     | MemberExpr a -> a.ty
-    | UnresolvedLookupExpr _ -> C_type.mk_j_type "?"
+    | UnresolvedLookupExpr _ -> J_type.unknown
     | RecoveryExpr ty -> ty
 
   let to_string ?(modifier:bool=false) ?(provenance:bool=false) ?(types:bool=false) : t -> string =
@@ -65,7 +65,7 @@ module Expr = struct
     in
     let opcode (o:string) (j:Yojson.Basic.t) : string =
       if types
-      then "(" ^ o ^ "." ^ C_type.j_to_string j ^ ")"
+      then "(" ^ o ^ "." ^ J_type.to_string j ^ ")"
       else o
     in
     let var_name : Variable.t -> string =
@@ -98,8 +98,8 @@ module Expr = struct
           ->  exp_to_s e
       in
       function
-      | SizeOfExpr ty -> "sizeof(" ^ C_type.j_to_string ty ^ ")"
-      | CXXNewExpr c -> "new " ^ C_type.j_to_string c.ty ^ "(" ^ exp_to_s c.arg ^ ")"
+      | SizeOfExpr ty -> "sizeof(" ^ J_type.to_string ty ^ ")"
+      | CXXNewExpr c -> "new " ^ J_type.to_string c.ty ^ "(" ^ exp_to_s c.arg ^ ")"
       | CXXDeleteExpr c -> "del " ^ par c.arg
       | RecoveryExpr _ -> "?"
       | FloatingLiteral f -> string_of_float f
@@ -112,7 +112,7 @@ module Expr = struct
       | MemberExpr m -> par m.base  ^ "." ^ m.name
       | ArraySubscriptExpr b -> par b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
       | CXXBoolLiteralExpr b -> if b then "true" else "false";
-      | CXXConstructExpr c -> attr "ctor" ^ C_type.j_to_string c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")"
+      | CXXConstructExpr c -> attr "ctor" ^ J_type.to_string c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")"
       | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
       | Ident v -> Decl_expr.to_string ~modifier v
       | CallExpr c -> par c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
@@ -940,7 +940,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
       | _ -> root_cause "ERROR: parse_exp" j)
 
   | "BinaryOperator" ->
-    let ty = List.assoc_opt "type" o |> Option.value ~default:C_type.j_int_type in
+    let ty = List.assoc_opt "type" o |> Option.value ~default:J_type.int in
     let* opcode = with_field "opcode" cast_string o in
     let* lhs, rhs = with_field "inner"
       (cast_list_2 parse_exp parse_exp) o
@@ -1154,11 +1154,11 @@ let rec parse_stmt (j:json) : Stmt.t j_result =
           let* args = with_field "inner" (cast_map parse_exp) o in
           let static_assert : Decl_expr.t = {
             name = Variable.from_name "static_assert";
-            ty=C_type.j_void_type;
+            ty=J_type.void;
             kind=Decl_expr.Kind.Function
           } in
           let func = Ident static_assert in
-          Ok (SExpr (CallExpr {func;args;ty=C_type.j_void_type}))
+          Ok (SExpr (CallExpr {func;args;ty=J_type.void}))
         )
       )
       |> Result.to_option
@@ -1292,7 +1292,7 @@ let parse_kernel (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Kernel.t j_r
   (
     let* o = cast_object j in
     let* ty = get_field "type" o in
-    let ty = C_type.j_to_string ty in
+    let ty = J_type.to_string ty in
     let* inner = with_field "inner" cast_list o in
     let attrs, inner =
       inner
@@ -1332,7 +1332,7 @@ let has_array_type (j:Yojson.Basic.t) : bool =
   let is_array =
     let* o = cast_object j in
     let* ty = get_field "type" o in
-    let* ty = C_type.from_json ty in
+    let* ty = J_type.to_c_type ty in
     Ok (C_type.is_array ty)
   in
   is_array |> Result.value ~default:false

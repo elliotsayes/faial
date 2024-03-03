@@ -262,9 +262,7 @@ module Calls = struct
       c.args
       |> List.exists (fun e ->
         Expr.to_type e
-        |> C_type.from_json
-        |> Result.map C_type.is_array
-        |> Rjson.unwrap_or false
+        |> J_type.matches C_type.is_array
       )
     )
 
@@ -518,12 +516,12 @@ module MutatedVar = struct
     match e with
     | BinaryOperator {lhs=Ident {name=x; kind; _}; opcode="="; rhs=s2; ty}
       when kind=ParmVar || kind =Var ->
-      let is_int =
-        match C_type.from_json ty with
-        | Ok ty -> C_type.is_int ty
-        | Error _ -> false
+      let w =
+        if J_type.matches C_type.is_int ty then
+          VarSet.add x writes
+        else
+          writes
       in
-      let w = if is_int then VarSet.add x writes else writes in
       get_writes s2 w
 
     | CallExpr {func=f; args=a; _}

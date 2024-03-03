@@ -209,7 +209,6 @@ module Make (L:Logger.Logger) = struct
     mem
     |> Variable.Map.filter_map (fun _ v ->
       if Memory.is_shared v then
-        let open Inference in
         let ty = Common.join " " v.data_type |> C_type.make in
         match C_type.sizeof ty with
         | Some n -> Some {byte_count=n; dim=v.size}

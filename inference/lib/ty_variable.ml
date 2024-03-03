@@ -16,9 +16,9 @@ let is_tid (x:t) : bool =
 let ty (x:t) : json = x.ty
 
 let to_string (x:t) : string =
-  C_type.j_to_string x.ty ^ " " ^ Variable.name x.name
+  J_type.to_string x.ty ^ " " ^ Variable.name x.name
 
 let has_type (pred:C_type.t -> bool) (x:t) : bool =
-  C_type.from_json x.ty
+  J_type.to_c_type x.ty
   |> Result.map pred
   |> Result.value ~default:false

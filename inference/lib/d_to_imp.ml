@@ -168,13 +168,13 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
   | Ident d ->
     ret_n (Var d.name)
   | SizeOfExpr ty ->
-    (match C_type.from_json ty with
+    (match J_type.to_c_type ty with
     | Ok ty ->
       let size = C_type.sizeof ty |> Option.value ~default:4 in
       L.warning ("sizeof(" ^ C_type.to_string ty ^ ") = " ^ string_of_int size);
       ret_n (Num size)
     | Error _ ->
-      let lbl = "sizeof(" ^ C_type.j_to_string ty ^ ")" in
+      let lbl = "sizeof(" ^ J_type.to_string ty ^ ")" in
       L.warning ("could not parse type: " ^ lbl ^ " = ?");
       Ok (Unknown lbl))
   | IntegerLiteral n
@@ -248,7 +248,7 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
 
 let parse_type (e:D_lang.d_type) : C_type.t d_result =
   e
-  |> C_type.from_json
+  |> J_type.to_c_type
   |> Result.map_error (fun e ->
     Common.StackTrace.RootCause (Rjson.error_to_string e)
   )
@@ -469,7 +469,7 @@ let cast_map f = Rjson.map_all f (fun idx _ e ->
 
 let parse_decl (d:D_lang.Decl.t) : (Variable.t * nexp option) list d_result =
   let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
-  let* ty = match C_type.from_json d.ty_var.ty with
+  let* ty = match J_type.to_c_type d.ty_var.ty with
   | Ok ty -> Ok ty
   | Error _ -> root_cause ("parse_decl: error parsing type: " ^ Rjson.pp_js d.ty_var.ty)
   in
@@ -488,16 +488,11 @@ let parse_decl (d:D_lang.Decl.t) : (Variable.t * nexp option) list d_result =
     Ok []
   )
 
-let is_pointer (j:Yojson.Basic.t) =
-  match C_type.from_json j with
-  | Ok t -> C_type.is_pointer t
-  | Error _ -> false
-
 let rec parse_load_expr (target:D_lang.Expr.t) (exp:D_lang.Expr.t)
   : (d_location_alias, D_lang.Expr.t) Either.t =
   let open Either in
   match exp with
-  | Ident {ty=ty; _} when is_pointer ty ->
+  | Ident {ty; _} when J_type.matches C_type.is_pointer ty ->
     Left {target=target; source=exp; offset=IntegerLiteral 0}
   | CXXOperatorCallExpr {func=UnresolvedLookupExpr {name=n; _}; args=[lhs;rhs]; ty}
   | CXXOperatorCallExpr {func=Ident {name=n; _}; args=[lhs;rhs]; ty}
@@ -711,8 +706,8 @@ let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t li
     ret (Block (List.flatten l))
 
   (* Support for location aliasing that declares a new variable *)
-  | DeclStmt ([{ty_var={ty=ty; _} as lhs; init=Some (IExpr rhs); _}] as l)
-    when is_pointer ty
+  | DeclStmt ([{ty_var={ty; _} as lhs; init=Some (IExpr rhs); _}] as l)
+    when J_type.matches C_type.is_pointer ty
     ->
     let lhs : D_lang.Expr.t = Ident (Decl_expr.from_ty_var lhs) in
     (match parse_load_expr lhs rhs with
@@ -729,7 +724,7 @@ let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t li
     ret (Decl l)
 
   | SExpr ((BinaryOperator {opcode="="; lhs=Ident {ty=ty; _} as lhs; rhs=rhs; _}))
-    when is_pointer ty
+    when J_type.matches C_type.is_pointer ty
     ->
     (match parse_load_expr lhs rhs with
     | Left a ->
@@ -791,7 +786,7 @@ let parse_param (p:Param.t) : param option d_result =
       data_type = C_type.get_array_type ty;
     }
   in
-  let* ty = C_type.from_json p.ty_var.ty |> Result.map_error from_j_error in
+  let* ty = J_type.to_c_type p.ty_var.ty |> Result.map_error from_j_error in
   if C_type.is_int ty then
     Ok (Some (Either.Left p.ty_var.name))
   else if C_type.is_array ty then (
@@ -871,7 +866,7 @@ let parse_kernel
     | [] -> params
     | TemplateType _ :: l -> add_type_params params l
     | NonTypeTemplate x :: l ->
-      let params = match C_type.from_json x.ty with
+      let params = match J_type.to_c_type x.ty with
       | Ok ty when C_type.is_int ty -> Variable.Set.add x.name params
       | _ -> params
       in
@@ -911,7 +906,7 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
     match p with
     | Declaration v :: l ->
       let (arrays, globals, assigns) =
-          match C_type.from_json v.ty_var.ty with
+          match J_type.to_c_type v.ty_var.ty with
           | Ok ty ->
             if List.mem C_lang.c_attr_shared v.attrs then
               (v.ty_var.name, mk_array SharedMemory ty)::arrays, globals, assigns

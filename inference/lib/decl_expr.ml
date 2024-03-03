@@ -25,7 +25,7 @@ end
 type t = {name: Variable.t; ty: json; kind: Kind.t}
 
 let from_name
-  ?(ty=C_type.j_int_type)
+  ?(ty=J_type.int)
   ?(kind=Kind.Var)
   (name:Variable.t)
 :

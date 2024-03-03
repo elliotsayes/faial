@@ -16,6 +16,9 @@ type var_type = Location | Index
 
 type access_expr = {access_index: nexp list; access_mode: Access.Mode.t}
 
+let kernel_id ~kernel ~ty : string =
+  kernel ^ ":" ^ ty
+
 module Alias = struct
   type t = {source: Variable.t; target: Variable.t; offset: nexp}
 
@@ -69,7 +72,7 @@ module Call = struct
   }
 
   let unique_id (c:t) : string =
-    C_type.kernel_id ~kernel:c.kernel ~ty:c.ty
+    kernel_id ~kernel:c.kernel ~ty:c.ty
 
   let to_string (c:t) : string =
     let args =
@@ -625,7 +628,7 @@ module Kernel = struct
 
   (* Generate a unique id that pairs the name and type. *)
   let unique_id (k:t) : string =
-    C_type.kernel_id ~kernel:k.name ~ty:k.ty
+    kernel_id ~kernel:k.name ~ty:k.ty
 
   let to_s (k:t) : Indent.t list =
     [
