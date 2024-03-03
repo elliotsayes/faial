@@ -1,0 +1,23 @@
+open Stage0
+open Protocols
+
+type t
+
+(* Constructors *)
+val from_json : Yojson.Basic.t -> t
+val from_string : string -> t
+
+(* Common types *)
+val int : t
+val char : t
+val bool : t
+val float : t
+val void : t
+val unknown : t
+
+(* Map into c_types *)
+val matches : (C_type.t -> bool) -> t -> bool
+
+(* Type conversion *)
+val to_c_type : t -> C_type.t Rjson.j_result
+val to_string : t -> string
