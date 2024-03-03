@@ -8,35 +8,33 @@ type json = Yojson.Basic.t
 type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
-type c_type = J_type.t
-
 let list_to_s (f:'a -> string) (l:'a list) : string =
   List.map f l |> Common.join ", "
 
 module Expr = struct
   type t =
-    | SizeOfExpr of c_type
-    | CXXNewExpr of {arg: t; ty: c_type}
-    | CXXDeleteExpr of {arg: t; ty: c_type}
-    | RecoveryExpr of c_type
+    | SizeOfExpr of J_type.t
+    | CXXNewExpr of {arg: t; ty: J_type.t}
+    | CXXDeleteExpr of {arg: t; ty: J_type.t}
+    | RecoveryExpr of J_type.t
     | CharacterLiteral of int
     | ArraySubscriptExpr of c_array_subscript
     | BinaryOperator of c_binary
-    | CallExpr of {func: t; args: t list; ty: c_type}
-    | ConditionalOperator of {cond: t; then_expr: t; else_expr: t; ty: c_type}
-    | CXXConstructExpr of {args: t list; ty: c_type}
+    | CallExpr of {func: t; args: t list; ty: J_type.t}
+    | ConditionalOperator of {cond: t; then_expr: t; else_expr: t; ty: J_type.t}
+    | CXXConstructExpr of {args: t list; ty: J_type.t}
     | CXXBoolLiteralExpr of bool
     | Ident of Decl_expr.t
-    | CXXOperatorCallExpr of {func: t; args: t list; ty: c_type}
+    | CXXOperatorCallExpr of {func: t; args: t list; ty: J_type.t}
     | FloatingLiteral of float
     | IntegerLiteral of int
-    | MemberExpr of {name: string; base: t; ty: c_type}
-    | UnaryOperator of {opcode: string; child: t; ty: c_type}
-    | UnresolvedLookupExpr of {name: Variable.t; tys: c_type list}
-  and c_binary = {opcode: string; lhs: t; rhs: t; ty: c_type}
-  and c_array_subscript = {lhs: t; rhs: t; ty: c_type; location: Location.t}
+    | MemberExpr of {name: string; base: t; ty: J_type.t}
+    | UnaryOperator of {opcode: string; child: t; ty: J_type.t}
+    | UnresolvedLookupExpr of {name: Variable.t; tys: J_type.t list}
+  and c_binary = {opcode: string; lhs: t; rhs: t; ty: J_type.t}
+  and c_array_subscript = {lhs: t; rhs: t; ty: J_type.t; location: Location.t}
 
-  let rec to_type : t -> c_type =
+  let rec to_type : t -> J_type.t =
     function
     | SizeOfExpr _ -> J_type.int
     | CXXNewExpr c -> c.ty
@@ -131,24 +129,24 @@ module Expr = struct
     type expr_t = t
 
     type 'a t =
-      | SizeOf of c_type
-      | CXXNew of {arg: 'a; ty: c_type}
-      | CXXDelete of {arg: 'a; ty: c_type}
-      | Recovery of c_type
+      | SizeOf of J_type.t
+      | CXXNew of {arg: 'a; ty: J_type.t}
+      | CXXDelete of {arg: 'a; ty: J_type.t}
+      | Recovery of J_type.t
       | CharacterLiteral of int
-      | ArraySubscript of {lhs: 'a; rhs: 'a; ty: c_type; location: Location.t}
-      | BinaryOperator of {opcode: string; lhs: 'a; rhs: 'a; ty: c_type}
-      | Call of {func: 'a; args: 'a list; ty: c_type}
-      | ConditionalOperator of {cond: 'a; then_expr: 'a; else_expr: 'a; ty: c_type}
-      | CXXConstruct of {args: 'a list; ty: c_type}
+      | ArraySubscript of {lhs: 'a; rhs: 'a; ty: J_type.t; location: Location.t}
+      | BinaryOperator of {opcode: string; lhs: 'a; rhs: 'a; ty: J_type.t}
+      | Call of {func: 'a; args: 'a list; ty: J_type.t}
+      | ConditionalOperator of {cond: 'a; then_expr: 'a; else_expr: 'a; ty: J_type.t}
+      | CXXConstruct of {args: 'a list; ty: J_type.t}
       | CXXBoolLiteral of bool
       | Ident of Decl_expr.t
-      | CXXOperatorCall of {func: 'a; args: 'a list; ty: c_type}
+      | CXXOperatorCall of {func: 'a; args: 'a list; ty: J_type.t}
       | FloatingLiteral of float
       | IntegerLiteral of int
-      | Member of {name: string; base: 'a; ty: c_type}
-      | UnaryOperator of {opcode: string; child: 'a; ty: c_type}
-      | UnresolvedLookup of {name: Variable.t; tys: c_type list}
+      | Member of {name: string; base: 'a; ty: J_type.t}
+      | UnaryOperator of {opcode: string; child: 'a; ty: J_type.t}
+      | UnresolvedLookup of {name: Variable.t; tys: J_type.t list}
 
     let rec fold (f: 'a t -> 'a) : expr_t -> 'a =
       function
@@ -233,7 +231,7 @@ end
 
 module Init = struct
   type t =
-    | InitListExpr of {ty: c_type; args: Expr.t list}
+    | InitListExpr of {ty: J_type.t; args: Expr.t list}
     | IExpr of Expr.t
 
   let map_expr (f:Expr.t -> Expr.t) : t -> t =
@@ -756,7 +754,7 @@ let parse_variable (j:json) : Variable.t j_result =
   | None -> Ok (Variable.from_name name)
   
 
-let compound (ty:c_type) (lhs:Expr.t) (opcode:string) (rhs:Expr.t) : Expr.t =
+let compound (ty:J_type.t) (lhs:Expr.t) (opcode:string) (rhs:Expr.t) : Expr.t =
   BinaryOperator {
     ty=ty;
     opcode="=";

@@ -246,7 +246,7 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
   | _ ->
     root_cause ("WARNING: parse_nexp: unsupported expression " ^ D_lang.Expr.name e ^ " : " ^ D_lang.Expr.to_string e)
 
-let parse_type (e:D_lang.d_type) : C_type.t d_result =
+let parse_type (e:J_type.t) : C_type.t d_result =
   e
   |> J_type.to_c_type
   |> Result.map_error (fun e ->

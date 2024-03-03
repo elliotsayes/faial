@@ -11,32 +11,31 @@ type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
 type array_t = Protocols.Memory.t
-type d_type = J_type.t
 
 let list_to_s (f:'a -> string) (l:'a list) : string =
   List.map f l |> Common.join ", "
 
 module Expr = struct
   type t =
-    | SizeOfExpr of d_type
-    | CXXNewExpr of {arg: t; ty: d_type}
-    | CXXDeleteExpr of {arg: t; ty: d_type}
-    | RecoveryExpr of d_type
+    | SizeOfExpr of J_type.t
+    | CXXNewExpr of {arg: t; ty: J_type.t}
+    | CXXDeleteExpr of {arg: t; ty: J_type.t}
+    | RecoveryExpr of J_type.t
     | CharacterLiteral of int
     | BinaryOperator of d_binary
     | CallExpr of d_call
-    | ConditionalOperator of {cond: t; then_expr: t; else_expr: t; ty: d_type}
-    | CXXConstructExpr of {args: t list; ty: d_type}
+    | ConditionalOperator of {cond: t; then_expr: t; else_expr: t; ty: J_type.t}
+    | CXXConstructExpr of {args: t list; ty: J_type.t}
     | CXXBoolLiteralExpr of bool
-    | CXXOperatorCallExpr of {func: t; args: t list; ty: d_type}
+    | CXXOperatorCallExpr of {func: t; args: t list; ty: J_type.t}
     | FloatingLiteral of float
     | IntegerLiteral of int
-    | MemberExpr of {name: string; base: t; ty: d_type}
+    | MemberExpr of {name: string; base: t; ty: J_type.t}
     | Ident of Decl_expr.t
-    | UnaryOperator of { opcode: string; child: t; ty: d_type}
-    | UnresolvedLookupExpr of {name: Variable.t; tys: d_type list}
-  and d_binary = {opcode: string; lhs: t; rhs: t; ty: d_type}
-  and d_call = {func: t; args: t list; ty: d_type}
+    | UnaryOperator of { opcode: string; child: t; ty: J_type.t}
+    | UnresolvedLookupExpr of {name: Variable.t; tys: J_type.t list}
+  and d_binary = {opcode: string; lhs: t; rhs: t; ty: J_type.t}
+  and d_call = {func: t; args: t list; ty: J_type.t}
 
   let ident
     ?(ty=J_type.int)
@@ -65,7 +64,7 @@ module Expr = struct
     | UnresolvedLookupExpr _ -> "UnresolvedLookupExpr"
     | Ident _ -> "Ident"
 
-  let rec to_type :  t -> d_type =
+  let rec to_type :  t -> J_type.t =
     function
     | SizeOfExpr _ -> J_type.int
     | CXXNewExpr c -> c.ty
@@ -157,8 +156,8 @@ end
 
 module Init = struct
   type t =
-    | CXXConstructExpr of {constructor: d_type; ty: d_type}
-    | InitListExpr of {ty: d_type; args: Expr.t list}
+    | CXXConstructExpr of {constructor: J_type.t; ty: J_type.t}
+    | InitListExpr of {ty: J_type.t; args: Expr.t list}
     | IExpr of Expr.t
 
   let to_exp (i:t) : Expr.t list =
@@ -269,7 +268,7 @@ module ForInit = struct
 
 end
 
-type d_subscript = {name: Variable.t; index: Expr.t list; ty: d_type; location: Location.t}
+type d_subscript = {name: Variable.t; index: Expr.t list; ty: J_type.t; location: Location.t}
 let subscript_to_s (s:d_subscript) : string =
   Variable.name s.name ^ "[" ^ list_to_s Expr.to_string s.index ^ "]"
 
@@ -616,7 +615,7 @@ module AccessState = struct
 
   let add_stmt (s: Stmt.t) (st:t) : t = s :: st
 
-  let add_expr (expr:Expr.t) (ty:d_type) (st:t) : t * Variable.t =
+  let add_expr (expr:Expr.t) (ty:J_type.t) (st:t) : t * Variable.t =
     add_var (Expr.to_string expr) (fun name ->
       [
         let ty_var = Ty_variable.make ~ty ~name in
