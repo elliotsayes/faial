@@ -8,17 +8,17 @@ type t = Yojson.Basic.t
 
 let from_json (j:Yojson.Basic.t) : t = j
 
-let from_name (name:string) : t =
+let from_string (name:string) : t =
   `Assoc[
     "qualType", `String name
   ]
 
-let int = from_name "int"
-let char = from_name "char"
-let bool = from_name "bool"
-let float = from_name "float"
-let void = from_name "void"
-let unknown = from_name "?"
+let int = from_string "int"
+let char = from_string "char"
+let bool = from_string "bool"
+let float = from_string "float"
+let void = from_string "void"
+let unknown = from_string "?"
 
 type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result

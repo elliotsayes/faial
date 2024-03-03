@@ -2,18 +2,17 @@ open OUnit2
 open Inference
 open D_lang
 open Protocols
-open C_type
 
-let make_int ?(ty=(mk_j_type "int")) (var:string) =
+let make_int ?(ty=J_type.int) (var:string) =
   Ty_variable.make
     ~name:(Variable.from_name var)
     ~ty:ty
 
 let mk_var ?(ty="int") x =
-  Expr.Ident {name=Variable.from_name x; kind=Var; ty=mk_j_type ty}
+  Expr.Ident {name=Variable.from_name x; kind=Var; ty=J_type.from_string ty}
 
 let make_init ?(assignment=0) ?(ty="int") ?(var_name="x") () =  
-  let ty_var = make_int ~ty:(mk_j_type ty) var_name in
+  let ty_var = make_int ~ty:(J_type.from_string ty) var_name in
   let init = Init.IExpr(D_lang.Expr.IntegerLiteral assignment) in
   let decl = Decl.from_init ty_var init in
   ForInit.Decls(decl :: [])   
