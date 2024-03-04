@@ -430,8 +430,8 @@ module Unknown = struct
     then Some b
     else None
 
-  let as_decls (xs:Variable.Set.t) : (Variable.t * nexp option) list =
-    Variable.Set.elements xs |> List.map (fun x -> (x, None))
+  let as_decls (xs:Variable.Set.t) : Imp.Decl.t list =
+    Variable.Set.elements xs |> List.map Imp.Decl.unset
 
   let decl_unknown (vars:Variable.Set.t) : Imp.Stmt.t list =
     if Variable.Set.is_empty vars then []
@@ -467,7 +467,7 @@ end
 let cast_map f = Rjson.map_all f (fun idx _ e ->
   StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
 
-let parse_decl (d:D_lang.Decl.t) : (Variable.t * nexp option) list d_result =
+let parse_decl (d:D_lang.Decl.t) : Imp.Decl.t list d_result =
   let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
   let* ty = match J_type.to_c_type d.ty_var.ty with
   | Ok ty -> Ok ty
@@ -475,14 +475,21 @@ let parse_decl (d:D_lang.Decl.t) : (Variable.t * nexp option) list d_result =
   in
   if C_type.is_int ty
   then (
-    let* ((vars, n):(Variable.Set.t * (nexp option))) = match d.init with
+    let* ((vars, init):(Variable.Set.t * (nexp option))) = match d.init with
     | Some (IExpr n) ->
       let* n = parse_e "init" n in
       let (vars, n) = Unknown.to_nexp n in
       Ok (vars, Some n)
     | _ -> Ok (Variable.Set.empty, None)
     in
-    Ok ((d.ty_var.name, n) :: Unknown.as_decls vars )
+    let ty = J_type.to_c_type d.ty_var.ty |> Result.value ~default:C_type.int in
+    let x = d.ty_var.name in
+    let d =
+      match init with
+      | Some n -> Imp.Decl.set ~ty x n
+      | None -> Imp.Decl.unset ~ty x
+    in
+    Ok (d :: Unknown.as_decls vars )
   ) else (
     L.warning ("parse_decl: skipping non-int local variable '" ^ Variable.name d.ty_var.name ^ "' type: " ^ J_type.to_string d.ty_var.ty);
     Ok []
@@ -677,19 +684,21 @@ let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t li
     )
 
   | ReadAccessStmt r ->
-    let x = r.source.name |> Variable.set_location r.source.location in
+    let array = r.source.name |> Variable.set_location r.source.location in
     let* idx = with_msg "read.idx" (cast_map parse_exp) r.source.index in
+    let ty = J_type.to_c_type r.ty |> Result.value ~default:C_type.int in
     idx
-    |> ret_ns (fun idx ->
-      Read {target=r.target; array=x; index=idx}
+    |> ret_ns (fun index ->
+      Read {target=r.target; array; index; ty}
     )
 
   | AtomicAccessStmt r ->
     let x = r.source.name |> Variable.set_location r.source.location in
     let* idx = with_msg "atomic.idx" (cast_map parse_exp) r.source.index in
+    let ty = J_type.to_c_type r.ty |> Result.value ~default:C_type.int in
     idx
     |> ret_ns (fun index ->
-      Atomic {target=r.target; array=x; index; atomic=r.atomic}
+      Atomic {target=r.target; array=x; index; atomic=r.atomic; ty}
     )
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt None];else_stmt=CompoundStmt[]}
@@ -732,10 +741,13 @@ let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t li
       parse_location_alias a
     | Right _ -> Ok [])
 
-  | SExpr (BinaryOperator {opcode="="; lhs=Ident {name=v; _}; rhs=rhs; _})
+  | SExpr (BinaryOperator {opcode="="; lhs=Ident {name=v; _}; rhs=rhs; ty; _})
     ->
     let* rhs = with_msg "assign.rhs" parse_exp rhs in
-    rhs |> ret_n (fun rhs -> Decl [v, Some rhs])
+    let ty = J_type.to_c_type ty |> Result.value ~default:C_type.int in
+    rhs |> ret_n (fun rhs ->
+      Decl [Imp.Decl.set ~ty v rhs]
+    )
 
   | ContinueStmt
   | BreakStmt
@@ -875,7 +887,7 @@ let parse_kernel
   in
   let open Imp.Stmt in
   let code =
-    let assigns = Decl (List.map (fun (k,v) -> (k, Some v)) assigns) in
+    let assigns = Decl (List.map (fun (k,v) -> Imp.Decl.set k v) assigns) in
     Block (assigns :: code)
   in
   let params =

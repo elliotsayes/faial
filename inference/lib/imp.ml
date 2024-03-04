@@ -32,8 +32,8 @@ module Alias = struct
     n_to_string l.offset ^ ";"
 end
 
-type read = {target: Variable.t; array: Variable.t; index: nexp list}
-type atomic = {target: Variable.t; atomic: Atomic.t; array: Variable.t; index: nexp list}
+type read = {target: Variable.t; ty: C_type.t; array: Variable.t; index: nexp list}
+type atomic = {target: Variable.t; ty:C_type.t; atomic: Atomic.t; array: Variable.t; index: nexp list}
 type write = {array: Variable.t; index: nexp list; payload: int option}
 
 let read_to_acc (r:read) : Variable.t * Access.t =
@@ -86,6 +86,29 @@ module Call = struct
 
 end
 
+module Decl = struct
+  type t = {var: Variable.t; ty:C_type.t; init: nexp option}
+
+  let set ?(ty=C_type.int) (var: Variable.t) (init:nexp) : t =
+    {init=Some init; ty; var}
+
+  let unset ?(ty=C_type.int) (var: Variable.t) : t =
+    {init=None; ty; var}
+
+  let map (f:nexp -> nexp) (d:t) : t =
+    { d with init = Option.map f d.init }
+
+  let to_string (d:t) : string =
+    let ty = C_type.to_string d.ty in
+    let x = Variable.name d.var in
+    let init =
+      d.init
+      |> Option.map (fun n -> " = " ^ n_to_string n)
+      |> Option.value ~default:""
+    in
+    ty ^ " " ^ x ^ init
+end
+
 module Stmt = struct
 
   type t =
@@ -96,7 +119,7 @@ module Stmt = struct
     | Write of write
     | Block of (t list)
     | LocationAlias of Alias.t
-    | Decl of (Variable.t * nexp option) list
+    | Decl of Decl.t list
     | If of (bexp * t * t)
     | For of (Range.t * t)
     | Star of t
@@ -219,11 +242,7 @@ module Stmt = struct
         [Line ("alias " ^ Alias.to_string l)]
       | Decl [] -> []
       | Decl l ->
-        let entry (x, n) =
-          Variable.name x ^
-          (match n with | Some n -> " = " ^ n_to_string n | None -> "")
-        in
-        let entries = Common.join "," (List.map entry l) in
+        let entries = Common.join "," (List.map Decl.to_string l) in
         [Line ("decl " ^ entries ^ ";")]
 
       | If (b, s1, Block []) -> [
@@ -263,7 +282,7 @@ module Post = struct
   | Acc of (Variable.t * Access.t)
   | If of (bexp * t * t)
   | For of (Range.t * t)
-  | Decl of (Variable.t * nexp option * t)
+  | Decl of (Decl.t * t)
   | Seq of t * t
 
   let to_string: t -> string =
@@ -272,13 +291,9 @@ module Post = struct
       | Skip -> [Line "skip;"]
       | Sync _ -> [Line "sync;"]
       | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
-      | Decl (x, n, p) ->
-        let entry =
-          Variable.name x ^
-          (match n with | Some n -> " = " ^ n_to_string n | None -> "")
-        in
+      | Decl (d, p) ->
         [
-          Line ("decl " ^ entry ^ " {");
+          Line ("decl " ^ Decl.to_string d ^ " {");
           Block (to_s p);
           Line "}";
         ]
@@ -318,7 +333,7 @@ module Post = struct
             failwith ("Expecting an index with dimension 1, but got " ^ idx)
         )
         else i
-      | Decl (x, o, l) -> Decl (x, o, loc_subst l)
+      | Decl (d, l) -> Decl (d, loc_subst l)
       | If (b, s1, s2) -> If (b, loc_subst s1, loc_subst s2)
       | For (r, s) -> For (r, loc_subst s)
       | Sync l -> Sync l
@@ -345,9 +360,9 @@ module Post = struct
       | Sync l -> Sync l
       | Skip -> Skip
       | Acc (x, a) -> Acc (x, M.a_subst st a)
-      | Decl (x, o, p) ->
-        Decl (x, Option.map (M.n_subst st) o,
-          M.add st x (function
+      | Decl (d, p) ->
+        let d = Decl.map (M.n_subst st) d in
+        Decl (d, M.add st d.var (function
           | Some st' -> subst st' p
           | None -> p
           )
@@ -377,7 +392,7 @@ module Post = struct
       | Sync l -> Sync l
       | If (b, p1, p2) -> If (b, filter p1, filter p2)
       | For (r, p) -> For (r, filter p)
-      | Decl (x, o, p) -> Decl (x, o, filter p)
+      | Decl (d, p) -> Decl (d, filter p)
       | Seq (p1, p2) -> Seq (filter p1, filter p2)
     in
       filter
@@ -394,16 +409,17 @@ module Post = struct
         let (vars, p) = distinct vars p in
         let (vars, q) = distinct vars q in
         vars, If (b, p, q)
-      | Decl (x, o, p) ->
+      | Decl (d, p) ->
+        let x = d.var in
         if Variable.Set.mem x vars then (
           let new_x : Variable.t = Variable.fresh vars x in
           let vars = Variable.Set.add new_x vars in
           let p = subst (x, Var new_x) p in
           let (vars, p) = distinct vars p in
-          vars, Decl (new_x, o, p)
+          vars, Decl ({ d with var=new_x;}, p)
         ) else
           let (vars, p) = distinct (Variable.Set.add x vars) p in
-          vars, Decl (x, o, p)
+          vars, Decl (d, p)
       | For (r, p) ->
         let x = Range.var r in
         if Variable.Set.mem x vars then (
@@ -457,12 +473,12 @@ module Post = struct
       | If (b, p1, p2) ->
         let b = b_subst st b in
         If (b, inline known st p1, inline known st p2)
-      | Decl (x, Some n, p) ->
+      | Decl ({var=x; init=Some n; _}, p) ->
         let n = n_subst st n in
         let st = SubstAssoc.put st x n  in
         inline known st p
-      | Decl (x, None, p) ->
-        Decl (x, None, inline known st p)
+      | Decl ({init=None; _} as d, p) ->
+        Decl (d, inline known st p)
       | For (r, p) ->
         let r = r_subst st r in
         let (x, known, st) = add_var r.var in
@@ -536,11 +552,11 @@ let imp_to_post : Variable.Set.t * Stmt.t -> Variable.Set.t * Post.t =
     | Read e ->
       fun (curr_id, globals) ->
         let rd = Post.Acc (e.array, {index=e.index; mode=Read}) in
-        (curr_id, globals, Decl (e.target, None, rd))
+        (curr_id, globals, Decl (Decl.unset ~ty:e.ty e.target, rd))
     | Atomic e ->
       fun (curr_id, globals) ->
         let rd = Post.Acc (e.array, {index=e.index; mode=Atomic e.atomic}) in
-        (curr_id, globals, Decl (e.target, None, rd))
+        (curr_id, globals, Decl (Decl.unset ~ty:e.ty e.target, rd))
     | Call _ -> imp_to_post_p []
     | Block p -> imp_to_post_p p
     | If (b, s1, s2) ->
@@ -560,7 +576,7 @@ let imp_to_post : Variable.Set.t * Stmt.t -> Variable.Set.t * Post.t =
         if synchronized then
           (curr_id + 1, Variable.Set.add x globals, s)
         else
-          (curr_id, globals, Decl (x, None, s))
+          (curr_id, globals, Decl (Decl.unset x, s))
       )
     (* Handled in the context of a prog *)
     | Assert _ -> failwith "unsupported"
@@ -578,9 +594,9 @@ let imp_to_post : Variable.Set.t * Stmt.t -> Variable.Set.t * Post.t =
        ret (Post.loc_subst e p)
       )
     | Decl [] :: p -> imp_to_post_p p
-    | Decl ((x,o)::l) :: p ->
+    | Decl (d::l) :: p ->
       bind (imp_to_post_p (Decl l :: p)) (fun s ->
-        ret (Post.Decl (x, o, s))
+        ret (Post.Decl (d, s))
       )
     | s :: p ->
       bind (imp_to_post_s s) (fun s ->
@@ -605,9 +621,9 @@ let rec post_to_proto : Post.t -> Proto.Code.t =
       (Proto.Code.cond (b_not b) (post_to_proto p2))
   | For (r, p) ->
     Loop (r, post_to_proto p)
-  | Decl (_, Some _, _) as i ->
+  | Decl ({init=Some _; _}, _) as i ->
     failwith ("Run inline_decl first: " ^ Post.to_string i)
-  | Decl (x, None, p) -> Proto.Code.decl x (post_to_proto p)
+  | Decl ({var=x; init=None; ty}, p) -> Proto.Code.decl ~ty x (post_to_proto p)
   | Seq (i, p) ->
     Proto.Code.seq (post_to_proto i) (post_to_proto p)
 
@@ -690,8 +706,8 @@ module Kernel = struct
       let i =
         let open Arg in
         match a with
-        | Scalar e -> Stmt.Decl [(x, Some e)]
-        | Unsupported -> Stmt.Decl [(x, None)]
+        | Scalar e -> Stmt.Decl [Decl.set x e]
+        | Unsupported -> Stmt.Decl [Decl.unset x]
         | Array u -> Stmt.LocationAlias {
             target = x;
             source = u.address;

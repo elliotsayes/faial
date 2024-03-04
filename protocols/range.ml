@@ -79,6 +79,7 @@ let to_string (r : t) : string =
   | Increase -> "↑"
   | Decrease -> "↓"
   in
+  C_type.to_string r.ty ^ " " ^
   x ^ " in " ^ lb ^ " .. " ^ ub ^ s ^ " " ^ d
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)

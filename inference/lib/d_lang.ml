@@ -286,8 +286,8 @@ type d_write = {
      *)
   payload: int option
 }
-type d_read = {target: Variable.t; source: d_subscript}
-type d_atomic = {target: Variable.t; source: d_subscript; atomic: Atomic.t}
+type d_read = {target: Variable.t; source: d_subscript; ty: J_type.t}
+type d_atomic = {target: Variable.t; source: d_subscript; atomic: Atomic.t; ty: J_type.t}
 
 module Stmt = struct
   type t =
@@ -645,14 +645,14 @@ module AccessState = struct
   let add_read (a:d_subscript) (st:t) : (t * Variable.t) =
     add_var (subscript_to_s a) (fun x ->
       [
-        ReadAccessStmt {target=x; source=a};
+        ReadAccessStmt {target=x; source=a; ty=a.ty};
       ]
     ) st
 
   let add_atomic (atomic:Atomic.t) (source:d_subscript) (st:t) : (t * Variable.t) =
     add_var (subscript_to_s source) (fun target ->
       [
-        AtomicAccessStmt {target; source; atomic};
+        AtomicAccessStmt {target; source; atomic; ty=source.ty};
       ]
     ) st
 

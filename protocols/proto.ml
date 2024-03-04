@@ -181,7 +181,7 @@ module Code = struct
     | Decl d ->
       let var = Variable.name d.var in
       let ty = C_type.to_string d.ty in
-      (Line ("var " ^ var ^ ": " ^ ty ^ " ;"))
+      (Line (ty ^ " " ^ var ^ ";"))
       :: to_s d.body
     | Loop (r, p) ->
       [
