@@ -38,7 +38,7 @@ let typecheck_kernel (k:Code.t Kernel.t) : err_t list =
       |> handle (fun l -> UndefinedLocs l) errs
   in
   let errs : type_error list = [] in
-  let all_vars : Variable.t list = List.append (k.local_variables |> Variable.Set.elements) (k.global_variables |> Variable.Set.elements) in
+  let all_vars : Variable.t list = List.append (k.local_variables |> Params.to_set |> Variable.Set.elements) (k.global_variables |> Params.to_set |> Variable.Set.elements) in
   let errs = dup_vars (k.arrays |> Variable.MapSetUtil.map_to_set |> Variable.Set.elements) (fun l -> DuplicateLocs l) errs in
   let errs = dup_vars all_vars (fun l -> DuplicateVars l) errs in
   let errs = undef_vars (Variable.Set.of_list all_vars) k.code errs in

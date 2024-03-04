@@ -54,7 +54,10 @@ type t = CType: string -> t
 let make (ty:string) : t =
   CType ty
 
+let char : t = make "char"
 let int : t = make "int"
+let unsigned_int : t = make "unsigned int"
+let unknown : t = make "?"
 
 let to_string (c:t) : string =
   match c with

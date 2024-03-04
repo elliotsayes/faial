@@ -96,7 +96,7 @@ module Make (L:Logger.Logger) = struct
           Proto.Kernel.constants p
           |> List.filter (fun (x,_) ->
             (* Make sure we only replace thread-global variables *)
-            Variable.Set.mem (Variable.from_name x) p.global_variables
+            Params.mem (Variable.from_name x) p.global_variables
           )
         in
         let key_vals = Gv_parser.to_assoc parsed.options @ key_vals in

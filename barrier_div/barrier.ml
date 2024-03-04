@@ -56,8 +56,8 @@ module Kernel = struct
   let from_proto (k : Proto.Code.t Proto.Kernel.t) : t =
     {
       name = k.name;
-      global_variables = k.global_variables;
-      local_variables = k.local_variables;
+      global_variables = Params.to_set k.global_variables;
+      local_variables = Params.to_set k.local_variables;
       code = Code.from_proto k.code |> List.of_seq;
     }
 

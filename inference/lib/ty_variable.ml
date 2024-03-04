@@ -16,7 +16,7 @@ let ty (x:t) : J_type.t = x.ty
 let to_string (x:t) : string =
   J_type.to_string x.ty ^ " " ^ Variable.name x.name
 
-let has_type (pred:C_type.t -> bool) (x:t) : bool =
-  J_type.to_c_type x.ty
+let matches (pred:C_type.t -> bool) (x:t) : bool =
+  J_type.to_c_type_res x.ty
   |> Result.map pred
   |> Result.value ~default:false

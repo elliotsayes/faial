@@ -6,7 +6,7 @@ let analyze ~only_global (fname:string): unit =
   k.kernels |> List.iter (fun k ->
     if only_global && not (Proto.Kernel.is_global k) then () else
     let open Proto in
-    let env = Variable.Set.union k.global_variables Variable.tid_var_set in
+    let env = Variable.Set.union (Params.to_set k.global_variables) Variable.tid_var_set in
     let p = Code.Cond (k.pre, k.code) in
     let to_s k : bool -> string =
       function

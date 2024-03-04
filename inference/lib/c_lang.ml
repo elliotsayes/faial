@@ -267,7 +267,6 @@ module Decl : sig
     attrs:string list ->
     t
   (* Accessors *)
-  val ty_var : t -> Ty_variable.t
   val attrs: t -> string list
   val init : t -> Init.t option
   (* Expression iterator *)
@@ -278,8 +277,10 @@ module Decl : sig
   val to_string : t -> string
   (* Convinience *)
   val is_shared : t -> bool
+  val matches : (C_type.t -> bool) -> t -> bool
   val is_array : t -> bool
   val var: t -> Variable.t
+  val ty: t -> J_type.t
 end = struct
   type t = {
     ty_var: Ty_variable.t;
@@ -296,13 +297,15 @@ end = struct
 
   let var (x:t) : Variable.t = x.ty_var.name
 
-  let ty_var (x:t) : Ty_variable.t = x.ty_var
+  let ty (x:t) : J_type.t = x.ty_var.ty
+
+  let matches pred x = J_type.matches pred x.ty_var.ty
 
   let is_shared (x:t) : bool =
     List.mem c_attr_shared x.attrs
 
   let is_array (x:t) : bool =
-    x.ty_var |> Ty_variable.has_type C_type.is_array
+    x.ty_var |> Ty_variable.matches C_type.is_array
 
   let to_expr_seq (x:t) : Expr.t Seq.t =
     match x.init with
@@ -347,13 +350,7 @@ module ForInit = struct
       | _ -> []
     in
     function
-    | Decls l ->
-      l
-      |> List.map (fun x ->
-        x
-        |> Decl.ty_var
-        |> Ty_variable.name
-      )
+    | Decls l -> List.map Decl.var l
     | Expr e -> exp_var e
 
   let to_string : t -> string =
@@ -1335,8 +1332,7 @@ let has_array_type (j:Yojson.Basic.t) : bool =
   let is_array =
     let* o = cast_object j in
     let* ty = get_field "type" o |> Result.map J_type.from_json in
-    let* ty = J_type.to_c_type ty in
-    Ok (C_type.is_array ty)
+    Ok (J_type.matches C_type.is_array ty)
   in
   is_array |> Result.value ~default:false
 
@@ -1461,8 +1457,8 @@ let rewrite_shared_arrays: c_program -> c_program =
      the shadowing of the available variables when it makes sense *) 
   let rw_decl (vars:Variable.Set.t) (d:Decl.t) : Variable.Set.t * Decl.t =
     let vars =
-      let name = d |> Decl.ty_var |> Ty_variable.name in
-      if Decl.is_shared d && not (Decl.ty_var d |> Ty_variable.has_type C_type.is_array) then
+      let name = d |> Decl.var in
+      if Decl.is_shared d && not (Decl.matches C_type.is_array d) then
         Variable.Set.add name vars
       else
         Variable.Set.remove name vars
@@ -1532,9 +1528,8 @@ let rewrite_shared_arrays: c_program -> c_program =
   let rec rw_p (vars:Variable.Set.t): c_program -> c_program =
     function
     | Declaration d :: p ->
-      let ty_var = d |> Decl.ty_var in
-      let vars = if Decl.is_shared d && not (ty_var |> Ty_variable.has_type C_type.is_array)
-        then Variable.Set.add (Ty_variable.name ty_var) vars
+      let vars = if Decl.is_shared d && not (Decl.matches C_type.is_array d)
+        then Variable.Set.add (Decl.var d) vars
         else vars
       in
       Declaration d :: rw_p vars p

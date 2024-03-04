@@ -43,7 +43,7 @@ type t = {
 
 let parse_init: D_lang.ForInit.t option -> (Variable.t * D_lang.Expr.t) option =
   function
-  | Some (Decls ({ty_var={name=n; _}; init=Some (IExpr i); _}::_)) -> Some (n, i)
+  | Some (Decls ({var=n; init=Some (IExpr i); _}::_)) -> Some (n, i)
   | Some (Expr (BinaryOperator {lhs=Ident d; opcode="="; rhs=i; _})) -> Some (d.name, i)
   | _ -> None
 

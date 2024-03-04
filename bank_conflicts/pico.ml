@@ -29,7 +29,7 @@ module Solver = struct
     show_ra: bool;
     skip_simpl_ra: bool;
     asympt: bool;
-    params: Params.t;
+    params: Config.t;
     count_shared_access: bool;
     explain: bool;
     show_ratio: bool;
@@ -89,7 +89,7 @@ module Solver = struct
     }
 
   let bank_conflict_count (app:t) (k:kernel) : Exp.nexp -> int =
-    Index_analysis.Default.analyze app.params k.local_variables
+    Index_analysis.Default.analyze app.params (Params.to_set k.local_variables)
 
   let access_count (_:t) (_:kernel) : Exp.nexp -> int =
     fun _ -> 1
@@ -413,7 +413,7 @@ let pico
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
   let block_dim = parsed.options.block_dim in
   let grid_dim = parsed.options.grid_dim in
-  let params = Params.make ~block_dim ~grid_dim () in
+  let params = Config.make ~block_dim ~grid_dim () in
   let kernels : kernel list =
     parsed.kernels
     |> List.filter Proto.Kernel.has_shared_arrays

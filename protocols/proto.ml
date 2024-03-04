@@ -209,9 +209,9 @@ module Kernel = struct
     (* The kernel name *)
     name : string;
     (* The internal variables are used in the code of the kernel.  *)
-    global_variables: Variable.Set.t;
+    global_variables: Params.t;
     (* The internal variables are used in the code of the kernel.  *)
-    local_variables: Variable.Set.t;
+    local_variables: Params.t;
     (* The modifiers of each array *)
     arrays: Memory.t Variable.Map.t;
     (* A thread-local pre-condition that is true on all phases. *)
@@ -232,12 +232,8 @@ module Kernel = struct
             k.arrays
         | Block -> k.arrays);
       code = Code.apply_arch a k.code;
-      global_variables =
-        Variable.Set.union k.global_variables d.globals
-      ;
-      local_variables =
-        Variable.Set.union k.local_variables d.locals
-      ;
+      global_variables = Params.union_right k.global_variables d.globals;
+      local_variables = Params.union_right k.local_variables d.locals;
       pre = b_and (Architecture.Defaults.to_bexp d) k.pre;
     }
 
@@ -286,8 +282,8 @@ module Kernel = struct
       arrays = Variable.Map.empty;
       pre = Bool true;
       code = Skip;
-      global_variables = Variable.Set.empty;
-      local_variables = Variable.Set.empty;
+      global_variables = Params.empty;
+      local_variables = Params.empty;
       visibility = k.visibility;
     }
 
@@ -308,17 +304,23 @@ module Kernel = struct
         k with
         pre = Code.PSubstAssoc.M.b_subst kvs k.pre;
         code = Code.PSubstAssoc.subst kvs k.code;
-        global_variables = Variable.Set.diff k.global_variables keys;
-        local_variables = Variable.Set.diff k.local_variables keys;
+        global_variables = Params.remove_all keys k.global_variables;
+        local_variables = Params.remove_all keys k.local_variables;
       }
     end
 
+  let global_set (k:'a t) : Variable.Set.t =
+    Params.to_set k.local_variables
+
+  let local_set (k:'a t) : Variable.Set.t =
+    Params.to_set k.local_variables
+
+  let variable_set (k:'a t) : Variable.Set.t =
+    Variable.Set.union (local_set k) (global_set k)
+
   let vars_distinct (k:Code.t t) : Code.t t =
-    let vars =
-      Variable.Set.union k.global_variables k.local_variables
-    in
     { k with
-      code = Code.vars_distinct k.code vars
+      code = Code.vars_distinct k.code (variable_set k)
     }
 
   (*
@@ -326,9 +328,12 @@ module Kernel = struct
     thread-locals.
   *)
   let hoist_decls : Code.t t -> Code.t t =
-    let rec inline (vars:Variable.Set.t) (p:Code.t) : Variable.Set.t * Code.t =
+    let rec inline (vars:Params.t) (p:Code.t)
+    :
+      Params.t * Code.t
+    =
       match p with
-      | Decl {var=x; body=p; _} -> inline (Variable.Set.add x vars) p
+      | Decl {var=x; body=p; ty;} -> inline (Params.add x ty vars) p
       | Acc _ | Skip | Sync _ -> (vars, p)
       | Cond (b, p) ->
         let (vars, p) = inline vars p in
@@ -343,18 +348,18 @@ module Kernel = struct
     in
     fun k ->
     let k = vars_distinct k in
-    let (locals, p) = inline Variable.Set.empty k.code in
+    let (locals, p) = inline Params.empty k.code in
     { k with
       code = p;
-      local_variables = Variable.Set.union locals k.local_variables;
+      local_variables = Params.union_left locals k.local_variables;
     }
 
   let to_s (f:'a -> Indent.t list) (k:'a t) : Indent.t list =
     [
       Line ("name: " ^ k.name ^ ";");
       Line ("arrays: " ^ Memory.map_to_string k.arrays ^ ";");
-      Line ("globals: " ^ Variable.set_to_string k.global_variables ^ ";");
-      Line ("locals: " ^ Variable.set_to_string k.local_variables ^ ";");
+      Line ("globals: " ^ Params.to_string k.global_variables ^ ";");
+      Line ("locals: " ^ Params.to_string k.local_variables ^ ";");
       Line ("invariant:");
       Block (b_to_s k.pre);
       Line ";";

@@ -4,6 +4,12 @@ module StringOT = struct
 end
 
 module MapUtil (M:Map.S) = struct
+  let union_left (m1: 'a M.t) (m2: 'a M.t) : 'a M.t =
+    M.union (fun _ o _ -> Some o) m1 m2
+
+  let union_right (m1: 'a M.t) (m2: 'a M.t) : 'a M.t =
+    union_left m2 m1
+
   let from_list (l:(M.key * 'a) list) : 'a M.t =
     List.fold_left (fun m (k,v) ->
       M.add k v m

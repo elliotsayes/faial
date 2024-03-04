@@ -2,7 +2,7 @@
   (name bank_conflicts)
   (modules
     vectorized poly shared_access index_analysis ra
-    params
+    config
     absynth
     maxima
     cofloco

@@ -78,12 +78,13 @@ module Kernel = struct
 
   let from_aligned (k: Aligned.t Kernel.t) : t stream =
     let p_to_k ((bi,locations):(Phased.t * Variable.Set.t)) : t =
+      let global_set = Params.to_set k.global_variables in
       (* Check for undefs *)
       (* 1. compute all globals *)
       let globals =
         List.map (fun r -> let open Range in r.var) bi.ranges
         |> Variable.Set.of_list
-        |> Variable.Set.union k.global_variables
+        |> Variable.Set.union global_set
       in
       (* 2. compute all free names in the ranges *)
       let fns = List.fold_right Freenames.free_names_range bi.ranges Variable.Set.empty in
@@ -102,8 +103,8 @@ module Kernel = struct
       ) else
         {
           name = k.name;
-          local_variables = k.local_variables;
-          global_variables = k.global_variables;
+          local_variables = k.local_variables |> Params.to_set;
+          global_variables = global_set;
           arrays = locations;
           ranges = bi.ranges;
           code = bi.code;

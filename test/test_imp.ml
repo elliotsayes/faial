@@ -30,7 +30,7 @@ let tests = "test_predicates" >::: [
       wr;
     ] in
     (* Translate: *)
-    let (_, p) = imp_to_post (Variable.Set.empty, p) in
+    let (_, p) = imp_to_post (Params.empty, p) in
     (* Test: *)
     let open Imp.Post in
     (match p with
@@ -89,7 +89,7 @@ let tests = "test_predicates" >::: [
       wr;
     ]) in
     (* Translate: *)
-    let (_, p) = imp_to_post (Variable.Set.empty, p) in
+    let (_, p) = imp_to_post (Params.empty, p) in
     (* Test: *)
     (match p with
     | Post.(
@@ -143,7 +143,7 @@ let tests = "test_predicates" >::: [
       wr;
     ]) in
     (* Translate: *)
-    let (_, p) = imp_to_post (Variable.Set.empty, p) in
+    let (_, p) = imp_to_post (Params.empty, p) in
     let p : Proto.Code.t = p
       |> Post.inline_assigns Variable.Set.empty
       |> post_to_proto
@@ -203,7 +203,7 @@ let tests = "test_predicates" >::: [
       inc id;
     ]) in
     (* Translate: *)
-    let (_, p) = imp_to_post (Variable.Set.empty, p) in
+    let (_, p) = imp_to_post (Params.empty, p) in
     let p : Proto.Code.t = p
       |> Post.inline_assigns Variable.Set.empty
       |> post_to_proto
@@ -261,7 +261,7 @@ let tests = "test_predicates" >::: [
         Skip
       )
     in
-    assert_post (imp_to_post (Variable.Set.empty, p) |> snd) p1;
+    assert_post (imp_to_post (Params.empty, p) |> snd) p1;
     let p2 =
       let open Post in
       (*
@@ -292,7 +292,7 @@ let tests = "test_predicates" >::: [
     in
     assert_post p3 (Post.inline_assigns Variable.Set.empty p2);
     (* Translate: *)
-    let (_, p) = imp_to_post (Variable.Set.empty, p) in
+    let (_, p) = imp_to_post (Params.empty, p) in
     let p : Proto.Code.t = p
       |> Post.inline_assigns Variable.Set.empty
       |> post_to_proto

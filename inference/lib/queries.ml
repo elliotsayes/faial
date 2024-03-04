@@ -21,7 +21,7 @@ module Params = struct
   let summarize (k:Kernel.t) : json =
     let filter_params (pred:C_type.t -> bool) : json =
       k.params
-      |> List.filter (Param.has_type pred)
+      |> List.filter (Param.matches pred)
       |> List.map Param.name
       |> var_list_to_json
     in
@@ -157,7 +157,7 @@ module Declarations = struct
   let shared_arrays (s: Stmt.t) : VarSet.t =
     to_seq s
     |> Seq.filter Decl.is_shared
-    |> Seq.map (fun (x:Decl.t) -> (Decl.ty_var x).name)
+    |> Seq.map Decl.var
     |> Variables.to_set
 
   let summarize (s: Stmt.t) : json =
@@ -168,15 +168,13 @@ module Declarations = struct
     in
     let int_count =
       s
-      |> Seq.map Decl.ty_var
-      |> Seq.filter (Ty_variable.has_type C_type.is_int)
+      |> Seq.filter (Decl.matches C_type.is_int)
       |> Seq.length
     in
     let shared_arrays =
       s
       |> Seq.filter Decl.is_shared
-      |> Seq.map Decl.ty_var
-      |> Seq.map Ty_variable.name
+      |> Seq.map Decl.var
       |> Variables.to_set
       |> var_set_to_json
     in
@@ -303,7 +301,7 @@ module Calls = struct
     in
     let uses_global =
       k.params
-      |> List.filter (Param.has_type C_type.is_array)
+      |> List.filter (Param.matches C_type.is_array)
       |> List.map (fun x -> Param.ty_var x |> Ty_variable.name)
       |> List.to_seq
       |> Variables.to_set

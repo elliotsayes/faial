@@ -103,7 +103,7 @@ module Make (L:Logger.Logger) = struct
     | Loop (r, p) ->
       Loop (r, from_shared_access idx_analysis  p)
 
-  let from_kernel (idx_analysis : Exp.nexp -> int) (params:Params.t) (k: Proto.Code.t Proto.Kernel.t) : t =
+  let from_kernel (idx_analysis : Exp.nexp -> int) (params:Config.t) (k: Proto.Code.t Proto.Kernel.t) : t =
     let shared = S.shared_memory k.arrays in
     let rec from_p : Proto.Code.t -> t =
       function

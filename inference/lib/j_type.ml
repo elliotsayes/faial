@@ -22,20 +22,25 @@ let unknown = from_string "?"
 
 type 'a j_result = 'a Rjson.j_result
 
-let to_c_type (j:t) : C_type.t j_result =
+let to_c_type_res (j:t) : C_type.t j_result =
   let open Rjson in
   let* o = cast_object j in
   let* ty = with_field "qualType" cast_string o in
   Ok (C_type.make ty)
 
+let to_c_type ?(default=C_type.unknown) (j:t) : C_type.t =
+  j
+  |> to_c_type_res
+  |> Result.value ~default
+
 let matches (f:C_type.t -> bool) (j:t) : bool =
-  match to_c_type j with
-  | Ok x -> f x
-  | Error _ -> false
+  j
+  |> to_c_type_res
+  |> Result.map f
+  |> Result.value ~default:false
 
 let to_string (j:t) : string =
   j
   |> to_c_type
-  |> Result.map C_type.to_string
-  |> Result.value ~default:"?"
+  |> C_type.to_string
 

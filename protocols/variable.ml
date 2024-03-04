@@ -6,6 +6,9 @@ let make ~name ~location : t = {name=name; label=None; location=Some location}
 
 let from_name (name:string) : t = {name=name; label=None; location=None}
 
+let compare (x1:t) (x2:t) : int =
+  String.compare x1.name x2.name
+
 let label (x:t) =
   match x.label with
   | Some l -> l

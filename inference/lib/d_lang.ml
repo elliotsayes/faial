@@ -178,28 +178,30 @@ end
 
 module Decl = struct
   type t = {
-    ty_var: Ty_variable.t;
+    var: Variable.t;
+    ty: J_type.t;
     init: Init.t option;
     attrs: string list
   }
 
-  let make ~ty_var ~init ~attrs : t =
-    {ty_var; init; attrs}
+  let make ~ty ~var ~init ~attrs : t =
+    {ty; var; init; attrs}
 
   let from_undef ?(attrs=[]) (ty_var:Ty_variable.t) : t =
-    {ty_var; init=None; attrs}
+    {ty=Ty_variable.ty ty_var; var=Ty_variable.name ty_var; init=None; attrs}
 
   let from_init ?(attrs=[]) (ty_var:Ty_variable.t) (init:Init.t) : t =
-    {ty_var; init=Some init; attrs}
+    {ty=Ty_variable.ty ty_var; var=Ty_variable.name ty_var; init=Some init; attrs}
 
   let from_expr ?(attrs=[]) (ty_var:Ty_variable.t) (expr:Expr.t) : t =
     from_init ~attrs ty_var (IExpr expr)
 
+  let var (d:t) : Variable.t = d.var
+
   let get_shared (d:t) : Memory.t option =
     if List.mem C_lang.c_attr_shared d.attrs
     then
-      let ty = d.ty_var |> Ty_variable.ty in
-      match J_type.to_c_type ty with
+      match J_type.to_c_type_res d.ty with
       | Ok ty ->
         Some {
           hierarchy = SharedMemory;
@@ -224,7 +226,9 @@ module Decl = struct
       let attrs = Common.join " " d.attrs |> String.trim in
       attrs ^ " "
     in
-    attr ^ Ty_variable.to_string d.ty_var ^ i
+    let ty = J_type.to_string d.ty in
+    let x = Variable.name d.var in
+    attr ^ ty ^ " " ^ x ^ i
 
 end
 
@@ -252,7 +256,7 @@ module ForInit = struct
       | _ -> []
     in
     function
-    | Decls l -> List.map (fun (d:Decl.t) -> d.ty_var |> Ty_variable.name) l
+    | Decls l -> List.map Decl.var l
     | Expr e -> exp_var e
 
   let to_string : t -> string =
@@ -865,8 +869,8 @@ let rewrite_decl (d:C_lang.Decl.t) : (Stmt.t list * Decl.t) =
       let (pre, e) = rewrite_exp e in
       (pre, IExpr e)
   in
-  let (pre, o) = d |> C_lang.Decl.init |> map_opt rewrite_init in
-  (pre, {ty_var=C_lang.Decl.ty_var d; init=o; attrs=C_lang.Decl.attrs d})
+  let (pre, init) = d |> C_lang.Decl.init |> map_opt rewrite_init in
+  (pre, Decl.make ~ty:(C_lang.Decl.ty d) ~var:(C_lang.Decl.var d) ~init ~attrs:(C_lang.Decl.attrs d))
 
 let rewrite_for_init (f:C_lang.ForInit.t) : (Stmt.t list * ForInit.t) =
   match f with

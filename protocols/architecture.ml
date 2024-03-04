@@ -14,8 +14,8 @@ let is_grid (x:t) : bool =
 
 module Defaults = struct
   type t = {
-    globals: Variable.Set.t;
-    locals: Variable.Set.t;
+    globals: Params.t;
+    locals: Params.t;
     distinct: bexp;
   }
   let base : bexp =
@@ -67,8 +67,9 @@ module Defaults = struct
       |> Variable.Set.union Variable.bid_var_set
       |> Variable.Set.union Variable.bdim_var_set
       |> Variable.Set.union Variable.gdim_var_set
+      |> Params.from_set C_type.unsigned_int
     ;
-    locals = Variable.tid_var_set;
+    locals = Variable.tid_var_set |> Params.from_set C_type.unsigned_int;
     distinct : bexp = distinct Variable.tid_var_list;
   }
 
@@ -77,8 +78,13 @@ module Defaults = struct
       Variable.Set.empty
       |> Variable.Set.union Variable.bdim_var_set
       |> Variable.Set.union Variable.gdim_var_set
+      |> Params.from_set C_type.unsigned_int
     ;
-    locals = Variable.Set.union Variable.tid_var_set Variable.bid_var_set;
+    locals =
+      Variable.bid_var_set
+      |> Variable.Set.union Variable.tid_var_set
+      |> Params.from_set C_type.unsigned_int
+    ;
     distinct : bexp = distinct Variable.bid_var_list;
   }
   let to_bexp (e:t) : bexp =

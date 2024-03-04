@@ -81,7 +81,7 @@ module Make (L:Logger.Logger) = struct
         does _not_ contain any variables.
     4. Otherwise, return the max number of bank conflicts.
   *)
-  let analyze (params:Params.t) (thread_locals : Variable.Set.t) (n : Exp.nexp) : int =
+  let analyze (params:Config.t) (thread_locals : Variable.Set.t) (n : Exp.nexp) : int =
     let bc_fail (reason : string) : int =
       L.warning (reason ^ ": " ^ Exp.n_to_string n);
       (params.num_banks - 1)

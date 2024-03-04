@@ -1,5 +1,5 @@
-open Protocols
 open Stage0
+open Protocols
 
 (*
   Given a protocol, generates a sequence of accesses with their
@@ -222,7 +222,7 @@ module Make (L:Logger.Logger) = struct
     nd-array, and uniform ranges.
    *)
   let simplify_kernel
-    (params:Params.t)
+    (params:Config.t)
     (k : Proto.Code.t Proto.Kernel.t)
   :
     Proto.Code.t Proto.Kernel.t
@@ -287,7 +287,7 @@ module Make (L:Logger.Logger) = struct
   (*
   Given a kernel return a sequence of slices.
    *)
-  let from_kernel (params:Params.t) (k: Proto.Code.t Proto.Kernel.t) : t Seq.t =
+  let from_kernel (params:Config.t) (k: Proto.Code.t Proto.Kernel.t) : t Seq.t =
     let open Exp in
     let shared = shared_memory k.arrays in
     let rec on_p : Proto.Code.t -> t Seq.t =

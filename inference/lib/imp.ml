@@ -530,9 +530,9 @@ let unknown_range (x:Variable.t) : Range.t =
     ty=C_type.int;
   }
 
-type stateful = (int * Variable.Set.t) -> int * Variable.Set.t * Post.t
+type stateful = (int * Params.t) -> int * Params.t * Post.t
 
-let imp_to_post : Variable.Set.t * Stmt.t -> Variable.Set.t * Post.t =
+let imp_to_post : Params.t * Stmt.t -> Params.t * Post.t =
   let unknown (x:int) : Variable.t =
     Variable.from_name ("__loop_" ^ string_of_int x)
   in
@@ -545,7 +545,7 @@ let imp_to_post : Variable.Set.t * Stmt.t -> Variable.Set.t * Post.t =
     let (curr_id, globals, s1) = f (curr_id, globals) in
     g s1 (curr_id, globals)
   in
-  let rec imp_to_post_s : Stmt.t -> (int * Variable.Set.t) -> int * Variable.Set.t * Post.t =
+  let rec imp_to_post_s : Stmt.t -> (int * Params.t) -> int * Params.t * Post.t =
     function
     | Sync l -> ret (Post.Sync l)
     | Write e -> ret (Acc (e.array, {index=e.index; mode=Write e.payload}))
@@ -574,7 +574,7 @@ let imp_to_post : Variable.Set.t * Stmt.t -> Variable.Set.t * Post.t =
         let r = unknown_range x in
         let s : Post.t = For (r, s) in
         if synchronized then
-          (curr_id + 1, Variable.Set.add x globals, s)
+          (curr_id + 1, Params.add x C_type.char globals, s)
         else
           (curr_id, globals, Decl (Decl.unset x, s))
       )
@@ -582,7 +582,7 @@ let imp_to_post : Variable.Set.t * Stmt.t -> Variable.Set.t * Post.t =
     | Assert _ -> failwith "unsupported"
     | LocationAlias _ -> failwith "unsupported"
     | Decl _ -> failwith "unsupported"
-  and imp_to_post_p : Stmt.prog -> int*Variable.Set.t -> int * Variable.Set.t * Post.t =
+  and imp_to_post_p : Stmt.prog -> int*Params.t -> int * Params.t * Post.t =
     function
     | [] -> ret Skip
     | Assert b :: p ->
@@ -636,7 +636,7 @@ module Kernel = struct
     (* The shared locations that can be accessed in the kernel. *)
     arrays: Memory.t Variable.Map.t;
     (* The internal variables are used in the code of the kernel.  *)
-    params: Variable.Set.t;
+    params: Params.t;
     (* The code of a kernel performs the actual memory accesses. *)
     code: Stmt.t;
     (* Visibility *)
@@ -652,7 +652,7 @@ module Kernel = struct
       Line (
         k.name ^
         " (" ^ Memory.map_to_string k.arrays ^ ", " ^
-        Variable.set_to_string k.params ^ ") {");
+        Params.to_string k.params ^ ") {");
       Block (Stmt.to_s k.code);
       Line "}"
     ]
@@ -667,22 +667,22 @@ module Kernel = struct
       p
       |> Post.filter_locs k.arrays (* Remove unknown arrays *)
       (* Inline local variable assignment and ensure variables are distinct*)
-      |> Post.inline_assigns k.params
+      |> Post.inline_assigns (Params.to_set k.params)
     in
     let p = post_to_proto p in
     let (p, locals, pre) =
       let rec inline_header :
-        (Proto.Code.t * Variable.Set.t * bexp)
+        (Proto.Code.t * Params.t * bexp)
         ->
-        (Proto.Code.t * Variable.Set.t * bexp)
+        (Proto.Code.t * Params.t * bexp)
       =
         fun (p, locals, pre) ->
         match p with
         | Cond (b, p) -> inline_header (p, locals, b_and b pre)
-        | Decl {var=x; body=p; _} -> inline_header (p, Variable.Set.add x locals, pre)
+        | Decl {var=x; body=p; ty} -> inline_header (p, Params.add x ty locals, pre)
         | _ -> (p, locals, pre)
       in
-      inline_header (p, Variable.Set.empty, Bool true)
+      inline_header (p, Params.empty, Bool true)
     in
     (*
       1. We rename all variables so that they are all different
