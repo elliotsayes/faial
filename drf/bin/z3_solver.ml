@@ -182,6 +182,7 @@ end
 module Witness = struct
   type t = {
     proof_id: int;
+    array_name: string;
     indices : string list;
     data_approx: Variable.Set.t;
     control_approx: Variable.Set.t;
@@ -340,6 +341,7 @@ module Witness = struct
     in
     {
       proof_id = proof.id;
+      array_name = proof.array_name;
       indices = idx;
       tasks = t1, t2;
       globals = globals;

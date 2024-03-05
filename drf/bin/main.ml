@@ -128,7 +128,11 @@ let box_globals (w:Witness.t) : PrintBox.t =
   { w.globals with
   variables=
   [
-    "index", Common.join " │ " w.indices;
+    let brackets =
+      List.map (fun _ -> "[]") w.indices
+      |> Common.join ""
+    in
+    w.array_name ^ brackets, Common.join " │ " w.indices;
   ]
   @ w.globals.variables
   }
