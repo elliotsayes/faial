@@ -6,34 +6,23 @@ open Drf
 module Environ = Z3_solver.Environ
 module Witness = Z3_solver.Witness
 module StringMap = Common.StringMap
-module Task = Z3_solver.Task
 module T = ANSITerminal
 
-let box_environ (e:Environ.t) : PrintBox.t =
-  PrintBox.(
-    v_record (List.map (fun (k,v) -> (k, text v)) (Environ.labels e))
-    |> frame
-  )
 
-
-
+(*
+  Renders the local state as a PrintBox
+  *)
 module LocalState = struct
   type t = {
+    ident: string;
     control_dependent: bool;
     data_dependent: bool;
     state: string * string;
   }
 
-  let parse_structs
-    ~data_approx:(data_approx:Variable.Set.t)
-    ~control_approx:(control_approx:Variable.Set.t)
-    ~t1:(t1:Task.t)
-    ~t2:(t2:Task.t)
-  :
-    (string * t) list
-  =
-    let t1_s = Environ.parse_structs t1.locals in
-    let t2_s = Environ.parse_structs t2.locals in
+  let parse_structs (w:Witness.t) : t list =
+    let t1_s = Environ.parse_structs (fst w.tasks).locals in
+    let t2_s = Environ.parse_structs (snd w.tasks).locals in
     (* Merge both maths, so we get identifier to struct, where a struct
        is a map from field to value. A value is a pair for each thread's local
        state *)
@@ -70,80 +59,175 @@ module LocalState = struct
         )
         |> String.concat " | "
       in
-      (ident, {
-        control_dependent = is_in control_approx;
-        data_dependent = is_in data_approx;
+      {
+        ident;
+        control_dependent = is_in w.control_approx;
+        data_dependent = is_in w.data_approx;
         state=(to_string s1, to_string s2)
-      })
+      }
     )
 
-  let parse_scalars
-    ~data_approx:(data_approx:Variable.Set.t)
-    ~control_approx:(control_approx:Variable.Set.t)
-    ~t1:(t1:Task.t)
-    ~t2:(t2:Task.t)
-  :
-    (string * t) list
-  =
+  let compare (x1:t) (x2:t) : int =
+    String.compare x1.ident x2.ident
+
+  let parse_scalars (w:Witness.t) : t list =
+    let (t1, t2) = w.tasks in
     t1.locals
     |> Environ.remove_structs
     |> Environ.variables
     |> List.map (fun (k, v1) ->
       let ident = Option.value ~default:k (Environ.label k t1.locals) in
       let is_in = Variable.Set.mem (Variable.from_name k) in
-      (ident, {
-        control_dependent = is_in control_approx;
-        data_dependent = is_in data_approx;
+      {
+        ident;
+        control_dependent = is_in w.control_approx;
+        data_dependent = is_in w.data_approx;
         state = (v1, Environ.get k t2.locals |> Option.value ~default:"?")
-      })
+      }
     )
+
+  let from_witness (w:Witness.t) : t list =
+    parse_structs w
+    @
+    parse_scalars w
+
+  let render (ls : t) : PrintBox.t array =
+    let open PrintBox in
+    let is_approx = ls.data_dependent || ls.control_dependent in
+    let style = if is_approx then Style.bold else Style.default in
+    let ident =
+      if is_approx then
+        let msg = if ls.control_dependent then "C" else "" in
+        let msg = msg ^ (if ls.data_dependent then "D" else "") in
+        ls.ident ^ " (" ^ msg ^ ")"
+      else
+        ls.ident
+    in
+    let (s1, s2) = ls.state in
+    [| text_with_style style ident; text s1; text s2; |]
+
+  let to_print_box (data: t list) : PrintBox.t =
+    data
+    |> List.sort compare
+    |> List.map render
+    |> Array.of_list
+    |> PrintBox.grid
+    |> PrintBox.frame
+
 end
 
-let box_tasks ~data_approx ~control_approx (t1:Task.t) (t2:Task.t) : PrintBox.t =
-  let open PrintBox in
-  let locals =
-    (LocalState.parse_structs ~data_approx ~control_approx ~t1 ~t2
-    @
-    LocalState.parse_scalars ~data_approx ~control_approx ~t1 ~t2)
-    |> List.sort (fun (i1, _) (i2, _) -> String.compare i1 i2)
-    |> List.map (fun ((ident, ls):string * LocalState.t) ->
+module GlobalState = struct
+  module Row = struct
+    type t = {
+      ident: string;
+      control_dependent: bool;
+      data_dependent: bool;
+      state: string;
+    }
+
+    let parse_structs (w:Witness.t) : t list =
+      w.globals
+      |> Environ.parse_structs
+      |> StringMap.bindings
+      (* At this point we have the map of structs *)
+      |> List.map (fun (ident, s) ->
+        (* Calculuate the local variables, of a particular struct *)
+        let all_vars : Variable.Set.t =
+          s
+          |> StringMap.bindings
+          |> List.map (fun (field, _) ->
+            ident ^ "." ^ field
+            |> Variable.from_name
+          )
+          |> Variable.Set.of_list
+        in
+        let is_in (vs:Variable.Set.t) : bool =
+          Variable.Set.cardinal (Variable.Set.inter vs all_vars) > 0
+        in
+        let state =
+          s
+          |> StringMap.bindings
+          |> List.sort (fun (k1, _) (k2, _) -> String.compare k1 k2)
+          |> List.map (fun (f, v) ->
+            f ^ " = " ^ v
+          )
+          |> String.concat " | "
+        in
+        {
+          ident;
+          control_dependent = is_in w.control_approx;
+          data_dependent = is_in w.data_approx;
+          state=state
+        }
+      )
+
+    let parse_scalars (w:Witness.t) : t list
+    =
+      w.globals
+      |> Environ.remove_structs
+      |> Environ.variables
+      |> List.map (fun (k, state) ->
+        (* flag whether CI/DI *)
+        let is_in = Variable.Set.mem (Variable.from_name k) in
+        {
+          (* get a nice label, rather than internal id if possible *)
+          ident = Option.value ~default:k (Environ.label k w.globals);
+          control_dependent = is_in w.control_approx;
+          data_dependent = is_in w.data_approx;
+          state;
+        }
+      )
+
+    let from_witness (w:Witness.t) : t list =
+      parse_structs w @ parse_scalars w
+
+    let compare (x1:t) (x2:t) : int =
+      String.compare x1.ident x2.ident
+
+    let render (ls : t) : PrintBox.t array =
+      let open PrintBox in
       let is_approx = ls.data_dependent || ls.control_dependent in
       let style = if is_approx then Style.bold else Style.default in
       let ident =
         if is_approx then
           let msg = if ls.control_dependent then "C" else "" in
           let msg = msg ^ (if ls.data_dependent then "D" else "") in
-          ident ^ " (" ^ msg ^ ")"
+          ls.ident ^ " (" ^ msg ^ ")"
         else
-          ident
+          ls.ident
       in
-      let (s1, s2) = ls.state in
-      [| text_with_style style ident; text s1; text s2; |]
-    )
-  in
-  let locals = Array.of_list locals in
-  grid locals |> frame
+      [| text_with_style style ident; text ls.state; |]
+  end
 
-let box_globals (w:Witness.t) : PrintBox.t =
-  { w.globals with
-  variables=
-  [
+  type t = {rows: Row.t list; index: string; state: string }
+
+  let from_witness (w:Witness.t) : t =
     let brackets =
       List.map (fun _ -> "[]") w.indices
       |> Common.join ""
     in
-    w.array_name ^ brackets, Common.join " │ " w.indices;
-  ]
-  @ w.globals.variables
-  }
-  |> box_environ
+    {
+      index = w.array_name ^ brackets;
+      state = Common.join " │ " w.indices;
+      rows = Row.from_witness w;
+    }
 
-let box_locals (w:Witness.t) : PrintBox.t =
-  let (t1, t2) = w.tasks in
-  box_tasks
-    ~data_approx:w.data_approx
-    ~control_approx:w.control_approx
-    t1 t2
+  let render_index (s:t) : PrintBox.t array =
+    let open PrintBox in
+    [| text_with_style Style.bold s.index; text s.state |]
+
+  let to_print_box (s: t) : PrintBox.t =
+    let rows =
+      s.rows
+      |> List.sort Row.compare
+      |> List.map Row.render
+    in
+    render_index s :: rows
+    |> Array.of_list
+    |> PrintBox.grid
+    |> PrintBox.frame
+
+end
 
 let print_box: PrintBox.t -> unit =
   PrintBox_text.output stdout
@@ -315,9 +399,9 @@ let tui (output: Analysis.t list) : unit =
         );
         print_endline "";
         T.print_string [T.Bold] ("Globals\n");
-        box_globals w |> print_box;
+        w |> GlobalState.from_witness |> GlobalState.to_print_box |> print_box;
         T.print_string [T.Bold] ("\n\nLocals\n");
-        box_locals w |> print_box;
+        w |> LocalState.from_witness |> LocalState.to_print_box |> print_box;
         (if is_exact then
           T.print_string [T.Bold; T.Underlined; T.Foreground T.Red] ("\nTrue alarm detected!\n")
         else
