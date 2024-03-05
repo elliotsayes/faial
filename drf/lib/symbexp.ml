@@ -318,6 +318,7 @@ module Proof = struct
   let from_code
     (arch:Architecture.t)
     (locals:Variable.Set.t)
+    (runtime:bexp)
     (code:Flatacc.Code.t)
   :
     bexp
@@ -331,6 +332,7 @@ module Proof = struct
     let assign_accesses (t:task) : bexp =
       code
       |> Flatacc.Code.to_list (* get conditional accesses *)
+      |> List.map (Flatacc.CondAccess.add_cond runtime)
       |> List.mapi (SymAccess.from_cond_access locals t) (* get symbolic access *)
       |> List.map (SymAccess.to_bexp t) (* generate code *)
       |> b_or_ex
@@ -349,7 +351,7 @@ module Proof = struct
       *)
       Code.dim code |> Option.get |> Gen.assign_dim;
       (* mode spec *)
-      Gen.mode_spec arch
+      Gen.mode_spec arch;
     ]
 
   let from_flat (arch:Architecture.t) (proof_id:int) (k:Flatacc.Kernel.t) : t =
@@ -359,7 +361,7 @@ module Proof = struct
         k.approx_local_variables
     in
     let goal =
-      from_code arch locals k.code
+      from_code arch locals k.runtime k.code
       |> b_and k.pre
     in
     let pre_fns = Freenames.free_names_bexp k.pre Variable.Set.empty in

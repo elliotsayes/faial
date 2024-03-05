@@ -40,9 +40,6 @@ end
 module Code = struct
   type t = CondAccess.t list
 
-  let add_cond (b:bexp) : t -> t =
-    List.map (CondAccess.add_cond b)
-
   let to_list : t -> CondAccess.t list =
     fun x -> x
 
@@ -77,6 +74,7 @@ module Kernel = struct
     exact_local_variables: Variable.Set.t;
     code: Code.t;
     pre: bexp;
+    runtime: bexp;
   }
 
   let to_s (k:t) : Indent.t list =
@@ -108,21 +106,22 @@ module Kernel = struct
     in
     let pre =
       b_and_ex (List.map Range.to_cond k.ranges)
-      |> b_and (Params.to_bexp k.global_variables)
-    in
-    let local_pre = Params.to_bexp k.local_variables in
-    let code =
-      k.code
-      |> Code.from_unsync
-      |> Code.add_cond local_pre
     in
     {
       name = k.name;
       array_name = k.array_name;
-      code = code;
+      code = Code.from_unsync k.code;
       exact_local_variables;
       approx_local_variables;
       pre;
+      runtime =
+        (* merge all parameters *)
+        k.global_variables
+        |> Params.union_left k.local_variables
+        (* only retain the parameters that are used *)
+        |> Params.retain_all (Locsplit.Kernel.free_names k)
+        (* generate data type constraints *)
+        |> Params.to_bexp;
     }
 end
 
