@@ -1,6 +1,6 @@
 2024-03:
 - Inference: added support for preserving the types from declarations.
-- DRF: analysis now uses the range according to the type of each variable.
+- DRF: analysis is more precise by using typing information.
 
 2024-02:
 - DRF: initial support for scoped atomic operations (no support for
