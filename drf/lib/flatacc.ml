@@ -92,7 +92,7 @@ module Kernel = struct
       |> Variable.Set.union Variable.tid_var_set
     in
     let approx_local_variables =
-      Variable.Set.diff k.local_variables ids
+      Variable.Set.diff (Params.to_set k.local_variables) ids
       |> Unsync.unsafe_binders k.code
     in
     let exact_local_variables =
@@ -100,13 +100,18 @@ module Kernel = struct
       |> Variable.Set.diff (Unsync.binders k.code Variable.Set.empty)
       |> Variable.Set.union ids
     in
+    let pre =
+      b_and_ex (List.map Range.to_cond k.ranges)
+      |> b_and (Params.to_bexp k.local_variables)
+      |> b_and (Params.to_bexp k.global_variables)
+    in
     {
       name = k.name;
       array_name = k.array_name;
       code = Code.from_unsync k.code;
       exact_local_variables;
       approx_local_variables;
-      pre = b_and_ex (List.map Range.to_cond k.ranges);
+      pre;
     }
 end
 

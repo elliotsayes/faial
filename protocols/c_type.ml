@@ -104,21 +104,27 @@ let sizeof (x:t) : int option =
   else if x = "double" then Some 8
   else None
 
+
+let to_int_dom (c:t) : Int_dom.t option =
+  let c = to_string c in
+  let c =
+    if String.starts_with ~prefix:"const " c then
+      Slice.from_start (String.length "const ")
+      |> Slice.substring c
+    else
+      c
+  in
+  match c with
+  | "bool" | "char" | "signed char" -> Some Int_dom.signed_char
+  | "unsigned char" | "uchar" -> Some Int_dom.unsigned_char
+  | "short" | "signed shot" -> Some Int_dom.signed_short
+  | "unsigned short" | "ushort" -> Some Int_dom.unsigned_short
+  | "int" | "signed int" -> Some Int_dom.signed_int
+  | "unsigned int" | "uint" -> Some Int_dom.unsigned_int
+  | "long" | "signed long" -> Some Int_dom.signed_long
+  | "unsigned long" | "ulong" | "size_t" -> Some Int_dom.unsigned_long
+  | _ -> None
+
 let is_int (c:t) : bool =
-  List.mem (to_string c) [
-    "int";
-    "const int";
-    "unsigned int";
-    "const unsigned int";
-    "short";
-    "const short";
-    "uint";
-    "const uint";
-    "long";
-    "const long";
-    "bool";
-    "const bool";
-    "size_t";
-    "const size_t";
-  ]
+  to_int_dom c |> Option.is_some
 

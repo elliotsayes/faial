@@ -14,7 +14,6 @@ module Phased = struct
     ranges: Range.t list;
   }
 
-
   let add (r:Range.t) (bi:t) : t =
     { bi with ranges = r :: bi.ranges }
 
@@ -67,9 +66,9 @@ module Kernel = struct
     (* The shared locations that can be accessed in the kernel. *)
     arrays: Variable.Set.t;
     (* The internal variables are used in the code of the kernel.  *)
-    global_variables: Variable.Set.t;
+    global_variables: Params.t;
     (* The internal variables are used in the code of the kernel.  *)
-    local_variables: Variable.Set.t;
+    local_variables: Params.t;
     (* Global ranges *)
     ranges: Range.t list;
     (* The code of a kernel performs the actual memory accesses. *)
@@ -78,37 +77,14 @@ module Kernel = struct
 
   let from_aligned (k: Aligned.t Kernel.t) : t stream =
     let p_to_k ((bi,locations):(Phased.t * Variable.Set.t)) : t =
-      let global_set = Params.to_set k.global_variables in
-      (* Check for undefs *)
-      (* 1. compute all globals *)
-      let globals =
-        List.map (fun r -> let open Range in r.var) bi.ranges
-        |> Variable.Set.of_list
-        |> Variable.Set.union global_set
-      in
-      (* 2. compute all free names in the ranges *)
-      let fns = List.fold_right Freenames.free_names_range bi.ranges Variable.Set.empty in
-      (* 3. check if there are any locals *)
-      let errs = Variable.Set.diff fns globals
-        |> Variable.Set.elements
-        |> List.map (fun (x:Variable.t) ->
-          "Barrier divergence error: cannot use thread-local variable '" ^
-          (Variable.name x) ^ "' in synchronized control flow",
-          (Variable.location_opt x)
-          )
-      in
-      if List.length errs > 0 then (
-        prerr_endline (List.map fst errs |> String.concat "\n");
-        raise (PhasesplitException errs)
-      ) else
-        {
-          name = k.name;
-          local_variables = k.local_variables |> Params.to_set;
-          global_variables = global_set;
-          arrays = locations;
-          ranges = bi.ranges;
-          code = bi.code;
-        }
+      {
+        name = k.name;
+        local_variables = k.local_variables;
+        global_variables = k.global_variables;
+        arrays = locations;
+        ranges = bi.ranges;
+        code = bi.code;
+      }
     in
     Phased.from_aligned k.pre k.code
     |> filter_map (fun b ->
@@ -128,8 +104,8 @@ module Kernel = struct
     in
     [
         Line ("arrays: " ^ Variable.set_to_string k.arrays ^ ";");
-        Line ("globals: " ^ Variable.set_to_string k.global_variables ^ ";");
-        Line ("locals: " ^ Variable.set_to_string k.local_variables ^ ";");
+        Line ("globals: " ^ Params.to_string k.global_variables ^ ";");
+        Line ("locals: " ^ Params.to_string k.local_variables ^ ";");
         Line ("ranges: " ^ ranges ^ ";");
         Line "{";
         Block (Unsync.to_s k.code);
