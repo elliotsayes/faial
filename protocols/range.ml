@@ -121,6 +121,12 @@ let pow ~base (n:nexp) : bexp =
 
 let to_cond (r:t) : bexp =
   let x = Var r.var in
+  let ty =
+    r.ty
+    |> C_type.to_int_dom
+    |> Option.value ~default:Int_dom.signed_int
+    |> Int_dom.to_bexp r.var
+  in
   let lb = r.lower_bound in
   let ub = r.upper_bound in
   (match r.step with
@@ -149,6 +155,7 @@ let to_cond (r:t) : bexp =
   [
     (* lb <= x < ub *)
     n_le lb x; n_lt x ub;
+    ty;
   ]
   |> b_and_ex
 
