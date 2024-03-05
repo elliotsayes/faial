@@ -25,15 +25,6 @@ let add
 :
   unit
 =
-  let vars : Expr.expr list =
-    p.decls
-    |> List.map (fun (x:string) ->
-      n_le (Var (Variable.from_name x)) (Num 2147483647)
-      |> b_to_expr ctx
-    )
-  in
-  vars
-  @
   [
     b_to_expr ctx (Predicates.inline p.goal)
   ]

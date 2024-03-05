@@ -17,6 +17,9 @@ module CondAccess = struct
     cond: bexp;
   }
 
+  let add_cond (b:bexp) (c:t) : t =
+    { c with cond = b_and b c.cond }
+
   let dim (a:t) : int = List.length a.access.index
 
   let location (x:t) : Location.t = x.location
@@ -36,6 +39,9 @@ end
 
 module Code = struct
   type t = CondAccess.t list
+
+  let add_cond (b:bexp) : t -> t =
+    List.map (CondAccess.add_cond b)
 
   let to_list : t -> CondAccess.t list =
     fun x -> x
@@ -102,13 +108,18 @@ module Kernel = struct
     in
     let pre =
       b_and_ex (List.map Range.to_cond k.ranges)
-      |> b_and (Params.to_bexp k.local_variables)
       |> b_and (Params.to_bexp k.global_variables)
+    in
+    let local_pre = Params.to_bexp k.local_variables in
+    let code =
+      k.code
+      |> Code.from_unsync
+      |> Code.add_cond local_pre
     in
     {
       name = k.name;
       array_name = k.array_name;
-      code = Code.from_unsync k.code;
+      code = code;
       exact_local_variables;
       approx_local_variables;
       pre;

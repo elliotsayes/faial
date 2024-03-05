@@ -42,9 +42,6 @@ module Kernel = struct
     ]
 
   let from_phased (k:Phasesplit.Kernel.t) : t Streamutil.stream =
-    let range_fns =
-      Freenames.free_names_list Freenames.free_names_range k.ranges Variable.Set.empty
-    in
     Variable.Set.elements k.arrays
     |> Streamutil.from_list
     |> Streamutil.filter_map (fun x ->
@@ -52,13 +49,12 @@ module Kernel = struct
       match Unsync.filter_by_location x k.code with
       | Some p ->
         (* Filter out code that does not touch location x *)
-        let fns = Unsync.free_names p range_fns in
         Some {
           array_name = Variable.name x;
           name = k.name;
           ranges = k.ranges;
-          local_variables = Params.retain_all fns k.local_variables;
-          global_variables = Params.retain_all fns k.global_variables;
+          local_variables = k.local_variables;
+          global_variables = k.global_variables;
           code = p;
         }
       | None -> None (* No locations being used, so ignore *)
