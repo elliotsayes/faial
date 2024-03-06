@@ -232,6 +232,9 @@ module Proof = struct
     accesses: AccessSummary.t list;
   }
 
+  let add_goal (b:bexp) (p:t) : t =
+    { p with goal = b_and p.goal b }
+
   let add_rel_index (o:Exp.nrel) (idx:int list) (p:t) : t =
     let idx_eq =
       idx
@@ -240,18 +243,52 @@ module Proof = struct
       )
       |> b_and_ex
     in
-    { p with goal = b_and p.goal idx_eq }
+    add_goal idx_eq p
 
-  let add_tid (tid:task) (idx:Dim3.t) (p:t) : t =
-    let goal =
+
+  let _assign_dim3 ~x ~y ~z (idx1:Dim3.t option) (idx2:Dim3.t option) (p:t) : t =
+    let gen_dim3 (tid:task) (idx:Dim3.t) : bexp =
       b_and_ex [
-        n_eq (Var (Gen.project tid Variable.tid_x)) (Num idx.x);
-        n_eq (Var (Gen.project tid Variable.tid_y)) (Num idx.y);
-        n_eq (Var (Gen.project tid Variable.tid_z)) (Num idx.z);
-        p.goal
+        n_eq (Var (Gen.project tid x)) (Num idx.x);
+        n_eq (Var (Gen.project tid y)) (Num idx.y);
+        n_eq (Var (Gen.project tid z)) (Num idx.z);
       ]
     in
-    { p with goal }
+    match idx1, idx2 with
+    | Some idx1, Some idx2 ->
+      let assign (idx1:Dim3.t) (idx2:Dim3.t) : bexp =
+        b_and (gen_dim3 Task1 idx1) (gen_dim3 Task2 idx2)
+      in
+      add_goal (b_or (assign idx1 idx2) (assign idx2 idx1)) p
+    | Some idx, None | None, Some idx ->
+      let assign : bexp =
+        b_or (gen_dim3 Task1 idx) (gen_dim3 Task2 idx)
+      in
+      add_goal assign p
+    | None, None -> p
+
+  let assign_dim3 t ~tid ~bid : bexp =
+    let gen_dim3 (x,y,z) (idx:Dim3.t) : bexp =
+      b_and_ex [
+        n_eq (Var (Gen.project t x)) (Num idx.x);
+        n_eq (Var (Gen.project t y)) (Num idx.y);
+        n_eq (Var (Gen.project t z)) (Num idx.z);
+      ]
+    in
+    let tid : bexp =
+      tid
+      |> Option.map (gen_dim3 (Variable.tid_x, Variable.tid_y, Variable.tid_z))
+      |> Option.value ~default:(Bool true)
+    in
+    let bid : bexp =
+      bid
+      |> Option.map (gen_dim3 (Variable.bid_x, Variable.bid_y, Variable.bid_z))
+      |> Option.value ~default:(Bool true)
+    in
+    b_and bid tid
+
+  let add ~tid ~bid : t -> t =
+    add_goal (b_or (assign_dim3 Task1 ~tid ~bid) (assign_dim3 Task2 ~tid ~bid))
 
   let labels (p:t) : (string * string) list =
     p.labels
@@ -401,18 +438,15 @@ let add_rel_index
   else
     Streamutil.map (Proof.add_rel_index o idx) s
 
-let add_tid
-  (tid:task)
-  (o:Dim3.t option)
-  (s:Proof.t Streamutil.stream)
+let add
+  ~tid
+  ~bid
 :
   Proof.t Streamutil.stream
+  ->
+  Proof.t Streamutil.stream
 =
-  match o with
-  | Some idx ->
-    Streamutil.map (Proof.add_tid tid idx) s
-  | None ->
-    s
+  Streamutil.map (Proof.add ~tid ~bid)
 
 let translate
   (arch:Architecture.t)

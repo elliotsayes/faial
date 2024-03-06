@@ -258,6 +258,8 @@ module App = struct
     only_array:string option;
     thread_idx_1: Dim3.t option;
     thread_idx_2: Dim3.t option;
+    block_idx_1: Dim3.t option;
+    block_idx_2: Dim3.t option;
     arch: Architecture.t;
   }
   let make
@@ -277,20 +279,13 @@ module App = struct
     ~only_array
     ~thread_idx_1
     ~thread_idx_2
+    ~block_idx_1
+    ~block_idx_2
     ~arch
     (kernels: Proto.Code.t Proto.Kernel.t list)
   :
     t
   =
-    (* We need to ensure that thread_idx_1 is GREATER THAN thread_idx_2,
-       otherwise, when they are both defined the matching will not find
-       a data-race. *)
-    let thread_idx_1, thread_idx_2 =
-      if Option.compare Dim3.compare thread_idx_1 thread_idx_2 < 0 then
-        (thread_idx_2, thread_idx_1)
-      else
-        (thread_idx_1, thread_idx_2)
-    in
     {
       timeout;
       show_proofs;
@@ -309,6 +304,8 @@ module App = struct
       only_array;
       thread_idx_1;
       thread_idx_2;
+      block_idx_1;
+      block_idx_2;
       arch;
     }
 
@@ -336,8 +333,8 @@ module App = struct
         |> Symbexp.add_rel_index Exp.NLe a.le_index
         |> Symbexp.add_rel_index Exp.NGe a.ge_index
         |> Symbexp.add_rel_index Exp.NEq a.eq_index
-        |> Symbexp.add_tid Task1 a.thread_idx_1
-        |> Symbexp.add_tid Task2 a.thread_idx_2
+        |> Symbexp.add ~tid:a.thread_idx_1 ~bid:a.block_idx_1
+        |> Symbexp.add ~tid:a.thread_idx_2 ~bid:a.block_idx_2
       in
       show a.show_symbexp (fun () -> Symbexp.print_kernels p);
       let open Z3_solver in
@@ -509,6 +506,8 @@ let main
   (only_array:string option)
   (thread_idx_1:Dim3.t option)
   (thread_idx_2:Dim3.t option)
+  (block_idx_1:Dim3.t option)
+  (block_idx_2:Dim3.t option)
   (grid_level:bool)
 :
   unit
@@ -542,6 +541,8 @@ let main
       ~only_array
       ~thread_idx_1
       ~thread_idx_2
+      ~block_idx_1
+      ~block_idx_2
       ~arch
   |> App.run
   |> ui
@@ -632,11 +633,19 @@ let grid_dim =
 
 let thread_idx_1 =
   let doc = "Sets the thread index for one thread." ^ dim_help ^ " Default: (none)" in
-  Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["thread-idx-1"] ~docv:"DIM3" ~doc)
+  Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["thread-idx-1"; "tid1"] ~docv:"DIM3" ~doc)
 
 let thread_idx_2 =
   let doc = "Sets the thread index for another thread." ^ dim_help ^ " Default: (none)" in
-  Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["thread-idx-2"] ~docv:"DIM3" ~doc)
+  Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["thread-idx-2"; "tid2"] ~docv:"DIM3" ~doc)
+
+let block_idx_1 =
+  let doc = "Sets the block index for one thread." ^ dim_help ^ " Default: (none)" in
+  Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["block-idx-1"; "bid1"] ~docv:"DIM3" ~doc)
+
+let block_idx_2 =
+  let doc = "Sets the block index for another thread." ^ dim_help ^ " Default: (none)" in
+  Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["block-idx-2"; "bid2"] ~docv:"DIM3" ~doc)
 
 let include_dir =
   let doc = "Add the specified directory to the search path for include files." in
@@ -649,7 +658,6 @@ let ignore_calls =
 let grid_level =
   let doc = "By default we perform block-level verification, this option performs grid-level verification." in
   Arg.(value & flag & info ["grid-level"] ~doc)
-
 
 let conv_int_list =
   let parse =
@@ -713,6 +721,8 @@ let main_t = Term.(
   $ only_array
   $ thread_idx_1
   $ thread_idx_2
+  $ block_idx_1
+  $ block_idx_2
   $ grid_level
 )
 
