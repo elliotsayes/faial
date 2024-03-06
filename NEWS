@@ -1,6 +1,7 @@
 2024-03:
 - Inference: added support for preserving the types from declarations.
 - DRF: analysis is more precise by using typing information.
+- DRF: only check a given blockIdx
 
 2024-02:
 - DRF: initial support for scoped atomic operations (no support for
