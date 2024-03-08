@@ -115,14 +115,14 @@ let to_int_dom (c:t) : Int_dom.t option =
       c
   in
   match c with
-  | "bool" | "char" | "signed char" -> Some Int_dom.signed_char
-  | "unsigned char" | "uchar" -> Some Int_dom.unsigned_char
-  | "short" | "signed shot" -> Some Int_dom.signed_short
-  | "unsigned short" | "ushort" -> Some Int_dom.unsigned_short
-  | "int" | "signed int" -> Some Int_dom.signed_int
-  | "unsigned int" | "uint" -> Some Int_dom.unsigned_int
-  | "long" | "signed long" -> Some Int_dom.signed_long
-  | "unsigned long" | "ulong" | "size_t" -> Some Int_dom.unsigned_long
+  | "bool" | "char" | "signed char" | "int8_t" -> Some Int_dom.signed_char
+  | "unsigned char" | "uchar" | "uint8_t" -> Some Int_dom.unsigned_char
+  | "short" | "signed shot" | "int16_t" -> Some Int_dom.signed_short
+  | "unsigned short" | "ushort" | "uint16_t" -> Some Int_dom.unsigned_short
+  | "int" | "signed int" | "int32_t" -> Some Int_dom.signed_int
+  | "unsigned int" | "uint" | "uint32_t" -> Some Int_dom.unsigned_int
+  | "long" | "signed long" | "int64_t" -> Some Int_dom.signed_long
+  | "unsigned long" | "ulong" | "size_t" | "uint64_t" -> Some Int_dom.unsigned_long
   | _ -> None
 
 let is_int (c:t) : bool =
