@@ -650,6 +650,13 @@ let ret_assert (b:D_lang.Expr.t) : Imp.Stmt.t list d_result =
   | Some b -> ret (Assert b)
   | None -> ret_skip
 
+let asserts : Variable.Set.t =
+  Variable.Set.of_list [
+    Variable.from_name "assert";
+    Variable.from_name "static_assert";
+    Variable.from_name "__requires"
+  ]
+
 let rec parse_stmt
   (sigs:D_lang.SignatureDB.t)
   (resolve:C_type.t -> C_type.t)
@@ -676,16 +683,8 @@ let rec parse_stmt
     ret (Sync n.location)
 
     (* Static assert may have a message as second argument *)
-  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = [b; _]; _})
-    when Variable.name n = "static_assert" ->
-    ret_assert b
-
-  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = [b]; _})
-    when Variable.name n = "static_assert" ->
-    ret_assert b
-
-  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = [b]; _})
-    when Variable.name n = "__requires" ->
+  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = b :: _; _})
+    when Variable.Set.mem n asserts ->
     ret_assert b
 
   | DeclStmt ([{init=Some (IExpr (CallExpr {func = f; args;_ }) ); _}] as l) ->
