@@ -56,6 +56,22 @@ type d_location_alias = {
   offset: D_lang.Expr.t;
 }
 
+module TypeAlias = struct
+  type t = C_type.t StringMap.t
+  let empty : t = StringMap.empty
+
+  (* Resolve a type according to the alias in the database *)
+  let resolve (ty:C_type.t) (db:t) : C_type.t =
+    StringMap.find_opt (C_type.to_string ty) db
+    |> Option.value ~default:ty
+
+  (* Add a new type alias to the data-base *)
+  let add (x:C_lang.Typedef.t) (db:t) : t =
+    (* Resolve the type so that there are no indirect alias *)
+    StringMap.add x.name (resolve x.ty db) db
+
+end
+
 module IExp = struct
   type n =
     | Var of Variable.t
@@ -467,9 +483,14 @@ end
 let cast_map f = Rjson.map_all f (fun idx _ e ->
   StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
 
-let parse_decl (d:D_lang.Decl.t) : Imp.Decl.t list d_result =
+let parse_decl
+  (resolve:C_type.t -> C_type.t)
+  (d:D_lang.Decl.t)
+:
+  Imp.Decl.t list d_result
+=
   let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
-  let* ty = match J_type.to_c_type_res d.ty with
+  let* ty = match J_type.to_c_type_res d.ty |> Result.map resolve with
   | Ok ty -> Ok ty
   | Error _ -> root_cause ("parse_decl: error parsing type: " ^ J_type.to_string d.ty)
   in
@@ -629,8 +650,15 @@ let ret_assert (b:D_lang.Expr.t) : Imp.Stmt.t list d_result =
   | Some b -> ret (Assert b)
   | None -> ret_skip
 
-let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t list d_result =
-  let parse_stmt = parse_stmt sigs in
+let rec parse_stmt
+  (sigs:D_lang.SignatureDB.t)
+  (resolve:C_type.t -> C_type.t)
+  (c:D_lang.Stmt.t)
+:
+  Imp.Stmt.t list d_result
+=
+  let parse_stmt = parse_stmt sigs resolve in
+  let parse_decl = parse_decl resolve in
   let with_msg (m:string) f b = with_msg_ex (fun _ -> "parse_stmt: " ^ m ^ ": " ^ D_lang.Stmt.summarize c) f b in
   let ret_n = Unknown.ret_n in
   let ret_b = Unknown.ret_b in
@@ -685,7 +713,7 @@ let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t li
   | ReadAccessStmt r ->
     let array = r.source.name |> Variable.set_location r.source.location in
     let* idx = with_msg "read.idx" (cast_map parse_exp) r.source.index in
-    let ty = J_type.to_c_type ~default:C_type.int r.ty in
+    let ty = r.ty |> resolve |> C_type.strip_array in
     idx
     |> ret_ns (fun index ->
       Read {target=r.target; array; index; ty}
@@ -694,15 +722,22 @@ let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t li
   | AtomicAccessStmt r ->
     let x = r.source.name |> Variable.set_location r.source.location in
     let* idx = with_msg "atomic.idx" (cast_map parse_exp) r.source.index in
-    let ty = J_type.to_c_type ~default:C_type.int r.ty in
+    let ty = r.ty |> resolve |> C_type.strip_array in
     idx
     |> ret_ns (fun index ->
-      Atomic {target=r.target; array=x; index; atomic=r.atomic; ty}
+      Atomic {
+        target=r.target;
+        array=x;
+        index;
+        atomic=r.atomic;
+        ty
+      }
     )
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt None];else_stmt=CompoundStmt[]}
   | IfStmt {cond=b;then_stmt=ReturnStmt None;else_stmt=CompoundStmt[]} ->
-    ret_assert (UnaryOperator {opcode="!"; child=b; ty=D_lang.Expr.to_type b})
+    let ty = D_lang.Expr.to_type b in
+    ret_assert (UnaryOperator {opcode="!"; child=b; ty})
 
   | IfStmt c ->
     let* b = with_msg "if.cond" parse_exp c.cond in
@@ -718,7 +753,13 @@ let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t li
   | DeclStmt ([{ty; init=Some (IExpr rhs); _} as d] as l)
     when J_type.matches C_type.is_pointer ty
     ->
-    let lhs : D_lang.Expr.t = Ident (Decl_expr.from_name ~ty:d.ty d.var) in
+    let d_ty =
+      d.ty
+      |> J_type.to_c_type ~default:C_type.int
+      |> resolve
+      |> J_type.from_c_type
+    in
+    let lhs : D_lang.Expr.t = Ident (Decl_expr.from_name ~ty:d_ty d.var) in
     (match parse_load_expr lhs rhs with
     | Left a ->
       parse_location_alias a
@@ -732,7 +773,7 @@ let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t li
     let* l = cast_map parse_decl l |> Result.map List.concat in
     ret (Decl l)
 
-  | SExpr ((BinaryOperator {opcode="="; lhs=Ident {ty=ty; _} as lhs; rhs=rhs; _}))
+  | SExpr ((BinaryOperator {opcode="="; lhs=Ident {ty; _} as lhs; rhs=rhs; _}))
     when J_type.matches C_type.is_pointer ty
     ->
     (match parse_load_expr lhs rhs with
@@ -743,7 +784,7 @@ let rec parse_stmt (sigs:D_lang.SignatureDB.t) (c:D_lang.Stmt.t) : Imp.Stmt.t li
   | SExpr (BinaryOperator {opcode="="; lhs=Ident {name=v; _}; rhs=rhs; ty; _})
     ->
     let* rhs = with_msg "assign.rhs" parse_exp rhs in
-    let ty = J_type.to_c_type ~default:C_type.int ty in
+    let ty = J_type.to_c_type ~default:C_type.int ty |> resolve in
     rhs |> ret_n (fun rhs ->
       Decl [Imp.Decl.set ~ty v rhs]
     )
@@ -790,7 +831,12 @@ type param = (Variable.t * C_type.t, Variable.t * Memory.t) Either.t
 let from_j_error (e:Rjson.j_error) : d_error =
   RootCause (Rjson.error_to_string e)
 
-let parse_param (p:Param.t) : param option d_result =
+let parse_param
+  (resolve:C_type.t -> C_type.t)
+  (p:Param.t)
+:
+  param option d_result
+=
   let mk_array (h:Memory.Hierarchy.t) (ty:C_type.t) : Memory.t =
     {
       hierarchy = h;
@@ -798,7 +844,12 @@ let parse_param (p:Param.t) : param option d_result =
       data_type = C_type.get_array_type ty;
     }
   in
-  let* ty = J_type.to_c_type_res p.ty_var.ty |> Result.map_error from_j_error in
+  let* ty =
+    p.ty_var.ty
+    |> J_type.to_c_type_res
+    |> Result.map_error from_j_error
+    |> Result.map resolve
+  in
   if C_type.is_int ty then
     let x = p.ty_var.name in
     Ok (Some (Either.Left (x, ty)))
@@ -807,18 +858,16 @@ let parse_param (p:Param.t) : param option d_result =
     Ok (Some (Either.Right (p.ty_var.name, mk_array h ty)))
   ) else Ok None
 
-let parse_params (ps:Param.t list) : (Params.t * Memory.t Variable.Map.t) d_result =
-  let* params = Rjson.map_all parse_param
+let parse_params
+  (resolve:C_type.t -> C_type.t)
+  (ps:Param.t list)
+:
+  (Params.t * Memory.t Variable.Map.t) d_result
+=
+  let* params = Rjson.map_all (parse_param resolve)
     (fun i _ e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
   Ok (Params.from_list globals, Variable.MapUtil.from_list arrays)
-
-let mk_array (h:Memory.Hierarchy.t) (ty:C_type.t) : Memory.t =
-  {
-    hierarchy = h;
-    size = C_type.get_array_length ty;
-    data_type = C_type.get_array_type ty;
-  }
 
 let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
   let open D_lang in
@@ -862,10 +911,11 @@ let parse_kernel
   (shared_params:(Variable.t * Memory.t) list)
   (globals:Params.t)
   (assigns:(Variable.t * nexp) list)
+  (resolve:C_type.t -> C_type.t)
   (k:D_lang.Kernel.t)
 : Imp.Kernel.t d_result =
-  let* code = parse_stmt sigs k.code in
-  let* (params, arrays) = parse_params k.params in
+  let* code = parse_stmt sigs resolve k.code in
+  let* (params, arrays) = parse_params resolve k.params in
   let params = Params.union_right globals params in
   let shared = parse_shared k.code
     |> Common.append_rev1 shared_params
@@ -908,6 +958,7 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
     (arrays:(Variable.t * Memory.t) list)
     (globals:Params.t)
     (assigns:(Variable.t * nexp) list)
+    (typedefs:TypeAlias.t)
     (p:D_lang.Program.t)
   : Imp.Kernel.t list d_result =
     match p with
@@ -915,8 +966,10 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
       let (arrays, globals, assigns) =
           match J_type.to_c_type_res v.ty with
           | Ok ty ->
+            (* make sure we resolve the type before we query it *)
+            let ty = TypeAlias.resolve ty typedefs in
             if List.mem C_lang.c_attr_shared v.attrs then
-              (v.var, mk_array SharedMemory ty)::arrays, globals, assigns
+              (v.var, Memory.from_type SharedMemory ty)::arrays, globals, assigns
             else if C_type.is_int ty then
               let g = match v.init with
               | Some (IExpr n) ->
@@ -932,15 +985,17 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
               arrays, globals, assigns
           | Error _ -> arrays, globals, assigns
       in
-      parse_p arrays globals assigns l
+      parse_p arrays globals assigns typedefs l
     | Kernel k :: l ->
-      let* ks = parse_p arrays globals assigns l in
-      let* k = parse_kernel sigs arrays globals assigns k in
+      let resolve x = TypeAlias.resolve x typedefs in
+      let* ks = parse_p arrays globals assigns typedefs l in
+      let* k = parse_kernel sigs arrays globals assigns resolve k in
       Ok (k::ks)
-    | Typedef _ :: l -> parse_p arrays globals assigns l
+    | Typedef d :: l ->
+      parse_p arrays globals assigns (TypeAlias.add d typedefs) l
     | [] -> Ok []
   in
-  parse_p [] Params.empty [] p
+  parse_p [] Params.empty [] TypeAlias.empty p
 end
 
 module Default = Make(Logger.Colors)

@@ -6,6 +6,7 @@ type t
 (* Constructors *)
 val from_json : Yojson.Basic.t -> t
 val from_string : string -> t
+val from_c_type: C_type.t -> t
 
 (* Common types *)
 val int : t
@@ -21,5 +22,4 @@ val matches : (C_type.t -> bool) -> t -> bool
 (* Type conversion *)
 val to_c_type_res : t -> C_type.t Rjson.j_result
 val to_c_type : ?default:C_type.t -> t -> C_type.t
-
 val to_string : t -> string

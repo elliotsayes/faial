@@ -290,8 +290,8 @@ type d_write = {
      *)
   payload: int option
 }
-type d_read = {target: Variable.t; source: d_subscript; ty: J_type.t}
-type d_atomic = {target: Variable.t; source: d_subscript; atomic: Atomic.t; ty: J_type.t}
+type d_read = {target: Variable.t; source: d_subscript; ty: C_type.t}
+type d_atomic = {target: Variable.t; source: d_subscript; atomic: Atomic.t; ty: C_type.t}
 
 module Stmt = struct
   type t =
@@ -641,24 +641,43 @@ module AccessState = struct
       (add_stmt (wr x) st, Decl_expr.name x)
     | _ ->
       add_var (subscript_to_s a) (fun x ->
+        let ty =
+          a.ty
+          |> J_type.to_c_type ~default:C_type.int
+          (* If it's an array get the elements type *)
+          |> C_type.strip_array
+          |> J_type.from_c_type
+        in
         [
           wr (Decl_expr.from_name x);
-          let ty_var = Ty_variable.make ~name:x ~ty:a.ty in
+          let ty_var = Ty_variable.make ~name:x ~ty in
           DeclStmt [Decl.from_expr ty_var source];
         ]
       ) st
 
   let add_read (a:d_subscript) (st:t) : (t * Variable.t) =
     add_var (subscript_to_s a) (fun x ->
+      let ty =
+        a.ty
+        |> J_type.to_c_type ~default:C_type.int
+        (* If it's an array get the elements type *)
+        |> C_type.strip_array
+      in
       [
-        ReadAccessStmt {target=x; source=a; ty=a.ty};
+        ReadAccessStmt {target=x; source=a; ty};
       ]
     ) st
 
   let add_atomic (atomic:Atomic.t) (source:d_subscript) (st:t) : (t * Variable.t) =
+    let ty =
+      source.ty
+      |> J_type.to_c_type ~default:C_type.int
+      (* If it's an array get the elements type *)
+      |> C_type.strip_array
+    in
     add_var (subscript_to_s source) (fun target ->
       [
-        AtomicAccessStmt {target; source; atomic; ty=source.ty};
+        AtomicAccessStmt {target; source; atomic; ty};
       ]
     ) st
 

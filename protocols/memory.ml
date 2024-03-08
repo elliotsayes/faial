@@ -29,6 +29,13 @@ let make (h:Hierarchy.t) : t = {
   data_type = [];
 }
 
+let from_type (h:Hierarchy.t) (ty:C_type.t) : t =
+  {
+    hierarchy = h;
+    size = C_type.get_array_length ty;
+    data_type = C_type.get_array_type ty;
+  }
+
 let make_map (h:Hierarchy.t) (vs:Variable.t list) : t Variable.Map.t =
   vs
   |> List.map (fun x -> (x, make h))

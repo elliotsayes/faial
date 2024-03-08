@@ -92,6 +92,14 @@ let is_array (c:t) : bool =
   |> parse_array_type_opt
   |> Option.is_some
 
+let array_elements (c:t) : t option =
+  split_array_type (to_string c)
+  |> Option.map fst
+  |> Option.map make
+
+let strip_array (c:t) : t =
+  array_elements c |> Option.value ~default:c
+
 let sizeof (x:t) : int option =
   let x = to_string x in
   if String.ends_with ~suffix:"*" x then Some 8

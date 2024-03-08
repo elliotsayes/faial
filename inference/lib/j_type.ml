@@ -13,6 +13,9 @@ let from_string (name:string) : t =
     "qualType", `String name
   ]
 
+let from_c_type (c:C_type.t) : t =
+  from_string (C_type.to_string c)
+
 let int = from_string "int"
 let char = from_string "char"
 let bool = from_string "bool"

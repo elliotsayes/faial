@@ -229,7 +229,14 @@ module Stmt = struct
       | Sync _ -> [Line "sync;"]
       | Assert b -> [Line ("assert (" ^ b_to_string b ^ ");")]
       | Atomic r -> [Line (Variable.name r.target ^ " = atomic " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
-      | Read r -> [Line (Variable.name r.target ^ " = rd " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
+      | Read r ->
+        let ty = C_type.to_string r.ty in
+        let x = Variable.name r.target in
+        let a = Variable.name r.array in
+        let idx = Access.index_to_string r.index in
+        [
+          Line (ty ^ " " ^ x ^ " = rd " ^ a ^ idx ^ ";")
+        ]
       | Write w ->
         let payload :string = match w.payload with
           | None -> ""
