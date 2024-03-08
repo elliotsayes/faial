@@ -68,8 +68,14 @@ let is_pointer (c:t) =
   (String.ends_with ~suffix:" *" c)
   || (String.ends_with ~suffix:" *__restrict" c)
 
+let is_function (c:t) : bool =
+  Common.contains ~substring:"(*)" (to_string c)
+
 let is_void (c:t) =
   to_string c = "void"
+
+let is_struct (c:t) : bool =
+  String.starts_with ~prefix:"struct " (to_string c)
 
 let get_array_length (c:t) : int list =
   to_string c

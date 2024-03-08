@@ -469,6 +469,7 @@ module Def = struct
   type t =
     | Kernel of Kernel.t
     | Declaration of Decl.t
+    | Typedef of C_lang.Typedef.t
 
   let is_device_kernel : t -> bool =
     function
@@ -480,6 +481,7 @@ module Def = struct
     match d with
     | Declaration d -> [Line (Decl.to_string d ^ ";")]
     | Kernel k -> Kernel.to_s k
+    | Typedef d -> C_lang.Typedef.to_s d
 
 end
 
@@ -566,7 +568,7 @@ module SignatureDB = struct
       let open Def in
       match d with
       | Kernel k -> add k kernels
-      | Declaration _ -> kernels
+      | Declaration _ | Typedef _ -> kernels
     ) StringMap.empty p
 
 end
@@ -959,12 +961,13 @@ let rewrite_kernel (k:C_lang.Kernel.t) : Kernel.t =
     attribute = k.attribute;
   }
 
-let rewrite_def (d:C_lang.c_def) : Def.t =
+let rewrite_def (d:C_lang.Def.t) : Def.t =
   match d with
   | Kernel k -> Kernel (rewrite_kernel k)
   | Declaration d ->
     let (_, d) = rewrite_decl d in
     Declaration d
+  | Typedef d -> Typedef d
 
-let rewrite_program: C_lang.c_program -> Program.t =
+let rewrite_program: C_lang.Program.t -> Program.t =
   List.map rewrite_def

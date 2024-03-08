@@ -2,14 +2,14 @@ open Stage0
 open Inference
 open Queries
 module Decl = C_lang.Decl
-let analyze (j:Yojson.Basic.t) : C_lang.c_program * D_lang.Program.t * (Imp.Kernel.t list) =
+let analyze (j:Yojson.Basic.t) : C_lang.Program.t * D_lang.Program.t * (Imp.Kernel.t list) =
   match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = D_lang.rewrite_program k1 in
       (match D_to_imp.Default.parse_program k2 with
       | Ok k3 -> (k1, k2, k3)
       | Error e ->
-        C_lang.print_program k1;
+        C_lang.Program.print k1;
         print_endline "------";
         D_lang.Program.print k2;
         print_endline "-------";
@@ -30,7 +30,7 @@ let main
   let (k1, k2, k3) = analyze j in
   if silent then () else ( 
     print_endline "\n==================== STAGE 1: C\n";
-    C_lang.print_program k1;
+    C_lang.Program.print k1;
     print_endline "==================== STAGE 2: C with reads/writes as statements\n";
     D_lang.Program.print k2;
     print_endline "==================== STAGE 3: IMP\n";
@@ -42,9 +42,10 @@ let main
   let k3_ht = Hashtbl.create k1_len in
   k2 |> List.iter (
     let open D_lang in
+    let open Def in
     function
-    | Def.Kernel k -> Hashtbl.add k2_ht k.name k
-    | Def.Declaration _ -> ()
+    | Kernel k -> Hashtbl.add k2_ht k.name k
+    | Declaration _ | Typedef _ -> ()
   );
   k3 |> List.iter (fun k ->
     let open Imp.Kernel in
@@ -52,6 +53,7 @@ let main
   );
   let l = List.fold_left (fun ((decls:Decl.t list), js) ->
     let open C_lang in
+    let open Def in
     function
     | Kernel k ->
       (try
@@ -84,6 +86,7 @@ let main
           decls
       in
       (decls, js)
+    | Typedef _ -> (decls, js)
   ) ([], []) k1 |> snd
   in
   print_endline (Yojson.Basic.pretty_to_string (`List l));

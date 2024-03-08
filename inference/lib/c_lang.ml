@@ -281,6 +281,7 @@ module Decl : sig
   val is_array : t -> bool
   val var: t -> Variable.t
   val ty: t -> J_type.t
+  val to_s :  t -> Indent.t list
 end = struct
   type t = {
     ty_var: Ty_variable.t;
@@ -326,6 +327,8 @@ end = struct
     in
     attr ^ Ty_variable.to_string d.ty_var ^ i
 
+  let to_s (d:t) : Indent.t list =
+    [Line (to_string d ^ ";")]
 end
 
 module ForInit = struct
@@ -694,11 +697,146 @@ module Kernel = struct
 
 end
 
-type c_def =
-  | Kernel of Kernel.t
-  | Declaration of Decl.t
+module Typedef = struct
+  type t = {name: string; ty: C_type.t}
 
-type c_program = c_def list
+  let to_string (d:t) =
+    "typedef " ^ C_type.to_string d.ty ^ " " ^ d.name
+
+  let to_s (d:t) : Indent.t list =
+    [Line (to_string d ^ ";")]
+end
+
+module Def = struct
+  type t =
+    | Kernel of Kernel.t
+    | Declaration of Decl.t
+    | Typedef of Typedef.t
+
+
+  let to_s (d:t) : Indent.t list =
+    match d with
+    | Declaration d -> Decl.to_s d
+    | Kernel k -> Kernel.to_s k
+    | Typedef d -> Typedef.to_s d
+end
+
+module Program = struct
+  type t = Def.t list
+
+  let rewrite_shared_arrays: t -> t =
+    (* Rewrites expressions: when it finds a variable that has been defined as
+      a shared variable, we replace that by an array subscript:
+      x becomes x[0] *)
+    let rw_exp (vars:Variable.Set.t) (e:Expr.t) : Expr.t =
+      if Variable.Set.is_empty vars then e else
+      e |> Expr.Visit.map (fun e ->
+        match e with
+        | Ident x ->
+          if Variable.Set.mem x.name vars
+          then ArraySubscriptExpr {
+            lhs=Ident x;
+            rhs=IntegerLiteral 0;
+            ty=x.ty;
+            location=Variable.location x.name
+          }
+          else e
+        | _ -> e)
+    in
+    (* When rewriting a variable declaration, we must return as the side-effect
+      the shadowing of the available variables when it makes sense *)
+    let rw_decl (vars:Variable.Set.t) (d:Decl.t) : Variable.Set.t * Decl.t =
+      let vars =
+        let name = d |> Decl.var in
+        if Decl.is_shared d && not (Decl.matches C_type.is_array d) then
+          Variable.Set.add name vars
+        else
+          Variable.Set.remove name vars
+      in
+      (vars, Decl.map_expr (rw_exp vars) d)
+    in
+    (* This is just a monadic map *)
+    let rec rw_list: 'a. (Variable.Set.t -> 'a -> Variable.Set.t * 'a) -> Variable.Set.t -> 'a list -> Variable.Set.t * 'a list =
+      fun f vars l ->
+          match l with
+          | [] -> (vars, [])
+          | x :: l ->
+            let (vars, x) = f vars x in
+            let (vars, l) = rw_list f vars l in
+            (vars, x::l)
+    in
+    (* We now rewrite statements *)
+    let rw_stmt (vars:Variable.Set.t) (s:Stmt.t) : Stmt.t =
+      let rec rw_s (vars:Variable.Set.t) (s: Stmt.t) : Variable.Set.t * Stmt.t =
+        let ret (s: Stmt.t) : Stmt.t = rw_s vars s |> snd in
+        let rw_e: Expr.t -> Expr.t = rw_exp vars in
+        match s with
+        | BreakStmt
+        | GotoStmt
+        | ReturnStmt None
+        | ContinueStmt ->
+          (vars, s)
+        | ReturnStmt (Some e) ->
+          (vars, ReturnStmt (Some (rw_e e)))
+        | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
+          (vars, IfStmt {cond=rw_e c; then_stmt=ret s1; else_stmt=ret s2})
+        | CompoundStmt l ->
+          (* This is one of the interesting cases, since we
+            propagate scoping through the monadic map (rw_list). *)
+          (vars, CompoundStmt (rw_list rw_s vars l |> snd))
+        | DeclStmt l ->
+          (* Variable declaration introduces a scope *)
+          let (vars, l) = rw_list rw_decl vars l in
+          (vars, DeclStmt l)
+        | WhileStmt {cond=e; body=s} ->
+          (vars, WhileStmt {cond=rw_e e; body=ret s})
+        | ForStmt {init=e1; cond=e2; inc=e3; body=s} ->
+          (* The init may create a scope *)
+          let (vars_body, e1) = match e1 with
+          | None -> (vars, None)
+          | Some (ForInit.Decls l) ->
+            let (vars, l) = rw_list rw_decl vars l in
+            (vars, Some (ForInit.Decls l))
+          | Some (ForInit.Expr e) -> (vars, Some (ForInit.Expr (rw_e e)))
+          in
+          let e2 = Option.map (rw_exp vars_body) e2 in
+          let e3 = Option.map (rw_exp vars_body) e3 in
+          (vars, ForStmt {init=e1; cond=e2; inc=e3; body=rw_s vars_body s |> snd})
+        | DoStmt {cond=e; body=s} ->
+          (vars, DoStmt {cond=rw_e e; body=ret s})
+        | SwitchStmt {cond=e; body=s} ->
+          (vars, SwitchStmt {cond=rw_e e; body=ret s})
+        | DefaultStmt s ->
+          (vars, DefaultStmt (ret s))
+        | CaseStmt  {case=e; body=s} ->
+          (vars, CaseStmt {case=rw_e e; body=ret s})
+        | SExpr e ->
+          (vars, SExpr (rw_e e))
+      in
+      rw_s vars s |> snd
+    in
+    let rec rw_p (vars:Variable.Set.t): t -> t =
+      function
+      | Declaration d :: p ->
+        let vars = if Decl.is_shared d && not (Decl.matches C_type.is_array d)
+          then Variable.Set.add (Decl.var d) vars
+          else vars
+        in
+        Declaration d :: rw_p vars p
+      | Kernel k :: p -> Kernel { k with code = rw_stmt vars k.code } :: rw_p vars p
+      | Typedef d :: p ->
+        Typedef d :: rw_p vars p
+      | [] -> []
+    in
+    rw_p Variable.Set.empty
+
+  let to_s (p:t) : Indent.t list =
+    List.concat_map (fun k -> Def.to_s k @ [Line ""]) p
+
+  let print (p:t) : unit =
+    Indent.print (to_s p)
+
+end
 
 (* ------------------------------------------------------------------- *)
 
@@ -1385,11 +1523,12 @@ let parse_type_param (j:Yojson.Basic.t) : Ty_param.t option j_result =
   | _ -> Ok None
 
 
-let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
+let rec parse_def (j:Yojson.Basic.t) : Def.t list j_result =
   let open Rjson in
+  let open Def in
   let* o = cast_object j in
   let* k = get_kind o in
-  let parse_k (type_params:Ty_param.t list) (j:Yojson.Basic.t) : c_def list j_result =
+  let parse_k (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Def.t list j_result =
     if is_kernel j then (
       let* k = parse_kernel type_params j in
       (if k.code = CompoundStmt [] then Ok []
@@ -1406,7 +1545,7 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
        might even have some more parameters after the function
        declaration, but those are discarded, as I did not understand
        what they are for. *)
-    let rec handle (type_params:Ty_param.t list): Yojson.Basic.t list -> c_def list j_result =
+    let rec handle (type_params:Ty_param.t list): Yojson.Basic.t list -> Def.t list j_result =
       function
       | [] -> root_cause "Error parsing FunctionTemplateDecl: no FunctionDecl found" j
       | j :: l ->
@@ -1428,134 +1567,30 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
   | "NamespaceDecl" ->
     let* defs = with_field_or "inner" (cast_map parse_def) [] o in
     Ok (List.concat defs)
+  | "TypedefDecl" ->
+    let* name = with_field "name" cast_string o in
+    let* ty = get_field "type" o |> Result.map J_type.from_json in
+
+    (match J_type.to_c_type_res ty with
+    | Ok ty ->
+      if C_type.is_struct ty || C_type.is_array ty || C_type.is_function ty then
+        Ok []
+      else Ok [Typedef {name; ty;}]
+    | Error _ -> Ok [])
   | _ ->
     Ok []
 
 
 (* ------------------------------------------------- *)
 
-let rewrite_shared_arrays: c_program -> c_program =
-  (* Rewrites expressions: when it finds a variable that has been defined as
-     a shared variable, we replace that by an array subscript:
-     x becomes x[0] *)
-  let rw_exp (vars:Variable.Set.t) (e:Expr.t) : Expr.t =
-    if Variable.Set.is_empty vars then e else
-    e |> Expr.Visit.map (fun e ->
-      match e with
-      | Ident x ->
-        if Variable.Set.mem x.name vars
-        then ArraySubscriptExpr {
-          lhs=Ident x;
-          rhs=IntegerLiteral 0;
-          ty=x.ty;
-          location=Variable.location x.name
-        }
-        else e
-      | _ -> e)
-  in
-  (* When rewriting a variable declaration, we must return as the side-effect
-     the shadowing of the available variables when it makes sense *) 
-  let rw_decl (vars:Variable.Set.t) (d:Decl.t) : Variable.Set.t * Decl.t =
-    let vars =
-      let name = d |> Decl.var in
-      if Decl.is_shared d && not (Decl.matches C_type.is_array d) then
-        Variable.Set.add name vars
-      else
-        Variable.Set.remove name vars
-    in
-    (vars, Decl.map_expr (rw_exp vars) d)
-  in
-  (* This is just a monadic map *)
-  let rec rw_list: 'a. (Variable.Set.t -> 'a -> Variable.Set.t * 'a) -> Variable.Set.t -> 'a list -> Variable.Set.t * 'a list =
-    fun f vars l ->
-        match l with
-        | [] -> (vars, [])
-        | x :: l ->
-          let (vars, x) = f vars x in
-          let (vars, l) = rw_list f vars l in
-          (vars, x::l)
-  in
-  (* We now rewrite statements *)
-  let rw_stmt (vars:Variable.Set.t) (s:Stmt.t) : Stmt.t =
-    let rec rw_s (vars:Variable.Set.t) (s: Stmt.t) : Variable.Set.t * Stmt.t =
-      let ret (s: Stmt.t) : Stmt.t = rw_s vars s |> snd in
-      let rw_e: Expr.t -> Expr.t = rw_exp vars in
-      match s with
-      | BreakStmt
-      | GotoStmt
-      | ReturnStmt None
-      | ContinueStmt ->
-        (vars, s)
-      | ReturnStmt (Some e) ->
-        (vars, ReturnStmt (Some (rw_e e)))
-      | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
-        (vars, IfStmt {cond=rw_e c; then_stmt=ret s1; else_stmt=ret s2})
-      | CompoundStmt l ->
-        (* This is one of the interesting cases, since we
-           propagate scoping through the monadic map (rw_list). *)
-        (vars, CompoundStmt (rw_list rw_s vars l |> snd))
-      | DeclStmt l ->
-        (* Variable declaration introduces a scope *)
-        let (vars, l) = rw_list rw_decl vars l in
-        (vars, DeclStmt l)
-      | WhileStmt {cond=e; body=s} ->
-        (vars, WhileStmt {cond=rw_e e; body=ret s})
-      | ForStmt {init=e1; cond=e2; inc=e3; body=s} ->
-        (* The init may create a scope *)
-        let (vars_body, e1) = match e1 with
-        | None -> (vars, None)
-        | Some (ForInit.Decls l) ->
-          let (vars, l) = rw_list rw_decl vars l in
-          (vars, Some (ForInit.Decls l))
-        | Some (ForInit.Expr e) -> (vars, Some (ForInit.Expr (rw_e e)))
-        in
-        let e2 = Option.map (rw_exp vars_body) e2 in
-        let e3 = Option.map (rw_exp vars_body) e3 in
-        (vars, ForStmt {init=e1; cond=e2; inc=e3; body=rw_s vars_body s |> snd})
-      | DoStmt {cond=e; body=s} ->
-        (vars, DoStmt {cond=rw_e e; body=ret s})
-      | SwitchStmt {cond=e; body=s} ->
-        (vars, SwitchStmt {cond=rw_e e; body=ret s})
-      | DefaultStmt s ->
-        (vars, DefaultStmt (ret s))
-      | CaseStmt  {case=e; body=s} ->
-        (vars, CaseStmt {case=rw_e e; body=ret s})
-      | SExpr e ->
-        (vars, SExpr (rw_e e))
-    in
-    rw_s vars s |> snd
-  in
-  let rec rw_p (vars:Variable.Set.t): c_program -> c_program =
-    function
-    | Declaration d :: p ->
-      let vars = if Decl.is_shared d && not (Decl.matches C_type.is_array d)
-        then Variable.Set.add (Decl.var d) vars
-        else vars
-      in
-      Declaration d :: rw_p vars p
-    | Kernel k :: p -> Kernel { k with code = rw_stmt vars k.code } :: rw_p vars p
-    | [] -> []
-  in
-  rw_p Variable.Set.empty
 
-let parse_program ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : c_program j_result =
+let parse_program ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : Program.t j_result =
   let open Rjson in
   let* o = cast_object j in
   let* inner = with_field "inner" (cast_map parse_def) o in
   let p = List.concat inner in
-  Ok (if rewrite_shared_variables then rewrite_shared_arrays p else p)
+  Ok (if rewrite_shared_variables then Program.rewrite_shared_arrays p else p)
 
 (* ------------------------------------------------------------------------ *)
 
-let def_to_s (d:c_def) : Indent.t list =
-  let open Indent in
-  match d with
-  | Declaration d -> [Line (Decl.to_string d ^ ";")]
-  | Kernel k -> Kernel.to_s k
-
-let program_to_s (p:c_program) : Indent.t list =
-  List.concat_map (fun k -> def_to_s k @ [Line ""]) p
-
-let print_program (p:c_program) : unit =
-  Indent.print (program_to_s p)
 

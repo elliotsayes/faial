@@ -52,7 +52,7 @@ module Make (L:Logger.Logger) = struct
           Stdlib.flush_all ();
           {options; kernels}
         | Error e ->
-          C_lang.print_program k1;
+          C_lang.Program.print k1;
           print_endline "------";
           D_lang.Program.print k2;
           print_endline "-------";

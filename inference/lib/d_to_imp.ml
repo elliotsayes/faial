@@ -937,6 +937,7 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
       let* ks = parse_p arrays globals assigns l in
       let* k = parse_kernel sigs arrays globals assigns k in
       Ok (k::ks)
+    | Typedef _ :: l -> parse_p arrays globals assigns l
     | [] -> Ok []
   in
   parse_p [] Params.empty [] p
