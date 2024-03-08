@@ -1,5 +1,6 @@
 2024-03:
 - Inference: added support for preserving the types from declarations.
+- Inference: now recognizes typedef.
 - DRF: analysis is more precise by using typing information.
 - DRF: only check a given blockIdx
 
