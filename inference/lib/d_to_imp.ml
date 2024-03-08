@@ -688,7 +688,7 @@ let rec parse_stmt
     when Variable.name n = "__requires" ->
     ret_assert b
 
-  | DeclStmt ([{init=Some (IExpr (CallExpr {func = f; args;_ }) ); _}]) ->
+  | DeclStmt ([{init=Some (IExpr (CallExpr {func = f; args;_ }) ); _}] as l) ->
     (match D_lang.SignatureDB.lookup f sigs with
     | Some s ->
       if List.length s.params = List.length args then (
@@ -700,7 +700,8 @@ let rec parse_stmt
       ) else
         root_cause "Args mismatch!"
     | None ->
-      ret (Block [])
+      let* l = cast_map parse_decl l |> Result.map List.concat in
+      ret (Decl l)
     )
 
   | WriteAccessStmt w ->
