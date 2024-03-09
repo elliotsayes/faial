@@ -35,6 +35,7 @@ let tests = [
   (* Data-race freee requires understanding fields in parameters. *)
   "drf-field-in-param.cu", [], 0;
   (* Data-race with atomics. *)
+  "racy-atomics.cu", [], 1;
 ]
 
 (* ----- UTIL ---- *)
