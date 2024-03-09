@@ -28,6 +28,10 @@ let tests = [
   "drf-shared-mem.cu", [], 0;
   (* Data-race free example *)
   "racy-shared-mem.cu", [], 1;
+  (* Data-race free example with array aliasing *)
+  "drf-alias.cu", [], 0;
+  (* Data-race free example with array aliasing *)
+  "racy-alias.cu", [], 1;
 ]
 
 (* ----- UTIL ---- *)
