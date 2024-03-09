@@ -32,6 +32,8 @@ let tests = [
   "drf-alias.cu", [], 0;
   (* Data-race free example with array aliasing *)
   "racy-alias.cu", [], 1;
+  (* Data-race freee requires understanding fields in parameters. *)
+  "drf-field-in-param.cu", [], 0;
 ]
 
 (* ----- UTIL ---- *)
