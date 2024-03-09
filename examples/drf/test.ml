@@ -36,7 +36,15 @@ let tests = [
   "drf-field-in-param.cu", [], 0;
   (* Data-race with atomics. *)
   "racy-atomics.cu", [], 1;
+  (* A data-race that occurs when we have warp-concurrent semantics *)
+  "racy-reduce.cu", [], 1;
 ]
+
+let unsupported : Fpath.t list =
+  [
+    "drf-warp.cu";
+    "racy-warp.cu";
+  ] |> List.map Fpath.v
 
 (* ----- UTIL ---- *)
 
@@ -59,6 +67,9 @@ let read_dir (dir:Fpath.t) : Fpath.t list =
   |> Array.map Fpath.v
   |> Array.to_list
 
+let exists (f:Fpath.t) : bool =
+  Sys.file_exists (Fpath.to_string f)
+
 (* ---- Testing-specific code ----- *)
 
 let faial_drf_path : Fpath.t = from_string "../../drf/bin/main.exe"
@@ -80,7 +91,8 @@ let missed_files (dir:Fpath.t) : Fpath.Set.t =
     |> List.filter (Fpath.has_ext ".cu")
     |> Fpath.Set.of_list
   in
-  Fpath.Set.diff all_cu_files used_files
+  let unsupported = Fpath.Set.of_list unsupported in
+  Fpath.Set.diff (Fpath.Set.diff all_cu_files used_files) unsupported
 
 let () =
   let open Feather in
@@ -108,6 +120,14 @@ let () =
     ));
     Stdlib.flush_all ();
   );
+  unsupported |> List.iter (fun f ->
+    if not (exists f) then (
+      print_endline ("Missing unsupported file: " ^ Fpath.to_string f);
+      exit 1
+    ) else (
+      print_endline ("TODO: " ^ Fpath.to_string f);
+    )
+  );
   let missed = missed_files (v ".") in
   if not (Fpath.Set.is_empty missed) then (
     let missed =
@@ -115,7 +135,7 @@ let () =
       |> Fpath.Set.to_list
       |> List.sort Fpath.compare
       |> List.map Fpath.to_string
-      |> String.concat ", "
+      |> String.concat " "
     in
     print_endline ("");
     print_endline ("ERROR: The following files are not being checked: " ^ missed);
