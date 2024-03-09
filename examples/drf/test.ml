@@ -24,6 +24,10 @@ let tests = [
   (* A data-race that occurs when analysis understand top-level assignments.
      We ensure it's a data-race between threads 0 and 1. *)
   "toplevel-racy.cu", ["--tid1"; "0"; "--tid2"; "1"], 1;
+  (* Data-race free example *)
+  "drf-shared-mem.cu", [], 0;
+  (* Data-race free example *)
+  "racy-shared-mem.cu", [], 1;
 ]
 
 (* ----- UTIL ---- *)
