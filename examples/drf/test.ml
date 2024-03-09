@@ -1,8 +1,9 @@
 let tests = [
-  "saxpy-parse-gv.cu", [], 0;
-  "saxpy-buggy.cu", [], 1;
-  "saxpy-buggy.cu", ["--logic"; "QF_AUFBV"], 1;
-  "saxpy-race-2d.cu", [], 1;
+  "parse-gv.cu", [], 0;
+  "saxpy-racy.cu", [], 1;
+  "saxpy-racy.cu", ["--logic"; "QF_AUFBV"], 1;
+  "racy-2d.cu", [], 1;
+  "racy-shared-scalar.cu", [], 1;
 ]
 
 (* ----- UTIL ---- *)
@@ -52,19 +53,22 @@ let missed_files (dir:Fpath.t) : Fpath.Set.t =
 let () =
   let open Feather in
   let open Fpath in
+  print_endline "Checking examples for DRF:";
   tests
   |> List.iter (fun (filename, args, expected_status) ->
     let str_args = if args = [] then "" else (String.concat " " args ^ " ") in
-    print_string ("faial-drf " ^ str_args ^ filename);
+    print_string ("- faial-drf " ^ str_args ^ filename);
+    Stdlib.flush_all ();
     let given = faial_drf ~args (v filename) |> collect everything in
-    if given.status <> expected_status then (
-      print_endline " ❌";
+    (if given.status <> expected_status then (
+      print_endline " ✘";
       print_endline (given.stdout);
       print_endline ("ERROR: Expected status: " ^ string_of_int expected_status ^ " but given: " ^ string_of_int given.status);
       exit 1
     ) else (
-      print_endline " ✅";
-    )
+      print_endline " ✔";
+    ));
+    Stdlib.flush_all ();
   );
   let missed = missed_files (v ".") in
   if not (Fpath.Set.is_empty missed) then (
