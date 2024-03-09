@@ -3,6 +3,9 @@
   (deps (glob_files *.cu)
     ../../drf/bin/main.exe
   )
-  (libraries feather fpath)
+  (libraries stage0
+    ; 3rd-party:
+    feather fpath
+  )
 )
 

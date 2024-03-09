@@ -1,4 +1,11 @@
-(* open Feather.Infix *)
+let tests = [
+  "saxpy-parse-gv.cu", [], 0;
+  "saxpy-buggy.cu", [], 1;
+  "saxpy-buggy.cu", ["--logic"; "QF_AUFBV"], 1;
+  "saxpy-race-2d.cu", [], 1;
+]
+
+(* ----- UTIL ---- *)
 
 let join (x:Fpath.t list) : Fpath.t =
   match x with
@@ -14,36 +21,61 @@ let from_list (x:string list) : Fpath.t =
 let from_string (x:string) : Fpath.t =
   x |> String.split_on_char '/' |> from_list
 
-let _read_dir (d: Fpath.t) : Fpath.t list =
-  Sys.readdir (Fpath.to_string d)
+let read_dir (dir:Fpath.t) : Fpath.t list =
+  Sys.readdir (Fpath.to_string dir)
   |> Array.map Fpath.v
   |> Array.to_list
+
+(* ---- Testing-specific code ----- *)
 
 let faial_drf_path : Fpath.t = from_string "../../drf/bin/main.exe"
 
 let faial_drf ?(args=[]) (fname:Fpath.t) : Feather.cmd =
   Feather.process (Fpath.to_string faial_drf_path) (args @ [fname |> Fpath.to_string])
 
-let files = [
-  "saxpy-parse-gv.cu", [], 0;
-  "saxpy-buggy.cu", [], 1;
-  "saxpy-buggy.cu", ["--logic"; "QF_AUFBV"], 1;
-]
+let used_files : Fpath.Set.t =
+  tests
+  (* get just the filenames as paths *)
+  |> List.map (fun (x, _, _) -> Fpath.v x)
+  (* convert to a set *)
+  |> Fpath.Set.of_list
+
+let missed_files (dir:Fpath.t) : Fpath.Set.t =
+  let all_cu_files : Fpath.Set.t =
+    dir
+    |> read_dir
+    |> List.filter (Fpath.has_ext ".cu")
+    |> Fpath.Set.of_list
+  in
+  Fpath.Set.diff all_cu_files used_files
 
 let () =
   let open Feather in
   let open Fpath in
-(*   let open Fpath in *)
-  files
+  tests
   |> List.iter (fun (filename, args, expected_status) ->
+    let str_args = if args = [] then "" else (String.concat " " args ^ " ") in
+    print_string ("faial-drf " ^ str_args ^ filename);
     let given = faial_drf ~args (v filename) |> collect everything in
     if given.status <> expected_status then (
+      print_endline " ❌";
       print_endline (given.stdout);
-      let args = if args = [] then "" else (String.concat " " args ^ " ") in
-      print_endline ("ERROR: faial-drf " ^ args ^ filename);
-      print_endline ("Expected status: " ^ string_of_int expected_status ^ " but given: " ^ string_of_int given.status);
+      print_endline ("ERROR: Expected status: " ^ string_of_int expected_status ^ " but given: " ^ string_of_int given.status);
       exit 1
-    ) else ()
+    ) else (
+      print_endline " ✅";
+    )
   );
-  ()
-(*   process drf []  |> run *)
+  let missed = missed_files (v ".") in
+  if not (Fpath.Set.is_empty missed) then (
+    let missed =
+      missed
+      |> Fpath.Set.to_list
+      |> List.sort Fpath.compare
+      |> List.map Fpath.to_string
+      |> String.concat ", "
+    in
+    print_endline ("");
+    print_endline ("ERROR: The following files are not being checked: " ^ missed);
+  ) else
+    ()
