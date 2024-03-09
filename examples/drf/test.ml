@@ -89,7 +89,13 @@ let () =
   tests
   |> List.iter (fun (filename, args, expected_status) ->
     let str_args = if args = [] then "" else (String.concat " " args ^ " ") in
-    print_string ("- faial-drf " ^ str_args ^ filename);
+    let bullet =
+      match expected_status with
+      | 0 -> "DRF:  "
+      | 1 -> "RACY: "
+      | _ -> "?:    "
+    in
+    print_string (bullet ^ "faial-drf " ^ str_args ^ filename);
     Stdlib.flush_all ();
     let given = faial_drf ~args (v filename) |> collect everything in
     (if given.status <> expected_status then (
