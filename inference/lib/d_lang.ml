@@ -337,7 +337,7 @@ module Stmt = struct
       function
       | WriteAccessStmt w -> [Line ("wr " ^ subscript_to_s w.target ^ " = " ^ Expr.to_string w.source)]
       | ReadAccessStmt r -> [Line ("rd " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
-      | AtomicAccessStmt r -> [Line ("atomic " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
+      | AtomicAccessStmt r -> [Line ("atomic " ^ C_type.to_string r.ty ^ " " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
       | ReturnStmt None -> [Line "return"]
       | ReturnStmt (Some e)-> [Line ("return " ^ Expr.to_string e)]
       | GotoStmt -> [Line "goto"]
