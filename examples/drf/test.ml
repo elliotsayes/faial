@@ -40,6 +40,10 @@ let tests = [
   "racy-reduce.cu", [], 1;
   (* A data-race free example as long as the analysis understands typedefs. *)
   "drf-typedef.cu", [], 0;
+  (* The running example of CAV21 *)
+  "racy-cav21.cu", [], 1;
+  (* The fixed running example of CAV21 *)
+  "drf-cav21.cu", [], 0;
 ]
 
 let unsupported : Fpath.t list =
