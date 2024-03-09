@@ -1,5 +1,8 @@
 // pass
 // --gridDim=[2,2,2]
+
+// This example is only DRF when the tool parses the command line
+// parameters.
 __global__
 void saxpy(int n, float a, float *x, float *y, int k)
 {

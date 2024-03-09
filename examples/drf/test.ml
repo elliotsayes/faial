@@ -1,9 +1,29 @@
 let tests = [
+  (* The example should be DRF *)
   "parse-gv.cu", [], 0;
+  (* Unless we override the parameters with something other than
+     what is in the source code. *)
+  "parse-gv.cu", ["--gridDim=3"], 1;
+  (* This is the simplest data-race. *)
   "saxpy-racy.cu", [], 1;
+  (* Sanity check, make sure that the bit-vector logic works. *)
   "saxpy-racy.cu", ["--logic"; "QF_AUFBV"], 1;
+  (* This is the simplest data-race free example. *)
+  "saxpy.cu", [], 0;
+  (* This example is only racy at the grid-level *)
+  "racy-grid-level.cu", [], 0;
+  "racy-grid-level.cu", ["--grid-level"], 1;
+  (* This is a data-race in a 2D shared array. *)
   "racy-2d.cu", [], 1;
+  (* This is a data-race on a shared scalar. *)
   "racy-shared-scalar.cu", [], 1;
+  (* A data-race in shared memory is invisible at the grid level. *)
+  "racy-shared-scalar.cu", ["--grid-level"], 0;
+  (* A data-race free example that relies on top-level assignments. *)
+  "toplevel-drf.cu", [], 0;
+  (* A data-race that occurs when analysis understand top-level assignments.
+     We ensure it's a data-race between threads 0 and 1. *)
+  "toplevel-racy.cu", ["--tid1"; "0"; "--tid2"; "1"], 1;
 ]
 
 (* ----- UTIL ---- *)
