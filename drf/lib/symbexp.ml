@@ -171,13 +171,15 @@ module SymAccess = struct
     " }"
 
   (* Given a task generator serialize a conditional access *)
-  let to_bexp (t:task) (a:t) : bexp =
-
+  let to_bexp ?(assign_index=true) (t:task) (a:t) : bexp =
     (
       Gen.assign_access_id t a.id ::
       a.condition :: (* assign the pre-condition of the access *)
       Gen.assign_mode t a.access.mode :: (* assign the mode *)
-      List.mapi (Gen.assign_index Exp.NEq t) a.access.index (* assign the values of the index *)
+      if assign_index then
+        (* assign the values of the index *)
+        List.mapi (Gen.assign_index Exp.NEq t) a.access.index
+      else [] (* otherwise do not generate *)
     )
     |> b_and_ex
 
@@ -353,6 +355,7 @@ module Proof = struct
     to_s p |> Indent.to_string
 
   let from_code
+    ?(assign_index=true)
     (arch:Architecture.t)
     (locals:Variable.Set.t)
     (runtime:bexp)
@@ -371,7 +374,7 @@ module Proof = struct
       |> Flatacc.Code.to_list (* get conditional accesses *)
       |> List.map (Flatacc.CondAccess.add_cond runtime)
       |> List.mapi (SymAccess.from_cond_access locals t) (* get symbolic access *)
-      |> List.map (SymAccess.to_bexp t) (* generate code *)
+      |> List.map (SymAccess.to_bexp ~assign_index t) (* generate code *)
       |> b_or_ex
     in
     b_and_ex [
@@ -391,14 +394,21 @@ module Proof = struct
       Gen.mode_spec arch;
     ]
 
-  let from_flat (arch:Architecture.t) (proof_id:int) (k:Flatacc.Kernel.t) : t =
+  let from_flat
+    ?(assign_index=true)
+    (arch:Architecture.t)
+    (proof_id:int)
+    (k:Flatacc.Kernel.t)
+  :
+    t
+  =
     let locals =
       Variable.Set.union
         k.exact_local_variables
         k.approx_local_variables
     in
     let goal =
-      from_code arch locals k.runtime k.code
+      from_code ~assign_index arch locals k.runtime k.code
       |> b_and k.pre
     in
     let pre_fns = Freenames.free_names_bexp k.pre Variable.Set.empty in
@@ -455,6 +465,14 @@ let translate
   Proof.t Streamutil.stream
 =
   Streamutil.mapi (Proof.from_flat arch) stream
+
+let sanity_check
+  (arch:Architecture.t)
+  (stream:Flatacc.Kernel.t Streamutil.stream)
+:
+  Proof.t Streamutil.stream
+=
+  Streamutil.mapi (Proof.from_flat ~assign_index:false arch) stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 

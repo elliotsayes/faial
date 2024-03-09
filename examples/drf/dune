@@ -1,0 +1,8 @@
+(test
+  (name test)
+  (deps (glob_files *.cu)
+    ../../drf/bin/main.exe
+  )
+  (libraries feather fpath)
+)
+

@@ -352,6 +352,45 @@ module Witness = struct
     |> filter_variables all_vars
 end
 
+let solve
+  ?(timeout=None)
+  ?(logic=None)
+  (p:Symbexp.Proof.t)
+:
+  Z3.Solver.status
+=
+  let options = [
+    ("model", "true");
+    ("proof", "false");
+    ] @
+    begin match timeout with
+      | Some timeout -> ["timeout", string_of_int timeout]
+      | None -> []
+    end
+  in
+  let b_to_expr =
+    logic
+    |> Option.map (fun l ->
+      if String.ends_with ~suffix:"BV" l then
+        Bv64Gen.b_to_expr
+      else
+        IntGen.b_to_expr
+    )
+    |> Option.value ~default:IntGen.b_to_expr
+  in
+  (* Create a solver and try to solve, might fail with Not_Implemented *)
+  let ctx = Z3.mk_context options in
+  let s =
+    match logic with
+      | None ->
+        Solver.mk_simple_solver ctx
+      | Some logic ->
+        Solver.mk_solver_s ctx logic
+  in
+  add b_to_expr s ctx p;
+  Solver.check s []
+
+
 module Solution = struct
   type t =
     | Drf
@@ -382,15 +421,15 @@ module Solution = struct
     logic |> Option.iter (fun l ->
       if String.ends_with ~suffix:"BV" l then (
         prerr_endline ("WARNING: user set bit-vector logic " ^ l);
-        b_to_expr := Bv32Gen.b_to_expr;
-        parse_num := Bv32Gen.parse_num;
+        b_to_expr := Bv64Gen.b_to_expr;
+        parse_num := Bv64Gen.parse_num;
       ) else ()
     );
     let logic = ref logic in
     let set_bv () : unit =
       prerr_endline ("WARNING: using bit-vector logic.");
-      b_to_expr := Bv32Gen.b_to_expr;
-      parse_num := Bv32Gen.parse_num;
+      b_to_expr := Bv64Gen.b_to_expr;
+      parse_num := Bv64Gen.parse_num;
       logic := None;
     in
     (* Logic is bit-vector based *)

@@ -240,4 +240,5 @@ end
 
 module IntGen = CodeGen (ArithmeticOps)
 module Bv32Gen = CodeGen (BitVectorOps(W32))
+module Bv64Gen = CodeGen (BitVectorOps(W64))
 module SignedBv32Gen = CodeGen (SignedBitVectorOps(SIGNED_32))

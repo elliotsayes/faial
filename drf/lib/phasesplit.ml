@@ -114,7 +114,7 @@ module Kernel = struct
 
 end
 
-let translate (ks: Aligned.t Proto.Kernel.t stream) (_:bool) : Kernel.t stream =
+let translate (ks: Aligned.t Proto.Kernel.t stream) : Kernel.t stream =
   map Kernel.from_aligned ks |> concat
 
 

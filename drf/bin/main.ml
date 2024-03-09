@@ -309,39 +309,70 @@ module App = struct
       arch;
     }
 
+  let show (b:bool) (call:'a -> unit) (x:'a) : 'a =
+    if b then call x else ();
+    x
+
+  let translate (a:t) (p:Proto.Code.t Proto.Kernel.t) : Flatacc.Kernel.t Streamutil.stream =
+    p
+    |> show a.show_proto (Proto.Kernel.print Proto.Code.to_s)
+    (* 1. constant folding optimization *)
+    |> Proto.Kernel.opt
+    (* 2. convert to a well-formed protocol *)
+    |> Wellformed.translate
+    |> show a.show_wf Wellformed.print_kernels
+    (* 3. align protocol *)
+    |> Aligned.translate
+    |> show a.show_align Aligned.print_kernels
+    (* 3. split per sync *)
+    |> Phasesplit.translate
+    |> show a.show_phase_split Phasesplit.print_kernels
+    (* 4. split per location *)
+    |> Locsplit.translate
+    |> Locsplit.filter_array a.only_array
+    |> show a.show_loc_split Locsplit.print_kernels
+    (* 5. flatten control-flow structures *)
+    |> Flatacc.translate a.arch
+    |> show a.show_flat_acc Flatacc.print_kernels
+
+  let check_unreachable (a:t) : unit =
+    a.kernels
+    |> List.iter (fun kernel ->
+      let report =
+        kernel
+        |> translate a
+        |> Symbexp.sanity_check a.arch
+        |> show a.show_symbexp Symbexp.print_kernels
+        |> Streamutil.map (fun b ->
+          (b, Z3_solver.solve ~timeout:a.timeout ~logic:a.logic b)
+        )
+        |> Streamutil.to_list
+      in
+      Stdlib.flush_all ();
+      report |> List.iter (fun (p, s) ->
+        let open Z3.Solver in
+        match s with
+        | UNSATISFIABLE | UNKNOWN ->
+          Symbexp.Proof.to_string p |> print_endline
+        | SATISFIABLE -> ()
+      )
+    )
+
+
   let run (a:t) : Analysis.t list =
     a.kernels
-    |> List.map (fun p ->
-      let kernel = p in
-      let show (b:bool) (call:unit -> unit) : unit =
-        if b then call () else ()
-      in
-      show a.show_proto (fun () -> Proto.Kernel.print Proto.Code.to_s p);
-      let p = p |> Proto.Kernel.opt |> Wellformed.translate in
-      show a.show_wf (fun () -> Wellformed.print_kernels p);
-      let p = Aligned.translate p in
-      show a.show_align (fun () -> Aligned.print_kernels p);
-      let p = Phasesplit.translate p false in
-      show a.show_phase_split (fun () -> Phasesplit.print_kernels p);
-      let p = Locsplit.translate p |> Locsplit.filter_array a.only_array in
-      show a.show_loc_split (fun () -> Locsplit.print_kernels p);
-      let p = Flatacc.translate a.arch p in
-      show a.show_flat_acc (fun () -> Flatacc.print_kernels p);
-      let p =
-        p
+    |> List.map (fun kernel ->
+      let report =
+        kernel
+        |> translate a
         |> Symbexp.translate a.arch
         |> Symbexp.add_rel_index Exp.NLe a.le_index
         |> Symbexp.add_rel_index Exp.NGe a.ge_index
         |> Symbexp.add_rel_index Exp.NEq a.eq_index
         |> Symbexp.add ~tid:a.thread_idx_1 ~bid:a.block_idx_1
         |> Symbexp.add ~tid:a.thread_idx_2 ~bid:a.block_idx_2
-      in
-      show a.show_symbexp (fun () -> Symbexp.print_kernels p);
-      let open Z3_solver in
-      let open Solution in
-      let report =
-        p
-        |> solve
+        |> show a.show_symbexp Symbexp.print_kernels
+        |> Z3_solver.Solution.solve
             ~timeout:a.timeout
             ~show_proofs:a.show_proofs
             ~logic:a.logic
@@ -509,6 +540,7 @@ let main
   (block_idx_1:Dim3.t option)
   (block_idx_2:Dim3.t option)
   (grid_level:bool)
+  (unreachable:bool)
 :
   unit
 =
@@ -544,8 +576,12 @@ let main
       ~block_idx_1
       ~block_idx_2
       ~arch
-  |> App.run
-  |> ui
+  |> (fun a ->
+    if unreachable then
+      App.check_unreachable a
+    else
+      App.run a |> ui
+  )
 
 
 open Cmdliner
@@ -597,6 +633,10 @@ let show_symbexp =
 let output_json =
   let doc = "Output result as JSON." in
   Arg.(value & flag & info ["json"] ~doc)
+
+let unreachable =
+  let doc = "Check unreachable accesses." in
+  Arg.(value & flag & info ["unreachable"] ~doc)
 
 let ignore_parsing_errors =
   let doc = "Ignore parsing errors." in
@@ -724,6 +764,7 @@ let main_t = Term.(
   $ block_idx_1
   $ block_idx_2
   $ grid_level
+  $ unreachable
 )
 
 let info =
