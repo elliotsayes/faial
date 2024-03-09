@@ -38,6 +38,8 @@ let tests = [
   "racy-atomics.cu", [], 1;
   (* A data-race that occurs when we have warp-concurrent semantics *)
   "racy-reduce.cu", [], 1;
+  (* A data-race free example as long as the analysis understands typedefs. *)
+  "drf-typedef.cu", [], 0;
 ]
 
 let unsupported : Fpath.t list =
