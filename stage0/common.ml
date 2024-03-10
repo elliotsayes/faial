@@ -9,11 +9,6 @@ module MapUtil (M:Map.S) = struct
 
   let union_right (m1: 'a M.t) (m2: 'a M.t) : 'a M.t =
     union_left m2 m1
-
-(*  let from_list (l:(M.key * 'a) list) : 'a M.t =
-    List.fold_left (fun m (k,v) ->
-      M.add k v m
-    ) M.empty l*)
 end
 
 module MapSetUtil (S:Set.S) (M:Map.S with type key = S.elt) = struct
