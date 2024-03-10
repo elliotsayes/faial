@@ -77,11 +77,3 @@ let expect (default:unit -> 'a): 'a option -> 'a =
   | None -> default ()
 
 
-(*
-let j_expect (j:Yojson.Basic.t) (msg:string) : 'a option -> 'a =
-  fun (o:'a option) ->
-    match o with
-    | Some v -> v
-    | None -> 
-      abort_error msg j
-*)

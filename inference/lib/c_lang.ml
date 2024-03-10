@@ -870,7 +870,11 @@ let parse_location (j:json) : Location.t j_result =
   let open Location in
   let* o = cast_object j in
   let* first = with_field "begin" parse_position o in
-  let last = with_field "end" (parse_position ~filename:first.filename) o |> unwrap_or first in
+  let last =
+    o
+    |> with_field "end" (parse_position ~filename:first.filename)
+    |> Result.value ~default:first
+  in
   Ok (Location.add_or_reset_lhs first last)
 
 let parse_variable (j:json) : Variable.t j_result =
@@ -905,7 +909,7 @@ let compound (ty:J_type.t) (lhs:Expr.t) (opcode:string) (rhs:Expr.t) : Expr.t =
 let is_invalid (o: j_object) : bool =
   let open Rjson in
   with_opt_field "isInvalid" cast_bool o
-  |> unwrap_or None
+  |> Result.value ~default:None
   |> Option.value ~default:false
 
 
@@ -1417,7 +1421,7 @@ let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
     let* k = get_kind o in
     Ok (f k)
   in
-  res |> unwrap_or false
+  res |> Result.value ~default:false
 
 let wrap_error (msg:string) (j:Yojson.Basic.t): 'a j_result -> 'a j_result =
     function

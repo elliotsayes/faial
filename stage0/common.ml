@@ -272,12 +272,6 @@ let wrap
   | Ok bv -> Ok bv
   | Error (e:'e) -> error_handler e
 
-(* Convert an optional boolean into a boolean, where None represents false *)
-let unwrap_or (default:'a): ('a, 'e) Result.t -> 'a =
-  function
-  | Ok v -> v
-  | Error _ -> default
-
 (* Read a range of lines: offset has base 0 *)
 let get_lines ~offset ~count (filename:string) : string list =
   (* Skip the first n-lines *)

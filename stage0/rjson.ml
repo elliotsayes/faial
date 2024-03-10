@@ -9,8 +9,6 @@ let (let*) = Result.bind
 (* Monadic pipe *)
 let (>>=) = Result.bind
 
-let unwrap_or = Common.unwrap_or
-
 let unless (first:('a, 'e) Result.t) (second:('a, 'e) Result.t) : ('a, 'e) Result.t =
   if Result.is_ok first then first else second
 
@@ -289,7 +287,7 @@ let filter_kind (f:string -> bool) (o:j_object) : bool =
   (* Check if the kind is in 'ks' *)
   |> Result.map f
   (* Convert bool option to bool *)
-  |> unwrap_or false
+  |> Result.value ~default:false
 
 
 let has_kind (ks:string list) (o:j_object) : bool =
