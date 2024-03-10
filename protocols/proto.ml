@@ -294,33 +294,46 @@ module Kernel = struct
       code = Code.opt k.code;
     }
 
-  let replace_constants (kvs:(string*int) list) (k:Code.t t) : Code.t t =
-    if Common.list_is_empty kvs then k else
-    begin
-      let kvs = List.map (fun (x,n) -> x, Num n) kvs in
-      let keys = List.split kvs |> fst |> List.map Variable.from_name |> Variable.Set.of_list in
-      let kvs = Subst.SubstAssoc.make kvs in
-      {
-        k with
-        pre = Code.PSubstAssoc.M.b_subst kvs k.pre;
-        code = Code.PSubstAssoc.subst kvs k.code;
-        global_variables = Params.remove_all keys k.global_variables;
-        local_variables = Params.remove_all keys k.local_variables;
-      }
-    end
-
   let global_set (k:'a t) : Variable.Set.t =
     Params.to_set k.local_variables
 
   let local_set (k:'a t) : Variable.Set.t =
     Params.to_set k.local_variables
 
-  let variable_set (k:'a t) : Variable.Set.t =
+  let parameter_set (k:'a t) : Variable.Set.t =
     Variable.Set.union (local_set k) (global_set k)
+
+  let assign_globals (kvs:(string*int) list) (k:Code.t t) : Code.t t =
+    if Common.list_is_empty kvs then k else
+    (* retrieve a set of key-values *)
+    let keys =
+      kvs
+      |> List.split
+      |> fst
+      |> List.map Variable.from_name
+      |> Variable.Set.of_list
+    in
+    let non_global_keys = Variable.Set.diff keys (global_set k) in
+    (if Variable.Set.is_empty non_global_keys then
+      raise (invalid_arg ("The following keys are not thread-global parameters: " ^
+      Variable.set_to_string non_global_keys))
+    else ());
+    let kvs =
+      kvs
+      |> List.map (fun (x,n) -> x, Num n)
+      |> Subst.SubstAssoc.make
+    in
+    {
+      k with
+      pre = Code.PSubstAssoc.M.b_subst kvs k.pre;
+      code = Code.PSubstAssoc.subst kvs k.code;
+      global_variables = Params.remove_all keys k.global_variables;
+      local_variables = Params.remove_all keys k.local_variables;
+    }
 
   let vars_distinct (k:Code.t t) : Code.t t =
     { k with
-      code = Code.vars_distinct k.code (variable_set k)
+      code = Code.vars_distinct k.code (parameter_set k)
     }
 
   (*

@@ -360,6 +360,14 @@ module App = struct
 
 
   let run (a:t) : Analysis.t list =
+    let bid1, bid2 =
+      if Architecture.is_grid a.arch then
+        (a.block_idx_1, a.block_idx_2)
+      else
+        (* block idx is ignored in other levels,
+           because it's being handled elsewhere *)
+        (None, None)
+    in
     a.kernels
     |> List.map (fun kernel ->
       let report =
@@ -369,8 +377,8 @@ module App = struct
         |> Symbexp.add_rel_index Exp.NLe a.le_index
         |> Symbexp.add_rel_index Exp.NGe a.ge_index
         |> Symbexp.add_rel_index Exp.NEq a.eq_index
-        |> Symbexp.add ~tid:a.thread_idx_1 ~bid:a.block_idx_1
-        |> Symbexp.add ~tid:a.thread_idx_2 ~bid:a.block_idx_2
+        |> Symbexp.add ~tid:a.thread_idx_1 ~bid:bid1
+        |> Symbexp.add ~tid:a.thread_idx_2 ~bid:bid2
         |> show a.show_symbexp Symbexp.print_kernels
         |> Z3_solver.Solution.solve
             ~timeout:a.timeout
@@ -513,6 +521,15 @@ let jui (output: Analysis.t list) : unit =
   |> Yojson.Basic.to_string
   |> print_endline
 
+let set_block_idx
+  (bid: Dim3.t)
+  (ks: Proto.Code.t Proto.Kernel.t list)
+:
+  Proto.Code.t Proto.Kernel.t list
+=
+  let kvs = Dim3.to_assoc ~prefix:"blockIdx." bid in
+  List.map (Proto.Kernel.assign_globals kvs) ks
+
 let main
   (fname: string)
   (timeout:int option)
@@ -545,6 +562,10 @@ let main
   unit
 =
   let arch = if grid_level then Architecture.Grid else Architecture.Block in
+  if Option.is_some block_idx_2 && not (Architecture.is_grid arch) then (
+    prerr_endline ("ERROR: Can only use --block-idx-2 with --grid-level.");
+    exit 1
+  ) else
   let parsed = Protocol_parser.Silent.to_proto
     ~abort_on_parsing_failure:(not ignore_parsing_errors)
     ~includes
@@ -554,8 +575,16 @@ let main
     ~arch
     fname
   in
+  let kernels = parsed.kernels in
+  (* Assign bid *)
+  let kernels =
+    match block_idx_1, arch with
+    | Some block_idx_1, Architecture.Block ->
+      set_block_idx block_idx_1 kernels
+    | _, _ -> kernels
+  in
   let ui = if output_json then jui else tui in
-  parsed.kernels
+  kernels
   |> App.make
       ~timeout
       ~show_proofs
@@ -680,11 +709,11 @@ let thread_idx_2 =
   Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["thread-idx-2"; "tid2"] ~docv:"DIM3" ~doc)
 
 let block_idx_1 =
-  let doc = "Sets the block index for one thread." ^ dim_help ^ " Default: (none)" in
+  let doc = "Sets the block index for one thread. Only available in grid-level analysis." ^ dim_help ^ " Default: (none)" in
   Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["block-idx-1"; "bid1"] ~docv:"DIM3" ~doc)
 
 let block_idx_2 =
-  let doc = "Sets the block index for another thread." ^ dim_help ^ " Default: (none)" in
+  let doc = "Sets the block index for another thread. Only available in grid-level analysis." ^ dim_help ^ " Default: (none)" in
   Arg.(value & opt (some (conv_dim3 Dim3.zero)) None & info ["block-idx-2"; "bid2"] ~docv:"DIM3" ~doc)
 
 let include_dir =

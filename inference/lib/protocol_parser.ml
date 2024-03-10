@@ -100,7 +100,7 @@ module Make (L:Logger.Logger) = struct
           )
         in
         let key_vals = Gv_parser.to_assoc parsed.options @ key_vals in
-        let p = Proto.Kernel.replace_constants key_vals p in
+        let p = Proto.Kernel.assign_globals key_vals p in
         p
       )
       |> List.filter (fun k ->
