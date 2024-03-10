@@ -867,7 +867,7 @@ let parse_params
   let* params = Rjson.map_all (parse_param resolve)
     (fun i _ e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
-  Ok (Params.from_list globals, Variable.MapUtil.from_list arrays)
+  Ok (Params.from_list globals, Variable.Map.of_list arrays)
 
 let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
   let open D_lang in
@@ -919,7 +919,7 @@ let parse_kernel
   let params = Params.union_right globals params in
   let shared = parse_shared k.code
     |> Common.append_rev1 shared_params
-    |> Variable.MapUtil.from_list in
+    |> Variable.Map.of_list in
   let rec add_type_params (params:Params.t) : Ty_param.t list -> Params.t =
     function
     | [] -> params

@@ -813,12 +813,12 @@ module Inliner = struct
       targets =
         ks
         |> List.map (fun k -> (Kernel.unique_id k, Kernel.calls k))
-        |> StringMapUtil.from_list
+        |> StringMap.of_list
       ;
       kernels =
         ks
         |> List.map (fun k -> (Kernel.unique_id k, k))
-        |> StringMapUtil.from_list
+        |> StringMap.of_list
       ;
       visited = StringSet.empty;
     }

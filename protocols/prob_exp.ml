@@ -86,7 +86,7 @@ let prob ?(sample_size=5000) ?(sample_var=sample_int32) (fns:Variable.t list) (b
       let vals : Int32.t Variable.Map.t =
         fns
         |> List.map (fun x -> (x, sample_var x))
-        |> Variable.MapUtil.from_list
+        |> Variable.Map.of_list
       in
       (* build an environment from variable to value *)
       let env (x:Variable.t) : (Int32.t, string) Result.t =
@@ -217,7 +217,7 @@ let make_doms
       in
       (x, r)
     )
-  |> Variable.MapUtil.from_list
+  |> Variable.Map.of_list
 
 
 let make_sample_var

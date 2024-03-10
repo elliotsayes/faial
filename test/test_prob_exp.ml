@@ -89,7 +89,7 @@ let tests = "Prob_exp" >::: [
     let range (x:string) (n:int) =
       (Variable.from_name x, (Int32.zero, Int32.of_int n))
     in
-    let doms = Variable.MapUtil.from_list [
+    let doms = Variable.Map.of_list [
       range "x" 3;
       range "y" 2;
     ] in

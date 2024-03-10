@@ -100,7 +100,7 @@ module Environ = struct
         (key, parse_num e)
       )
     in
-    let labels = StringMapUtil.from_list labels in
+    let labels = StringMap.of_list labels in
     { labels; variables }
 
 end
