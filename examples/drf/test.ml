@@ -1,3 +1,7 @@
+open Stage0
+
+(* -------- Define the actual tests: ------------- *)
+
 let tests = [
   (* The example should be DRF *)
   "parse-gv.cu", [], 0;
@@ -46,39 +50,17 @@ let tests = [
   "drf-cav21.cu", [], 0;
 ]
 
+(* These are kernels that are being documented, but are
+   not currently being checked *)
 let unsupported : Fpath.t list =
   [
     "drf-warp.cu";
     "racy-warp.cu";
   ] |> List.map Fpath.v
 
-(* ----- UTIL ---- *)
-
-let join (x:Fpath.t list) : Fpath.t =
-  match x with
-  | [] -> failwith "empty list"
-  | [x] -> x
-  | x :: l ->
-    List.fold_left Fpath.append x l
-
-let from_list (x:string list) : Fpath.t =
-  List.map Fpath.v x |> join
-
-(* cross platform load path, expects path separator to be / *)
-let from_string (x:string) : Fpath.t =
-  x |> String.split_on_char '/' |> from_list
-
-let read_dir (dir:Fpath.t) : Fpath.t list =
-  Sys.readdir (Fpath.to_string dir)
-  |> Array.map Fpath.v
-  |> Array.to_list
-
-let exists (f:Fpath.t) : bool =
-  Sys.file_exists (Fpath.to_string f)
-
 (* ---- Testing-specific code ----- *)
 
-let faial_drf_path : Fpath.t = from_string "../../drf/bin/main.exe"
+let faial_drf_path : Fpath.t = Files.from_string "../../drf/bin/main.exe"
 
 let faial_drf ?(args=[]) (fname:Fpath.t) : Feather.cmd =
   Feather.process (Fpath.to_string faial_drf_path) (args @ [fname |> Fpath.to_string])
@@ -93,7 +75,7 @@ let used_files : Fpath.Set.t =
 let missed_files (dir:Fpath.t) : Fpath.Set.t =
   let all_cu_files : Fpath.Set.t =
     dir
-    |> read_dir
+    |> Files.read_dir
     |> List.filter (Fpath.has_ext ".cu")
     |> Fpath.Set.of_list
   in
@@ -127,7 +109,7 @@ let () =
     Stdlib.flush_all ();
   );
   unsupported |> List.iter (fun f ->
-    if not (exists f) then (
+    if not (Files.exists f) then (
       print_endline ("Missing unsupported file: " ^ Fpath.to_string f);
       exit 1
     ) else (
