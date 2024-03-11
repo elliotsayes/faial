@@ -65,23 +65,39 @@ let ic_to_string ?(chunk_size=1024) (ic:in_channel) : string =
   in
   loop ()
 
+let stdout_stderr_to_string
+  ?(stdin="")
+  ((ic,oc): in_channel * out_channel)
+:
+  string
+=
+  (* Send the expression to be processed *)
+  output_string oc stdin;
+  (* Close output to ensure it is processed *)
+  close_out oc;
+  (* Receive the output *)
+  ic_to_string ic
+
 let process_status_to_string : Unix.process_status -> string =
   function
   | WEXITED n -> "Process exited with return code: " ^ string_of_int n
   | WSIGNALED n -> "Process was killed by a signal: " ^ string_of_int n
   | WSTOPPED n -> "Process was stopped by a signal: " ^ string_of_int n
 
-(*
-  Runs a program with a string given as an input
-  *)
-let run ?(stdin="") ~exe args : (Unix.process_status * string) =
-  let cmd = Filename.quote_command exe args in
-  Unix.open_process cmd
-  |> with_process_in_out (fun (ic, oc) ->
-    (* Send the expression to be processed *)
-    output_string oc stdin;
-    (* Close output to ensure it is processed *)
-    close_out oc;
-    (* Receive the output *)
-    ic_to_string ic
-  )
+type t = {
+  exe: string;
+  args: string list;
+}
+
+let make (exe:string) (args:string list) : t = {exe; args;}
+
+let quote (c:t) : string =
+  Filename.quote_command c.exe c.args
+
+(* Run a process while capturing the stdout and stderr *)
+let capture ?(stdin="") (c:t) : (Unix.process_status * string) =
+  c
+  |> quote
+  |> Unix.open_process
+  |> with_process_in_out (stdout_stderr_to_string ~stdin)
+
