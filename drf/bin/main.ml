@@ -394,6 +394,7 @@ module App = struct
 end
 
 let tui (output: Analysis.t list) : unit =
+  let total = ref 0 in
   output
   |> List.iter (fun solution ->
     let kernel_name =
@@ -468,11 +469,16 @@ let tui (output: Analysis.t list) : unit =
       if has_unknown then
         T.print_string [T.Foreground T.Red] ("A portion of the kernel was not analyzable. Try to increasing the timeout.\n")
       else ();
-      if err_count <> "0" || has_unknown then
-        exit 1
-      else
+      if err_count <> "0" || has_unknown then (
+        total := !total + 1;
+      ) else
         ()
   )
+  ;
+  if !total > 0 then
+    exit 1
+  else
+    ()
 
 let jui (output: Analysis.t list) : unit =
   let kernels =
