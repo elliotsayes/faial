@@ -125,7 +125,7 @@ let run ?(asympt=false) ?(exe="koat2") ?(verbose=false) (env:Environ.t) (expr:st
     else ());
   let parse = if asympt then parse_asympt else parse_cost in
   Subprocess.make exe ["analyse"; "-i"; "/dev/stdin"]
-  |> Subprocess.capture ~stdin:expr
+  |> Subprocess.run_combine ~stdin:expr
   |> Errors.handle_result (parse env)
 
 let run_ra ?(asympt=false) ?(exe="koat2") ?(verbose=false) (s:Ra.t) : (string, Errors.t) Result.t =

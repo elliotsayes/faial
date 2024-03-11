@@ -20,11 +20,16 @@ let to_string (err:t) : string =
   Reason.to_string err.reason ^
   "\nProcess output:\n" ^ err.output
 
-let handle_result (parse_data:string -> string option) ((r:Unix.process_status), (data:string)) : (string, t) Result.t =
-  if r = Unix.WEXITED 0 then
-    match parse_data data with
+let handle_result
+  (parse_data:string -> string option)
+  (r:Subprocess.Completed1.t)
+:
+  (string, t) Result.t
+=
+  if Subprocess.Completed1.is_ok r then
+    match parse_data r.output with
     | Some data -> Ok data
-    | None -> Error {output=data; reason=UnexpectedOutput}
+    | None -> Error {output=r.output; reason=UnexpectedOutput}
   else
-    Error {output=data; reason=UnexpectedProcessStatus r}
+    Error {output=r.output; reason=UnexpectedProcessStatus r.status}
 

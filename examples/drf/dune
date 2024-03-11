@@ -5,7 +5,7 @@
   )
   (libraries stage0
     ; 3rd-party:
-    feather fpath
+    fpath
   )
 )
 

@@ -126,7 +126,7 @@ let run
     else ());
   let parse = if asympt then parse_asympt else parse_cost in
   Subprocess.make exe ["-v"; "0"; "-i"; "/dev/stdin"]
-  |> Subprocess.capture ~stdin:expr
+  |> Subprocess.run_combine ~stdin:expr
   |> Errors.handle_result (parse env)
 
 let run_ra ?(asympt=false) ?(verbose=false) ?(exe="cofloco") (s:Ra.t) : (string, Errors.t) Result.t =

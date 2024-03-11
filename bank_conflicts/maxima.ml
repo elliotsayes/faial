@@ -50,7 +50,7 @@ let run ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Resu
     then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
     else ());
   Subprocess.make exe ["--very-quiet"; "--disable-readline"]
-  |> Subprocess.capture ~stdin:expr
+  |> Subprocess.run_combine ~stdin:expr
   |> Errors.handle_result parse_maxima
 
 let run_ra_ratio

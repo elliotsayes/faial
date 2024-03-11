@@ -62,8 +62,8 @@ let unsupported : Fpath.t list =
 
 let faial_drf_path : Fpath.t = Files.from_string "../../drf/bin/main.exe"
 
-let faial_drf ?(args=[]) (fname:Fpath.t) : Feather.cmd =
-  Feather.process (Fpath.to_string faial_drf_path) (args @ [fname |> Fpath.to_string])
+let faial_drf ?(args=[]) (fname:Fpath.t) : Subprocess.t =
+  Subprocess.make (Fpath.to_string faial_drf_path) (args @ [fname |> Fpath.to_string])
 
 let used_files : Fpath.Set.t =
   tests
@@ -83,7 +83,6 @@ let missed_files (dir:Fpath.t) : Fpath.Set.t =
   Fpath.Set.diff (Fpath.Set.diff all_cu_files used_files) unsupported
 
 let () =
-  let open Feather in
   let open Fpath in
   print_endline "Checking examples for DRF:";
   tests
@@ -97,14 +96,14 @@ let () =
     in
     print_string (bullet ^ "faial-drf " ^ str_args ^ filename);
     Stdlib.flush_all ();
-    let given = faial_drf ~args (v filename) |> collect everything in
-    (if given.status <> expected_status then (
+    let given = faial_drf ~args (v filename) |> Subprocess.run_split in
+    (if given.status = Unix.WEXITED expected_status then (
+      print_endline " ✔";
+    ) else (
       print_endline " ✘";
       print_endline (given.stdout);
-      print_endline ("ERROR: Expected status: " ^ string_of_int expected_status ^ " but given: " ^ string_of_int given.status);
+      print_endline ("ERROR: Expected status: " ^ string_of_int expected_status ^ " but given: " ^ Subprocess.Completed2.to_string given);
       exit 1
-    ) else (
-      print_endline " ✔";
     ));
     Stdlib.flush_all ();
   );

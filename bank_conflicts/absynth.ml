@@ -55,7 +55,7 @@ let run ?(asympt=false) ?(verbose=false) ?(exe="absynth") (data:string) : (strin
   with_tmp ~prefix:"absynth_" ~suffix:".imp" (fun filename ->
     write_string ~filename ~data;
     Subprocess.make exe (args @ [filename])
-    |> Subprocess.capture
+    |> Subprocess.run_combine
   )
   |> Errors.handle_result parse_absynth
 

@@ -55,6 +55,19 @@ let with_process_in_out :
 =
   WithProcessInOut.with_process
 
+
+module WithProcessSplit = WithProcess(struct
+  type t = in_channel * out_channel * in_channel
+  let close_process = Unix.close_process_full
+end)
+
+let with_process_split :
+  (in_channel * out_channel * in_channel -> 'a) ->
+  in_channel * out_channel * in_channel ->
+  (Unix.process_status * 'a)
+=
+  WithProcessSplit.with_process
+
 let ic_to_string ?(chunk_size=1024) (ic:in_channel) : string =
   let buffer = Buffer.create chunk_size in
   let rec loop () =
@@ -78,6 +91,30 @@ let stdout_stderr_to_string
   (* Receive the output *)
   ic_to_string ic
 
+let split_to_string
+  ?(stdin="")
+  ((stdout,oc,stderr): in_channel * out_channel * in_channel)
+:
+  string * string
+=
+  (* Send the expression to be processed *)
+  output_string oc stdin;
+  (* Close output to ensure it is processed *)
+  close_out oc;
+  (* Receive the output *)
+  ic_to_string stdout, ic_to_string stderr
+
+let neither_to_string
+  ?(stdin="")
+  (oc:out_channel)
+:
+  unit
+=
+  (* Send the expression to be processed *)
+  output_string oc stdin;
+  (* Close output to ensure it is processed *)
+  close_out oc
+
 let process_status_to_string : Unix.process_status -> string =
   function
   | WEXITED n -> "Process exited with return code: " ^ string_of_int n
@@ -94,10 +131,59 @@ let make (exe:string) (args:string list) : t = {exe; args;}
 let quote (c:t) : string =
   Filename.quote_command c.exe c.args
 
+module Completed2 = struct
+  type t = {
+    status: Unix.process_status;
+    stdout: string;
+    stderr: string;
+  }
+
+  let make ?(stdout="") ?(stderr="") (status:Unix.process_status) : t =
+    {stdout; stderr; status}
+
+  let is_ok (c:t) : bool =
+    c.status = Unix.WEXITED 0
+
+  let to_string (x:t) : string =
+    process_status_to_string x.status
+end
+
+
+module Completed1 = struct
+  type t = {
+    status: Unix.process_status;
+    output: string;
+  }
+
+  let make ?(output="") (status:Unix.process_status) : t =
+    {output; status}
+
+  let is_ok (c:t) : bool =
+    c.status = Unix.WEXITED 0
+
+  let to_string (x:t) : string =
+    process_status_to_string x.status
+end
+
 (* Run a process while capturing the stdout and stderr *)
-let capture ?(stdin="") (c:t) : (Unix.process_status * string) =
+let run_split ?(stdin="") (c:t) : Completed2.t =
+  c
+  |> quote
+  |> (fun cmd -> Unix.open_process_full cmd (Unix.environment ()) )
+  |> with_process_split (split_to_string ~stdin)
+  |> (fun (s, (o,e)) -> Completed2.make ~stdout:o ~stderr:e s)
+
+(* Run a process while capturing the stdout and stderr *)
+let run_combine ?(stdin="") (c:t) : Completed1.t =
   c
   |> quote
   |> Unix.open_process
   |> with_process_in_out (stdout_stderr_to_string ~stdin)
+  |> (fun (s, o) -> Completed1.make ~output:o s)
 
+let run_echo ?(stdin="") (c:t) : Unix.process_status =
+  c
+  |> quote
+  |> Unix.open_process_out
+  |> with_process_out (neither_to_string ~stdin)
+  |> fst

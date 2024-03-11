@@ -8,7 +8,6 @@ if which opam > /dev/null; then
         yojson=2.1.2 \
         z3=4.12.6 \
         printbox-text=0.10 \
-        feather=0.3.0 \
         fpath=0.7.3
 
 else
