@@ -13,7 +13,7 @@ let cu_to_json_res
   let cmd = Filename.quote_command exe args in
   let (r, j) =
     Unix.open_process_in cmd
-    |> Common.with_process_in (fun ic -> try Ok (Yojson.Basic.from_channel ic) with
+    |> Subprocess.with_process_in (fun ic -> try Ok (Yojson.Basic.from_channel ic) with
       Yojson.Json_error e -> Error e
     )
   in

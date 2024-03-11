@@ -125,7 +125,7 @@ let run
     then prerr_endline ("CoFloCo output:\n" ^ expr ^ "\n")
     else ());
   let parse = if asympt then parse_asympt else parse_cost in
-  Common.run ~stdin:expr ~exe ["-v"; "0"; "-i"; "/dev/stdin"]
+  Subprocess.run ~stdin:expr ~exe ["-v"; "0"; "-i"; "/dev/stdin"]
   |> Errors.handle_result (parse env)
 
 let run_ra ?(asympt=false) ?(verbose=false) ?(exe="cofloco") (s:Ra.t) : (string, Errors.t) Result.t =

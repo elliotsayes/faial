@@ -54,7 +54,7 @@ let run ?(asympt=false) ?(verbose=false) ?(exe="absynth") (data:string) : (strin
   let args = if asympt then ["-asympt"] else [] in
   with_tmp ~prefix:"absynth_" ~suffix:".imp" (fun filename ->
     write_string ~filename ~data;
-    Common.run ~exe (args @ [filename])
+    Subprocess.run ~exe (args @ [filename])
   )
   |> Errors.handle_result parse_absynth
 
