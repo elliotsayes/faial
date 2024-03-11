@@ -48,6 +48,8 @@ let tests = [
   "racy-cav21.cu", [], 1;
   (* The fixed running example of CAV21 *)
   "drf-cav21.cu", [], 0;
+  (* A racy example *)
+  "racy-device.cu", [], 1;
 ]
 
 (* These are kernels that are being documented, but are

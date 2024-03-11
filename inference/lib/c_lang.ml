@@ -1209,8 +1209,9 @@ let parse_decl (j:json) : Decl.t option j_result =
       (
         let* o = cast_object j in
         let* k = get_kind o in
+        print_endline k;
         Ok (match k with
-          | "CUDASharedAttr" -> true
+          | "CUDASharedAttr" | "CUDADeviceAttr" -> true
           | _ -> false
         )
       ) |> (Result.value ~default:false)

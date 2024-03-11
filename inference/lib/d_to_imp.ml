@@ -970,6 +970,8 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
             let ty = TypeAlias.resolve ty typedefs in
             if List.mem C_lang.c_attr_shared v.attrs then
               (v.var, Memory.from_type SharedMemory ty)::arrays, globals, assigns
+            else if List.mem C_lang.c_attr_device v.attrs then
+              (v.var, Memory.from_type GlobalMemory ty)::arrays, globals, assigns
             else if C_type.is_int ty then
               let g = match v.init with
               | Some (IExpr n) ->
