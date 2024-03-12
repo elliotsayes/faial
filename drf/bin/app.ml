@@ -154,17 +154,12 @@ let show (b:bool) (call:'a -> unit) (x:'a) : 'a =
   if b then call x else ();
   x
 
-let globals (a:t) : (string * int) list =
-  Dim3.to_assoc ~prefix:"blockDim." a.block_dim
-  @
-  Dim3.to_assoc ~prefix:"gridDim." a.grid_dim
-
 let translate (a:t) (p:Proto.Code.t Proto.Kernel.t) : Flatacc.Kernel.t Streamutil.stream =
   p
   (* 1. apply block-level/grid-level analysis constraints *)
   |> Proto.Kernel.apply_arch a.arch
   (* 2. inline global assignments, including block_dim/grid_dim *)
-  |> Proto.Kernel.inline_globals ~key_vals:(globals a)
+  |> Proto.Kernel.inline_all ~grid_dim:a.grid_dim ~block_dim:a.block_dim
   |> show a.show_proto (Proto.Kernel.print Proto.Code.to_s)
   (* 3. constant folding optimization *)
   |> Proto.Kernel.opt

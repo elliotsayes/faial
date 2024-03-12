@@ -367,16 +367,29 @@ module Kernel = struct
       local_variables = Params.union_left locals k.local_variables;
     }
 
-  let inline_globals ?(key_vals=[]) (k:Code.t t) : Code.t t =
-    let inferred_key_vals =
+  let inline_dims (dims:(string*Dim3.t) list) (k:Code.t t) : Code.t t =
+    let key_vals = List.concat_map (fun (name, d) ->
+      Dim3.to_assoc ~prefix:(name ^ ".") d
+    ) dims in
+    assign_globals key_vals k
+
+  let inline_inferred (k:Code.t t) : Code.t t =
+    let key_vals =
       constants k
       |> List.filter (fun (x,_) ->
         (* Make sure we only replace thread-global variables *)
         Params.mem (Variable.from_name x) k.global_variables
       )
     in
-    let key_vals = key_vals @ inferred_key_vals in
     assign_globals key_vals k
+
+  let inline_all ~block_dim ~grid_dim (k:Code.t t) : Code.t t =
+    k
+    |> inline_dims [
+      "blockDim", block_dim;
+      "gridDim", grid_dim;
+    ]
+    |> inline_inferred
 
   let to_s (f:'a -> Indent.t list) (k:'a t) : Indent.t list =
     [
