@@ -267,6 +267,10 @@ let wrap
   | Ok bv -> Ok bv
   | Error (e:'e) -> error_handler e
 
+let string_split_lines (x:string) : string list =
+   let eol = Str.regexp "\r?\n" in
+   Str.split eol x
+
 (* Read a range of lines: offset has base 0 *)
 let get_lines ~offset ~count (filename:string) : string list =
   (* Skip the first n-lines *)

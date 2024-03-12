@@ -131,6 +131,8 @@ let make (exe:string) (args:string list) : t = {exe; args;}
 let quote (c:t) : string =
   Filename.quote_command c.exe c.args
 
+let to_string (c:t) : string = quote c
+
 module Completed2 = struct
   type t = {
     status: Unix.process_status;
