@@ -236,7 +236,7 @@ module TUI = struct
         in
         (* Flatten the expression *)
         ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
-        s |> Shared_access.location |> Tui.LocationUI.print;
+        s |> Shared_access.location |> Tui_helper.LocationUI.print;
         print_endline "";
         PrintBox.(
           tree (s |> Shared_access.to_string |> String.cat "▶ Context: " |> text)

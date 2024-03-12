@@ -367,6 +367,17 @@ module Kernel = struct
       local_variables = Params.union_left locals k.local_variables;
     }
 
+  let inline_globals ?(key_vals=[]) (k:Code.t t) : Code.t t =
+    let inferred_key_vals =
+      constants k
+      |> List.filter (fun (x,_) ->
+        (* Make sure we only replace thread-global variables *)
+        Params.mem (Variable.from_name x) k.global_variables
+      )
+    in
+    let key_vals = key_vals @ inferred_key_vals in
+    assign_globals key_vals k
+
   let to_s (f:'a -> Indent.t list) (k:'a t) : Indent.t list =
     [
       Line ("name: " ^ k.name ^ ";");

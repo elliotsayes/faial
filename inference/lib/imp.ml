@@ -667,7 +667,7 @@ module Kernel = struct
   let print (k: t) : unit =
     Indent.print (to_s k)
 
-  let compile (arch:Architecture.t) (k:t) : Proto.Code.t Proto.Kernel.t =
+  let compile (k:t) : Proto.Code.t Proto.Kernel.t =
     let globals = k.params in
     let (globals, p) = imp_to_post (globals, k.code) in
     let p : Post.t =
@@ -703,7 +703,7 @@ module Kernel = struct
       global_variables = globals;
       code = p;
       visibility = k.visibility;
-    } |> Proto.Kernel.apply_arch arch
+    }
 
   let calls (k:t) : StringSet.t =
     Stmt.calls k.code

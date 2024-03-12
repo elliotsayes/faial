@@ -410,7 +410,7 @@ module Solution = struct
     *)
   let solve
     ?(timeout=None)
-    ?(show_proofs=false)
+    ?(_show_proofs=false)
     ?(logic=None)
     (ps:Symbexp.Proof.t Streamutil.stream)
   :
@@ -465,11 +465,11 @@ module Solution = struct
             set_bv ();
             solve ()
       in
-      (if show_proofs then (
+      (*if show_proofs then (
         let title = "proof #" ^ string_of_int p.id in
         let body = Solver.to_string s ^ "(check-sat)\n(get-model)\n" in
         Tui.print_frame ~title ~body
-      ) else ());
+      ) else ()); *)
       let r = match Solver.check s [] with
       | UNSATISFIABLE -> Drf
       | SATISFIABLE ->

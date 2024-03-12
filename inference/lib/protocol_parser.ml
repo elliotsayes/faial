@@ -70,9 +70,8 @@ module Make (L:Logger.Logger) = struct
     ?(grid_dim=None)
     ?(includes=[])
     ?(exit_status=2)
-    ?(inline=true)
+    ?(inline_calls=true)
     ?(only_globals=true)
-    ?(arch=Architecture.Block)
     (fname:string)
   :
     proto_kernel t
@@ -89,20 +88,8 @@ module Make (L:Logger.Logger) = struct
     { parsed with
       kernels =
       parsed.kernels
-      |> (if inline then Imp.inline_calls else fun x -> x)
-      |> List.map (fun p ->
-        let p = Imp.Kernel.compile arch p in
-        let key_vals =
-          Proto.Kernel.constants p
-          |> List.filter (fun (x,_) ->
-            (* Make sure we only replace thread-global variables *)
-            Params.mem (Variable.from_name x) p.global_variables
-          )
-        in
-        let key_vals = Gv_parser.to_assoc parsed.options @ key_vals in
-        let p = Proto.Kernel.assign_globals key_vals p in
-        p
-      )
+      |> (if inline_calls then Imp.inline_calls else fun x -> x)
+      |> List.map Imp.Kernel.compile
       |> List.filter (fun k ->
         not only_globals || (only_globals && Proto.Kernel.is_global k)
       )
