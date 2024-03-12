@@ -4,6 +4,7 @@ open Protocols
 let analyze ~only_global (fname:string): unit =
   let k = Protocol_parser.Silent.to_proto ~abort_on_parsing_failure:false fname in
   k.kernels |> List.iter (fun k ->
+    let k = Proto.Kernel.apply_arch Architecture.Block k in
     if only_global && not (Proto.Kernel.is_global k) then () else
     let open Proto in
     let env = Variable.Set.union (Params.to_set k.global_variables) Variable.tid_var_set in
