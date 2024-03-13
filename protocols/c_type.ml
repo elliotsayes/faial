@@ -87,6 +87,10 @@ let get_array_type (c:t) : string list =
   |> parse_array_type_opt
   |> Option.value ~default:[]
 
+let is_const (c:t) : bool =
+  to_string c
+  |> String.starts_with ~prefix:"const "
+
 let is_array (c:t) : bool =
   to_string c
   |> parse_array_type_opt

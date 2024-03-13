@@ -968,9 +968,10 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
           | Ok ty ->
             (* make sure we resolve the type before we query it *)
             let ty = TypeAlias.resolve ty typedefs in
-            if List.mem C_lang.c_attr_shared v.attrs then
+            let is_mut = not (C_type.is_const ty) in
+            if is_mut && List.mem C_lang.c_attr_shared v.attrs then
               (v.var, Memory.from_type SharedMemory ty)::arrays, globals, assigns
-            else if List.mem C_lang.c_attr_device v.attrs then
+            else if is_mut && List.mem C_lang.c_attr_device v.attrs then
               (v.var, Memory.from_type GlobalMemory ty)::arrays, globals, assigns
             else if C_type.is_int ty then
               let g = match v.init with
