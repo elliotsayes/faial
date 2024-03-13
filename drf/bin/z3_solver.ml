@@ -397,6 +397,11 @@ module Solution = struct
     | Racy of Witness.t
     | Unknown
 
+  let is_safe : t -> bool =
+    function
+    | Drf -> true
+    | _ -> false
+
   let to_json: t -> json =
     function
     | Drf -> `String "drf"

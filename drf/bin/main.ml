@@ -57,7 +57,7 @@ let main
     ~thread_idx_2
     ~block_idx_1
     ~block_idx_2
-    ~arch
+    ~archs:[arch]
     ~inline_calls:(not ignore_calls)
     ~ignore_parsing_errors
     ~includes
