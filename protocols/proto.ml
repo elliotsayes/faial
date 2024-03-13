@@ -393,8 +393,9 @@ module Kernel = struct
     in
     assign_globals key_vals k
 
-  let inline_all ~block_dim ~grid_dim (k:Code.t t) : Code.t t =
+  let inline_all ~globals ~block_dim ~grid_dim (k:Code.t t) : Code.t t =
     k
+    |> assign_globals globals
     |> inline_dims [
       "blockDim", block_dim;
       "gridDim", grid_dim;

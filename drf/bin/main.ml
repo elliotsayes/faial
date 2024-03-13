@@ -30,6 +30,7 @@ let main
   (grid_level:bool)
   (unreachable:bool)
   (all_levels:bool)
+  (params:(string * int) list)
 :
   unit
 =
@@ -67,6 +68,7 @@ let main
     ~includes
     ~block_dim
     ~grid_dim
+    ~params
   in
   let ui = if output_json then Jui.render else Tui.render in
   if unreachable then
@@ -180,6 +182,10 @@ let include_dir =
   let doc = "Add the specified directory to the search path for include files." in
   Arg.(value & opt_all string [] & info ["I"; "include-dir";] ~docv:"DIR" ~doc)
 
+let params =
+  let doc = "Set the value of an integer parameter" in
+  Arg.(value & opt_all (pair ~sep:'=' string int) [] & info ["p"; "param"] ~docv:"KEYVAL" ~doc)
+
 let ignore_calls =
   let doc = "By default we inline kernel calls, this option skips that step." in
   Arg.(value & flag & info ["ignore-calls"] ~doc)
@@ -259,6 +265,7 @@ let main_t = Term.(
   $ grid_level
   $ unreachable
   $ all_levels
+  $ params
 )
 
 let info =

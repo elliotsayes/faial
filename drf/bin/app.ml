@@ -27,6 +27,7 @@ type t = {
   archs: Architecture.t list;
   block_dim: Dim3.t;
   grid_dim: Dim3.t;
+  params: (string * int) list;
 }
 
 let to_string (app:t) : string =
@@ -52,7 +53,7 @@ let to_string (app:t) : string =
      show_align; show_phase_split; show_loc_split; show_flat_acc;
      show_symbexp; logic; le_index = _; ge_index = _; eq_index = _;
      only_array = _; thread_idx_1 = _; block_idx_1 = _; thread_idx_2 = _;
-     block_idx_2 = _; archs; block_dim; grid_dim; } ->
+     block_idx_2 = _; archs; block_dim; grid_dim; params = _;} ->
     let kernels = List.length kernels |> string_of_int in
     "filename: " ^ filename ^
     "\nblock_dim: " ^ dim3 block_dim ^
@@ -97,6 +98,7 @@ let parse
   ~inline_calls
   ~archs
   ~ignore_parsing_errors
+  ~params
 :
   t
 =
@@ -135,6 +137,7 @@ let parse
     archs;
     grid_dim;
     block_dim;
+    params;
   }
 
 let show (b:bool) (call:'a -> unit) (x:'a) : 'a =
@@ -152,7 +155,10 @@ let translate (arch:Architecture.t) (a:t) (k:Proto.Code.t Proto.Kernel.t) : Flat
   (* 1. apply block-level/grid-level analysis constraints *)
   |> Proto.Kernel.apply_arch arch
   (* 2. inline global assignments, including block_dim/grid_dim *)
-  |> Proto.Kernel.inline_all ~grid_dim:a.grid_dim ~block_dim:a.block_dim
+  |> Proto.Kernel.inline_all
+    ~grid_dim:a.grid_dim
+    ~block_dim:a.block_dim
+    ~globals:a.params
   (* 2.1 inline block_id as a constant when architecture is Grid *)
   |> (fun k ->
     match arch, a.block_idx_1 with
