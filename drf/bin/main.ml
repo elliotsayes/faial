@@ -29,14 +29,18 @@ let main
   (block_idx_2:Dim3.t option)
   (grid_level:bool)
   (unreachable:bool)
+  (all_levels:bool)
 :
   unit
 =
-  let arch = if grid_level then Architecture.Grid else Architecture.Block in
-  if Option.is_some block_idx_2 && not (Architecture.is_grid arch) then (
-    prerr_endline ("ERROR: Can only use --block-idx-2 with --grid-level.");
-    exit 1
-  ) else
+  let archs =
+    if all_levels then
+      [Architecture.Grid; Architecture.Block]
+    else if grid_level then
+      [Architecture.Grid]
+    else
+      [Architecture.Block]
+  in
   let app = App.parse
     ~filename
     ~timeout
@@ -57,7 +61,7 @@ let main
     ~thread_idx_2
     ~block_idx_1
     ~block_idx_2
-    ~archs:[arch]
+    ~archs
     ~inline_calls:(not ignore_calls)
     ~ignore_parsing_errors
     ~includes
@@ -184,6 +188,10 @@ let grid_level =
   let doc = "By default we perform block-level verification, this option performs grid-level verification." in
   Arg.(value & flag & info ["grid-level"] ~doc)
 
+let all_levels =
+  let doc = "By default we perform block-level verification, this option performs block-level AND grid-level verification." in
+  Arg.(value & flag & info ["all-levels"] ~doc)
+
 let conv_int_list =
   let parse =
     fun s ->
@@ -250,6 +258,7 @@ let main_t = Term.(
   $ block_idx_2
   $ grid_level
   $ unreachable
+  $ all_levels
 )
 
 let info =
