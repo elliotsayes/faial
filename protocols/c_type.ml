@@ -74,6 +74,9 @@ let is_function (c:t) : bool =
 let is_void (c:t) =
   to_string c = "void"
 
+let is_auto (c:t) =
+  to_string c = "auto"
+
 let is_struct (c:t) : bool =
   String.starts_with ~prefix:"struct " (to_string c)
 

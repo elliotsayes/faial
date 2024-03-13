@@ -730,6 +730,19 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
   | BinaryOperator {lhs=ArraySubscriptExpr a; rhs=src; opcode="="; _} ->
     rewrite_write a src
 
+  (* operator*[w] = *)
+  | BinaryOperator {
+      lhs=CXXOperatorCallExpr{
+        func=UnresolvedLookupExpr {name=v; _};
+        args=[(Ident {name=x; ty; _}) as lhs;];
+        _
+      };
+      rhs=src;
+      opcode="="; _
+    } when Variable.name v = "operator*" ->
+      print_endline(C_lang.Expr.to_string lhs);
+    rewrite_write {lhs=lhs; rhs=IntegerLiteral 0; ty;location=Variable.location x} src
+
   | CXXOperatorCallExpr {
       func=Ident {name=v; _};
       args=[ArraySubscriptExpr a; src];

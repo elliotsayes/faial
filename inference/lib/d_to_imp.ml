@@ -751,7 +751,8 @@ let rec parse_stmt
 
   (* Support for location aliasing that declares a new variable *)
   | DeclStmt ([{ty; init=Some (IExpr rhs); _} as d] as l)
-    when J_type.matches C_type.is_pointer ty
+    (* either a pointer or an auto because templates *)
+    when J_type.matches (fun x -> C_type.is_pointer x || C_type.is_auto x) ty
     ->
     let d_ty =
       d.ty
