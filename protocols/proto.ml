@@ -274,6 +274,16 @@ module Kernel = struct
     in
     constants k.pre []
 
+  let filter_array (name:string) (k:Code.t t) : Code.t t =
+    { k with
+      (* update the set of arrays *)
+      arrays = Variable.Map.filter (fun x _ -> Variable.name x = name) k.arrays;
+      code = Code.filter (
+      function
+      | Acc (v, _) -> Variable.name v = name
+      | _ -> true
+      ) k.code
+    }
 
   (* Create a new kernel with same name, but no code to check *)
   let clear (k:Code.t t) : Code.t t =

@@ -157,6 +157,12 @@ let show (b:bool) (call:'a -> unit) (x:'a) : 'a =
 let translate (a:t) (p:Proto.Code.t Proto.Kernel.t) : Flatacc.Kernel.t Streamutil.stream =
   p
   (* 1. apply block-level/grid-level analysis constraints *)
+  (* filter arrays *)
+  |> (fun k ->
+    match a.only_array with
+    | Some arr -> Proto.Kernel.filter_array arr k
+    | None -> k
+  )
   |> Proto.Kernel.apply_arch a.arch
   (* 2. inline global assignments, including block_dim/grid_dim *)
   |> Proto.Kernel.inline_all ~grid_dim:a.grid_dim ~block_dim:a.block_dim
@@ -174,7 +180,6 @@ let translate (a:t) (p:Proto.Code.t Proto.Kernel.t) : Flatacc.Kernel.t Streamuti
   |> show a.show_phase_split Phasesplit.print_kernels
   (* 7. split per location *)
   |> Locsplit.translate
-  |> Locsplit.filter_array a.only_array
   |> show a.show_loc_split Locsplit.print_kernels
   (* 8. flatten control-flow structures *)
   |> Flatacc.translate a.arch
