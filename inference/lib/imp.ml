@@ -120,6 +120,7 @@ module Stmt = struct
     | Block of (t list)
     | LocationAlias of Alias.t
     | Decl of Decl.t list
+    | Assign of {var: Variable.t; data: nexp; ty: C_type.t}
     | If of (bexp * t * t)
     | For of (Range.t * t)
     | Star of t
@@ -141,7 +142,8 @@ module Stmt = struct
     function
     | Sync _ -> true
     | If (_, p, q) -> has_sync p || has_sync q
-    | Atomic _ | Read _ | Write _ | Assert _ | LocationAlias _ | Decl _ | Call _ -> false
+    | Atomic _ | Read _ | Write _ | Assert _ | LocationAlias _
+    | Decl _ | Call _ | Assign _ -> false
     | Block l -> List.exists has_sync l
     | For (_, p) | Star p -> has_sync p
 
@@ -149,7 +151,7 @@ module Stmt = struct
     let rec calls (cs:StringSet.t) : t -> StringSet.t =
       function
       | Decl _ | LocationAlias _ | Sync _ | Assert _
-      | Read _ | Write _ | Atomic _ ->
+      | Read _ | Write _ | Atomic _ | Assign _ ->
         cs
       | Block l -> List.fold_left calls cs l
       | If (_, s1, s2) -> calls (calls cs s1) s2
@@ -170,6 +172,7 @@ module Stmt = struct
         | Atomic _
         | Write _
         | Decl _
+        | Assign _
         | LocationAlias _
         | Call _ ->
           init
@@ -221,6 +224,8 @@ module Stmt = struct
     | (_, Block [], Block []) -> Block []
     | _ -> If (b, p1, p2)
 
+  let assign (ty:C_type.t) (var:Variable.t) (data:nexp) : t =
+    Assign {ty; var; data}
 
   let to_s: t -> Indent.t list =
     let rec stmt_to_s : t -> Indent.t list =
@@ -245,6 +250,7 @@ module Stmt = struct
         [Line ("wr " ^ Variable.name w.array ^ Access.index_to_string w.index ^ payload ^ ";")]
       | Block [] -> []
       | Block l -> [Line "{"; Block (List.map stmt_to_s l |> List.flatten); Line "}"]
+      | Assign a -> [Line (Variable.name a.var ^ " = " ^ Exp.n_to_string a.data ^ ";")]
       | LocationAlias l ->
         [Line ("alias " ^ Alias.to_string l)]
       | Decl [] -> []
@@ -289,6 +295,7 @@ module Post = struct
   | Acc of (Variable.t * Access.t)
   | If of (bexp * t * t)
   | For of (Range.t * t)
+  | Assign of {var: Variable.t; ty: C_type.t; data: nexp; body: t}
   | Decl of (Decl.t * t)
   | Seq of t * t
 
@@ -298,6 +305,11 @@ module Post = struct
       | Skip -> [Line "skip;"]
       | Sync _ -> [Line "sync;"]
       | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
+      | Assign a -> [
+          Line (Variable.name a.var ^ " = " ^ n_to_string a.data ^ " {");
+          Block (to_s a.body);
+          Line "}";
+        ]
       | Decl (d, p) ->
         [
           Line ("decl " ^ Decl.to_string d ^ " {");
@@ -341,6 +353,7 @@ module Post = struct
         )
         else i
       | Decl (d, l) -> Decl (d, loc_subst l)
+      | Assign a -> Assign {a with body = loc_subst a.body}
       | If (b, s1, s2) -> If (b, loc_subst s1, loc_subst s2)
       | For (r, s) -> For (r, loc_subst s)
       | Sync l -> Sync l
@@ -374,6 +387,14 @@ module Post = struct
           | None -> p
           )
         )
+      | Assign a ->
+        Assign { a with
+          data = M.n_subst st a.data;
+          body = M.add st a.var (function
+            | Some st' -> subst st' a.body
+            | None -> a.body
+          );
+        }
       | If (b, p1, p2) ->
         If (M.b_subst st b, subst st p1, subst st p2)
       | For (r, p) ->
@@ -400,6 +421,7 @@ module Post = struct
       | If (b, p1, p2) -> If (b, filter p1, filter p2)
       | For (r, p) -> For (r, filter p)
       | Decl (d, p) -> Decl (d, filter p)
+      | Assign a -> Assign {a with body = filter a.body}
       | Seq (p1, p2) -> Seq (filter p1, filter p2)
     in
       filter
@@ -416,6 +438,9 @@ module Post = struct
         let (vars, p) = distinct vars p in
         let (vars, q) = distinct vars q in
         vars, If (b, p, q)
+      | Assign a ->
+        let (vars, body) = distinct vars a.body in
+        vars, Assign { a with body}
       | Decl (d, p) ->
         let x = d.var in
         if Variable.Set.mem x vars then (
@@ -441,6 +466,7 @@ module Post = struct
     in
     fun p ->
       distinct Variable.Set.empty p |> snd
+
   let inline_assigns (known:Variable.Set.t) : t -> t =
     let n_subst (st:SubstAssoc.t) (n:nexp): nexp =
       if SubstAssoc.is_empty st
@@ -480,7 +506,9 @@ module Post = struct
       | If (b, p1, p2) ->
         let b = b_subst st b in
         If (b, inline known st p1, inline known st p2)
-      | Decl ({var=x; init=Some n; _}, p) ->
+
+      | Decl ({var=x; init=Some n; _}, p)
+      | Assign {var=x; data=n; body=p; _} ->
         let n = n_subst st n in
         let st = SubstAssoc.put st x n  in
         inline known st p
@@ -498,7 +526,53 @@ module Post = struct
       |> vars_distinct
       |> inline known (SubstAssoc.make [])
 
+  (* Rewrite assigns that cannot be represented as lets *)
+  let fix_assigns : t -> t =
+    let decl (assigns:Params.t) (p:t) : t =
+      Params.to_list assigns
+      |> List.fold_left (fun p (x, ty) -> Decl (Decl.unset x ~ty, p)) p
+    in
+    let rec fix_assigns (defined:Params.t) (i:t) : Params.t * t =
+      match i with
+      | Skip | Sync _ | Acc _ -> (Params.empty, i)
+      | If (b, p, q) ->
+        let (assigns_1, p) = fix_assigns Params.empty p in
+        let (assigns_2, q) = fix_assigns Params.empty q in
+        (Params.union_left assigns_1 assigns_2, If (b, p, q))
+      | Assign a ->
+        let (assigns, body) = fix_assigns defined a.body in
+        let assigns =
+          if Params.mem a.var defined then
+            (* already defined, so no need to record outstanding
+                assignment *)
+            assigns
+          else
+            Params.add a.var a.ty assigns
+        in
+        (assigns, Assign {a with body})
+      | Decl (d, p) ->
+        let defined = Params.add d.var d.ty defined in
+        let (assigns, p) = fix_assigns defined p in
+        (assigns, Decl (d, p))
+      | Seq (If _ as p, q)
+      | Seq (For _ as p, q) ->
+        let (assigns_1, p) = fix_assigns defined p in
+        let (assigns_2, q) = fix_assigns defined q in
+        (assigns_2, Seq (p, decl assigns_1 q))
+      | Seq (p, q) ->
+        let (assigns_1, p) = fix_assigns defined p in
+        let (assigns_2, q) = fix_assigns defined q in
+        (Params.union_left assigns_1 assigns_2, Seq (p, q))
 
+      | For (r, p) ->
+        let (assigns, p) = fix_assigns Params.empty p in
+        (* convert assigns to decls *)
+        (assigns, For (r, decl assigns p))
+    in
+    fun s ->
+      s
+      |> fix_assigns Params.empty
+      |> snd
 end
 
 
@@ -586,9 +660,9 @@ let imp_to_post : Params.t * Stmt.t -> Params.t * Post.t =
           (curr_id, globals, Decl (Decl.unset x, s))
       )
     (* Handled in the context of a prog *)
-    | Assert _ -> failwith "unsupported"
-    | LocationAlias _ -> failwith "unsupported"
-    | Decl _ -> failwith "unsupported"
+    | Assert _ | LocationAlias _ | Decl _ | Assign _ ->
+      failwith "unsupported"
+
   and imp_to_post_p : Stmt.prog -> int*Params.t -> int * Params.t * Post.t =
     function
     | [] -> ret Skip
@@ -601,6 +675,10 @@ let imp_to_post : Params.t * Stmt.t -> Params.t * Post.t =
        ret (Post.loc_subst e p)
       )
     | Decl [] :: p -> imp_to_post_p p
+    | Assign {var; data; ty;} :: p ->
+      bind (imp_to_post_p p) (fun s ->
+        ret (Post.Assign {var; data; ty; body=s})
+      )
     | Decl (d::l) :: p ->
       bind (imp_to_post_p (Decl l :: p)) (fun s ->
         ret (Post.Decl (d, s))
@@ -628,6 +706,8 @@ let rec post_to_proto : Post.t -> Proto.Code.t =
       (Proto.Code.cond (b_not b) (post_to_proto p2))
   | For (r, p) ->
     Loop (r, post_to_proto p)
+  | Assign _ as i ->
+    failwith ("Run inline_decl first: " ^ Post.to_string i)
   | Decl ({init=Some _; _}, _) as i ->
     failwith ("Run inline_decl first: " ^ Post.to_string i)
   | Decl ({var=x; init=None; ty}, p) -> Proto.Code.decl ~ty x (post_to_proto p)
@@ -673,6 +753,7 @@ module Kernel = struct
     let p : Post.t =
       p
       |> Post.filter_locs k.arrays (* Remove unknown arrays *)
+      |> Post.fix_assigns
       (* Inline local variable assignment and ensure variables are distinct*)
       |> Post.inline_assigns (Params.to_set k.params)
     in
@@ -732,7 +813,8 @@ module Kernel = struct
         | Some k -> apply c.args k
         | None -> s
         )
-      | Sync _ | Assert _ | Read _ | Write _ | Atomic _ | Decl _ | LocationAlias _ ->
+      | Sync _ | Assert _ | Read _ | Write _ | Atomic _ | Decl _
+      | LocationAlias _ | Assign _ ->
         s
       | Block l -> Block (List.map inline l)
       | If (b, s1, s2) -> If (b, inline s1, inline s2)

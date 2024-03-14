@@ -28,6 +28,9 @@ let mem = Variable.Map.mem
 let from_list (l:(Variable.t * C_type.t) list) : t =
   Variable.Map.of_list l
 
+let to_list (m:t) : (Variable.t * C_type.t) list =
+  Variable.Map.to_list m
+
 let to_set (m:t) : Variable.Set.t =
   Variable.MapSetUtil.map_to_set m
 

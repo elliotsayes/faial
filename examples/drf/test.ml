@@ -52,6 +52,8 @@ let tests = [
   "racy-device.cu", [], 1;
   (* A data-race that uses aliasing and templated arrays *)
   "racy-template-alias.cu", [], 1;
+  (* Improve the support for creating decls due to mutation *)
+  "racy-mutation.cu", [], 1;
 ]
 
 (* These are kernels that are being documented, but are

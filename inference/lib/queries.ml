@@ -848,6 +848,7 @@ module Accesses = struct
       match s with
       | Call _
       | Decl _
+      | Assign _
       | Sync _
       | Assert _
       | LocationAlias _ ->

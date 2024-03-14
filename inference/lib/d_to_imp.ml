@@ -787,7 +787,7 @@ let rec parse_stmt
     let* rhs = with_msg "assign.rhs" parse_exp rhs in
     let ty = J_type.to_c_type ~default:C_type.int ty |> resolve in
     rhs |> ret_n (fun rhs ->
-      Decl [Imp.Decl.set ~ty v rhs]
+      Imp.Stmt.assign ty v rhs
     )
 
   | ContinueStmt
