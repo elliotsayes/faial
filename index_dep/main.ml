@@ -1,11 +1,15 @@
 open Inference
 open Protocols
 
-let analyze ~only_global (fname:string): unit =
-  let k = Protocol_parser.Silent.to_proto ~abort_on_parsing_failure:false fname in
+let analyze ~ignore_parsing_errors (fname:string): unit =
+  let k =
+    Protocol_parser.Silent.to_proto
+      ~abort_on_parsing_failure:(not ignore_parsing_errors)
+      fname
+  in
   k.kernels |> List.iter (fun k ->
     let k = Proto.Kernel.apply_arch Architecture.Block k in
-    if only_global && not (Proto.Kernel.is_global k) then () else
+    if not (Proto.Kernel.is_global k) then () else
     let open Proto in
     let env = Variable.Set.union (Params.to_set k.global_variables) Variable.tid_var_set in
     let p = Code.Cond (k.pre, k.code) in
@@ -19,8 +23,13 @@ let analyze ~only_global (fname:string): unit =
     print_endline (k.name ^ "," ^ di ^ "," ^ ci)
   )
 
-let main (fname: string) (only_global:bool) : unit =
-  analyze ~only_global fname
+let main
+  (fname: string)
+  (ignore_parsing_errors:bool)
+:
+  unit
+=
+  analyze ~ignore_parsing_errors fname
 
 open Cmdliner
 
@@ -28,11 +37,11 @@ let get_fname =
   let doc = "The path $(docv) of the GPU program." in
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
 
-let only_global =
-  let doc = "Only analyze kernels annotated with __global__" in
-  Arg.(value & flag & info ["only-global"] ~doc)
+let ignore_parsing_errors =
+  let doc = "Ignore parsing errors." in
+  Arg.(value & flag & info ["ignore-parsing-errors"] ~doc)
 
-let main_t = Term.(const main $ get_fname $ only_global)
+let main_t = Term.(const main $ get_fname $ ignore_parsing_errors)
 
 let info =
   let doc = "Data-dependency analysis for GPU programs" in
