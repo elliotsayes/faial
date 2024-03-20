@@ -18,8 +18,8 @@ let analyze ~ignore_parsing_errors (fname:string): unit =
       | true -> "ind"
       | false -> k
     in
-    let ci = Typing.is_control_exact env p |> to_s "ctrl" in
-    let di = Typing.is_data_exact env p |> to_s "data" in
+    let ci = Typing.is_control_independent env p |> to_s "ctrl" in
+    let di = Typing.is_data_independent env p |> to_s "data" in
     print_endline (k.name ^ "," ^ di ^ "," ^ ci)
   )
 
