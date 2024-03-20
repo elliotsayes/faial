@@ -740,7 +740,6 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
       rhs=src;
       opcode="="; _
     } when Variable.name v = "operator*" ->
-      print_endline(C_lang.Expr.to_string lhs);
     rewrite_write {lhs=lhs; rhs=IntegerLiteral 0; ty;location=Variable.location x} src
 
   | CXXOperatorCallExpr {
