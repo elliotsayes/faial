@@ -697,21 +697,12 @@ module Kernel = struct
 
 end
 
-module Typedef = struct
-  type t = {name: string; ty: C_type.t}
-
-  let to_string (d:t) =
-    "typedef " ^ C_type.to_string d.ty ^ " " ^ d.name
-
-  let to_s (d:t) : Indent.t list =
-    [Line (to_string d ^ ";")]
-end
-
 module Def = struct
   type t =
     | Kernel of Kernel.t
     | Declaration of Decl.t
     | Typedef of Typedef.t
+    | Enum of Enum.t
 
 
   let to_s (d:t) : Indent.t list =
@@ -719,6 +710,7 @@ module Def = struct
     | Declaration d -> Decl.to_s d
     | Kernel k -> Kernel.to_s k
     | Typedef d -> Typedef.to_s d
+    | Enum e -> Enum.to_s e
 end
 
 module Program = struct
@@ -826,6 +818,8 @@ module Program = struct
       | Kernel k :: p -> Kernel { k with code = rw_stmt vars k.code } :: rw_p vars p
       | Typedef d :: p ->
         Typedef d :: rw_p vars p
+      | Enum e :: p ->
+        Enum e :: rw_p vars p
       | [] -> []
     in
     rw_p Variable.Set.empty
@@ -1526,6 +1520,31 @@ let parse_type_param (j:Yojson.Basic.t) : Ty_param.t option j_result =
     Ok (Some (Ty_param.NonTypeTemplate {name=name; ty=J_type.from_json ty}))
   | _ -> Ok None
 
+let parse_constant (j:Yojson.Basic.t) : Enum.Constant.t j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* _ = expect_kind "EnumConstantDecl" o in
+  let* var = parse_variable j in
+  let* init = with_field_or "inner"
+    (cast_list_1
+      (fun j ->
+        let* e = parse_exp j in
+        match e with
+        | IntegerLiteral n -> Ok (Some n)
+        | _ -> root_cause ("Expecting an integer, but got something else") j
+      )
+    ) None o
+  in
+  let open Enum.Constant in
+  Ok {var; init}
+
+let parse_enum (j:Yojson.Basic.t) : Enum.t j_result =
+  let open Rjson in
+  let open Enum in
+  let* var = parse_variable j in
+  let* o = cast_object j in
+  let* constants = with_field "inner" (cast_map parse_constant) o in
+  Ok {var; constants}
 
 let rec parse_def (j:Yojson.Basic.t) : Def.t list j_result =
   let open Rjson in
@@ -1581,6 +1600,9 @@ let rec parse_def (j:Yojson.Basic.t) : Def.t list j_result =
         Ok []
       else Ok [Typedef {name; ty;}]
     | Error _ -> Ok [])
+  | "EnumDecl" ->
+    let* e = parse_enum j in
+    Ok [Enum e]
   | _ ->
     Ok []
 

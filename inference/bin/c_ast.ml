@@ -45,7 +45,7 @@ let main
     let open Def in
     function
     | Kernel k -> Hashtbl.add k2_ht k.name k
-    | Declaration _ | Typedef _ -> ()
+    | Declaration _ | Typedef _ | Enum _ -> ()
   );
   k3 |> List.iter (fun k ->
     let open Imp.Kernel in
@@ -86,7 +86,7 @@ let main
           decls
       in
       (decls, js)
-    | Typedef _ -> (decls, js)
+    | Typedef _ | Enum _ -> (decls, js)
   ) ([], []) k1 |> snd
   in
   print_endline (Yojson.Basic.pretty_to_string (`List l));

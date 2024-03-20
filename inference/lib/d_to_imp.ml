@@ -66,7 +66,7 @@ module TypeAlias = struct
     |> Option.value ~default:ty
 
   (* Add a new type alias to the data-base *)
-  let add (x:C_lang.Typedef.t) (db:t) : t =
+  let add (x:Typedef.t) (db:t) : t =
     (* Resolve the type so that there are no indirect alias *)
     StringMap.add x.name (resolve x.ty db) db
 
@@ -997,6 +997,14 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
       Ok (k::ks)
     | Typedef d :: l ->
       parse_p arrays globals assigns (TypeAlias.add d typedefs) l
+    | Enum e :: l ->
+      let assigns =
+        if Enum.ignore e then
+          assigns
+        else
+          Enum.to_assigns e @ assigns
+      in
+      parse_p arrays globals assigns typedefs l
     | [] -> Ok []
   in
   parse_p [] Params.empty [] TypeAlias.empty p

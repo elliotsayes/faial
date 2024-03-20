@@ -56,6 +56,8 @@ let tests = [
   "racy-template.cu", [], 1;
   (* Improve the support for creating decls due to mutation *)
   "racy-mutation.cu", [], 1;
+  (* Support for enumerates *)
+  "drf-enum.cu", [], 0;
 ]
 
 (* These are kernels that are being documented, but are
