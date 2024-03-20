@@ -1,4 +1,5 @@
 open Protocols
+open Stage0
 
 let typecheck_n (env:Variable.Set.t) (n:Exp.nexp) : bool =
   Variable.Set.subset
@@ -27,18 +28,29 @@ module Context = struct
     | Loop of Range.t * t
     | Acc of Variable.t * Access.t
 
-  let rec from_proto : Proto.Code.t -> t Seq.t =
+  let rec location : t -> Location.t =
+    function
+    | Cond (_, l) | Decl {body=l; _} | Loop (_, l) ->
+      location l
+    | Acc (x, _) ->
+      Variable.location x
+
+  let rec from_code : Proto.Code.t -> t Seq.t =
     function
     | Acc (x, y) -> Seq.return (Acc (x, y))
     | Sync _ | Skip -> Seq.empty
     | Cond (b, p) ->
-      from_proto p |> Seq.map (fun c -> Cond (b, c))
+      from_code p |> Seq.map (fun c -> Cond (b, c))
     | Loop (r, p) ->
-      from_proto p |> Seq.map (fun c -> Loop (r, c))
+      from_code p |> Seq.map (fun c -> Loop (r, c))
     | Seq (p, q) ->
-      from_proto p |> Seq.append (from_proto q)
+      from_code p |> Seq.append (from_code q)
     | Decl {var; ty; body} ->
-      from_proto body |> Seq.map (fun body -> Decl {var; ty; body})
+      from_code body |> Seq.map (fun body -> Decl {var; ty; body})
+
+  let from_kernel (k: Proto.Code.t Proto.Kernel.t) : t Seq.t =
+    Cond (k.pre, k.code)
+    |> from_code
 
   let rec is_control_independent (env:Variable.Set.t) : t -> bool =
     function
@@ -71,16 +83,48 @@ module Context = struct
       typecheck_a env a
 end
 
-let is_data_independent (env:Variable.Set.t) (p: Proto.Code.t) : bool =
-  p
-  |> Context.from_proto
-  |> Seq.fold_left (fun is_di c ->
-    is_di && Context.is_data_independent env c
-  ) true
+let kernel_env (k: Proto.Code.t Proto.Kernel.t) : Variable.Set.t =
+  let globals = Params.to_set k.global_variables in
+  Variable.Set.union globals Variable.tid_var_set
 
-let is_control_independent (env:Variable.Set.t) (p: Proto.Code.t) : bool =
-  p
-  |> Context.from_proto
-  |> Seq.fold_left (fun is_ci c ->
-    is_ci && Context.is_control_independent env c
-  ) true
+type t = {data_independent: bool; control_independent: bool}
+
+let from_context (env:Variable.Set.t) (c:Context.t) : t =
+  {
+    data_independent = Context.is_data_independent env c;
+    control_independent = Context.is_control_independent env c;
+  }
+
+let add (env:Variable.Set.t) (r:t) (c:Context.t) : t =
+  let data_independent =
+    r.data_independent && Context.is_data_independent env c
+  in
+  let control_independent =
+    r.control_independent && Context.is_control_independent env c
+  in
+  {
+    data_independent;
+    control_independent;
+  }
+
+let ci_di : t = { control_independent=true; data_independent=true; }
+
+let to_string (x:t) =
+  let ci = if x.control_independent then "CI" else "CD" in
+  let di = if x.data_independent then "DI" else "DD" in
+  ci ^ di
+
+let per_kernel (k: Proto.Code.t Proto.Kernel.t) : t =
+  let env = kernel_env k in
+  k
+  |> Context.from_kernel
+  |> Seq.fold_left (add env) ci_di
+
+let per_access (k: Proto.Code.t Proto.Kernel.t) : (Context.t * t) list =
+  let env = kernel_env k in
+  k
+  |> Context.from_kernel
+  |> Seq.map (fun (c:Context.t) ->
+    (c, from_context env c)
+  )
+  |> List.of_seq

@@ -1,7 +1,8 @@
 open Inference
 open Protocols
+open Stage0
 
-let analyze ~ignore_parsing_errors (fname:string): unit =
+let run_kernel ~ignore_parsing_errors (fname:string): unit =
   let k =
     Protocol_parser.Silent.to_proto
       ~abort_on_parsing_failure:(not ignore_parsing_errors)
@@ -9,27 +10,38 @@ let analyze ~ignore_parsing_errors (fname:string): unit =
   in
   k.kernels |> List.iter (fun k ->
     let k = Proto.Kernel.apply_arch Architecture.Block k in
-    if not (Proto.Kernel.is_global k) then () else
-    let open Proto in
-    let env = Variable.Set.union (Params.to_set k.global_variables) Variable.tid_var_set in
-    let p = Code.Cond (k.pre, k.code) in
-    let to_s k : bool -> string =
-      function
-      | true -> "ind"
-      | false -> k
-    in
-    let ci = Typing.is_control_independent env p |> to_s "ctrl" in
-    let di = Typing.is_data_independent env p |> to_s "data" in
+    let cidi = Typing.per_kernel k in
+    let ci = if cidi.control_independent then "ind" else "ctrl" in
+    let di = if cidi.data_independent then "ind" else "data" in
     print_endline (k.name ^ "," ^ di ^ "," ^ ci)
+  )
+
+let run_acc ~ignore_parsing_errors (fname:string): unit =
+  let k =
+    Protocol_parser.Silent.to_proto
+      ~abort_on_parsing_failure:(not ignore_parsing_errors)
+      fname
+  in
+  k.kernels |> List.iter (fun k ->
+    let k = Proto.Kernel.apply_arch Architecture.Block k in
+    Typing.per_access k
+    |> List.iter (fun (c, cidi) ->
+      let l = Typing.Context.location c |> Location.to_string in
+      print_endline (k.name ^ "," ^ Typing.to_string cidi ^ "," ^ l)
+    )
   )
 
 let main
   (fname: string)
   (ignore_parsing_errors:bool)
+  (per_access:bool)
 :
   unit
 =
-  analyze ~ignore_parsing_errors fname
+  if per_access then
+    run_acc ~ignore_parsing_errors fname
+  else
+    run_kernel ~ignore_parsing_errors fname
 
 open Cmdliner
 
@@ -41,7 +53,11 @@ let ignore_parsing_errors =
   let doc = "Ignore parsing errors." in
   Arg.(value & flag & info ["ignore-parsing-errors"] ~doc)
 
-let main_t = Term.(const main $ get_fname $ ignore_parsing_errors)
+let per_access =
+  let doc = "List approximation analysis per access." in
+  Arg.(value & flag & info ["per-access"; "A"] ~doc)
+
+let main_t = Term.(const main $ get_fname $ ignore_parsing_errors $ per_access)
 
 let info =
   let doc = "Data-dependency analysis for GPU programs" in
