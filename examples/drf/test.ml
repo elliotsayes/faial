@@ -58,6 +58,8 @@ let tests = [
   "racy-mutation.cu", [], 1;
   (* Support for enumerates *)
   "drf-enum.cu", [], 0;
+  (* Support for enumerates *)
+(*   "drf-enum-constraint.cu", [], 0; *)
 ]
 
 (* These are kernels that are being documented, but are
@@ -66,6 +68,8 @@ let unsupported : Fpath.t list =
   [
     "drf-warp.cu";
     "racy-warp.cu";
+    (* TODO: fix me! *)
+    "drf-enum-constraint.cu";
   ] |> List.map Fpath.v
 
 (* ---- Testing-specific code ----- *)

@@ -953,61 +953,93 @@ let parse_kernel
     ;
   }
 
+module ProgramBuilder = struct
+  type t = {
+    arrays: (Variable.t * Memory.t) list;
+    globals: Params.t;
+    assigns: (Variable.t * nexp) list;
+    typedefs: TypeAlias.t;
+  }
+
+  let empty : t =
+    {
+      arrays = [];
+      globals = Params.empty;
+      assigns = [];
+      typedefs = TypeAlias.empty;
+    }
+
+  let resolve (ty:C_type.t) (b:t) : C_type.t =
+    TypeAlias.resolve ty b.typedefs
+
+  let add_array (var:Variable.t) (m:Memory.t) (b:t) : t =
+    { b with arrays = (var, m) :: b.arrays; }
+
+  let add_assign (var:Variable.t) (n:Exp.nexp) (b:t) : t =
+    { b with assigns = (var, n) :: b.assigns }
+
+  let add_global (var:Variable.t) (ty:C_type.t) (b:t) : t =
+    { b with globals = Params.add var ty b.globals }
+
+  let add_typedef (d:Typedef.t) (b:t) : t =
+    { b with typedefs = TypeAlias.add d b.typedefs }
+
+  let add_enum (e:Enum.t) (b:t) : t =
+    let assigns =
+      if Enum.ignore e then
+        b.assigns
+      else
+        Enum.to_assigns e @ b.assigns
+    in
+    { b with assigns }
+end
+
 let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
   let sigs = D_lang.SignatureDB.from_program p in
   let rec parse_p
-    (arrays:(Variable.t * Memory.t) list)
-    (globals:Params.t)
-    (assigns:(Variable.t * nexp) list)
-    (typedefs:TypeAlias.t)
+    (b:ProgramBuilder.t)
     (p:D_lang.Program.t)
   : Imp.Kernel.t list d_result =
     match p with
     | Declaration v :: l ->
-      let (arrays, globals, assigns) =
-          match J_type.to_c_type_res v.ty with
-          | Ok ty ->
-            (* make sure we resolve the type before we query it *)
-            let ty = TypeAlias.resolve ty typedefs in
-            let is_mut = not (C_type.is_const ty) in
-            if is_mut && List.mem C_lang.c_attr_shared v.attrs then
-              (v.var, Memory.from_type SharedMemory ty)::arrays, globals, assigns
-            else if is_mut && List.mem C_lang.c_attr_device v.attrs then
-              (v.var, Memory.from_type GlobalMemory ty)::arrays, globals, assigns
-            else if C_type.is_int ty then
-              let g = match v.init with
-              | Some (IExpr n) ->
-                (match parse_exp n with
-                | Ok n -> Unknown.try_to_nexp n
-                | Error _ -> None) 
-              | _ -> None
-              in
-              match g with
-              | Some g -> arrays, globals, (v.var, g) :: assigns
-              | None -> arrays, Params.add v.var ty globals, assigns
-            else
-              arrays, globals, assigns
-          | Error _ -> arrays, globals, assigns
+      let b =
+        match J_type.to_c_type_res v.ty with
+        | Ok ty ->
+          (* make sure we resolve the type before we query it *)
+          let ty = ProgramBuilder.resolve ty b in
+          let is_mut = not (C_type.is_const ty) in
+          if is_mut && List.mem C_lang.c_attr_shared v.attrs then
+            ProgramBuilder.add_array v.var (Memory.from_type SharedMemory ty) b
+          else if is_mut && List.mem C_lang.c_attr_device v.attrs then
+            ProgramBuilder.add_array v.var (Memory.from_type GlobalMemory ty) b
+          else if C_type.is_int ty then
+            let g = match v.init with
+            | Some (IExpr n) ->
+              (match parse_exp n with
+              | Ok n -> Unknown.try_to_nexp n
+              | Error _ -> None)
+            | _ -> None
+            in
+            match g with
+            | Some g -> ProgramBuilder.add_assign v.var g b
+            | None -> ProgramBuilder.add_global v.var ty b
+          else
+            b
+        | Error _ -> b
       in
-      parse_p arrays globals assigns typedefs l
+      parse_p b l
     | Kernel k :: l ->
-      let resolve x = TypeAlias.resolve x typedefs in
-      let* ks = parse_p arrays globals assigns typedefs l in
-      let* k = parse_kernel sigs arrays globals assigns resolve k in
+      let resolve x = ProgramBuilder.resolve x b in
+      let* ks = parse_p b l in
+      let* k = parse_kernel sigs b.arrays b.globals b.assigns resolve k in
       Ok (k::ks)
     | Typedef d :: l ->
-      parse_p arrays globals assigns (TypeAlias.add d typedefs) l
+      parse_p (ProgramBuilder.add_typedef d b) l
     | Enum e :: l ->
-      let assigns =
-        if Enum.ignore e then
-          assigns
-        else
-          Enum.to_assigns e @ assigns
-      in
-      parse_p arrays globals assigns typedefs l
+      parse_p (ProgramBuilder.add_enum e b) l
     | [] -> Ok []
   in
-  parse_p [] Params.empty [] TypeAlias.empty p
+  parse_p ProgramBuilder.empty p
 end
 
 module Default = Make(Logger.Colors)
