@@ -1,5 +1,4 @@
 open Stage0
-open Protocols
 
 module Constant = struct
   type t = {var: Variable.t; init: int option}
@@ -16,9 +15,15 @@ module Constant = struct
   let to_assign (default:int) (e:t) : Variable.t * int =
     e.var, e.init |> Option.value ~default
 
+  let to_bexp (default:int) (x:Variable.t) (e:t) : Exp.bexp * int =
+    let n = e.init |> Option.value ~default in
+    Exp.n_eq (Var x) (Num n), n
+
 end
 
 type t = {var: Variable.t; constants: Constant.t list}
+
+let to_c_type (e:t) = e.var |> Variable.name |> C_type.make
 
 type assign_t = { current: int; assigns: (Variable.t * Exp.nexp) list }
 
@@ -32,6 +37,15 @@ let to_assigns (e:t) : (Variable.t * Exp.nexp) list =
     {current=0; assigns=[]} e.constants
   in
   a.assigns
+
+let to_bexp (x:Variable.t) (e:t) : Exp.bexp =
+  let a =
+    List.fold_left (fun (b, curr) e ->
+      let (b', curr) = Constant.to_bexp curr x e in
+      (Exp.b_or b b', curr + 1)
+    ) (Bool false, 0) e.constants
+  in
+  fst a
 
 let to_string (x:t) : string =
   let c =

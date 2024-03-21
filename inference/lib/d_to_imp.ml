@@ -487,6 +487,7 @@ module Context = struct
     globals: Params.t;
     assigns: (Variable.t * nexp) list;
     typedefs: TypeAlias.t;
+    enums: Enum.t Variable.Map.t;
   }
 
   let from_signature_db (sigs:D_lang.SignatureDB.t) : t =
@@ -496,6 +497,7 @@ module Context = struct
       globals = Params.empty;
       assigns = [];
       typedefs = TypeAlias.empty;
+      enums = Variable.Map.empty;
     }
 
   let resolve (ty:C_type.t) (b:t) : C_type.t =
@@ -503,6 +505,26 @@ module Context = struct
 
   let lookup_sig (e: D_lang.Expr.t) (db:t) : D_lang.SignatureDB.Signature.t option =
     D_lang.SignatureDB.lookup e db.sigs
+
+  let is_enum (ty:C_type.t) (ctx:t) : bool =
+    let name = C_type.to_string ty |> Variable.from_name in
+    Variable.Map.mem name ctx.enums
+
+  let is_int (ty:C_type.t) (ctx:t) : bool =
+    C_type.is_int ty || is_enum ty ctx
+
+  let get_enum (ty:C_type.t) (ctx:t) : Enum.t =
+    let name = C_type.to_string ty |> Variable.from_name in
+    Variable.Map.find name ctx.enums
+
+  let build_params (ps:(Variable.t * C_type.t) list) (ctx:t) : Params.t =
+    List.fold_left (fun ps (x,ty) ->
+      if is_enum ty ctx then
+        Params.add_enum x (get_enum ty ctx) ps
+      else
+        Params.add x ty ps
+    )
+    Params.empty ps
 
   let add_array (var:Variable.t) (m:Memory.t) (b:t) : t =
     { b with arrays = (var, m) :: b.arrays; }
@@ -523,7 +545,7 @@ module Context = struct
       else
         Enum.to_assigns e @ b.assigns
     in
-    { b with assigns }
+    { b with assigns; enums = Variable.Map.add e.var e b.enums;}
 
   (* Generate the preamble *)
   let gen_preamble (c:t) : Imp.Stmt.t list =
@@ -906,7 +928,7 @@ let parse_param
     |> Result.map_error from_j_error
     |> Result.map (fun x -> Context.resolve x ctx)
   in
-  if C_type.is_int ty then
+  if Context.is_int ty ctx then
     let x = p.ty_var.name in
     Ok (Some (Either.Left (x, ty)))
   else if C_type.is_array ty then (
@@ -929,7 +951,7 @@ let parse_params
   let* params = Rjson.map_all (parse_param ctx)
     (fun i _ e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
-  Ok (Params.from_list globals, Variable.Map.of_list arrays)
+  Ok (Context.build_params globals ctx, Variable.Map.of_list arrays)
 
 let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
   let open D_lang in
@@ -985,15 +1007,17 @@ let parse_kernel
     |> Common.append_rev1 ctx.arrays
     |> Variable.Map.of_list
   in
+
   let rec add_type_params (params:Params.t) : Ty_param.t list -> Params.t =
     function
     | [] -> params
     | TemplateType _ :: l -> add_type_params params l
     | NonTypeTemplate x :: l ->
-      let params = match J_type.to_c_type_res x.ty with
-      | Ok ty when C_type.is_int ty ->
-        Params.add x.name ty params
-      | _ -> params
+      let params =
+        match J_type.to_c_type_res x.ty with
+        | Ok ty when C_type.is_int ty ->
+          Params.add x.name ty params
+        | _ -> params
       in
       add_type_params params l
   in
@@ -1016,22 +1040,24 @@ let parse_kernel
 
 let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
   let rec parse_p
-    (b:Context.t)
+    (ctx:Context.t)
     (p:D_lang.Program.t)
-  : Imp.Kernel.t list d_result =
+  :
+    Imp.Kernel.t list d_result
+  =
     match p with
     | Declaration v :: l ->
       let b =
         match J_type.to_c_type_res v.ty with
         | Ok ty ->
           (* make sure we resolve the type before we query it *)
-          let ty = Context.resolve ty b in
+          let ty = Context.resolve ty ctx in
           let is_mut = not (C_type.is_const ty) in
           if is_mut && List.mem C_lang.c_attr_shared v.attrs then
-            Context.add_array v.var (Memory.from_type SharedMemory ty) b
+            Context.add_array v.var (Memory.from_type SharedMemory ty) ctx
           else if is_mut && List.mem C_lang.c_attr_device v.attrs then
-            Context.add_array v.var (Memory.from_type GlobalMemory ty) b
-          else if C_type.is_int ty then
+            Context.add_array v.var (Memory.from_type GlobalMemory ty) ctx
+          else if Context.is_int ty ctx then
             let g = match v.init with
             | Some (IExpr n) ->
               (match parse_exp n with
@@ -1040,21 +1066,21 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
             | _ -> None
             in
             match g with
-            | Some g -> Context.add_assign v.var g b
-            | None -> Context.add_global v.var ty b
+            | Some g -> Context.add_assign v.var g ctx
+            | None -> Context.add_global v.var ty ctx
           else
-            b
-        | Error _ -> b
+            ctx
+        | Error _ -> ctx
       in
       parse_p b l
     | Kernel k :: l ->
-      let* ks = parse_p b l in
-      let* k = parse_kernel b k in
+      let* ks = parse_p ctx l in
+      let* k = parse_kernel ctx k in
       Ok (k::ks)
     | Typedef d :: l ->
-      parse_p (Context.add_typedef d b) l
+      parse_p (Context.add_typedef d ctx) l
     | Enum e :: l ->
-      parse_p (Context.add_enum e b) l
+      parse_p (Context.add_enum e ctx) l
     | [] -> Ok []
   in
   let sigs = D_lang.SignatureDB.from_program p in

@@ -83,6 +83,7 @@ module Kernel = struct
         Line ("exact locals: " ^ Variable.set_to_string k.exact_local_variables ^ ";");
         Line ("approx locals: " ^ Variable.set_to_string k.approx_local_variables ^ ";");
         Line ("pre: " ^ b_to_string k.pre ^ ";");
+        Line ("rt: " ^ b_to_string k.runtime ^ ";");
         Line "{";
         Block (Code.to_s k.code);
         Line "}"
