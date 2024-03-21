@@ -480,17 +480,68 @@ end
 
 (* -------------------------------------------------------------- *)
 
+module Context = struct
+  type t = {
+    sigs: D_lang.SignatureDB.t;
+    arrays: (Variable.t * Memory.t) list;
+    globals: Params.t;
+    assigns: (Variable.t * nexp) list;
+    typedefs: TypeAlias.t;
+  }
+
+  let from_signature_db (sigs:D_lang.SignatureDB.t) : t =
+    {
+      sigs;
+      arrays = [];
+      globals = Params.empty;
+      assigns = [];
+      typedefs = TypeAlias.empty;
+    }
+
+  let resolve (ty:C_type.t) (b:t) : C_type.t =
+    TypeAlias.resolve ty b.typedefs
+
+  let lookup_sig (e: D_lang.Expr.t) (db:t) : D_lang.SignatureDB.Signature.t option =
+    D_lang.SignatureDB.lookup e db.sigs
+
+  let add_array (var:Variable.t) (m:Memory.t) (b:t) : t =
+    { b with arrays = (var, m) :: b.arrays; }
+
+  let add_assign (var:Variable.t) (n:Exp.nexp) (b:t) : t =
+    { b with assigns = (var, n) :: b.assigns }
+
+  let add_global (var:Variable.t) (ty:C_type.t) (b:t) : t =
+    { b with globals = Params.add var ty b.globals }
+
+  let add_typedef (d:Typedef.t) (b:t) : t =
+    { b with typedefs = TypeAlias.add d b.typedefs }
+
+  let add_enum (e:Enum.t) (b:t) : t =
+    let assigns =
+      if Enum.ignore e then
+        b.assigns
+      else
+        Enum.to_assigns e @ b.assigns
+    in
+    { b with assigns }
+
+  (* Generate the preamble *)
+  let gen_preamble (c:t) : Imp.Stmt.t list =
+    let open Imp.Stmt in
+    [Decl (List.map (fun (k,v) -> Imp.Decl.set k v) c.assigns)]
+end
+
 let cast_map f = Rjson.map_all f (fun idx _ e ->
   StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
 
 let parse_decl
-  (resolve:C_type.t -> C_type.t)
+  (ctx:Context.t)
   (d:D_lang.Decl.t)
 :
   Imp.Decl.t list d_result
 =
   let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
-  let* ty = match J_type.to_c_type_res d.ty |> Result.map resolve with
+  let* ty = match J_type.to_c_type_res d.ty |> Result.map (fun x -> Context.resolve x ctx) with
   | Ok ty -> Ok ty
   | Error _ -> root_cause ("parse_decl: error parsing type: " ^ J_type.to_string d.ty)
   in
@@ -657,20 +708,22 @@ let asserts : Variable.Set.t =
     Variable.from_name "__requires"
   ]
 
+
+
 let rec parse_stmt
-  (sigs:D_lang.SignatureDB.t)
-  (resolve:C_type.t -> C_type.t)
+  (ctx:Context.t)
   (c:D_lang.Stmt.t)
 :
   Imp.Stmt.t list d_result
 =
-  let parse_stmt = parse_stmt sigs resolve in
-  let parse_decl = parse_decl resolve in
+  let parse_stmt = parse_stmt ctx in
+  let parse_decl = parse_decl ctx in
   let with_msg (m:string) f b = with_msg_ex (fun _ -> "parse_stmt: " ^ m ^ ": " ^ D_lang.Stmt.summarize c) f b in
   let ret_n = Unknown.ret_n in
   let ret_b = Unknown.ret_b in
   let ret_ns = Unknown.ret_ns in
   let ret_args = Unknown.ret_args in
+  let resolve ty = Context.resolve ty ctx in
 
   match c with
 
@@ -688,7 +741,7 @@ let rec parse_stmt
     ret_assert b
 
   | DeclStmt ([{init=Some (IExpr (CallExpr {func = f; args;_ }) ); _}] as l) ->
-    (match D_lang.SignatureDB.lookup f sigs with
+    (match Context.lookup_sig f ctx with
     | Some s ->
       if List.length s.params = List.length args then (
         let* args = with_msg "call.args" (cast_map Arg.parse) args in
@@ -832,8 +885,9 @@ type param = (Variable.t * C_type.t, Variable.t * Memory.t) Either.t
 let from_j_error (e:Rjson.j_error) : d_error =
   RootCause (Rjson.error_to_string e)
 
+
 let parse_param
-  (resolve:C_type.t -> C_type.t)
+  (ctx:Context.t)
   (p:Param.t)
 :
   param option d_result
@@ -849,7 +903,7 @@ let parse_param
     p.ty_var.ty
     |> J_type.to_c_type_res
     |> Result.map_error from_j_error
-    |> Result.map resolve
+    |> Result.map (fun x -> Context.resolve x ctx)
   in
   if C_type.is_int ty then
     let x = p.ty_var.name in
@@ -859,13 +913,14 @@ let parse_param
     Ok (Some (Either.Right (p.ty_var.name, mk_array h ty)))
   ) else Ok None
 
+
 let parse_params
-  (resolve:C_type.t -> C_type.t)
+  (ctx:Context.t)
   (ps:Param.t list)
 :
   (Params.t * Memory.t Variable.Map.t) d_result
 =
-  let* params = Rjson.map_all (parse_param resolve)
+  let* params = Rjson.map_all (parse_param ctx)
     (fun i _ e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
   let globals, arrays = Common.flatten_opt params |> Common.either_split in
   Ok (Params.from_list globals, Variable.Map.of_list arrays)
@@ -908,18 +963,16 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
   find_shared [] s
 
 let parse_kernel
-  (sigs:D_lang.SignatureDB.t)
-  (shared_params:(Variable.t * Memory.t) list)
-  (globals:Params.t)
-  (assigns:(Variable.t * nexp) list)
-  (resolve:C_type.t -> C_type.t)
+  (ctx:Context.t)
   (k:D_lang.Kernel.t)
-: Imp.Kernel.t d_result =
-  let* code = parse_stmt sigs resolve k.code in
-  let* (params, arrays) = parse_params resolve k.params in
-  let params = Params.union_right globals params in
+:
+  Imp.Kernel.t d_result
+=
+  let* code = parse_stmt ctx k.code in
+  let* (params, arrays) = parse_params ctx k.params in
+  let params = Params.union_right ctx.globals params in
   let shared = parse_shared k.code
-    |> Common.append_rev1 shared_params
+    |> Common.append_rev1 ctx.arrays
     |> Variable.Map.of_list in
   let rec add_type_params (params:Params.t) : Ty_param.t list -> Params.t =
     function
@@ -934,10 +987,7 @@ let parse_kernel
       add_type_params params l
   in
   let open Imp.Stmt in
-  let code =
-    let assigns = Decl (List.map (fun (k,v) -> Imp.Decl.set k v) assigns) in
-    Block (assigns :: code)
-  in
+  let code = Block (Context.gen_preamble ctx @ code) in
   let params = add_type_params params k.type_params in
   let open Imp.Kernel in
   Ok {
@@ -953,51 +1003,9 @@ let parse_kernel
     ;
   }
 
-module ProgramBuilder = struct
-  type t = {
-    arrays: (Variable.t * Memory.t) list;
-    globals: Params.t;
-    assigns: (Variable.t * nexp) list;
-    typedefs: TypeAlias.t;
-  }
-
-  let empty : t =
-    {
-      arrays = [];
-      globals = Params.empty;
-      assigns = [];
-      typedefs = TypeAlias.empty;
-    }
-
-  let resolve (ty:C_type.t) (b:t) : C_type.t =
-    TypeAlias.resolve ty b.typedefs
-
-  let add_array (var:Variable.t) (m:Memory.t) (b:t) : t =
-    { b with arrays = (var, m) :: b.arrays; }
-
-  let add_assign (var:Variable.t) (n:Exp.nexp) (b:t) : t =
-    { b with assigns = (var, n) :: b.assigns }
-
-  let add_global (var:Variable.t) (ty:C_type.t) (b:t) : t =
-    { b with globals = Params.add var ty b.globals }
-
-  let add_typedef (d:Typedef.t) (b:t) : t =
-    { b with typedefs = TypeAlias.add d b.typedefs }
-
-  let add_enum (e:Enum.t) (b:t) : t =
-    let assigns =
-      if Enum.ignore e then
-        b.assigns
-      else
-        Enum.to_assigns e @ b.assigns
-    in
-    { b with assigns }
-end
-
 let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
-  let sigs = D_lang.SignatureDB.from_program p in
   let rec parse_p
-    (b:ProgramBuilder.t)
+    (b:Context.t)
     (p:D_lang.Program.t)
   : Imp.Kernel.t list d_result =
     match p with
@@ -1006,12 +1014,12 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
         match J_type.to_c_type_res v.ty with
         | Ok ty ->
           (* make sure we resolve the type before we query it *)
-          let ty = ProgramBuilder.resolve ty b in
+          let ty = Context.resolve ty b in
           let is_mut = not (C_type.is_const ty) in
           if is_mut && List.mem C_lang.c_attr_shared v.attrs then
-            ProgramBuilder.add_array v.var (Memory.from_type SharedMemory ty) b
+            Context.add_array v.var (Memory.from_type SharedMemory ty) b
           else if is_mut && List.mem C_lang.c_attr_device v.attrs then
-            ProgramBuilder.add_array v.var (Memory.from_type GlobalMemory ty) b
+            Context.add_array v.var (Memory.from_type GlobalMemory ty) b
           else if C_type.is_int ty then
             let g = match v.init with
             | Some (IExpr n) ->
@@ -1021,25 +1029,25 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
             | _ -> None
             in
             match g with
-            | Some g -> ProgramBuilder.add_assign v.var g b
-            | None -> ProgramBuilder.add_global v.var ty b
+            | Some g -> Context.add_assign v.var g b
+            | None -> Context.add_global v.var ty b
           else
             b
         | Error _ -> b
       in
       parse_p b l
     | Kernel k :: l ->
-      let resolve x = ProgramBuilder.resolve x b in
       let* ks = parse_p b l in
-      let* k = parse_kernel sigs b.arrays b.globals b.assigns resolve k in
+      let* k = parse_kernel b k in
       Ok (k::ks)
     | Typedef d :: l ->
-      parse_p (ProgramBuilder.add_typedef d b) l
+      parse_p (Context.add_typedef d b) l
     | Enum e :: l ->
-      parse_p (ProgramBuilder.add_enum e b) l
+      parse_p (Context.add_enum e b) l
     | [] -> Ok []
   in
-  parse_p ProgramBuilder.empty p
+  let sigs = D_lang.SignatureDB.from_program p in
+  parse_p (Context.from_signature_db sigs) p
 end
 
 module Default = Make(Logger.Colors)
