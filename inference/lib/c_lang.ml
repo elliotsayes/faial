@@ -1543,7 +1543,7 @@ let parse_enum (j:Yojson.Basic.t) : Enum.t j_result =
   let open Enum in
   let* var = parse_variable j in
   let* o = cast_object j in
-  let* constants = with_field "inner" (cast_map parse_constant) o in
+  let* constants = with_field_or "inner" (cast_map parse_constant) [] o in
   Ok {var; constants}
 
 let rec parse_def (j:Yojson.Basic.t) : Def.t list j_result =
