@@ -910,7 +910,12 @@ let parse_param
     let x = p.ty_var.name in
     Ok (Some (Either.Left (x, ty)))
   else if C_type.is_array ty then (
-    let h = if p.is_shared then Memory.Hierarchy.SharedMemory else Memory.Hierarchy.GlobalMemory in
+    let h =
+      if p.is_shared then
+        Memory.Hierarchy.SharedMemory
+      else
+        Memory.Hierarchy.GlobalMemory
+    in
     Ok (Some (Either.Right (p.ty_var.name, mk_array h ty)))
   ) else Ok None
 
