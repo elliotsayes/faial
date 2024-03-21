@@ -541,19 +541,20 @@ let parse_decl
   Imp.Decl.t list d_result
 =
   let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
-  let* ty = match J_type.to_c_type_res d.ty |> Result.map (fun x -> Context.resolve x ctx) with
-  | Ok ty -> Ok ty
-  | Error _ -> root_cause ("parse_decl: error parsing type: " ^ J_type.to_string d.ty)
+  let* ty =
+    match J_type.to_c_type_res d.ty |> Result.map (fun x -> Context.resolve x ctx) with
+    | Ok ty -> Ok ty
+    | Error _ -> root_cause ("parse_decl: error parsing type: " ^ J_type.to_string d.ty)
   in
   let x = d.var in
-  if C_type.is_int ty
-  then (
-    let* ((vars, init):(Variable.Set.t * (nexp option))) = match d.init with
-    | Some (IExpr n) ->
-      let* n = parse_e "init" n in
-      let (vars, n) = Unknown.to_nexp n in
-      Ok (vars, Some n)
-    | _ -> Ok (Variable.Set.empty, None)
+  if C_type.is_int ty then (
+    let* ((vars, init):(Variable.Set.t * (nexp option))) =
+      match d.init with
+      | Some (IExpr n) ->
+        let* n = parse_e "init" n in
+        let (vars, n) = Unknown.to_nexp n in
+        Ok (vars, Some n)
+      | _ -> Ok (Variable.Set.empty, None)
     in
     let d =
       match init with
@@ -930,7 +931,9 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
   let rec find_shared
     (arrays:(Variable.t * array_t) list)
     (s:Stmt.t)
-  : (Variable.t * array_t) list =
+  :
+    (Variable.t * array_t) list
+  =
     match s with
     | DeclStmt l ->
       List.filter_map (fun (d:Decl.t) ->
@@ -971,9 +974,12 @@ let parse_kernel
   let* code = parse_stmt ctx k.code in
   let* (params, arrays) = parse_params ctx k.params in
   let params = Params.union_right ctx.globals params in
-  let shared = parse_shared k.code
+  let shared =
+    k.code
+    |> parse_shared
     |> Common.append_rev1 ctx.arrays
-    |> Variable.Map.of_list in
+    |> Variable.Map.of_list
+  in
   let rec add_type_params (params:Params.t) : Ty_param.t list -> Params.t =
     function
     | [] -> params
