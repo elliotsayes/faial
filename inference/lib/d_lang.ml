@@ -693,6 +693,24 @@ module AccessState = struct
     ) st
 end
 
+let curand_read : Variable.Set.t =
+  [
+    "curand_uniform";
+    "curand_normal";
+    "curand_log_normal";
+    "curand_uniform_double";
+    "curand_normal_double";
+    "curand_log_normal_double";
+    "curand_poisson";
+    "curand_discrete";
+    "curand_normal2";
+    "curand_log_normal2";
+    "curand_normal2_double";
+    "curand_log_normal2_double";
+  ]
+  |> List.map Variable.from_name
+  |> Variable.Set.of_list
+
 let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
   let open Expr in
   match c with
@@ -791,6 +809,13 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     ]; _}
     when Variable.name n = "curand_init" ->
     rewrite_write a (IntegerLiteral 0)
+
+  | CallExpr {func = Ident {name=n; kind=Function; _}; args=
+      UnaryOperator {child=ArraySubscriptExpr a; opcode="&"; _}
+      :: _
+    ; _}
+    when Variable.Set.mem n curand_read ->
+    rewrite_read a
 
   | SizeOfExpr ty ->
     fun st -> (st, SizeOfExpr ty)
