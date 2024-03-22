@@ -783,6 +783,15 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
   (* When a read happens *)
   | ArraySubscriptExpr a -> rewrite_read a
 
+  | CallExpr {func = Ident {name=n; kind=Function; _}; args=[
+      (* seed *) (* seq *) (* offset *)
+      _;         _;        _;
+      (* write *)
+      UnaryOperator {child=ArraySubscriptExpr a; opcode="&"; _};
+    ]; _}
+    when Variable.name n = "curand_init" ->
+    rewrite_write a (IntegerLiteral 0)
+
   | SizeOfExpr ty ->
     fun st -> (st, SizeOfExpr ty)
 
