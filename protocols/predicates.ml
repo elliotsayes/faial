@@ -64,7 +64,7 @@ let get_predicates (b:bexp) : t list =
     | Var _ | Num _ -> ns
     | Bin (_, n1, n2) -> get_names_n n1 ns |> get_names_n n2
     | NIf (b, n1, n2) -> get_names_b b ns |> get_names_n n1 |> get_names_n n2
-    | NCall (_, n) | Other n -> get_names_n n ns
+    | NCall (_, n) | Other n | BitNot n -> get_names_n n ns
   in
   get_names_b b StringSet.empty
   |> StringSet.elements
@@ -78,6 +78,7 @@ let inline: bexp -> bexp =
     | Num _
       -> n
     | Other e -> Other (inline_n e)
+    | BitNot e -> BitNot (inline_n e)
     | Bin (o, n1, n2) -> Bin (o, inline_n n1, inline_n n2)
     | NIf (b, n1, n2) -> NIf (inline_b b, inline_n n1, inline_n n2)
   and inline_b (b: bexp) : bexp =

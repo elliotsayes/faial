@@ -37,6 +37,7 @@ module Make (S:SUBST) = struct
         | None -> n
       end
     | Num _ -> n
+    | BitNot e -> BitNot (n_subst s e)
     | Bin (o, n1, n2) -> Bin (o, n_subst s n1, n_subst s n2)
     | NIf (b, n1, n2) -> NIf (b_subst s b, n_subst s n1, n_subst s n2)
     | NCall (x, a) -> NCall (x, n_subst s a)

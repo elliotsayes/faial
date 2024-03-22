@@ -37,11 +37,13 @@ module type NUMERIC_OPS = sig
   val mk_ge: binop
   val mk_gt: binop
   val mk_lt: binop
+  val mk_not: unop
   val parse_num: string -> string
 end
 
 module ArithmeticOps : NUMERIC_OPS = struct
   let missing (name:string) : binop = fun _ _ _ -> raise (Not_implemented name)
+  let missing1 (name:string) : unop = fun _ _ -> raise (Not_implemented name)
   let mk_var = Integer.mk_const_s
   let mk_num = Arithmetic.Integer.mk_numeral_i
   let mk_bit_and = missing "&"
@@ -58,6 +60,7 @@ module ArithmeticOps : NUMERIC_OPS = struct
   let mk_ge = Arithmetic.mk_ge
   let mk_gt = Arithmetic.mk_gt
   let mk_lt = Arithmetic.mk_lt
+  let mk_not = missing1 "~"
   let parse_num (x:string) = x
 end
 
@@ -118,6 +121,7 @@ module BitVectorOps (W:WordSize) = struct
 	let mk_ge = BitVector.mk_sge
 	let mk_gt = BitVector.mk_sgt
 	let mk_lt = BitVector.mk_slt
+	let mk_not = BitVector.mk_not
 	let parse_num x =
 		(* Input is: #x0000004000000000 *)
 		let offset n x = String.sub x n (String.length x - n) in
@@ -167,11 +171,14 @@ module CodeGen (N:NUMERIC_OPS) = struct
 		| BOr -> fun ctx b1 b2 -> Boolean.mk_or ctx [b1; b2]
 		| BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
 
-	let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr = match n with
+	let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr =
+    match n with
     | Var x -> Variable.name x |> N.mk_var ctx
-		| Other n ->
-		    let n : string = Exp.n_to_string n in
-		    raise (Not_implemented ("n_to_expr: not implemented for Other of " ^ n))
+    | BitNot n ->
+      N.mk_not ctx (n_to_expr ctx n)
+    | Other n ->
+        let n : string = Exp.n_to_string n in
+        raise (Not_implemented ("n_to_expr: not implemented for Other of " ^ n))
     | NCall _ ->
         failwith "b_to_expr: invoke Predicates.inline to remove predicates"
     | Num (n:int) -> N.mk_num ctx n
@@ -180,7 +187,8 @@ module CodeGen (N:NUMERIC_OPS) = struct
     | NIf (b, n1, n2) -> Boolean.mk_ite ctx
         (b_to_expr ctx b) (n_to_expr ctx n1) (n_to_expr ctx n2)
 
-	and b_to_expr (ctx:Z3.context) (b:bexp) : Expr.expr = match b with
+	and b_to_expr (ctx:Z3.context) (b:bexp) : Expr.expr =
+    match b with
     | Bool (b:bool) -> Boolean.mk_val ctx b
     | NRel (op, n1, n2) ->
         (nrel_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
@@ -217,6 +225,7 @@ module SignedBitVectorOps (W:WordSize) = struct
   let mk_ge = BitVector.mk_sge
   let mk_gt = BitVector.mk_sgt
   let mk_lt = BitVector.mk_slt
+  let mk_not = BitVector.mk_not
   let parse_num x =
     (* Input is: #x0000004000000000 *)
     let offset n x = String.sub x n (String.length x - n) in

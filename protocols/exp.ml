@@ -46,6 +46,7 @@ type nexp =
   | Var of Variable.t
   | Num of int
   | Bin of nbin * nexp * nexp
+  | BitNot of nexp
   | NCall of string * nexp
   | NIf of bexp * nexp * nexp
   | Other of nexp
@@ -89,6 +90,9 @@ let rec n_eval_res (n: nexp) : (int, string) Result.t =
   match n with
   | Var x -> Error ("n_eval: variable " ^ Variable.name x)
   | Num n -> Ok n
+  | BitNot n ->
+    let* n = n_eval_res n in
+    Ok (~- n)
   | Bin (o, n1, n2) ->
     let* n1 = n_eval_res n1 in
     let* n2 = n_eval_res n2 in
@@ -320,12 +324,14 @@ let rec n_par (n:nexp) : string =
   | Other _
     -> n_to_string n
   | NIf _
+  | BitNot _
   | Bin _
     -> "(" ^ n_to_string n ^ ")"
 
 and n_to_string : nexp -> string = function
   | Num n -> string_of_int n
   | Var x -> Variable.name x
+  | BitNot n -> "~" ^ n_par n
   | Bin (b, a1, a2) ->
     n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
   | NCall (x, arg) ->

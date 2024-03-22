@@ -28,6 +28,9 @@ let rec n_eval_res ?(env=default_env) (n:Exp.nexp) : (Int32.t, string) Result.t 
   let (let*) = Result.bind in
   match n with
   | Var x -> env x
+  | BitNot e ->
+    let* n = n_eval_res ~env e in
+    Ok (Int32.neg n)
   | Num n -> Ok (Int32.of_int n)
   | Bin (o, n1, n2) ->
     let* n1 = n_eval_res ~env n1 in

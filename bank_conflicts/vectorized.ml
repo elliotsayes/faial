@@ -167,6 +167,10 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
 
   | Num n -> NMap.constant ~count:ctx.warp_count ~value:n
 
+  | BitNot e ->
+    let n = n_eval e ctx in
+    NMap.map (fun v -> ~- v) n
+
   | Bin (o, n1, n2) ->
     let o = Exp.eval_nbin o in
     let n1 = n_eval n1 ctx in

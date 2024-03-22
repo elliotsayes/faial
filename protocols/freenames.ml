@@ -4,6 +4,7 @@ let rec fold_nexp f e a =
   match e with
   | Num _ -> a
   | Var x -> f x a
+  | BitNot e -> fold_nexp f e a
   | Bin (_, e1, e2) -> fold_nexp f e1 a |> fold_nexp f e2
   | NIf (b, e1, e2) -> fold_bexp f b a |> fold_nexp f e1 |> fold_nexp f e2
   | NCall (_, e) | Other e -> fold_nexp f e a

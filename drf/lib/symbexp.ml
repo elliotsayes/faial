@@ -122,6 +122,7 @@ let project_access (locals:Variable.Set.t) (t:task) (ca:CondAccess.t) : CondAcce
     | Num _ -> n
     | Var x when Variable.Set.mem x locals -> Var (Gen.project t x)
     | Var _ -> n
+    | BitNot e -> BitNot (inline_proj_n t e)
     | Other e -> inline_proj_n (other_task t) e
     | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
     | NIf (b, n1, n2) -> NIf (inline_proj_b t b, inline_proj_n t n1, inline_proj_n t n2)

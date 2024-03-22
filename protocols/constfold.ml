@@ -37,6 +37,12 @@ let rec n_opt (a : nexp) : nexp =
   | Num _ -> a
     (* if n < 0 then raise (Failure "Negative number") else a *)
   | NCall (x, e) -> NCall (x, n_opt e)
+  | BitNot e ->
+    let e = n_opt e in
+    begin match e with
+    | Num n -> Num (~- n)
+    | _ -> BitNot e
+    end
   | Other e -> Other (n_opt e)
   | NIf (b, n1, n2) ->
     let b = b_opt b in

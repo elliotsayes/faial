@@ -76,6 +76,7 @@ module IExp = struct
   type n =
     | Var of Variable.t
     | Num of int
+    | BitNot of t
     | Bin of nbin * t * t
     | NCall of string * t
     | NIf of t * t * t
@@ -103,6 +104,7 @@ module IExp = struct
     function
     | Var x -> Variable.name x
     | Num x -> string_of_int x
+    | BitNot e -> "~ (" ^ to_string e ^ ")"
     | Bin (o, l, r) ->
       "(" ^ to_string l ^ ") " ^ nbin_to_string o ^ " (" ^ to_string r ^ ")"
     | NCall (o, e) -> o ^ "(" ^ to_string e ^ ")"
@@ -204,6 +206,10 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
     let* n2 = parse_e "else_expr" o.else_expr in
     ret_n (NIf (b, n1, n2))
 
+  | UnaryOperator {opcode="~"; child=e; _} ->
+    let* n = parse_e "child" e in
+    ret_n (BitNot n)
+
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _}
     when Variable.name n = "divUp" ->
     let* n1 = parse_e "lhs" n1 in
@@ -249,7 +255,6 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
     ret_b (BNot b)
 
   | RecoveryExpr _
-  | UnaryOperator {opcode="~"; _}
   | CXXConstructExpr _
   | MemberExpr _
   | CallExpr _ 
@@ -353,6 +358,9 @@ module Unknown = struct
       | Other n ->
         let (u, n) = handle_n u n in
         (u, Exp.Other n)
+      | BitNot n ->
+        let (u, n) = handle_n u n in
+        (u, Exp.BitNot n)
       | NCall (x, n) ->
         let (u, n) = handle_n u n in
         (u, Exp.NCall (x, n))
