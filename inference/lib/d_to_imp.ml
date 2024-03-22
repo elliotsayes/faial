@@ -763,6 +763,21 @@ let rec parse_stmt
     when Variable.Set.mem n asserts ->
     ret_assert b
 
+  | SExpr (CallExpr {func = f; args;_ }) ->
+    (match Context.lookup_sig f ctx with
+    | Some s ->
+      if List.length s.params = List.length args then (
+        let* args = with_msg "call.args" (cast_map Arg.parse) args in
+        args |> ret_args (fun args ->
+          let args = List.map2 (fun x y -> (x, y)) s.params args in
+          Imp.Stmt.Call {kernel=s.kernel; ty=s.ty; args}
+        )
+      ) else
+        root_cause "Args mismatch!"
+    | None ->
+      Ok []
+    )
+
   | DeclStmt ([{init=Some (IExpr (CallExpr {func = f; args;_ }) ); _}] as l) ->
     (match Context.lookup_sig f ctx with
     | Some s ->
