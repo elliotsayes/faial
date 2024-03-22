@@ -5,6 +5,8 @@
 - Inference: fixed a regression where certain functions weren't being
   recognized (introduced with kernel calls)
 - Inference: added support for enumeration.
+- Inference: improved support for kernel calls.
+- Inference: improved support for array aliasing.
 - DRF: analysis is more precise by using typing information.
 - DRF: only check a given blockIdx
 
