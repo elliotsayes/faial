@@ -732,6 +732,35 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
   | BinaryOperator {lhs=ArraySubscriptExpr a; rhs=src; opcode="="; _} ->
     rewrite_write a src
 
+  (*   *w = *)
+  | BinaryOperator {
+      lhs=UnaryOperator{
+        opcode="*";
+        child=(Ident {name=x; ty; _}) as lhs;
+        _
+      };
+      rhs=src;
+      opcode="="; _
+    } ->
+    rewrite_write {lhs=lhs; rhs=IntegerLiteral 0; ty;location=Variable.location x} src
+
+  (*   *w = *)
+  | BinaryOperator {
+      lhs=UnaryOperator{
+        opcode="*";
+        child=BinaryOperator {
+          lhs=(Ident {name=x; ty; _}) as lhs;
+          rhs;
+          opcode="+";
+          _
+        };
+        _
+      };
+      rhs=src;
+      opcode="="; _
+    } ->
+    rewrite_write {lhs; rhs; ty;location=Variable.location x} src
+
   (* operator*[w] = *)
   | BinaryOperator {
       lhs=CXXOperatorCallExpr{
