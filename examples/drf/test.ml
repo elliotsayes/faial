@@ -30,8 +30,10 @@ let tests = [
   "toplevel-racy.cu", ["--tid1"; "0"; "--tid2"; "1"], 1;
   (* Data-race free example *)
   "drf-shared-mem.cu", [], 0;
-  (* Data-race free example *)
+  (* Shared memory *)
   "racy-shared-mem.cu", [], 1;
+  (* Shared memory in a device function *)
+  "racy-shared-mem-2.cu", [], 1;
   (* Data-race free example with array aliasing *)
   "drf-alias.cu", [], 0;
   (* Data-race free example with array aliasing *)

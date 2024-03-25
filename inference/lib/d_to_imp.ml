@@ -491,17 +491,24 @@ end
 module Context = struct
   type t = {
     sigs: D_lang.SignatureDB.t;
-    arrays: (Variable.t * Memory.t) list;
+    arrays: Memory.t Variable.Map.t;
     globals: Params.t;
     assigns: (Variable.t * nexp) list;
     typedefs: TypeAlias.t;
     enums: Enum.t Variable.Map.t;
   }
 
+  let to_string (ctx:t) : string =
+    [
+      "sigs: " ^ D_lang.SignatureDB.to_string ctx.sigs;
+      "arrays: [" ^ (ctx.arrays |> Variable.Map.to_list |> List.map fst |> List.map Variable.name |> String.concat ", ") ^ "]";
+    ]
+    |> String.concat "\n"
+
   let from_signature_db (sigs:D_lang.SignatureDB.t) : t =
     {
       sigs;
-      arrays = [];
+      arrays = Variable.Map.empty;
       globals = Params.empty;
       assigns = [];
       typedefs = TypeAlias.empty;
@@ -535,7 +542,7 @@ module Context = struct
     Params.empty ps
 
   let add_array (var:Variable.t) (m:Memory.t) (b:t) : t =
-    { b with arrays = (var, m) :: b.arrays; }
+    { b with arrays = Variable.Map.add var m b.arrays; }
 
   let add_assign (var:Variable.t) (n:Exp.nexp) (b:t) : t =
     { b with assigns = (var, n) :: b.assigns }
@@ -988,7 +995,8 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
     | DeclStmt l ->
       List.filter_map (fun (d:Decl.t) ->
         Decl.get_shared d
-        |> Option.map (fun a -> (d.var, a))
+        |> Option.map (fun a ->
+          (d.var, a))
       ) l
       |> Common.append_tr arrays
     | WriteAccessStmt _
@@ -1019,17 +1027,18 @@ let parse_kernel
   (ctx:Context.t)
   (k:D_lang.Kernel.t)
 :
-  Imp.Kernel.t d_result
+  (Context.t * Imp.Kernel.t) d_result
 =
   let* code = parse_stmt ctx k.code in
-  let* (params, arrays) = parse_params ctx k.params in
-  let params = Params.union_right ctx.globals params in
-  let shared =
-    k.code
-    |> parse_shared
-    |> Common.append_rev1 ctx.arrays
-    |> Variable.Map.of_list
+  (* Add inferred arrays to global context *)
+  let ctx =
+    List.fold_left (fun ctx (x, m) ->
+      Context.add_array x m ctx
+    ) ctx (parse_shared k.code)
   in
+  let* (params, arrays) = parse_params ctx k.params in
+  let arrays = Variable.Map.union (fun _ _ r -> Some r) arrays ctx.arrays in
+  let params = Params.union_right ctx.globals params in
 
   let rec add_type_params (params:Params.t) : Ty_param.t list -> Params.t =
     function
@@ -1048,18 +1057,18 @@ let parse_kernel
   let code = Block (Context.gen_preamble ctx @ code) in
   let params = add_type_params params k.type_params in
   let open Imp.Kernel in
-  Ok {
+  Ok (ctx, {
     name = k.name;
     ty = k.ty;
     code = code;
-    params = params;
-    arrays = Variable.Map.union (fun _ _ r -> Some r) arrays shared;
+    params;
+    arrays;
     visibility =
       match k.attribute with
       | Default -> Global
       | Auxiliary -> Device
     ;
-  }
+  })
 
 let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
   let rec parse_p
@@ -1097,8 +1106,8 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
       in
       parse_p b l
     | Kernel k :: l ->
+      let* (ctx, k) = parse_kernel ctx k in
       let* ks = parse_p ctx l in
-      let* k = parse_kernel ctx k in
       Ok (k::ks)
     | Typedef d :: l ->
       parse_p (Context.add_typedef d ctx) l
