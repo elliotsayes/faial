@@ -185,6 +185,7 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
   (* ------------------ nexp ------------------------ *)
   | Ident d ->
     ret_n (Var d.name)
+
   | SizeOfExpr ty ->
     (match J_type.to_c_type_res ty with
     | Ok ty ->
@@ -195,11 +196,15 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
       let lbl = "sizeof(" ^ J_type.to_string ty ^ ")" in
       L.warning ("could not parse type: " ^ lbl ^ " = ?");
       Ok (Unknown lbl))
+
   | IntegerLiteral n
+
   | CharacterLiteral n -> ret_n (Num n)
+
   | FloatingLiteral n -> 
     L.warning ("parse_nexp: converting float '" ^ Float.to_string n ^ "' to integer");
     ret_n (Num (Float.to_int n))
+
   | ConditionalOperator o ->
     let* b = parse_e "cond" o.cond in
     let* n1 = parse_e "then_expr" o.then_expr in
@@ -230,26 +235,32 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__is_pow2" ->
     let* n = parse_e "arg" n in
     ret_b (Pred ("pow2", n))
+
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _} when Variable.name n = "min" ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
     ret_n (NIf (BExp (NRel (NLt, n1, n2)), n1, n2))
+
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _} when Variable.name n = "max" ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
     ret_n (NIf (BExp (NRel (NGt, n1, n2)), n1, n2))
+
   | BinaryOperator {lhs=l; opcode="&"; rhs=IntegerLiteral 1; _} ->
     let* n = parse_exp l in
     ret_b (NRel (NEq, NExp (Bin (Mod, n, NExp (Num 2))), NExp (Num 0)))
 
   | BinaryOperator {opcode="&"; lhs=n1; rhs=BinaryOperator {opcode="-"; lhs=n2; rhs=IntegerLiteral 1; _}; ty=ty} ->
     parse_exp (BinaryOperator {opcode="%"; lhs=n1; rhs=n2; ty=ty})
+
   | BinaryOperator {opcode=o; lhs=n1; rhs=n2; _} ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
     Ok (parse_bin o n1 n2)
+
   | CXXBoolLiteralExpr b ->
     ret_b (Bool b)
+
   | UnaryOperator u when u.opcode = "!" ->
     let* b = parse_e "not" u.child in
     ret_b (BNot b)
