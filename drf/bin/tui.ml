@@ -237,12 +237,12 @@ let render (output: Analysis.t list) : unit =
       solution.kernel.name in
     let errors =
       solution.report
-      |> List.filter_map (
+      |> List.filter_map (fun s ->
         let open Z3_solver.Solution in
-        function
-        | _, Drf -> None
-        | p, Unknown -> Some (Either.Left p)
-        | p, Racy w -> Some (Either.Right (p, w))
+        match s.outcome with
+        | Drf -> None
+        | Unknown -> Some (Either.Left s.proof)
+        | Racy w -> Some (Either.Right (s.proof, w))
       )
     in
     let print_errors errs =

@@ -390,8 +390,7 @@ let solve
   add b_to_expr s ctx p;
   Solver.check s []
 
-
-module Solution = struct
+module Outcome = struct
   type t =
     | Drf
     | Racy of Witness.t
@@ -407,6 +406,17 @@ module Solution = struct
     | Drf -> `String "drf"
     | Unknown -> `String "unknown"
     | Racy w -> Witness.to_json w
+end
+
+module Solution = struct
+  type t = {
+    proof: Symbexp.Proof.t;
+    outcome: Outcome.t;
+    logic: string option;
+  }
+
+  let is_safe (x:t) : bool =
+    Outcome.is_safe x.outcome
 
   (*
     Example of retrieving values from a model.
@@ -419,7 +429,7 @@ module Solution = struct
     ?(logic=None)
     (ps:Symbexp.Proof.t Streamutil.stream)
   :
-    (Symbexp.Proof.t * t) Streamutil.stream
+    t Streamutil.stream
   =
     let b_to_expr = ref IntGen.b_to_expr in
     let parse_num = ref IntGen.parse_num in
@@ -448,7 +458,7 @@ module Solution = struct
         | None -> []
       end
       in
-      let s =
+      let (l, s) =
         (* Create a solver and try to solve, might fail with Not_Implemented *)
         let solve () =
           let ctx = Z3.mk_context options in
@@ -463,29 +473,31 @@ module Solution = struct
           s
         in
         try
-          solve ()
+          (!logic, solve ())
         with
           Not_implemented x ->
             prerr_endline ("WARNING: arithmetic solver cannot handle operator '" ^ x ^ "', trying bit-vector arithmetic instead.");
             set_bv ();
-            solve ()
+            (Some "BV", solve ())
       in
       (*if show_proofs then (
         let title = "proof #" ^ string_of_int p.id in
         let body = Solver.to_string s ^ "(check-sat)\n(get-model)\n" in
         Tui.print_frame ~title ~body
       ) else ()); *)
-      let r = match Solver.check s [] with
-      | UNSATISFIABLE -> Drf
-      | SATISFIABLE ->
-        (match Solver.get_model s with
-        | Some m ->
-          let w = Witness.parse !parse_num ~proof:p m in
-          if Witness.can_conflict w then Racy w else Drf
-        | None -> failwith "INVALID")
-      | UNKNOWN -> Unknown
+      let r =
+        let open Outcome in
+        match Solver.check s [] with
+        | UNSATISFIABLE -> Drf
+        | SATISFIABLE ->
+          (match Solver.get_model s with
+          | Some m ->
+            let w = Witness.parse !parse_num ~proof:p m in
+            if Witness.can_conflict w then Racy w else Drf
+          | None -> failwith "INVALID")
+        | UNKNOWN -> Unknown
       in
-      (p, r)
+      {proof=p; outcome=r; logic=l}
     ) ps
 
 end
