@@ -62,6 +62,12 @@ let tests = [
   "drf-enum.cu", [], 0;
   (* Support for enumerates *)
   "drf-enum-constraint.cu", [], 0;
+  (* Aliasing using shared memory (example 1) *)
+  "racy-alias-shmem1.cu", [], 1;
+  (* Aliasing using shared memory (example 1) *)
+  "racy-alias-shmem2.cu", [], 1;
+  (* Aliasing using shared memory (example 1) *)
+  "racy-alias-shmem3.cu", [], 1;
 ]
 
 (* These are kernels that are being documented, but are

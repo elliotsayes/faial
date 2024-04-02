@@ -619,7 +619,7 @@ let rec parse_load_expr (target:D_lang.Expr.t) (exp:D_lang.Expr.t)
   : (d_location_alias, D_lang.Expr.t) Either.t =
   let open Either in
   match exp with
-  | Ident {ty; _} when J_type.matches C_type.is_pointer ty ->
+  | Ident {ty; _} when J_type.matches C_type.is_pointer ty || J_type.matches C_type.is_array ty->
     Left {target=target; source=exp; offset=IntegerLiteral 0}
   | CXXOperatorCallExpr {func=UnresolvedLookupExpr {name=n; _}; args=[lhs;rhs]; ty}
   | CXXOperatorCallExpr {func=Ident {name=n; _}; args=[lhs;rhs]; ty}
