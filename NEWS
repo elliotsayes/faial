@@ -1,3 +1,6 @@
+2024-04:
+- Inference: improved support for array aliasing with shared memory.
+
 2024-03:
 - Inference: improved how we handle mutated variables in loops/conditionals.
 - Inference: added support for preserving the types from declarations.
