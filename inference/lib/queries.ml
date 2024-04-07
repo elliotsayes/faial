@@ -854,11 +854,11 @@ module Accesses = struct
       | LocationAlias _ ->
         Seq.empty
       | Atomic a ->
-        if in_cond then (Seq.return (Imp.atomic_to_acc a)) else Seq.empty
+        if in_cond then (Seq.return (Imp.Atomic_write.to_acc a)) else Seq.empty
       | Read r ->
-        if in_cond then (Seq.return (Imp.read_to_acc r)) else Seq.empty
+        if in_cond then (Seq.return (Imp.Read.to_acc r)) else Seq.empty
       | Write w ->
-        if in_cond then (Seq.return (Imp.write_to_acc w)) else Seq.empty
+        if in_cond then (Seq.return (Imp.Write.to_acc w)) else Seq.empty
       | Block l ->
         Seq.concat_map (cond_accesses in_cond) (List.to_seq l)
       | If (_, s1, s2) ->
@@ -872,8 +872,9 @@ module Accesses = struct
   let all_accesses: Stmt.t -> t Seq.t =
     let f (s:Stmt.t) =
       match s with
-      | Read r -> Some (Imp.read_to_acc r)
-      | Write w -> Some (Imp.write_to_acc w)
+      | Read r -> Some (Imp.Read.to_acc r)
+      | Write w -> Some (Imp.Write.to_acc w)
+      | Atomic w -> Some (Imp.Atomic_write.to_acc w)
       | _ -> None
     in
     Stmt.find_all_map f
