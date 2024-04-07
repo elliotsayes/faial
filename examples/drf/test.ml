@@ -68,6 +68,8 @@ let tests = [
   "racy-alias-shmem2.cu", [], 1;
   (* Aliasing using shared memory (example 1) *)
   "racy-alias-shmem3.cu", [], 1;
+  (* Aliasing with increment *)
+  "racy-alias-assign.cu", [], 1;
 ]
 
 (* These are kernels that are being documented, but are
