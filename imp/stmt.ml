@@ -294,7 +294,7 @@ let to_assert_scoped : Params.t * t -> Params.t * Assert_scoped.t =
     function
     | Sync l -> ret (Assert_scoped.Sync l)
     | Write e -> ret (Acc (e.array, {index=e.index; mode=Write e.payload}))
-    | Assert b -> ret (Assert_scoped.Assert b)
+    | Assert b -> ret (Assert_scoped.Assert (b, Assert_scoped.Skip))
     | Read e ->
       fun (curr_id, globals) ->
         let rd = Assert_scoped.Acc (e.array, {index=e.index; mode=Read}) in
@@ -331,6 +331,10 @@ let to_assert_scoped : Params.t * t -> Params.t * Assert_scoped.t =
   and imp_to_scoped_p : prog -> int*Params.t -> int * Params.t * Assert_scoped.t =
     function
     | [] -> ret Skip
+    | Assert e :: p ->
+      bind (imp_to_scoped_p p) (fun p ->
+        ret (Assert_scoped.Assert (e, p))
+      )
     | LocationAlias e :: p ->
       bind (imp_to_scoped_p p) (fun p ->
        ret (Assert_scoped.loc_subst e p)

@@ -290,6 +290,26 @@ let rec b_or_split : bexp -> bexp list =
     b_or_split b1 @ b_or_split b2
   | b -> [b]
 
+
+(* Checks if variable [x] is in the given expression *)
+let rec n_mem (x:Variable.t) : nexp -> bool =
+  function
+  | Var y -> Variable.equal x y
+  | Num _ -> false
+  | Bin (_, e1, e2) ->
+    n_mem x e1 || n_mem x e2
+  | BitNot e | NCall (_, e) | Other e -> n_mem x e
+  | NIf (b, e1, e2) ->
+    b_mem x b || n_mem x e1 || n_mem x e2
+
+and b_mem (x:Variable.t) : bexp -> bool =
+  function
+  | Bool _ -> false
+  | NRel (_, e1, e2) -> n_mem x e1 || n_mem x e2
+  | BRel (_, e1, e2) -> b_mem x e1 || b_mem x e2
+  | BNot e -> b_mem x e
+  | Pred (_, e) -> n_mem x e
+
 let nbin_to_string : nbin -> string = function
   | Plus -> "+"
   | Minus -> "-"

@@ -238,6 +238,12 @@ let inline_assigns (known:Variable.Set.t) : t -> t =
     |> vars_distinct
     |> inline known (Subst.SubstAssoc.make [])
 
+let if_ (b:Exp.bexp) (s:t) : t =
+  match b with
+  | Bool true -> s
+  | Bool false -> Skip
+  | _ -> If (b, s, Skip)
+
 (* Rewrite assigns that cannot be represented as lets *)
 let fix_assigns : t -> t =
   let decl (assigns:Params.t) (p:t) : t =

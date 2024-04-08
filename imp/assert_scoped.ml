@@ -4,7 +4,7 @@ open Protocols
 type t =
   | Skip
   | Sync of Location.t option
-  | Assert of Exp.bexp
+  | Assert of (Exp.bexp * t)
   | Acc of (Variable.t * Access.t)
   | If of (Exp.bexp * t * t)
   | For of (Range.t * t)
@@ -17,7 +17,12 @@ let to_string: t -> string =
     function
     | Skip -> [Line "skip;"]
     | Sync _ -> [Line "sync;"]
-    | Assert b -> [Line ("assert (" ^ Exp.b_to_string b ^ ");")]
+    | Assert (b, s) ->
+      [
+        Line ("assert (" ^ Exp.b_to_string b ^ ") {");
+        Block (to_s s);
+        Line ("}");
+      ]
     | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
     | Assign a -> [
         Line (Variable.name a.var ^ " = " ^ Exp.n_to_string a.data ^ " {");
@@ -95,7 +100,7 @@ module SubstMake(S:Subst.SUBST) = struct
     | Sync l -> Sync l
     | Skip -> Skip
     | Acc (x, a) -> Acc (x, M.a_subst st a)
-    | Assert b -> Assert (M.b_subst st b)
+    | Assert (b, s) -> Assert (M.b_subst st b, subst st s)
     | Decl (d, p) ->
       let d = Decl.map (M.n_subst st) d in
       Decl (d, M.add st d.var (function
@@ -218,7 +223,7 @@ let inline_assigns (known:Variable.Set.t) : t -> t =
     in
     match i with
     | Sync l -> Sync l
-    | Assert b -> Assert (b_subst st b)
+    | Assert (b, s) -> Assert (b_subst st b, inline known st s)
     | Acc (x,e) -> Acc (x, a_subst st e)
     | Skip -> Skip
     | If (b, p1, p2) ->
@@ -292,3 +297,132 @@ let fix_assigns : t -> t =
     |> fix_assigns Params.empty
     |> snd
 
+module AssertionTree = struct
+  open Exp
+
+  type t =
+    | True
+    | Cond of bexp
+    | Append of t * t
+    | And of Exp.bexp * t
+    | Implies of Exp.bexp * t
+
+  let true_ : t = True
+
+  let rec from_bexp : bexp -> t =
+    let open Exp in
+    function
+    | Bool true -> True
+    | BRel (BAnd, e1, e2) ->
+      and_ e1 (from_bexp e2)
+    | e -> Cond e
+
+  and and_ (e1:bexp) (e2:t) : t =
+    match e1, e2 with
+    | Bool true, e -> e
+    | e, True -> from_bexp e
+    | Bool false, _ -> Cond (Bool false)
+    | _, _ -> And (e1, e2)
+
+  let append (e1:t) (e2:t) : t =
+    match e1, e2 with
+    | True, e | e, True -> e
+    | _, _ -> Append (e1, e2)
+
+
+  let implies (e1:bexp) (e2:t) =
+    match e1, e2 with
+    | Bool true, e -> e
+    | Bool false, _ -> True
+    | _, _ -> Implies (e1, e2)
+
+  let rec to_bexp : t -> Exp.bexp =
+    let open Exp in
+    function
+    | True -> Bool true
+    | Cond b -> b
+    | Append (a, b) -> b_and (to_bexp a) (to_bexp b)
+    | And (b, p) -> b_and b (to_bexp p)
+    | Implies (b, p) -> b_impl b (to_bexp p)
+
+  let retain (x:Variable.t) : t -> bexp =
+    let b_retain (b:bexp) : bexp =
+      if Exp.b_mem x b then b else Bool true
+    in
+    let rec retain : t -> t =
+      function
+      | True -> True
+      | Cond b ->
+        if Exp.b_mem x b then (Cond b) else True
+      | Append (a, b) ->
+        append (retain a) (retain b)
+      | And (a, b) ->
+        and_ (b_retain a) (retain b)
+      | Implies (a, b) ->
+        implies (b_retain a) (retain b)
+    in
+    fun e ->
+      retain e |> to_bexp
+
+  let remove (x:Variable.t) : t -> t =
+    let open Exp in
+    let b_remove (e:bexp) : bexp =
+      if Exp.b_mem x e then (Bool true) else e
+    in
+    let rec remove : t -> t =
+      function
+      | True -> True
+      | Cond b -> if Exp.b_mem x b then True else (Cond b)
+      | And (a, b) ->
+        and_ (b_remove a) (remove b)
+      | Implies (a, b) ->
+        implies (b_remove a) (remove b)
+      | Append (a, b) ->
+        append (remove a) (remove b)
+    in
+    remove
+
+end
+
+let to_scoped : t -> Scoped.t =
+  let open Exp in
+  let rec to_scoped :  t -> Scoped.t * AssertionTree.t =
+    function
+    | Skip -> Scoped.Skip, AssertionTree.true_
+    | Acc (x, e) -> Scoped.Acc (x, e), AssertionTree.true_
+    | Seq (p, q) ->
+      let p, a1 = to_scoped p in
+      let q, a2 = to_scoped q in
+      (Scoped.Seq (p, q), AssertionTree.append a1 a2)
+    | Assert (e, p) ->
+      let p, a = to_scoped p in
+      p, AssertionTree.and_ e a
+    | If (b, then_s, else_s) ->
+      let then_s, a1 = to_scoped then_s in
+      let else_s, a2 = to_scoped else_s in
+      let a = AssertionTree.(append
+        (implies b a1)
+        (implies (b_not b) a2)
+      ) in
+      Scoped.If (b, then_s, else_s), a
+    | For (r, p) ->
+      let p, a = to_scoped p in
+      let guard = AssertionTree.retain (Range.var r) a in
+      let a = AssertionTree.remove (Range.var r) a in
+      (
+        Scoped.For (r, Scoped.if_ guard p),
+        AssertionTree.implies (Range.has_next r) a
+      )
+    | Sync e -> Scoped.Sync e, AssertionTree.true_
+    | Assign e ->
+      let p, a = to_scoped e.body in
+      Scoped.Assign {var=e.var; ty=e.ty; data=e.data; body=p}, a
+    | Decl (e, p) ->
+      let p, a = to_scoped p in
+      let guard = AssertionTree.retain e.var a in
+      let a = AssertionTree.remove e.var a in
+      Decl (e, Scoped.if_ guard p), a
+  in
+  fun e ->
+    let p, a = to_scoped e in
+    Scoped.if_ (AssertionTree.to_bexp a) p
