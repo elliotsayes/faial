@@ -268,14 +268,6 @@ let from_stmt : Params.t * Stmt.t -> Params.t * t =
     | Sync l -> ret (Sync l)
     | Write e -> ret (Acc (e.array, {index=e.index; mode=Write e.payload}))
     | Assert b -> ret (Assert (b, Skip))
-    | Read e ->
-      fun (curr_id, globals) ->
-        let rd = Acc (e.array, {index=e.index; mode=Read}) in
-        (curr_id, globals, Decl (Decl.unset ~ty:e.ty e.target, rd))
-    | Atomic e ->
-      fun (curr_id, globals) ->
-        let rd = Acc (e.array, {index=e.index; mode=Atomic e.atomic}) in
-        (curr_id, globals, Decl (Decl.unset ~ty:e.ty e.target, rd))
     | Call _ -> imp_to_scoped_p []
     | Block p -> imp_to_scoped_p p
     | If (b, s1, s2) ->
@@ -298,7 +290,7 @@ let from_stmt : Params.t * Stmt.t -> Params.t * t =
           (curr_id, globals, Decl (Decl.unset x, s))
       )
     (* Handled in the context of a prog *)
-    | LocationAlias _ | Decl _ | Assign _ ->
+    | LocationAlias _ | Decl _ | Assign _ | Read _ | Atomic _ ->
       failwith "unsupported"
 
   and imp_to_scoped_p : Stmt.prog -> int*Params.t -> int * Params.t * t =
@@ -321,6 +313,16 @@ let from_stmt : Params.t * Stmt.t -> Params.t * t =
       bind (imp_to_scoped_p (Decl l :: p)) (fun s ->
         ret (Decl (d, s))
       )
+    | Read e :: p ->
+      bind (imp_to_scoped_p p) (fun s ->
+        let rd = Acc (e.array, {index=e.index; mode=Read}) in
+        ret (Decl (Decl.unset ~ty:e.ty e.target, Seq (rd, s)))
+      )
+    | Atomic e :: p ->
+      bind (imp_to_scoped_p p) (fun s ->
+        let rd = Acc (e.array, {index=e.index; mode=Atomic e.atomic}) in
+        ret (Decl (Decl.unset ~ty:e.ty e.target, Seq (rd, s)))
+      )
     | s :: p ->
       bind (imp_to_scoped_s s) (fun s ->
         bind (imp_to_scoped_p p) (fun p ->
@@ -329,5 +331,5 @@ let from_stmt : Params.t * Stmt.t -> Params.t * t =
       )
   in
   fun (globals, s) ->
-    let (_, globals, p) = imp_to_scoped_s (Block [s]) (1, globals) in
+    let (_, globals, p) = imp_to_scoped_s s (1, globals) in
     (globals, p)
