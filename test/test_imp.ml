@@ -4,6 +4,10 @@ open OUnit2
 open Exp
 open Imp
 
+let assert_var (expected:Variable.t) (given:Variable.t)  =
+  let msg = "Expected: " ^ Variable.name expected ^ "\nGiven: " ^ Variable.name given in
+  assert_equal expected given ~msg
+
 let assert_nexp (expected:nexp) (given:nexp) =
   let msg = "Expected: " ^ Exp.n_to_string expected ^ "\nGiven: " ^ Exp.n_to_string given in
   assert_equal expected given ~msg
@@ -41,9 +45,9 @@ let tests = "test_predicates" >::: [
     (* Test: *)
     let open Imp.Scoped in
     (match p with
-    | Seq (Decl ({init=Some e1; _}, (* local id = 32 + id; *)
+    | Decl ({init=Some e1; _}, (* local id = 32 + id; *)
         Seq (Acc (_, {index=[e2]; _}), Skip) (* rw s_Q[id]; *)
-      ), Skip)
+      )
       ->
       assert_nexp (n_plus (Num 32) (Var id)) e1;
       assert_nexp (Var id) e2;
@@ -100,22 +104,24 @@ let tests = "test_predicates" >::: [
     (* Test: *)
     (match p with
     | Scoped.(
-      Seq (
         Decl ({var=v1; init=None; _}, (*  local threadIdx.x; *)
           Decl ({var=v2; init=Some v2_e; _}, (* local id = threadIdx.x; *)
             Seq (
               Acc (_, {index=[e1]; _}), (* rw s_Q[id]; *)
               Decl ({var=v3; init=Some v3_e; _}, (* local id = 32 + id; *)
-                Seq (Acc (_, {index=[e2]; _}), Skip) (* rw s_Q[id]; *)
+                Seq (
+                  Acc (_, {index=[e2]; _}), (* rw s_Q[id]; *)
+                  Skip
+                )
               )
             )
           )
-        ),
-        Skip
         )
       )
-      when v1 = tid && v2 = id && v3 = id
       ->
+      assert_var tid v1;
+      assert_var id v2;
+      assert_var id v3;
       let inc e = n_plus (Num 32) e in
       let id = Var id in
       assert_nexp id e1;
@@ -257,7 +263,7 @@ let tests = "test_predicates" >::: [
     ]) in
     let p1 : Scoped.t =
       let open Scoped in
-      Seq (
+      (
         Decl (Decl.unset x,
           Decl (Decl.set a (Var x),
             Decl (Decl.unset x,
@@ -266,8 +272,7 @@ let tests = "test_predicates" >::: [
               )
             )
           )
-        ),
-        Skip
+        )
       )
     in
     assert_post (Scoped.from_stmt (Params.empty, p) |> snd) p1;
