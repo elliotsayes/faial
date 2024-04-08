@@ -148,9 +148,9 @@ module AssertionTree = struct
 
 end
 
-let from_assert_scoped : Assert_scoped.t -> t =
+let from_scoped : Scoped.t -> t =
   let open Exp in
-  let rec to_scoped : Assert_scoped.t -> t * AssertionTree.t =
+  let rec to_scoped : Scoped.t -> t * AssertionTree.t =
     function
     | Skip -> Skip, AssertionTree.true_
     | Acc (x, e) -> Acc (x, e), AssertionTree.true_
