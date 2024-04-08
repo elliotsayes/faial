@@ -29,7 +29,7 @@ let tests = "test_predicates" >::: [
       wr;
     ] in
     (* Translate: *)
-    let (_, p) = Stmt.to_assert_scoped (Params.empty, p) in
+    let (_, p) = Assert_scoped.from_stmt (Params.empty, p) in
     (* Test: *)
     let open Imp.Assert_scoped in
     (match p with
@@ -87,7 +87,7 @@ let tests = "test_predicates" >::: [
       wr;
     ]) in
     (* Translate: *)
-    let (_, p) = Stmt.to_assert_scoped (Params.empty, p) in
+    let (_, p) = Assert_scoped.from_stmt (Params.empty, p) in
     (* Test: *)
     (match p with
     | Assert_scoped.(
@@ -141,7 +141,7 @@ let tests = "test_predicates" >::: [
       wr;
     ]) in
     (* Translate: *)
-    let (_, p) = Stmt.to_assert_scoped (Params.empty, p) in
+    let (_, p) = Assert_scoped.from_stmt (Params.empty, p) in
     let p : Proto.Code.t = p
       |> Assert_scoped.inline_assigns Variable.Set.empty
       |> Scoped.from_assert_scoped
@@ -202,7 +202,7 @@ let tests = "test_predicates" >::: [
       inc id;
     ]) in
     (* Translate: *)
-    let (_, p) = Stmt.to_assert_scoped (Params.empty, p) in
+    let (_, p) = Assert_scoped.from_stmt (Params.empty, p) in
     let p : Proto.Code.t = p
       |> Assert_scoped.inline_assigns Variable.Set.empty
       |> Scoped.from_assert_scoped
@@ -261,7 +261,7 @@ let tests = "test_predicates" >::: [
         Skip
       )
     in
-    assert_post (Stmt.to_assert_scoped (Params.empty, p) |> snd) p1;
+    assert_post (Assert_scoped.from_stmt (Params.empty, p) |> snd) p1;
     let p2 : Assert_scoped.t =
       let open Assert_scoped in
       (*
@@ -292,7 +292,7 @@ let tests = "test_predicates" >::: [
     in
     assert_post p3 (Assert_scoped.inline_assigns Variable.Set.empty p2);
     (* Translate: *)
-    let (_, p) = Stmt.to_assert_scoped (Params.empty, p) in
+    let (_, p) = Assert_scoped.from_stmt (Params.empty, p) in
     let p : Proto.Code.t = p
       |> Assert_scoped.inline_assigns Variable.Set.empty
       |> Scoped.from_assert_scoped

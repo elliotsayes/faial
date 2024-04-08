@@ -73,7 +73,7 @@ let print (k: t) : unit =
 
 let compile (k:t) : Proto.Code.t Proto.Kernel.t =
   let globals = k.params in
-  let (globals, p) = Stmt.to_assert_scoped (globals, k.code) in
+  let (globals, p) = Assert_scoped.from_stmt (globals, k.code) in
   let p =
     p
     |> Assert_scoped.filter_locs k.arrays (* Remove unknown arrays *)
