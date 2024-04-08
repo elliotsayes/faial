@@ -148,29 +148,29 @@ module AssertionTree = struct
 
 end
 
-let from_scoped : Scoped.t -> t =
+let from_encode_assigns : Encode_assigns.t -> t =
   let open Exp in
-  let rec to_scoped : Scoped.t -> t * AssertionTree.t =
+  let rec from : Encode_assigns.t -> t * AssertionTree.t =
     function
     | Skip -> Skip, AssertionTree.true_
     | Acc (x, e) -> Acc (x, e), AssertionTree.true_
     | Seq (p, q) ->
-      let p, a1 = to_scoped p in
-      let q, a2 = to_scoped q in
+      let p, a1 = from p in
+      let q, a2 = from q in
       (Seq (p, q), AssertionTree.append a1 a2)
     | Assert (e, p) ->
-      let p, a = to_scoped p in
+      let p, a = from p in
       p, AssertionTree.and_ e a
     | If (b, then_s, else_s) ->
-      let then_s, a1 = to_scoped then_s in
-      let else_s, a2 = to_scoped else_s in
+      let then_s, a1 = from then_s in
+      let else_s, a2 = from else_s in
       let a = AssertionTree.(append
         (implies b a1)
         (implies (b_not b) a2)
       ) in
       If (b, then_s, else_s), a
     | For (r, p) ->
-      let p, a = to_scoped p in
+      let p, a = from p in
       let guard = AssertionTree.retain (Range.var r) a in
       let a = AssertionTree.remove (Range.var r) a in
       (
@@ -178,14 +178,12 @@ let from_scoped : Scoped.t -> t =
         AssertionTree.implies (Range.has_next r) a
       )
     | Sync e -> Sync e, AssertionTree.true_
-    | Assign _ ->
-      failwith "call inline_assigns first!"
-    | Decl (e, p) ->
-      let p, a = to_scoped p in
-      let guard = AssertionTree.retain e.var a in
-      let a = AssertionTree.remove e.var a in
-      Decl {var=e.var; ty=e.ty; body=if_ guard p}, a
+    | Decl {var; ty; body=p}->
+      let p, a = from p in
+      let guard = AssertionTree.retain var a in
+      let a = AssertionTree.remove var a in
+      Decl {var; ty; body=if_ guard p}, a
   in
   fun e ->
-    let p, a = to_scoped e in
+    let p, a = from e in
     if_ (AssertionTree.to_bexp a) p

@@ -189,66 +189,6 @@ let vars_distinct : t -> t =
   fun p ->
     distinct Variable.Set.empty p |> snd
 
-let inline_assigns (known:Variable.Set.t) : t -> t =
-  let n_subst (st:Subst.SubstAssoc.t) (n:Exp.nexp): Exp.nexp =
-    if Subst.SubstAssoc.is_empty st
-    then n
-    else Subst.ReplaceAssoc.n_subst st n
-  in
-  let b_subst (st:Subst.SubstAssoc.t) (b:Exp.bexp): Exp.bexp = if Subst.SubstAssoc.is_empty st
-    then b
-    else Subst.ReplaceAssoc.b_subst st b
-  in
-  let a_subst (st:Subst.SubstAssoc.t) (a:Access.t): Access.t =
-    if Subst.SubstAssoc.is_empty st
-    then a
-    else Subst.ReplaceAssoc.a_subst st a
-  in
-  let r_subst (st:Subst.SubstAssoc.t) (r:Range.t): Range.t =
-    if Subst.SubstAssoc.is_empty st
-    then r
-    else Subst.ReplaceAssoc.r_subst st r
-  in
-  let rec inline (known:Variable.Set.t) (st:Subst.SubstAssoc.t) (i:t) : t =
-    let add_var (x:Variable.t) : Variable.t * Variable.Set.t * Subst.SubstAssoc.t =
-      let x, st =
-        if Variable.Set.mem x known
-        then (
-          let new_x = Variable.fresh known x in
-          (new_x, Subst.SubstAssoc.put st x (Var new_x))
-        ) else (x, st)
-      in
-      let known = Variable.Set.add x known in
-      (x, known, st)
-    in
-    match i with
-    | Sync l -> Sync l
-    | Assert (b, s) -> Assert (b_subst st b, inline known st s)
-    | Acc (x,e) -> Acc (x, a_subst st e)
-    | Skip -> Skip
-    | If (b, p1, p2) ->
-      let b = b_subst st b in
-      If (b, inline known st p1, inline known st p2)
-
-    | Decl ({var=x; init=Some n; _}, p)
-    | Assign {var=x; data=n; body=p; _} ->
-      let n = n_subst st n in
-      let st = Subst.SubstAssoc.put st x n  in
-      inline known st p
-    | Decl ({init=None; _} as d, p) ->
-      Decl (d, inline known st p)
-    | For (r, p) ->
-      let r = r_subst st r in
-      let (x, known, st) = add_var r.var in
-      For ({r with var = x}, inline known st p)
-    | Seq (p1, p2) ->
-      Seq (inline known st p1, inline known st p2)
-  in
-  fun p ->
-    p
-    |> vars_distinct
-    |> inline known (Subst.SubstAssoc.make [])
-
 (* Rewrite assigns that cannot be represented as lets *)
 let fix_assigns : t -> t =
   let decl (assigns:Params.t) (p:t) : t =

@@ -79,8 +79,8 @@ let compile (k:t) : Proto.Code.t Proto.Kernel.t =
     |> Scoped.filter_locs k.arrays (* Remove unknown arrays *)
     |> Scoped.fix_assigns
     (* Inline local variable assignment and ensure variables are distinct*)
-    |> Scoped.inline_assigns (Params.to_set k.params)
-    |> Encode_asserts.from_scoped
+    |> Encode_assigns.from_scoped (Params.to_set k.params)
+    |> Encode_asserts.from_encode_assigns
     |> Encode_asserts.to_proto
   in
   let (p, locals, pre) =
