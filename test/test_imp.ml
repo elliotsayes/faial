@@ -144,8 +144,8 @@ let tests = "test_predicates" >::: [
     let (_, p) = Assert_scoped.from_stmt (Params.empty, p) in
     let p : Proto.Code.t = p
       |> Assert_scoped.inline_assigns Variable.Set.empty
-      |> Scoped.from_assert_scoped
-      |> Scoped.to_proto
+      |> Encode_asserts.from_assert_scoped
+      |> Encode_asserts.to_proto
     in
     (* Test: *)
     begin
@@ -205,8 +205,8 @@ let tests = "test_predicates" >::: [
     let (_, p) = Assert_scoped.from_stmt (Params.empty, p) in
     let p : Proto.Code.t = p
       |> Assert_scoped.inline_assigns Variable.Set.empty
-      |> Scoped.from_assert_scoped
-      |> Scoped.to_proto
+      |> Encode_asserts.from_assert_scoped
+      |> Encode_asserts.to_proto
     in
     (* Test: *)
     begin
@@ -295,8 +295,8 @@ let tests = "test_predicates" >::: [
     let (_, p) = Assert_scoped.from_stmt (Params.empty, p) in
     let p : Proto.Code.t = p
       |> Assert_scoped.inline_assigns Variable.Set.empty
-      |> Scoped.from_assert_scoped
-      |> Scoped.to_proto
+      |> Encode_asserts.from_assert_scoped
+      |> Encode_asserts.to_proto
     in
     match p with
     | Decl {var=y1;

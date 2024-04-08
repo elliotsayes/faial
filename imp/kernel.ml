@@ -80,8 +80,8 @@ let compile (k:t) : Proto.Code.t Proto.Kernel.t =
     |> Assert_scoped.fix_assigns
     (* Inline local variable assignment and ensure variables are distinct*)
     |> Assert_scoped.inline_assigns (Params.to_set k.params)
-    |> Scoped.from_assert_scoped
-    |> Scoped.to_proto
+    |> Encode_asserts.from_assert_scoped
+    |> Encode_asserts.to_proto
   in
   let (p, locals, pre) =
     let rec inline_header :
