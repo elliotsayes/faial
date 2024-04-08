@@ -2,14 +2,13 @@ open Stage0
 open Protocols
 
 type t =
-  | Skip
+  | Acc of Variable.t * Access.t
   | Sync of Location.t option
-  | Acc of (Variable.t * Access.t)
-  | If of (Exp.bexp * t * t)
-  | For of (Range.t * t)
-  | Assign of {var: Variable.t; ty: C_type.t; data: Exp.nexp; body: t}
-  | Decl of (Decl.t * t)
+  | If of Exp.bexp * t * t
+  | For of Range.t * t
   | Seq of t * t
+  | Skip
+  | Decl of {var: Variable.t; ty:C_type.t; body: t}
 
 let to_string: t -> string =
   let rec to_s : t -> Indent.t list =
@@ -17,15 +16,10 @@ let to_string: t -> string =
     | Skip -> [Line "skip;"]
     | Sync _ -> [Line "sync;"]
     | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
-    | Assign a -> [
-        Line (Variable.name a.var ^ " = " ^ Exp.n_to_string a.data ^ " {");
-        Block (to_s a.body);
-        Line "}";
-      ]
-    | Decl (d, p) ->
+    | Decl d ->
       [
-        Line ("decl " ^ Decl.to_string d ^ " {");
-        Block (to_s p);
+        Line (C_type.to_string d.ty ^ " " ^ Variable.name d.var ^ " {");
+        Block (to_s d.body);
         Line "}";
       ]
 
@@ -64,11 +58,7 @@ let rec to_proto : t -> Proto.Code.t =
       (Proto.Code.cond (Exp.b_not b) (to_proto p2))
   | For (r, p) ->
     Loop (r, to_proto p)
-  | Assign _ as i ->
-    failwith ("Run inline_decl first: " ^ to_string i)
-  | Decl ({init=Some _; _}, _) as i ->
-    failwith ("Run inline_decl first: " ^ to_string i)
-  | Decl ({var=x; init=None; ty}, p) -> Proto.Code.decl ~ty x (to_proto p)
+  | Decl {var=x; ty; body=p} -> Proto.Code.decl ~ty x (to_proto p)
   | Seq (i, p) ->
     Proto.Code.seq (to_proto i) (to_proto p)
 
@@ -103,7 +93,6 @@ module AssertionTree = struct
     match e1, e2 with
     | True, e | e, True -> e
     | _, _ -> Append (e1, e2)
-
 
   let implies (e1:bexp) (e2:t) =
     match e1, e2 with
@@ -189,14 +178,13 @@ let from_assert_scoped : Assert_scoped.t -> t =
         AssertionTree.implies (Range.has_next r) a
       )
     | Sync e -> Sync e, AssertionTree.true_
-    | Assign e ->
-      let p, a = to_scoped e.body in
-      Assign {var=e.var; ty=e.ty; data=e.data; body=p}, a
+    | Assign _ ->
+      failwith "call inline_assigns first!"
     | Decl (e, p) ->
       let p, a = to_scoped p in
       let guard = AssertionTree.retain e.var a in
       let a = AssertionTree.remove e.var a in
-      Decl (e, if_ guard p), a
+      Decl {var=e.var; ty=e.ty; body=if_ guard p}, a
   in
   fun e ->
     let p, a = to_scoped e in
