@@ -8,10 +8,10 @@ let assert_nexp (expected:nexp) (given:nexp) =
   let msg = "Expected: " ^ Exp.n_to_string expected ^ "\nGiven: " ^ Exp.n_to_string given in
   assert_equal expected given ~msg
 
-let assert_post (expected:Scoped.t) (given:Scoped.t) =
+let assert_post (expected:Assert_scoped.t) (given:Assert_scoped.t) =
   let msg =
-    "Expected:\n" ^ Scoped.to_string expected ^
-    "\nGiven:\n" ^ Scoped.to_string given
+    "Expected:\n" ^ Assert_scoped.to_string expected ^
+    "\nGiven:\n" ^ Assert_scoped.to_string given
   in
   assert_equal expected given ~msg
 let tests = "test_predicates" >::: [
@@ -29,9 +29,9 @@ let tests = "test_predicates" >::: [
       wr;
     ] in
     (* Translate: *)
-    let (_, p) = Stmt.to_scoped (Params.empty, p) in
+    let (_, p) = Stmt.to_assert_scoped (Params.empty, p) in
     (* Test: *)
-    let open Imp.Scoped in
+    let open Imp.Assert_scoped in
     (match p with
     | Seq (Decl ({init=Some e1; _}, (* local id = 32 + id; *)
         Seq (Acc (_, {index=[e2]; _}), Skip) (* rw s_Q[id]; *)
@@ -40,7 +40,7 @@ let tests = "test_predicates" >::: [
       assert_nexp (n_plus (Num 32) (Var id)) e1;
       assert_nexp (Var id) e2;
       ()
-    | _ -> assert_failure (Scoped.to_string p)
+    | _ -> assert_failure (Assert_scoped.to_string p)
     );
     ()
   );
@@ -51,15 +51,14 @@ let tests = "test_predicates" >::: [
       *)
     let id = Variable.from_name "id" in
     let sq = Variable.from_name "s_Q" in
-    let p : Scoped.t =
-      let open Scoped in
+    let p : Assert_scoped.t =
       Decl (Decl.set id (n_plus (Num 32) (Var id)), (* local id = 32 + id; *)
         Acc (sq, {index=[Var id]; mode = Write None}) (* rw s_Q[id]; *)
       )
     in
-    let p : Scoped.t = Scoped.inline_assigns Variable.Set.empty p in
+    let p : Assert_scoped.t = Assert_scoped.inline_assigns Variable.Set.empty p in
     match p with
-    | Scoped.Acc (_, {index=[e]; mode = Write None}) (* rw s_Q[32 + id]; *)
+    | Acc (_, {index=[e]; mode = Write None}) (* rw s_Q[32 + id]; *)
       ->
       assert_nexp (n_plus (Num 32) (Var id)) e;
       ()
@@ -88,10 +87,10 @@ let tests = "test_predicates" >::: [
       wr;
     ]) in
     (* Translate: *)
-    let (_, p) = Stmt.to_scoped (Params.empty, p) in
+    let (_, p) = Stmt.to_assert_scoped (Params.empty, p) in
     (* Test: *)
     (match p with
-    | Scoped.(
+    | Assert_scoped.(
       Seq (
         Decl ({var=v1; init=None; _}, (*  local threadIdx.x; *)
           Decl ({var=v2; init=Some v2_e; _}, (* local id = threadIdx.x; *)
@@ -115,7 +114,7 @@ let tests = "test_predicates" >::: [
       assert_nexp id e2;
       assert_nexp (inc id) v3_e;
       ()
-    | _ -> assert_failure (Scoped.to_string p)
+    | _ -> assert_failure (Assert_scoped.to_string p)
     );
     ()
   );
@@ -142,9 +141,10 @@ let tests = "test_predicates" >::: [
       wr;
     ]) in
     (* Translate: *)
-    let (_, p) = Stmt.to_scoped (Params.empty, p) in
+    let (_, p) = Stmt.to_assert_scoped (Params.empty, p) in
     let p : Proto.Code.t = p
-      |> Scoped.inline_assigns Variable.Set.empty
+      |> Assert_scoped.inline_assigns Variable.Set.empty
+      |> Scoped.from_assert_scoped
       |> Scoped.to_proto
     in
     (* Test: *)
@@ -202,9 +202,10 @@ let tests = "test_predicates" >::: [
       inc id;
     ]) in
     (* Translate: *)
-    let (_, p) = Stmt.to_scoped (Params.empty, p) in
+    let (_, p) = Stmt.to_assert_scoped (Params.empty, p) in
     let p : Proto.Code.t = p
-      |> Scoped.inline_assigns Variable.Set.empty
+      |> Assert_scoped.inline_assigns Variable.Set.empty
+      |> Scoped.from_assert_scoped
       |> Scoped.to_proto
     in
     (* Test: *)
@@ -245,10 +246,10 @@ let tests = "test_predicates" >::: [
       ];
       wr
     ]) in
-    let p1 =
-      let open Scoped in
+    let p1 : Assert_scoped.t =
+      let open Assert_scoped in
       Seq (
-        Scoped.Decl (Decl.unset x,
+        Decl (Decl.unset x,
           Decl (Decl.set a (Var x),
             Decl (Decl.unset x,
               Decl (Decl.set b (Var x),
@@ -260,9 +261,9 @@ let tests = "test_predicates" >::: [
         Skip
       )
     in
-    assert_post (Stmt.to_scoped (Params.empty, p) |> snd) p1;
-    let p2 =
-      let open Scoped in
+    assert_post (Stmt.to_assert_scoped (Params.empty, p) |> snd) p1;
+    let p2 : Assert_scoped.t =
+      let open Assert_scoped in
       (*
         var x;
         var a = x;
@@ -270,7 +271,7 @@ let tests = "test_predicates" >::: [
         var b = x;
         wr [a; b]
        *)
-      Scoped.Decl (Decl.unset x,
+      Decl (Decl.unset x,
         Decl (Decl.set a (Var x),
           Decl (Decl.unset x,
             Decl (Decl.set b (Var x),
@@ -282,18 +283,19 @@ let tests = "test_predicates" >::: [
     in
     let x1 = Variable.from_name "x1" in
     let p3 = 
-      let open Scoped in
-      Scoped.Decl (Decl.unset x,
+      let open Assert_scoped in
+      Decl (Decl.unset x,
         Decl (Decl.unset x1,
           Acc (Variable.from_name "A", Access.write [Var x; Var x1] None)
         )
       )
     in
-    assert_post p3 (Scoped.inline_assigns Variable.Set.empty p2);
+    assert_post p3 (Assert_scoped.inline_assigns Variable.Set.empty p2);
     (* Translate: *)
-    let (_, p) = Stmt.to_scoped (Params.empty, p) in
+    let (_, p) = Stmt.to_assert_scoped (Params.empty, p) in
     let p : Proto.Code.t = p
-      |> Scoped.inline_assigns Variable.Set.empty
+      |> Assert_scoped.inline_assigns Variable.Set.empty
+      |> Scoped.from_assert_scoped
       |> Scoped.to_proto
     in
     match p with

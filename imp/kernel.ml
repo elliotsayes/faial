@@ -73,15 +73,16 @@ let print (k: t) : unit =
 
 let compile (k:t) : Proto.Code.t Proto.Kernel.t =
   let globals = k.params in
-  let (globals, p) = Stmt.to_scoped (globals, k.code) in
-  let p : Scoped.t =
+  let (globals, p) = Stmt.to_assert_scoped (globals, k.code) in
+  let p =
     p
-    |> Scoped.filter_locs k.arrays (* Remove unknown arrays *)
-    |> Scoped.fix_assigns
+    |> Assert_scoped.filter_locs k.arrays (* Remove unknown arrays *)
+    |> Assert_scoped.fix_assigns
     (* Inline local variable assignment and ensure variables are distinct*)
-    |> Scoped.inline_assigns (Params.to_set k.params)
+    |> Assert_scoped.inline_assigns (Params.to_set k.params)
+    |> Scoped.from_assert_scoped
+    |> Scoped.to_proto
   in
-  let p = Scoped.to_proto p in
   let (p, locals, pre) =
     let rec inline_header :
       (Proto.Code.t * Params.t * bexp)

@@ -181,8 +181,6 @@ let to_s: t -> Indent.t list =
 let to_string (s: t) : string =
   Indent.to_string (to_s s)
 
-type stateful = (int * Params.t) -> int * Params.t * Scoped.t
-
 type assert_stateful = (int * Params.t) -> int * Params.t * Assert_scoped.t
 
 let unknown_range (x:Variable.t) : Range.t =
@@ -194,88 +192,6 @@ let unknown_range (x:Variable.t) : Range.t =
     step=Step.plus (Num 1);
     ty=C_type.int;
   }
-
-let to_scoped : Params.t * t -> Params.t * Scoped.t =
-  let unknown (x:int) : Variable.t =
-    Variable.from_name ("__loop_" ^ string_of_int x)
-  in
-  let ret (p:Scoped.t) : stateful =
-    fun (curr_id, globals) ->
-      (curr_id, globals, p)
-  in
-  let bind (f:stateful) (g:Scoped.t -> stateful) : stateful =
-    fun (curr_id, globals) ->
-    let (curr_id, globals, s1) = f (curr_id, globals) in
-    g s1 (curr_id, globals)
-  in
-  let rec imp_to_scoped_s : t -> (int * Params.t) -> int * Params.t * Scoped.t =
-    function
-    | Sync l -> ret (Scoped.Sync l)
-    | Write e -> ret (Acc (e.array, {index=e.index; mode=Write e.payload}))
-    | Read e ->
-      fun (curr_id, globals) ->
-        let rd = Scoped.Acc (e.array, {index=e.index; mode=Read}) in
-        (curr_id, globals, Decl (Decl.unset ~ty:e.ty e.target, rd))
-    | Atomic e ->
-      fun (curr_id, globals) ->
-        let rd = Scoped.Acc (e.array, {index=e.index; mode=Atomic e.atomic}) in
-        (curr_id, globals, Decl (Decl.unset ~ty:e.ty e.target, rd))
-    | Call _ -> imp_to_scoped_p []
-    | Block p -> imp_to_scoped_p p
-    | If (b, s1, s2) ->
-      bind (imp_to_scoped_p [s1]) (fun s1 ->
-        bind (imp_to_scoped_p [s2]) (fun s2 ->
-          ret (Scoped.If (b, s1, s2))
-        )
-      )
-    | For (r, s) ->
-      bind (imp_to_scoped_p [s]) (fun s -> ret (Scoped.For (r, s)))
-    | Star s ->
-      let synchronized = has_sync s in
-      bind (imp_to_scoped_p [s]) (fun s (curr_id, globals) ->
-        let x = unknown curr_id in
-        let r = unknown_range x in
-        let s : Scoped.t = For (r, s) in
-        if synchronized then
-          (curr_id + 1, Params.add x C_type.char globals, s)
-        else
-          (curr_id, globals, Decl (Decl.unset x, s))
-      )
-    (* Handled in the context of a prog *)
-    | Assert _ | LocationAlias _ | Decl _ | Assign _ ->
-      failwith "unsupported"
-
-  and imp_to_scoped_p : prog -> int*Params.t -> int * Params.t * Scoped.t =
-    function
-    | [] -> ret Skip
-    | Assert b :: p ->
-      bind (imp_to_scoped_p p) (fun p ->
-        ret (Scoped.If (b, p, Skip))
-      )
-    | LocationAlias e :: p ->
-      bind (imp_to_scoped_p p) (fun p ->
-       ret (Scoped.loc_subst e p)
-      )
-    | Decl [] :: p -> imp_to_scoped_p p
-    | Assign {var; data; ty;} :: p ->
-      bind (imp_to_scoped_p p) (fun s ->
-        ret (Scoped.Assign {var; data; ty; body=s})
-      )
-    | Decl (d::l) :: p ->
-      bind (imp_to_scoped_p (Decl l :: p)) (fun s ->
-        ret (Scoped.Decl (d, s))
-      )
-    | s :: p ->
-      bind (imp_to_scoped_s s) (fun s ->
-        bind (imp_to_scoped_p p) (fun p ->
-          ret (Seq (s, p))
-        )
-      )
-  in
-  fun (globals, s) ->
-    let (_, globals, p) = imp_to_scoped_s (Block [s]) (1, globals) in
-    (globals, p)
-
 
 let to_assert_scoped : Params.t * t -> Params.t * Assert_scoped.t =
   let unknown (x:int) : Variable.t =
