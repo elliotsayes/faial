@@ -80,7 +80,7 @@ let main
       )
     | Declaration d ->
       let decls =
-        if Decl.is_array d then
+        if Decl.matches Protocols.C_type.is_array d then
           d::decls
         else
           decls

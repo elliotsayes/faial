@@ -259,7 +259,13 @@ let c_attr_global = c_attr "global"
 let c_attr_device = c_attr "device"
 
 module Decl : sig
-  type t
+  type t = {
+    var: Variable.t;
+    ty: J_type.t;
+    init: Init.t option;
+    attrs: string list
+  }
+
   (* Constructor *)
   val make :
     ty_var:Ty_variable.t ->
@@ -278,35 +284,33 @@ module Decl : sig
   (* Convinience *)
   val is_shared : t -> bool
   val matches : (C_type.t -> bool) -> t -> bool
-  val is_array : t -> bool
   val var: t -> Variable.t
   val ty: t -> J_type.t
   val to_s :  t -> Indent.t list
+
 end = struct
   type t = {
-    ty_var: Ty_variable.t;
+    var: Variable.t;
+    ty: J_type.t;
     init: Init.t option;
     attrs: string list
   }
 
   let make ~ty_var ~init ~attrs : t =
-    {ty_var; init; attrs}
+    {ty=ty_var.ty; var=Ty_variable.name ty_var; init; attrs}
 
   let init (x:t) : Init.t option = x.init
 
   let attrs (x:t) : string list = x.attrs
 
-  let var (x:t) : Variable.t = x.ty_var.name
+  let var (x:t) : Variable.t = x.var
 
-  let ty (x:t) : J_type.t = x.ty_var.ty
+  let ty (x:t) : J_type.t = x.ty
 
-  let matches pred x = J_type.matches pred x.ty_var.ty
+  let matches pred x = J_type.matches pred x.ty
 
   let is_shared (x:t) : bool =
     List.mem c_attr_shared x.attrs
-
-  let is_array (x:t) : bool =
-    x.ty_var |> Ty_variable.matches C_type.is_array
 
   let to_expr_seq (x:t) : Expr.t Seq.t =
     match x.init with
@@ -325,7 +329,7 @@ end = struct
       let attrs = Common.join " " d.attrs |> String.trim in
       attrs ^ " "
     in
-    attr ^ Ty_variable.to_string d.ty_var ^ i
+    attr ^ J_type.to_string d.ty ^ " " ^ Variable.name d.var ^ i
 
   let to_s (d:t) : Indent.t list =
     [Line (to_string d ^ ";")]

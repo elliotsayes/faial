@@ -324,6 +324,30 @@ module Stmt = struct
       )
     | i -> CompoundStmt [], i
 
+  let read_access (target:Variable.t) (source:d_subscript) : t =
+    let ty =
+      source.ty
+      |> J_type.to_c_type ~default:C_type.int
+      (* If it's an array get the elements type *)
+      |> C_type.strip_array
+    in
+    ReadAccessStmt {target; source; ty}
+
+  let atomic_access
+    (target:Variable.t)
+    (source:d_subscript)
+    (atomic:Atomic.t)
+  :
+    t
+  =
+    let ty =
+      source.ty
+      |> J_type.to_c_type ~default:C_type.int
+      (* If it's an array get the elements type *)
+      |> C_type.strip_array
+    in
+    AtomicAccessStmt {target; source; atomic; ty}
+
   let to_string: t -> Indent.t list =
     let rec stmt_to_s : t -> Indent.t list =
       let ret l : Indent.t list =
@@ -658,28 +682,12 @@ module AccessState = struct
       ) st
 
   let add_read (a:d_subscript) (st:t) : (t * Variable.t) =
-    add_var (subscript_to_s a) (fun x ->
-      let ty =
-        a.ty
-        |> J_type.to_c_type ~default:C_type.int
-        (* If it's an array get the elements type *)
-        |> C_type.strip_array
-      in
-      [
-        ReadAccessStmt {target=x; source=a; ty};
-      ]
-    ) st
+    add_var (subscript_to_s a) (fun x -> [Stmt.read_access x a]) st
 
   let add_atomic (atomic:Atomic.t) (source:d_subscript) (st:t) : (t * Variable.t) =
-    let ty =
-      source.ty
-      |> J_type.to_c_type ~default:C_type.int
-      (* If it's an array get the elements type *)
-      |> C_type.strip_array
-    in
     add_var (subscript_to_s source) (fun target ->
       [
-        AtomicAccessStmt {target; source; atomic; ty};
+        Stmt.atomic_access target source atomic;
       ]
     ) st
 
@@ -953,6 +961,14 @@ let rewrite_exp (e:C_lang.Expr.t) : (Stmt.t list * Expr.t) =
   let (st, e) = rewrite_exp e AccessState.make_empty in
   (st |> List.rev, e)
 
+let rewrite_subscript
+  (a:C_lang.Expr.c_array_subscript)
+:
+  (Stmt.t list * d_subscript)
+=
+  let (st, e) = rewrite_subscript a AccessState.make_empty in
+  (st |> List.rev, e)
+
 let rewrite_exp_list (es:C_lang.Expr.t list) : (Stmt.t list * Expr.t list) =
   let (ss, es) = List.map rewrite_exp es |> List.split in
   (List.concat ss, es)
@@ -1008,6 +1024,10 @@ let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t list =
       else_stmt=rewrite_s s2;
     })
   | CompoundStmt l -> [CompoundStmt (List.concat_map rewrite_stmt l)]
+
+  | DeclStmt ({var; init=Some (IExpr (ArraySubscriptExpr a)); _}::d) ->
+    let (pre, a) = rewrite_subscript a in
+    decl pre (Stmt.read_access var a) @ rewrite_stmt (DeclStmt d)
 
   | DeclStmt d ->
     let (pre, d) = List.map rewrite_decl d |> List.split in
