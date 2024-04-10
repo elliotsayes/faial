@@ -61,12 +61,13 @@ module Code = struct
         )
   end
 
-  let apply_arch : Architecture.t -> t -> t =
+  let apply_arch (arrays:Variable.Set.t) : Architecture.t -> t -> t =
     function
     | Grid ->
       filter (
         function
         | Sync _ -> false
+        | Acc (x, _) -> Variable.Set.mem x arrays
         | _ -> true
       )
     | Block -> fun s -> s
@@ -224,14 +225,14 @@ module Kernel = struct
 
   let apply_arch (a:Architecture.t) (k:Code.t t) : Code.t t =
     let d = Architecture.to_defaults a in
+    let arrays =
+      Variable.Map.filter (fun _ a -> Memory.is_global a) k.arrays
+    in
     { k with
       arrays = (match a with
-        | Grid ->
-          Variable.Map.filter
-            (fun _ a -> Memory.is_global a)
-            k.arrays
+        | Grid -> arrays
         | Block -> k.arrays);
-      code = Code.apply_arch a k.code;
+      code = Code.apply_arch (Variable.MapSetUtil.map_to_set arrays) a k.code;
       global_variables = Params.union_right k.global_variables d.globals;
       local_variables = Params.union_right k.local_variables d.locals;
       pre = b_and (Architecture.Defaults.to_bexp d) k.pre;
