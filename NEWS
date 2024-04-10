@@ -1,5 +1,7 @@
 2024-04:
 - Inference: improved support for array aliasing with shared memory.
+- Inference: added support for assertions anywhere in the code
+  (not just in the beginning of the kernel).
 
 2024-03:
 - Inference: improved how we handle mutated variables in loops/conditionals.
