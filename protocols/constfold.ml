@@ -7,6 +7,7 @@ let rec norm (b:bexp) : bexp list =
   | BNot (Pred _)
   | BRel (BOr, _, _)
   | Bool _
+  | BNot (CastBool _)
   | NRel _ -> [b]
   | BRel (BAnd, b1, b2) -> List.append (norm b1) (norm b2)
   | BNot (Bool b) -> [Bool (not b)]
@@ -19,6 +20,8 @@ let rec norm (b:bexp) : bexp list =
   | BNot (NRel (NLe, n1, n2)) -> norm (n_gt n1 n2)
   | BNot (NRel (NGe, n1, n2)) -> norm (n_lt n1 n2)
   | BNot (BNot b) -> norm b
+  | CastBool (CastInt b) -> norm b
+  | CastBool _ -> [b]
 
 let bexp_to_bool b =
   match b with
@@ -43,6 +46,9 @@ let rec n_opt (a : nexp) : nexp =
     | Num n -> Num (~- n)
     | _ -> BitNot e
     end
+  | CastInt b ->
+    let b = b_opt b in
+    cast_int b
   | Other e -> Other (n_opt e)
   | NIf (b, n1, n2) ->
     let b = b_opt b in
@@ -141,6 +147,9 @@ and b_opt (e : bexp) : bexp =
       end
     | v -> Pred (x, v)
     end
+  | CastBool e ->
+    let e = n_opt e in
+    cast_bool e
   | Bool _ -> e
   | BRel (b, b1, b2) ->
     begin

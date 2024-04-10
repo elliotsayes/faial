@@ -53,6 +53,11 @@ module Make (L:Logger.Logger) = struct
         index_and (fun e1 e2 -> Bin (o, e1, e2)) (from_nexp e1) (from_nexp e2)
       | NCall (f, e) -> map (fun e -> NCall (f, e)) (from_nexp e)
       | Other e -> map (fun e -> Other e) (from_nexp e)
+      | CastInt e ->
+        if Freenames.contains_tid_bexp e then
+          Index (CastInt e)
+        else
+          Offset (CastInt e)
       | NIf (c, n1, n2) ->
         if Freenames.contains_tid_bexp c then
           Index (NIf (c, n1, n2))

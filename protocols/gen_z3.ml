@@ -174,6 +174,8 @@ module CodeGen (N:NUMERIC_OPS) = struct
 	let rec n_to_expr (ctx:Z3.context) (n:nexp) : Expr.expr =
     match n with
     | Var x -> Variable.name x |> N.mk_var ctx
+    | CastInt b ->
+      n_to_expr ctx (n_if b (Num 1) (Num 0))
     | BitNot n ->
       N.mk_not ctx (n_to_expr ctx n)
     | Other n ->
@@ -190,6 +192,7 @@ module CodeGen (N:NUMERIC_OPS) = struct
 	and b_to_expr (ctx:Z3.context) (b:bexp) : Expr.expr =
     match b with
     | Bool (b:bool) -> Boolean.mk_val ctx b
+    | CastBool n -> b_to_expr ctx (n_neq n (Num 0))
     | NRel (op, n1, n2) ->
         (nrel_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
     | BRel (op, b1, b2) ->

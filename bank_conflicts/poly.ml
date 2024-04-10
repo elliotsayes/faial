@@ -394,6 +394,7 @@ let rec from_nexp (x:Variable.t) (n:Exp.nexp) : t option =
     Some (div e1 e2)
   | Num _
   | Var _ -> Some (Exp0 n)
+  | CastInt _
   | BitNot _
   | Bin _
   | NCall _

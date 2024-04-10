@@ -50,6 +50,7 @@ type nexp =
   | NCall of string * nexp
   | NIf of bexp * nexp * nexp
   | Other of nexp
+  | CastInt of bexp
 
 and bexp =
   | Bool of bool
@@ -57,6 +58,7 @@ and bexp =
   | BRel of brel * bexp * bexp
   | BNot of bexp
   | Pred of string * nexp
+  | CastBool of nexp
 
 let eval_nbin (o:nbin) : int -> int -> int =
   match o with
@@ -90,6 +92,9 @@ let rec n_eval_res (n: nexp) : (int, string) Result.t =
   match n with
   | Var x -> Error ("n_eval: variable " ^ Variable.name x)
   | Num n -> Ok n
+  | CastInt b ->
+    let* b = b_eval_res b in
+    Ok (if b then 1 else 0)
   | BitNot n ->
     let* n = n_eval_res n in
     Ok (~- n)
@@ -107,6 +112,9 @@ and b_eval_res (b: bexp) : (bool, string) Result.t =
   let (let*) = Result.bind in
   match b with
   | Bool b -> Ok b
+  | CastBool n ->
+    let* n = n_eval_res n in
+    Ok (n <> 0)
   | NRel (o, n1, n2) ->
     let* n1 = n_eval_res n1 in
     let* n2 = n_eval_res n2 in
@@ -266,6 +274,19 @@ let b_impl b1 b2 =
 let b_true = Bool true
 let b_false = Bool false
 
+let cast_int : bexp -> nexp =
+  function
+  | Bool true -> Num 1
+  | Bool false -> Num 0
+  | CastBool n -> n
+  | b -> CastInt b
+
+let cast_bool : nexp -> bexp =
+  function
+  | Num n -> Bool (n <> 0)
+  | CastInt b -> b
+  | n -> CastBool n
+
 let rec b_and_ex l =
   match l with
   | [] -> Bool true
@@ -300,6 +321,7 @@ let rec b_or_split : bexp -> bexp list =
 (* Checks if variable [x] is in the given expression *)
 let rec n_mem (x:Variable.t) : nexp -> bool =
   function
+  | CastInt b -> b_mem x b
   | Var y -> Variable.equal x y
   | Num _ -> false
   | Bin (_, e1, e2) ->
@@ -311,6 +333,7 @@ let rec n_mem (x:Variable.t) : nexp -> bool =
 and b_mem (x:Variable.t) : bexp -> bool =
   function
   | Bool _ -> false
+  | CastBool n -> n_mem x n
   | NRel (_, e1, e2) -> n_mem x e1 || n_mem x e2
   | BRel (_, e1, e2) -> b_mem x e1 || b_mem x e2
   | BNot e -> b_mem x e
@@ -348,6 +371,7 @@ let rec n_par (n:nexp) : string =
   | Var _
   | NCall _
   | Other _
+  | CastInt _
     -> n_to_string n
   | NIf _
   | BitNot _
@@ -365,9 +389,11 @@ and n_to_string : nexp -> string = function
   | NIf (b, n1, n2) ->
     b_par b ^ " ? " ^ n_par n1 ^ " : " ^ n_par n2
   | Other e -> "other(" ^ n_to_string e ^ ")"
+  | CastInt b -> "int(" ^ b_to_string b ^ ")"
 
 and b_to_string : bexp -> string = function
   | Bool b -> if b then "true" else "false"
+  | CastBool e -> "bool(" ^ n_to_string e ^ ")"
   | NRel (b, n1, n2) ->
     n_to_string n1 ^ " " ^ nrel_to_string b ^ " " ^ n_to_string n2
   | BRel (b, b1, b2) ->
@@ -378,6 +404,7 @@ and b_to_string : bexp -> string = function
 and b_par (b:bexp) : string =
   match b with
   | Pred _
+  | CastBool _
   | Bool _
   | BNot _
     -> b_to_string b
@@ -392,6 +419,7 @@ let b_to_s : bexp -> Indent.t list =
     | NRel _
     | Bool _
     | BNot _
+    | CastBool _
     | Pred _
       -> [Line (b_to_string b)]
     | BRel (o, _, _) ->

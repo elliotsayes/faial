@@ -36,6 +36,7 @@ module Make (S:SUBST) = struct
         | Some v -> v
         | None -> n
       end
+    | CastInt b -> CastInt (b_subst s b)
     | Num _ -> n
     | BitNot e -> BitNot (n_subst s e)
     | Bin (o, n1, n2) -> Bin (o, n_subst s n1, n_subst s n2)
@@ -45,6 +46,7 @@ module Make (S:SUBST) = struct
 
   and b_subst (s:S.t) (b:bexp) : bexp =
     match b with
+    | CastBool e -> CastBool (n_subst s e)
     | Pred (n, v) -> Pred (n, n_subst s v)
     | Bool _ -> b
     | NRel (o, n1, n2) -> NRel (o, n_subst s n1, n_subst s n2)

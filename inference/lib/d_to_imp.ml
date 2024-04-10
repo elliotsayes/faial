@@ -136,6 +136,9 @@ module IExp = struct
   let thread_equal (e:t) : b =
     NRel (NEq, e, NExp (Other e))
 
+  let thread_distinct (e:t) : b =
+    NRel (NNeq, e, NExp (Other e))
+
 end
 
 module Make (L: Logger) = struct
@@ -231,6 +234,10 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__uniform_int" ->
     let* n = parse_e "arg" n in
     ret_b (IExp.thread_equal n)
+
+  | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__distinct_int" ->
+    let* n = parse_e "arg" n in
+    ret_b (IExp.thread_distinct n)
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__is_pow2" ->
     let* n = parse_e "arg" n in
@@ -382,7 +389,7 @@ module Unknown = struct
         (u, Exp.NIf (b, n1, n2)))
     | BExp _ ->
       let (u, b) = handle_b u e in
-      (u, Exp.NIf (b, Num 1, Num 0))
+      (u, Exp.cast_int b)
     | Unknown lbl ->
       let (u, x) = create lbl u in
       (u, Exp.Var x)
@@ -408,10 +415,10 @@ module Unknown = struct
         (u, Pred (x, n)))
     | NExp _ ->
       let (u, n) = handle_n u e in
-      (u, NRel (NNeq, n, Num 0))
+      (u, Exp.cast_bool n)
     | Unknown lbl ->
       let (u, x) = create lbl u in
-      (u, NRel (NNeq, Var x, Num 0))
+      (u, Exp.cast_bool (Var x))
 
   let convert (handler:t -> 'a -> t * 'b) (n:'a) : Variable.Set.t * 'b =
     let (u, n) = handler make n in
@@ -459,8 +466,8 @@ module Unknown = struct
     else None
 
   (* Convert a d_bexp into an bexp only if there are no unknowns *)
-  let try_to_bexp (n:IExp.t) : bexp option =
-    let (u, b) = handle_b make n in
+  let try_to_bexp (b:IExp.t) : bexp option =
+    let (u, b) = handle_b make b in
     if u = 0
     then Some b
     else None

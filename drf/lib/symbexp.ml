@@ -120,6 +120,7 @@ let project_access (locals:Variable.Set.t) (t:task) (ca:CondAccess.t) : CondAcce
   let rec inline_proj_n (t:task) (n: nexp) : nexp =
     match n with
     | Num _ -> n
+    | CastInt e -> CastInt (inline_proj_b t e)
     | Var x when Variable.Set.mem x locals -> Var (Gen.project t x)
     | Var _ -> n
     | BitNot e -> BitNot (inline_proj_n t e)
@@ -129,6 +130,7 @@ let project_access (locals:Variable.Set.t) (t:task) (ca:CondAccess.t) : CondAcce
     | NCall (x, n) -> NCall (x, inline_proj_n t n)
   and inline_proj_b (t:task) (b: bexp) : bexp =
     match b with
+    | CastBool e -> CastBool (inline_proj_n t e)
     | Pred (x, n) -> Pred (x, inline_proj_n t n)
     | Bool _ -> b
     | BNot b -> BNot (inline_proj_b t b)

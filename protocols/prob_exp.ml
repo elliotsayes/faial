@@ -27,6 +27,9 @@ let default_env (x:Variable.t) : (Int32.t, string) Result.t =
 let rec n_eval_res ?(env=default_env) (n:Exp.nexp) : (Int32.t, string) Result.t =
   let (let*) = Result.bind in
   match n with
+  | CastInt b ->
+    let* b = b_eval_res ~env b in
+    Ok (Int32.of_int (if b then 1 else 0))
   | Var x -> env x
   | BitNot e ->
     let* n = n_eval_res ~env e in
@@ -46,6 +49,9 @@ and b_eval_res ?(env=default_env) (b: Exp.bexp) : (bool, string) Result.t =
   let (let*) = Result.bind in
   match b with
   | Bool b -> Ok b
+  | CastBool e ->
+    let* e = n_eval_res ~env e in
+    Ok (not (Int32.equal e Int32.zero))
   | NRel (o, n1, n2) ->
     let* n1 = n_eval_res ~env n1 in
     let* n2 = n_eval_res ~env n2 in

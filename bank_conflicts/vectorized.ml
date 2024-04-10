@@ -167,6 +167,15 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
 
   | Num n -> NMap.constant ~count:ctx.warp_count ~value:n
 
+  | CastInt (CastBool n) ->
+    n_eval n ctx
+
+  | CastInt e ->
+    b_eval e ctx
+    |> BMap.to_array
+    |> Array.map (fun v -> if v then 1 else 0)
+    |> NMap.from_array
+
   | BitNot e ->
     let n = n_eval e ctx in
     NMap.map (fun v -> ~- v) n
@@ -195,6 +204,15 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
 and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
   match b with
   | Bool b -> BMap.constant ~count:ctx.bank_count ~value:b
+
+  | CastBool (CastInt e) ->
+    b_eval e ctx
+
+  | CastBool e ->
+    n_eval e ctx
+    |> NMap.to_array
+    |> Array.map (fun v -> v <> 0)
+    |> BMap.from_array
 
   | NRel (o, n1, n2) ->
     let o = Exp.eval_nrel o in
