@@ -19,6 +19,7 @@ type t = {
   le_index:int list;
   ge_index:int list;
   eq_index:int list;
+  only_kernel: string option;
   only_array:string option;
   thread_idx_1: Dim3.t option;
   thread_idx_2: Dim3.t option;
@@ -53,9 +54,12 @@ let to_string (app:t) : string =
      show_align; show_phase_split; show_loc_split; show_flat_acc;
      show_symbexp; logic; le_index = _; ge_index = _; eq_index = _;
      only_array = _; thread_idx_1 = _; block_idx_1 = _; thread_idx_2 = _;
-     block_idx_2 = _; archs; block_dim; grid_dim; params = _;} ->
+     block_idx_2 = _; archs; block_dim; grid_dim; params = _;
+     only_kernel;} ->
+    let only_kernel = Option.value ~default:"(null)" only_kernel in
     let kernels = List.length kernels |> string_of_int in
     "filename: " ^ filename ^
+    "\nonly_kernel: " ^ only_kernel ^
     "\nblock_dim: " ^ dim3 block_dim ^
     "\ngrid_dim: " ^ dim3 grid_dim ^
     "\nkernels: " ^ kernels ^
@@ -99,6 +103,7 @@ let parse
   ~archs
   ~ignore_parsing_errors
   ~params
+  ~only_kernel
 :
   t
 =
@@ -138,6 +143,7 @@ let parse
     grid_dim;
     block_dim;
     params;
+    only_kernel;
   }
 
 let show (b:bool) (call:'a -> unit) (x:'a) : 'a =
@@ -187,8 +193,28 @@ let translate (arch:Architecture.t) (a:t) (k:Proto.Code.t Proto.Kernel.t) : Flat
   |> Flatacc.translate arch
   |> show a.show_flat_acc Flatacc.print_kernels
 
+let only_kernel
+  (a:t)
+  (ks:Proto.Code.t Proto.Kernel.t list)
+:
+  Proto.Code.t Proto.Kernel.t list
+=
+  match a.only_kernel with
+  | Some name ->
+    let ks =
+      ks
+      |> List.filter (fun k -> let open Proto.Kernel in k.name = name)
+    in
+    if ks = [] then
+      (Logger.Colors.error ("kernel '" ^ name ^ "' not found!");
+        exit (-1)
+      )
+    else ks
+  | None -> ks
+
 let check_unreachable (a:t) : unit =
   a.kernels
+  |> only_kernel a
   |> List.iter (fun kernel ->
     let report =
       kernel
@@ -233,6 +259,7 @@ let run (a:t) : Analysis.t list =
     Analysis.{kernel; report}
   in
   a.kernels
+  |> only_kernel a
   |> List.map (fun kernel ->
     let rec check_until (archs:Architecture.t list) : Analysis.t =
       match archs with

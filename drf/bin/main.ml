@@ -23,6 +23,7 @@ let main
   (le_index:int list)
   (eq_index:int list)
   (only_array:string option)
+  (only_kernel:string option)
   (thread_idx_1:Dim3.t option)
   (thread_idx_2:Dim3.t option)
   (block_idx_1:Dim3.t option)
@@ -69,6 +70,7 @@ let main
     ~block_dim
     ~grid_dim
     ~params
+    ~only_kernel
   in
   let ui = if output_json then Jui.render else Tui.render in
   if unreachable then
@@ -235,6 +237,10 @@ let only_array =
   let doc = "Only check a specific array." in
   Arg.(value & opt (some string) None & info ["array"] ~doc)
 
+let only_kernel =
+  let doc = "Only check a specific kernel." in
+  Arg.(value & opt (some string) None & info ["kernel"] ~doc)
+
 let main_t = Term.(
   const main
   $ get_fname
@@ -258,6 +264,7 @@ let main_t = Term.(
   $ le_index
   $ eq_index
   $ only_array
+  $ only_kernel
   $ thread_idx_1
   $ thread_idx_2
   $ block_idx_1
