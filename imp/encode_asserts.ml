@@ -158,9 +158,7 @@ let from_encode_assigns : Encode_assigns.t -> t =
       let p, a1 = from p in
       let q, a2 = from q in
       (Seq (p, q), AssertionTree.append a1 a2)
-    | Assert (e, p) ->
-      let p, a = from p in
-      p, AssertionTree.and_ e a
+    | Assert e -> Skip, AssertionTree.from_bexp e
     | If (b, then_s, else_s) ->
       let then_s, a1 = from then_s in
       let else_s, a2 = from else_s in

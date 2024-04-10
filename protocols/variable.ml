@@ -75,6 +75,21 @@ module Map = Map.Make(OT)
 module MapUtil = Common.MapUtil(Map)
 module MapSetUtil = Common.MapSetUtil (Set) (Map)
 
+let map_to_string
+  ?(sep=": ")
+  (f:'a -> string)
+  (m:'a Map.t)
+:
+  string
+=
+  let keys =
+    m
+    |> Map.to_list
+    |> List.map (fun (k,v) -> k.name ^ sep ^ f v)
+    |> String.concat ", "
+  in
+  "{" ^ keys ^ "}"
+
 let list_to_string (vs: t list) : string =
   vs
   |> List.map name

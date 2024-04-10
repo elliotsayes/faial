@@ -70,6 +70,8 @@ let tests = [
   "racy-alias-shmem3.cu", [], 1;
   (* Aliasing with increment *)
   "racy-alias-assign.cu", [], 1;
+  (* Array accesses of local memory should not introduce data-races. *)
+  "drf-local-array.cu", [], 0;
 ]
 
 (* These are kernels that are being documented, but are

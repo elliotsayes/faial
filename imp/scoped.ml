@@ -4,7 +4,7 @@ open Protocols
 type t =
   | Skip
   | Sync of Location.t option
-  | Assert of (Exp.bexp * t)
+  | Assert of Exp.bexp
   | Acc of (Variable.t * Access.t)
   | If of (Exp.bexp * t * t)
   | For of (Range.t * t)
@@ -17,11 +17,9 @@ let to_string: t -> string =
     function
     | Skip -> [Line "skip;"]
     | Sync _ -> [Line "sync;"]
-    | Assert (b, s) ->
+    | Assert b ->
       [
-        Line ("assert (" ^ Exp.b_to_string b ^ ") {");
-        Block (to_s s);
-        Line ("}");
+        Line ("assert (" ^ Exp.b_to_string b ^ ");");
       ]
     | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
     | Assign a -> [
@@ -100,7 +98,7 @@ module SubstMake(S:Subst.SUBST) = struct
     | Sync l -> Sync l
     | Skip -> Skip
     | Acc (x, a) -> Acc (x, M.a_subst st a)
-    | Assert (b, s) -> Assert (M.b_subst st b, subst st s)
+    | Assert b -> Assert (M.b_subst st b)
     | Decl (d, p) ->
       let d = Decl.map (M.n_subst st) d in
       Decl (d, M.add st d.var (function
@@ -267,7 +265,7 @@ let from_stmt : Params.t * Stmt.t -> Params.t * t =
     function
     | Sync l -> ret (Sync l)
     | Write e -> ret (Acc (e.array, {index=e.index; mode=Write e.payload}))
-    | Assert b -> ret (Assert (b, Skip))
+    | Assert b -> ret (Assert b)
     | Call _ -> imp_to_scoped_p []
     | Block p -> imp_to_scoped_p p
     | If (b, s1, s2) ->
@@ -296,10 +294,6 @@ let from_stmt : Params.t * Stmt.t -> Params.t * t =
   and imp_to_scoped_p : Stmt.prog -> int*Params.t -> int * Params.t * t =
     function
     | [] -> ret Skip
-    | Assert e :: p ->
-      bind (imp_to_scoped_p p) (fun p ->
-        ret (Assert (e, p))
-      )
     | LocationAlias e :: p ->
       bind (imp_to_scoped_p p) (fun p ->
        ret (loc_subst e p)
