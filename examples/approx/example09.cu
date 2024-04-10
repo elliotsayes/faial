@@ -1,5 +1,5 @@
 //saxpy,ind,ind
-//_unknown_1
+//
 /*
 Example 9: index loaded from array and used in a conditional, but conditional has
 no accesses.
