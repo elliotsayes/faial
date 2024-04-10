@@ -1,9 +1,9 @@
 //saxpy,ind,ctrl
-//_unknown_1, _unknown_2, k
+//_unknown_1, j, k
 /*
 Example 3: data flows from array to lower bound of loop
 
-Variable `x[i]` is `_unkown_1`, `y[i + 1]` is `_unknown_2`.
+Variable `x[i]` is `j`, `y[i + 1]` is `_unknown_1`.
 
 */
 __global__ void saxpy(int n, float a, float *x, float *y)

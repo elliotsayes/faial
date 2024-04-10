@@ -1,5 +1,5 @@
 //saxpy,ind,ind
-//_unknown_1
+//j
 /*
 Example 8: index loaded from an array and used in a loop, but loop
 has no accesses.

@@ -1,5 +1,5 @@
 //saxpy,ind,ctrl
-//_unknown_1, _unknown_2, k
+//_unknown_1, j, k
 /*
 Example 4: data flows from array to upper bound of loop
 
