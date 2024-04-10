@@ -9,11 +9,11 @@ let tests = [
      what is in the source code. *)
   "parse-gv.cu", ["--gridDim=3"], 1;
   (* This is the simplest data-race. *)
-  "saxpy-racy.cu", [], 1;
+  "racy-saxpy.cu", [], 1;
   (* Sanity check, make sure that the bit-vector logic works. *)
-  "saxpy-racy.cu", ["--logic"; "QF_AUFBV"], 1;
+  "racy-saxpy.cu", ["--logic"; "QF_AUFBV"], 1;
   (* This is the simplest data-race free example. *)
-  "saxpy.cu", [], 0;
+  "drf-saxpy.cu", [], 0;
   (* This example is only racy at the grid-level *)
   "racy-grid-level.cu", [], 0;
   "racy-grid-level.cu", ["--grid-level"], 1;
@@ -24,10 +24,10 @@ let tests = [
   (* A data-race in shared memory is invisible at the grid level. *)
   "racy-shared-scalar.cu", ["--grid-level"], 0;
   (* A data-race free example that relies on top-level assignments. *)
-  "toplevel-drf.cu", [], 0;
+  "drf-toplevel.cu", [], 0;
   (* A data-race that occurs when analysis understand top-level assignments.
      We ensure it's a data-race between threads 0 and 1. *)
-  "toplevel-racy.cu", ["--tid1"; "0"; "--tid2"; "1"], 1;
+  "racy-toplevel.cu", ["--tid1"; "0"; "--tid2"; "1"], 1;
   (* Data-race free example *)
   "drf-shared-mem.cu", [], 0;
   (* Shared memory *)
