@@ -74,9 +74,17 @@ module AssertionTree = struct
 
   let true_ : t = True
 
-  let rec from_bexp : bexp -> t =
+  let rec from_bexp (e: bexp) : t =
     let open Exp in
-    function
+    let e =
+      match e with
+      | BNot e -> b_not e
+      | BRel (BAnd, e1, e2) -> b_and e1 e2
+      | BRel (BOr, e1, e2) -> b_or e1 e2
+      | NRel (o, e1, e2) -> n_rel o e1 e2
+      | _ -> e
+    in
+    match e with
     | Bool true -> True
     | BRel (BAnd, e1, e2) ->
       and_ e1 (from_bexp e2)

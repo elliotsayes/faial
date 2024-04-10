@@ -243,13 +243,19 @@ let b_and b1 b2 =
   | Bool false, _ | _, Bool false -> Bool false
   | _, _ -> b_rel BAnd b1 b2
 
-let b_not b =
-  match b with
+let rec b_not : bexp -> bexp =
+  function
   | BNot b -> b
-  | NRel (NEq, n1, n2) -> NRel (NNeq, n1, n2)
-  | NRel (NNeq, n1, n2) -> NRel (NEq, n1, n2)
+  | BRel (BAnd, b1, b2) -> b_or (b_not b1) (b_not b2)
+  | BRel (BOr, b1, b2) -> b_and (b_not b1) (b_not b2)
+  | NRel (NEq, n1, n2) -> n_neq n1 n2
+  | NRel (NNeq, n1, n2) -> n_eq n1 n2
+  | NRel (NLt, n1, n2) -> n_rel NGe n1 n2
+  | NRel (NGt, n1, n2) -> n_rel NLe n1 n2
+  | NRel (NLe, n1, n2) -> n_rel NGt n1 n2
+  | NRel (NGe, n1, n2) -> n_rel NLt n1 n2
   | Bool b -> Bool (not b)
-  | _ -> BNot b
+  | b -> BNot b
 
 let b_impl b1 b2 =
   match b1 with
