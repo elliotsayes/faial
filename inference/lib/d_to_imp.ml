@@ -863,6 +863,11 @@ let rec parse_stmt
     let ty = D_lang.Expr.to_type b in
     ret_assert (UnaryOperator {opcode="!"; child=b; ty})
 
+  | IfStmt {cond=b;then_stmt=CompoundStmt[BreakStmt];else_stmt=CompoundStmt[]}
+  | IfStmt {cond=b;then_stmt=BreakStmt;else_stmt=CompoundStmt[]} ->
+    let ty = D_lang.Expr.to_type b in
+    ret_assert (UnaryOperator {opcode="!"; child=b; ty})
+
   | IfStmt c ->
     let* b = with_msg "if.cond" parse_exp c.cond in
     let* t = with_msg "if.then" parse_stmt c.then_stmt in
