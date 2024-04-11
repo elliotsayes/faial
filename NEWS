@@ -2,6 +2,8 @@
 - Inference: improved support for array aliasing with shared memory.
 - Inference: added support for assertions anywhere in the code
   (not just in the beginning of the kernel).
+- Inference: added support for inferring assertions from if(...)break;
+  inside loops.
 - DRF: grid-level analysis was mistakenly taking into account
   shared memory some times.
 
