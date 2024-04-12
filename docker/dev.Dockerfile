@@ -56,7 +56,7 @@ RUN \
   chmod a+x /usr/bin/opam
 USER faial
 RUN \
-  opam init --compiler=4.14.0 --disable-sandboxing --yes && \
+  opam init --compiler=5.1.1 --disable-sandboxing --yes && \
   wget https://gitlab.com/umb-svl/faial/-/raw/${FAIAL_VERSION}/configure.sh && \
   eval $(opam env) && \
   bash configure.sh -y && \
