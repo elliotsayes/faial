@@ -32,6 +32,7 @@ let main
   (unreachable:bool)
   (all_levels:bool)
   (params:(string * int) list)
+  (macros:string list)
 :
   unit
 =
@@ -71,6 +72,7 @@ let main
     ~grid_dim
     ~params
     ~only_kernel
+    ~macros
   in
   let ui = if output_json then Jui.render else Tui.render in
   if unreachable then
@@ -188,6 +190,10 @@ let params =
   let doc = "Set the value of an integer parameter" in
   Arg.(value & opt_all (pair ~sep:'=' string int) [] & info ["p"; "param"] ~docv:"KEYVAL" ~doc)
 
+let macros =
+  let doc = "Define <macro> to <value> (or 1 if <value> omitted)" in
+  Arg.(value & opt_all string [] & info ["D"; "macro"] ~docv:"<macro>=<value>" ~doc)
+
 let ignore_calls =
   let doc = "By default we inline kernel calls, this option skips that step." in
   Arg.(value & flag & info ["ignore-calls"] ~doc)
@@ -273,6 +279,7 @@ let main_t = Term.(
   $ unreachable
   $ all_levels
   $ params
+  $ macros
 )
 
 let info =

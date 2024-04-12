@@ -15,6 +15,7 @@ module Make (L:Logger.Logger) = struct
     ?(block_dim=None)
     ?(grid_dim=None)
     ?(includes=[])
+    ?(macros=[])
     ?(exit_status=2)
     (fname:string)
   :
@@ -24,6 +25,7 @@ module Make (L:Logger.Logger) = struct
       ~ignore_fail:(not abort_on_parsing_failure)
       ~on_error:(fun _ -> exit exit_status)
       ~includes
+      ~macros
       fname
     in
     let options : Gv_parser.t = match Gv_parser.parse fname with
@@ -72,6 +74,7 @@ module Make (L:Logger.Logger) = struct
     ?(exit_status=2)
     ?(inline_calls=true)
     ?(only_globals=true)
+    ?(macros=[])
     (fname:string)
   :
     proto_kernel t
@@ -83,6 +86,7 @@ module Make (L:Logger.Logger) = struct
       ~grid_dim
       ~includes
       ~exit_status
+      ~macros
       fname
     in
     { parsed with

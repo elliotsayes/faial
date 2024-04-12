@@ -29,6 +29,7 @@ type t = {
   block_dim: Dim3.t;
   grid_dim: Dim3.t;
   params: (string * int) list;
+  macros: string list;
 }
 
 let to_string (app:t) : string =
@@ -46,8 +47,13 @@ let to_string (app:t) : string =
   let dim3 (o:Dim3.t) : string =
     Dim3.to_string o
   in
+
+  let list_string (l:string list) : string =
+    "[" ^ (String.concat ", " l) ^ "]"
+  in
+
   let list_arch (l:Architecture.t list) : string =
-    "[" ^ (List.map Architecture.to_string l |> String.concat ", ") ^ "]"
+    list_string (List.map Architecture.to_string l)
   in
   match app with
   | {filename; kernels; timeout; show_proofs; show_proto; show_wf;
@@ -55,7 +61,7 @@ let to_string (app:t) : string =
      show_symbexp; logic; le_index = _; ge_index = _; eq_index = _;
      only_array = _; thread_idx_1 = _; block_idx_1 = _; thread_idx_2 = _;
      block_idx_2 = _; archs; block_dim; grid_dim; params = _;
-     only_kernel;} ->
+     only_kernel; macros; } ->
     let only_kernel = Option.value ~default:"(null)" only_kernel in
     let kernels = List.length kernels |> string_of_int in
     "filename: " ^ filename ^
@@ -74,6 +80,7 @@ let to_string (app:t) : string =
     "\nshow_loc_split: " ^ bool show_loc_split ^
     "\nshow_flat_acc: " ^ bool show_flat_acc ^
     "\nshow_symbexp: " ^ bool show_symbexp ^
+    "\nmacros = " ^ list_string macros ^
     "\n"
 
 let parse
@@ -104,6 +111,7 @@ let parse
   ~ignore_parsing_errors
   ~params
   ~only_kernel
+  ~macros
 :
   t
 =
@@ -113,6 +121,7 @@ let parse
     ~block_dim
     ~grid_dim
     ~inline_calls
+    ~macros
     filename
   in
   let kernels = parsed.kernels in
@@ -144,6 +153,7 @@ let parse
     block_dim;
     params;
     only_kernel;
+    macros;
   }
 
 let show (b:bool) (call:'a -> unit) (x:'a) : 'a =

@@ -72,6 +72,14 @@ let tests = [
   "racy-alias-assign.cu", [], 1;
   (* Array accesses of local memory should not introduce data-races. *)
   "drf-local-array.cu", [], 0;
+  (* Check support for macros *)
+  "macro.cu", ["-DMACRO="], 0;
+  "macro.cu", ["-DMACRO=+ 0"], 0;
+  "macro.cu", ["-DMACRO=+ 1"], 1; (* data-race *)
+  "macro.cu", ["-DMACRO"], 2; (* expands to 1, which is a syntax error *)
+  "macro.cu", [], 2; (* syntax error if the macro is not defined *)
+  (* A conditional break is inferred as an assertion *)
+  "drf-assert-loop.cu", [], 0;
 ]
 
 (* These are kernels that are being documented, but are
@@ -114,9 +122,10 @@ let () =
     let str_args = if args = [] then "" else (String.concat " " args ^ " ") in
     let bullet =
       match expected_status with
-      | 0 -> "DRF:  "
-      | 1 -> "RACY: "
-      | _ -> "?:    "
+      | 0 -> "DRF:   "
+      | 1 -> "RACY:  "
+      | 2 -> "PARSE: "
+      | _ -> "?:     "
     in
     print_string (bullet ^ "faial-drf " ^ str_args ^ filename);
     Stdlib.flush_all ();
@@ -136,7 +145,7 @@ let () =
       print_endline ("Missing unsupported file: " ^ Fpath.to_string f);
       exit 1
     ) else (
-      print_endline ("TODO: " ^ Fpath.to_string f);
+      print_endline ("TODO:  " ^ Fpath.to_string f);
     )
   );
   let missed = missed_files (v ".") in
