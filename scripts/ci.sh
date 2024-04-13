@@ -14,6 +14,7 @@ mkdir lib/ &&
 wget -nv --content-disposition "https://github.com/Z3Prover/z3/releases/download/z3-${Z3_VERSION}/z3-${Z3_VERSION}-${Z3_ARCH}.zip" &&
 unzip z3-${Z3_VERSION}-${Z3_ARCH}.zip &&
 cp z3-${Z3_VERSION}-${Z3_ARCH}/bin/libz3.so lib/ &&
+cp z3-${Z3_VERSION}-${Z3_ARCH}/LICENSE.txt ./LICENSE-z3.txt &&
 rm -rf z3-${Z3_VERSION}-${Z3_ARCH}.zip z3-${Z3_VERSION}-${Z3_ARCH}/ &&
 # display tree & bundle:
 tar jcvf faial.tar.bz2 * &&
