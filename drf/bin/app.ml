@@ -112,6 +112,7 @@ let parse
   ~params
   ~only_kernel
   ~macros
+  ~cu_to_json
 :
   t
 =
@@ -122,6 +123,7 @@ let parse
     ~grid_dim
     ~inline_calls
     ~macros
+    ~cu_to_json
     filename
   in
   let kernels = parsed.kernels in

@@ -17,6 +17,7 @@ module Make (L:Logger.Logger) = struct
     ?(includes=[])
     ?(macros=[])
     ?(exit_status=2)
+    ?(cu_to_json="cu-to-json")
     (fname:string)
   :
     imp_kernel t
@@ -26,6 +27,7 @@ module Make (L:Logger.Logger) = struct
       ~on_error:(fun _ -> exit exit_status)
       ~includes
       ~macros
+      ~exe:cu_to_json
       fname
     in
     let options : Gv_parser.t = match Gv_parser.parse fname with
@@ -75,12 +77,14 @@ module Make (L:Logger.Logger) = struct
     ?(inline_calls=true)
     ?(only_globals=true)
     ?(macros=[])
+    ?(cu_to_json="cu-to-json")
     (fname:string)
   :
     proto_kernel t
   =
     let parsed =
       to_imp
+      ~cu_to_json
       ~abort_on_parsing_failure
       ~block_dim
       ~grid_dim

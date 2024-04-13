@@ -33,6 +33,7 @@ let main
   (all_levels:bool)
   (params:(string * int) list)
   (macros:string list)
+  (cu_to_json:string)
 :
   unit
 =
@@ -73,6 +74,7 @@ let main
     ~params
     ~only_kernel
     ~macros
+    ~cu_to_json
   in
   let ui = if output_json then Jui.render else Tui.render in
   if unreachable then
@@ -247,6 +249,10 @@ let only_kernel =
   let doc = "Only check a specific kernel." in
   Arg.(value & opt (some string) None & info ["kernel"] ~doc)
 
+let cu_to_json =
+  let doc = "Set path to cu-to-json." in
+  Arg.(value & opt string "cu-to-json" & info ["cu-to-json"] ~docv:"PATH" ~doc)
+
 let main_t = Term.(
   const main
   $ get_fname
@@ -280,6 +286,7 @@ let main_t = Term.(
   $ all_levels
   $ params
   $ macros
+  $ cu_to_json
 )
 
 let info =
