@@ -1,0 +1,17 @@
+#!/bin/bash
+DIR="$(dirname "$(readlink -f "$0")")"
+do_abort() {
+  >&2 echo "$@"
+  exit 1
+}
+ensure_file () {
+  if [ ! -f "$DIR/$1" ]; then
+    do_abort "File not found: $DIR/$1"
+  fi
+}
+ensure_file "lib/libz3.so"
+ensure_file "bin/cu-to-json"
+ensure_file "bin/faial-drf"
+export LD_LIBRARY_PATH="$DIR/lib"
+exec "$DIR/bin/"faial-drf --cu-to-json "$DIR/bin/cu-to-json" "$@"
+
