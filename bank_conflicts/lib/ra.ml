@@ -96,19 +96,32 @@ let print (x:t) : unit =
 module Make (L:Logger.Logger) = struct
   module S = Shared_access.Make(L)
 
-  let rec from_shared_access (idx_analysis : Exp.nexp -> int) : Shared_access.t -> t =
-    function
-    | Index a -> Tick (idx_analysis a.index)
-    | Cond (_, p) -> from_shared_access idx_analysis p
-    | Loop (r, p) ->
-      Loop (r, from_shared_access idx_analysis  p)
+  let from_shared_access
+    (idx_analysis : Variable.Set.t -> Exp.nexp -> int)
+  :
+    Variable.Set.t -> Shared_access.t -> t
+  =
+    let rec from (locals:Variable.Set.t) : Shared_access.t -> t =
+      function
+      | Index a -> Tick (idx_analysis locals a.index)
+      | Cond (_, p) -> from locals p
+      | Decl (x, p) -> from (Variable.Set.add x locals) p
+      | Loop (r, p) -> Loop (r, from locals p)
+    in
+    from
 
-  let from_kernel (idx_analysis : Exp.nexp -> int) (params:Config.t) (k: Proto.Code.t Proto.Kernel.t) : t =
+  let from_kernel
+    (idx_analysis : Variable.Set.t -> Exp.nexp -> int)
+    (params:Config.t)
+    (k: Proto.Code.t Proto.Kernel.t)
+  :
+    t
+  =
     let shared = S.shared_memory k.arrays in
-    let rec from_p : Proto.Code.t -> t =
+    let rec from_p (locals:Variable.Set.t) : Proto.Code.t -> t =
       function
       | Skip -> Skip
-      | Seq (p, q) -> Seq (from_p p, from_p q)
+      | Seq (p, q) -> Seq (from_p locals p, from_p locals q)
       | Acc (x, {index=l; _}) ->
         (* Flatten n-dimensional array and apply word size *)
         (match Variable.Map.find_opt x shared with
@@ -118,19 +131,19 @@ module Make (L:Logger.Logger) = struct
               |> S.byte_count_multiplier v.byte_count
               |> S.flatten_multi_dim v.dim
             in
-            Tick (idx_analysis e)
+            Tick (idx_analysis locals e)
           | None -> Skip)
       | Sync _ -> Skip
-      | Decl {body=p; _}
-      | Cond (_, p) -> from_p p
+      | Decl {body=p; var; _} -> from_p (Variable.Set.add var locals) p
+      | Cond (_, p) -> from_p locals p
       | Loop (r, p) ->
         let r = S.uniform params.block_dim r |> Option.value ~default:r in
-        Loop (r, from_p p)
+        Loop (r, from_p locals p)
     in
     k.code
     |> Proto.Code.subst_block_dim params.block_dim
     |> Proto.Code.subst_grid_dim params.grid_dim
-    |> from_p
+    |> from_p (Params.to_set k.local_variables)
 end
 
 module Default = Make(Logger.Colors)

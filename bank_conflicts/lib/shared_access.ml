@@ -19,6 +19,7 @@ type t =
   | Loop of Range.t * t
   | Cond of Exp.bexp * t
   | Index of shared_access
+  | Decl of Variable.t * t
 
 module SubstMake (S:Subst.SUBST) = struct
   module M = Subst.Make(S)
@@ -28,6 +29,12 @@ module SubstMake (S:Subst.SUBST) = struct
     | Loop (r, acc) -> Loop (M.r_subst s r, subst s acc)
     | Cond (b, acc) -> Cond (M.b_subst s b, subst s acc)
     | Index a -> Index { a with index = M.n_subst s a.index }
+    | Decl (x, acc) ->
+      M.add s x (
+        function
+        | Some s -> Decl (x, subst s acc)
+        | None -> Decl (x, acc)
+      )
 
 end
 
@@ -43,12 +50,15 @@ let rec to_string : t -> string =
       "if (" ^ Exp.b_to_string b ^ ") " ^ to_string acc
   | Index a ->
       "acc(" ^ Exp.n_to_string a.index ^ ")"
+  | Decl (x, p) ->
+      "var " ^ Variable.name x ^ " " ^ to_string p
 
 let rec shared_array : t -> Variable.t =
   function
   | Index a -> a.shared_array
   | Loop (_, p)
-  | Cond (_, p) -> shared_array p
+  | Cond (_, p)
+  | Decl (_, p) -> shared_array p
 
 let location (x: t) : Location.t =
   x
@@ -305,7 +315,8 @@ module Make (L:Logger.Logger) = struct
         | None -> Seq.empty)
       | Sync _ ->
         Seq.empty
-      | Decl {body=p; _} -> on_p p
+      | Decl {body=p; var; _} ->
+        on_p p |> Seq.map (fun (i:t) -> Decl (var, i))
       | Cond (b, p) ->
         on_p p
         |> Seq.map (fun (i:t) : t -> Cond (b, i))

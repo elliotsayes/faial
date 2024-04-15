@@ -88,13 +88,13 @@ module Solver = struct
       ignore_absent;
     }
 
-  let bank_conflict_count (app:t) (k:kernel) : Exp.nexp -> int =
-    Index_analysis.Default.analyze app.params (Params.to_set k.local_variables)
+  let bank_conflict_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
+    Index_analysis.Default.analyze app.params
 
-  let access_count (_:t) (_:kernel) : Exp.nexp -> int =
-    fun _ -> 1
+  let access_count (_:t) : Variable.Set.t -> Exp.nexp -> int =
+    fun _ _ -> 1
 
-  let access_analysis (app:t) : kernel -> Exp.nexp -> int =
+  let access_analysis (app:t) : Variable.Set.t -> Exp.nexp -> int =
     if app.count_shared_access then
       access_count app
     else
@@ -125,7 +125,7 @@ module Solver = struct
     )
     |> Result.map_error Errors.to_string
 
-  let get_ra (a:t) (k:kernel) (idx_analysis: Exp.nexp -> int) : Ra.t =
+  let get_ra (a:t) (k:kernel) (idx_analysis: Variable.Set.t -> Exp.nexp -> int) : Ra.t =
     let r = Ra.Default.from_kernel idx_analysis a.params k in
     if a.skip_simpl_ra then r else Ra.simplify r
 
@@ -133,12 +133,12 @@ module Solver = struct
   type slice = Shared_access.t * Ra.t * r_cost
 
   let total_cost (a:t) (k:kernel) : r_cost =
-    let r = get_ra a k (access_analysis a k) in
+    let r = get_ra a k (access_analysis a) in
     get_cost a r
 
   let ratio_cost (a:t) (k:kernel) : r_cost =
-    let numerator = get_ra a k (bank_conflict_count a k) in
-    let denominator = get_ra a k (access_count a k) in
+    let numerator = get_ra a k (bank_conflict_count a) in
+    let denominator = get_ra a k (access_count a) in
     let start = Unix.gettimeofday () in
     Maxima.run_ra_ratio
       ~verbose:a.show_code
@@ -151,11 +151,16 @@ module Solver = struct
     |> Result.map_error Errors.to_string
 
   let sliced_cost (a:t) (k:kernel) : slice list =
-    let idx_analysis = access_analysis a k in
+    let idx_analysis = access_analysis a in
     Shared_access.Default.from_kernel a.params k
     |> Seq.filter_map (fun s ->
       (* Convert a slice into an expression *)
-      let r = Ra.Default.from_shared_access idx_analysis s in
+      let r =
+        Ra.Default.from_shared_access
+          idx_analysis
+          (Params.to_set k.local_variables)
+          s
+      in
       if Ra.is_zero r && a.skip_zero then
         None
       else
