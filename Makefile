@@ -26,12 +26,12 @@ faial-drf:
 	cp -f $(BUILD)/drf/bin/main.exe faial-drf
 
 faial-bc-dyn:
-	$(DUNE) build bank_conflicts/dyn.exe
-	cp -f $(BUILD)/bank_conflicts/dyn.exe faial-bc-dyn
+	$(DUNE) build bank_conflicts/bin/dyn.exe
+	cp -f $(BUILD)/bank_conflicts/bin/dyn.exe faial-bc-dyn
 
 faial-bc:
-	$(DUNE) build bank_conflicts/pico.exe
-	cp -f $(BUILD)/bank_conflicts/pico.exe faial-bc
+	$(DUNE) build $(BUILD)/bank_conflicts/bin/main.exe
+	cp -f $(BUILD)/bank_conflicts/bin/main.exe faial-bc
 
 faial-sync:
 	$(DUNE) build barrier_div/main.exe
