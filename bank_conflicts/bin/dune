@@ -1,0 +1,11 @@
+(executable
+ (public_name faial-bc)
+ (name main)
+ (modules main)
+ (libraries cmdliner z3 bank_conflicts printbox printbox-text))
+
+(executable
+ (public_name faial-bc-dyn)
+ (name dyn)
+ (modules dyn)
+ (libraries inference cmdliner z3 bank_conflicts))
