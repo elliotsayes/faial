@@ -5,8 +5,6 @@ variables:
 .cache: &global_cache
   before_script:
     - export PATH="$PATH:$CI_PROJECT_DIR"
-    - opam --version
-    - ocamlc --version
 
   cache:
     key: "Ubuntu-$CI_COMMIT_REF_NAME-1"
@@ -17,9 +15,10 @@ variables:
 test:
   <<: *global_cache
   script:
-    - rm -f ./target/*/faial
     - cd "$CI_PROJECT_DIR"
+    - rm -f ./target/*/faial
     - eval $(opam config env)
+    - ocamlc --version
     - export PATH="$PATH:$PWD"
     - make
     - make test
@@ -30,6 +29,7 @@ build-dist:
     - cd "$CI_PROJECT_DIR"
     - rm -f ./target/*/faial
     - eval $(opam config env)
+    - ocamlc --version
     - dune build --release
     - cp -Lr _build/install/default/bin/* ./
 
