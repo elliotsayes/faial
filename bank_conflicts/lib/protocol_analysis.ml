@@ -1,3 +1,10 @@
+(*
+
+ This module is not used internally; it's only used by the code
+ generation algorithm.
+
+ *)
+
 open Stage0
 open Protocols
 
