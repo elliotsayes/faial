@@ -55,28 +55,23 @@ let location (x: t) : Location.t =
 
 
 module Make (L:Logger.Logger) = struct
-  module S = Shared_access.Make(L)
+  module R = Uniform_range.Make(L)
+  module L = Linearize_index.Make(L)
   (*
   Given a kernel return a sequence of slices.
    *)
   let from_kernel (cfg:Config.t) (k: Proto.Code.t Proto.Kernel.t) : t Seq.t =
     let open Exp in
-    let shared = S.shared_memory k.arrays ~bytes_per_word:cfg.bytes_per_word in
+    let lin = L.linearize cfg k.arrays in
     let rec on_p : Proto.Code.t -> t Seq.t =
       function
       | Acc (x, {index=l; _}) ->
-        (* Flatten n-dimensional array and apply word size *)
-        (match Variable.Map.find_opt x shared with
-        | Some a ->
-          let e =
-            l
-            |> S.byte_count_multiplier
-              ~bytes_per_word:cfg.bytes_per_word
-              ~byte_count:a.byte_count
-            |> S.flatten_multi_dim a.dim
-          in
-          Seq.return (Index {shared_array=x; index=e})
-        | None -> Seq.empty)
+        l
+        |> lin x
+        |> Option.map (fun e ->
+            Seq.return (Index {shared_array=x; index=e})
+          )
+        |> Option.value ~default:Seq.empty
       | Sync _ ->
         Seq.empty
       | Decl {body=p; var; _} ->
@@ -87,7 +82,7 @@ module Make (L:Logger.Logger) = struct
       | Loop (r, p) ->
         on_p p
         |> Seq.map (fun i ->
-          match S.uniform cfg.block_dim r with
+          match R.uniform cfg.block_dim r with
           | Some r' ->
             let cnd =
               b_and

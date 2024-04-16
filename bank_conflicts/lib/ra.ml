@@ -94,7 +94,8 @@ let print (x:t) : unit =
   indent x |> Indent.print
 
 module Make (L:Logger.Logger) = struct
-  module S = Shared_access.Make(L)
+  module R = Uniform_range.Make(L)
+  module L = Linearize_index.Make(L)
 
   let from_access_context
     (idx_analysis : Variable.Set.t -> Exp.nexp -> int)
@@ -117,29 +118,23 @@ module Make (L:Logger.Logger) = struct
   :
     t
   =
-    let shared = S.shared_memory k.arrays ~bytes_per_word:cfg.bytes_per_word in
+    let lin = L.linearize cfg k.arrays in
     let rec from_p (locals:Variable.Set.t) : Proto.Code.t -> t =
       function
       | Skip -> Skip
       | Seq (p, q) -> Seq (from_p locals p, from_p locals q)
       | Acc (x, {index=l; _}) ->
-        (* Flatten n-dimensional array and apply word size *)
-        (match Variable.Map.find_opt x shared with
-          | Some v ->
-            let e =
-              l
-              |> S.byte_count_multiplier
-                ~bytes_per_word:cfg.bytes_per_word
-                ~byte_count:v.byte_count
-              |> S.flatten_multi_dim v.dim
-            in
+        l
+        |> lin x
+        |> Option.map (fun e ->
             Tick (idx_analysis locals e)
-          | None -> Skip)
+          )
+        |> Option.value ~default:Skip
       | Sync _ -> Skip
       | Decl {body=p; var; _} -> from_p (Variable.Set.add var locals) p
       | Cond (_, p) -> from_p locals p
       | Loop (r, p) ->
-        let r = S.uniform cfg.block_dim r |> Option.value ~default:r in
+        let r = R.uniform cfg.block_dim r |> Option.value ~default:r in
         Loop (r, from_p locals p)
     in
     k.code
