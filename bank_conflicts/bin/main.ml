@@ -130,7 +130,7 @@ module Solver = struct
     if a.skip_simpl_ra then r else Ra.simplify r
 
   type r_cost = (cost, string) Result.t
-  type slice = Shared_access.t * Ra.t * r_cost
+  type slice = Access_context.t * Ra.t * r_cost
 
   let total_cost (a:t) (k:kernel) : r_cost =
     let r = get_ra a k (access_analysis a) in
@@ -152,11 +152,11 @@ module Solver = struct
 
   let sliced_cost (a:t) (k:kernel) : slice list =
     let idx_analysis = access_analysis a in
-    Shared_access.Default.from_kernel a.params k
+    Access_context.Default.from_kernel a.params k
     |> Seq.filter_map (fun s ->
       (* Convert a slice into an expression *)
       let r =
-        Ra.Default.from_shared_access
+        Ra.Default.from_access_context
           idx_analysis
           (Params.to_set k.local_variables)
           s
@@ -241,10 +241,10 @@ module TUI = struct
         in
         (* Flatten the expression *)
         ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
-        s |> Shared_access.location |> Tui_helper.LocationUI.print;
+        s |> Access_context.location |> Tui_helper.LocationUI.print;
         print_endline "";
         PrintBox.(
-          tree (s |> Shared_access.to_string |> String.cat "▶ Context: " |> text)
+          tree (s |> Access_context.to_string |> String.cat "▶ Context: " |> text)
           [cost]
         ) |> PrintBox_text.output stdout;
         print_endline "\n"
@@ -287,7 +287,7 @@ module JUI = struct
         `List (
           l
           |> List.map (fun (s, _, e) ->
-            let loc = Shared_access.location s in
+            let loc = Access_context.location s in
             let loc = [
               "location",
                 `Assoc [

@@ -96,12 +96,12 @@ let print (x:t) : unit =
 module Make (L:Logger.Logger) = struct
   module S = Shared_access.Make(L)
 
-  let from_shared_access
+  let from_access_context
     (idx_analysis : Variable.Set.t -> Exp.nexp -> int)
   :
-    Variable.Set.t -> Shared_access.t -> t
+    Variable.Set.t -> Access_context.t -> t
   =
-    let rec from (locals:Variable.Set.t) : Shared_access.t -> t =
+    let rec from (locals:Variable.Set.t) : Access_context.t -> t =
       function
       | Index a -> Tick (idx_analysis locals a.index)
       | Cond (_, p) -> from locals p
@@ -112,12 +112,12 @@ module Make (L:Logger.Logger) = struct
 
   let from_kernel
     (idx_analysis : Variable.Set.t -> Exp.nexp -> int)
-    (params:Config.t)
+    (cfg:Config.t)
     (k: Proto.Code.t Proto.Kernel.t)
   :
     t
   =
-    let shared = S.shared_memory k.arrays in
+    let shared = S.shared_memory k.arrays ~word_size:cfg.word_size in
     let rec from_p (locals:Variable.Set.t) : Proto.Code.t -> t =
       function
       | Skip -> Skip
@@ -128,7 +128,9 @@ module Make (L:Logger.Logger) = struct
           | Some v ->
             let e =
               l
-              |> S.byte_count_multiplier v.byte_count
+              |> S.byte_count_multiplier
+                ~word_size:cfg.word_size
+                ~byte_count:v.byte_count
               |> S.flatten_multi_dim v.dim
             in
             Tick (idx_analysis locals e)
@@ -137,12 +139,12 @@ module Make (L:Logger.Logger) = struct
       | Decl {body=p; var; _} -> from_p (Variable.Set.add var locals) p
       | Cond (_, p) -> from_p locals p
       | Loop (r, p) ->
-        let r = S.uniform params.block_dim r |> Option.value ~default:r in
+        let r = S.uniform cfg.block_dim r |> Option.value ~default:r in
         Loop (r, from_p locals p)
     in
     k.code
-    |> Proto.Code.subst_block_dim params.block_dim
-    |> Proto.Code.subst_grid_dim params.grid_dim
+    |> Proto.Code.subst_block_dim cfg.block_dim
+    |> Proto.Code.subst_grid_dim cfg.grid_dim
     |> from_p (Params.to_set k.local_variables)
 end
 

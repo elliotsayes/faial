@@ -11,60 +11,6 @@ open Protocols
     - convert non-uniform loops into uniform loops
 *)
 
-let word_size = 4
-
-type shared_access = {shared_array: Variable.t; index: Exp.nexp}
-
-type t =
-  | Loop of Range.t * t
-  | Cond of Exp.bexp * t
-  | Index of shared_access
-  | Decl of Variable.t * t
-
-module SubstMake (S:Subst.SUBST) = struct
-  module M = Subst.Make(S)
-
-  let rec subst (s:S.t) : t -> t =
-    function
-    | Loop (r, acc) -> Loop (M.r_subst s r, subst s acc)
-    | Cond (b, acc) -> Cond (M.b_subst s b, subst s acc)
-    | Index a -> Index { a with index = M.n_subst s a.index }
-    | Decl (x, acc) ->
-      M.add s x (
-        function
-        | Some s -> Decl (x, subst s acc)
-        | None -> Decl (x, acc)
-      )
-
-end
-
-module S1 = SubstMake(Subst.SubstPair)
-
-let subst = S1.subst
-
-let rec to_string : t -> string =
-  function
-  | Loop (r, acc) ->
-      "for (" ^ Range.to_string r ^ ") " ^ to_string acc
-  | Cond (b, acc) ->
-      "if (" ^ Exp.b_to_string b ^ ") " ^ to_string acc
-  | Index a ->
-      "acc(" ^ Exp.n_to_string a.index ^ ")"
-  | Decl (x, p) ->
-      "var " ^ Variable.name x ^ " " ^ to_string p
-
-let rec shared_array : t -> Variable.t =
-  function
-  | Index a -> a.shared_array
-  | Loop (_, p)
-  | Cond (_, p)
-  | Decl (_, p) -> shared_array p
-
-let location (x: t) : Location.t =
-  x
-  |> shared_array
-  |> Variable.location
-
 type array_size = { byte_count: int; dim: int list}
 
 module Make (L:Logger.Logger) = struct
@@ -177,7 +123,7 @@ module Make (L:Logger.Logger) = struct
     else None
 
   (* Given an n-dimensional array access apply type modifiers *)
-  let byte_count_multiplier (byte_count:int) (l:Exp.nexp list) : Exp.nexp list =
+  let byte_count_multiplier ~word_size ~byte_count (l:Exp.nexp list) : Exp.nexp list =
     if byte_count/word_size = 1 then
       l
     else (
@@ -215,7 +161,7 @@ module Make (L:Logger.Logger) = struct
       ) (Common.zip l dim) (Num 0)
 
   (* Given a map of memory descriptors, return a map of array sizes *)
-  let shared_memory (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t =
+  let shared_memory ~word_size (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t =
     mem
     |> Variable.Map.filter_map (fun _ v ->
       if Memory.is_shared v then
@@ -237,7 +183,7 @@ module Make (L:Logger.Logger) = struct
   :
     Proto.Code.t Proto.Kernel.t
   =
-    let shared = shared_memory k.arrays in
+    let shared = shared_memory k.arrays ~word_size:params.word_size in
     let rec simpl : Proto.Code.t -> Proto.Code.t =
       function
       | Acc (x, ({index=l; _} as a)) ->
@@ -247,7 +193,9 @@ module Make (L:Logger.Logger) = struct
           | Some v ->
             let e =
               l
-              |> byte_count_multiplier v.byte_count
+              |> byte_count_multiplier
+                ~word_size:params.word_size
+                ~byte_count:v.byte_count
               |> flatten_multi_dim v.dim
             in
             { a with index=[e] }
@@ -293,55 +241,6 @@ module Make (L:Logger.Logger) = struct
         |> simpl;
       arrays = arrays;
     }
-
-  (*
-  Given a kernel return a sequence of slices.
-   *)
-  let from_kernel (params:Config.t) (k: Proto.Code.t Proto.Kernel.t) : t Seq.t =
-    let open Exp in
-    let shared = shared_memory k.arrays in
-    let rec on_p : Proto.Code.t -> t Seq.t =
-      function
-      | Acc (x, {index=l; _}) ->
-        (* Flatten n-dimensional array and apply word size *)
-        (match Variable.Map.find_opt x shared with
-        | Some a ->
-          let e =
-            l
-            |> byte_count_multiplier a.byte_count
-            |> flatten_multi_dim a.dim
-          in
-          Seq.return (Index {shared_array=x; index=e})
-        | None -> Seq.empty)
-      | Sync _ ->
-        Seq.empty
-      | Decl {body=p; var; _} ->
-        on_p p |> Seq.map (fun (i:t) -> Decl (var, i))
-      | Cond (b, p) ->
-        on_p p
-        |> Seq.map (fun (i:t) : t -> Cond (b, i))
-      | Loop (r, p) ->
-        on_p p
-        |> Seq.map (fun i ->
-          match uniform params.block_dim r with
-          | Some r' ->
-            let cnd =
-              b_and
-                (n_ge (Var r.var) r.lower_bound)
-                (n_lt (Var r.var) r.upper_bound)
-            in
-            Loop (r', Cond(cnd, i))
-          | None ->
-            Loop (r, i)
-        )
-      | Skip -> Seq.empty
-      | Seq (p, q) ->
-        Seq.append (on_p p) (on_p q)
-    in
-    k.code
-    |> Proto.Code.subst_block_dim params.block_dim
-    |> Proto.Code.subst_grid_dim params.grid_dim
-    |> on_p
 end
 
 module Silent = Make(Logger.Silent)
