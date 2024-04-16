@@ -117,7 +117,7 @@ module Make (L:Logger.Logger) = struct
   :
     t
   =
-    let shared = S.shared_memory k.arrays ~word_size:cfg.word_size in
+    let shared = S.shared_memory k.arrays ~bytes_per_word:cfg.bytes_per_word in
     let rec from_p (locals:Variable.Set.t) : Proto.Code.t -> t =
       function
       | Skip -> Skip
@@ -129,7 +129,7 @@ module Make (L:Logger.Logger) = struct
             let e =
               l
               |> S.byte_count_multiplier
-                ~word_size:cfg.word_size
+                ~bytes_per_word:cfg.bytes_per_word
                 ~byte_count:v.byte_count
               |> S.flatten_multi_dim v.dim
             in

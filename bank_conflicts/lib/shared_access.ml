@@ -123,16 +123,16 @@ module Make (L:Logger.Logger) = struct
     else None
 
   (* Given an n-dimensional array access apply type modifiers *)
-  let byte_count_multiplier ~word_size ~byte_count (l:Exp.nexp list) : Exp.nexp list =
-    if byte_count/word_size = 1 then
+  let byte_count_multiplier ~bytes_per_word ~byte_count (l:Exp.nexp list) : Exp.nexp list =
+    if byte_count/bytes_per_word = 1 then
       l
     else (
       let open Exp in
       let n_s = Exp.n_to_string in
-      let bs = string_of_int byte_count ^  "/" ^ string_of_int word_size in
+      let bs = string_of_int byte_count ^  "/" ^ string_of_int bytes_per_word in
       let arr l = List.map n_s l |> Common.join ", " in
       let l' = List.map (fun n ->
-        n_mult (Num byte_count) (n_div n (Num word_size))
+        n_mult (Num byte_count) (n_div n (Num bytes_per_word))
         ) l
       in
       L.info ("Applied byte-modifier : " ^ bs ^ " " ^ arr l  ^ " -> " ^ arr l');
@@ -161,14 +161,14 @@ module Make (L:Logger.Logger) = struct
       ) (Common.zip l dim) (Num 0)
 
   (* Given a map of memory descriptors, return a map of array sizes *)
-  let shared_memory ~word_size (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t =
+  let shared_memory ~bytes_per_word (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t =
     mem
     |> Variable.Map.filter_map (fun _ v ->
       if Memory.is_shared v then
         let ty = Common.join " " v.data_type |> C_type.make in
         match C_type.sizeof ty with
         | Some n -> Some {byte_count=n; dim=v.size}
-        | None -> Some {byte_count=word_size; dim=v.size}
+        | None -> Some {byte_count=bytes_per_word; dim=v.size}
       else
         None
     )
@@ -183,7 +183,7 @@ module Make (L:Logger.Logger) = struct
   :
     Proto.Code.t Proto.Kernel.t
   =
-    let shared = shared_memory k.arrays ~word_size:params.word_size in
+    let shared = shared_memory k.arrays ~bytes_per_word:params.bytes_per_word in
     let rec simpl : Proto.Code.t -> Proto.Code.t =
       function
       | Acc (x, ({index=l; _} as a)) ->
@@ -194,7 +194,7 @@ module Make (L:Logger.Logger) = struct
             let e =
               l
               |> byte_count_multiplier
-                ~word_size:params.word_size
+                ~bytes_per_word:params.bytes_per_word
                 ~byte_count:v.byte_count
               |> flatten_multi_dim v.dim
             in

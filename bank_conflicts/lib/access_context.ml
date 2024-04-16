@@ -61,7 +61,7 @@ module Make (L:Logger.Logger) = struct
    *)
   let from_kernel (cfg:Config.t) (k: Proto.Code.t Proto.Kernel.t) : t Seq.t =
     let open Exp in
-    let shared = S.shared_memory k.arrays ~word_size:cfg.word_size in
+    let shared = S.shared_memory k.arrays ~bytes_per_word:cfg.bytes_per_word in
     let rec on_p : Proto.Code.t -> t Seq.t =
       function
       | Acc (x, {index=l; _}) ->
@@ -71,7 +71,7 @@ module Make (L:Logger.Logger) = struct
           let e =
             l
             |> S.byte_count_multiplier
-              ~word_size:cfg.word_size
+              ~bytes_per_word:cfg.bytes_per_word
               ~byte_count:a.byte_count
             |> S.flatten_multi_dim a.dim
           in
