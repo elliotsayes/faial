@@ -221,6 +221,16 @@ let n_mod n1 n2 =
   | Num n1, Num n2 -> Num (Common.modulo n1 n2)
   | _, _ -> Bin (Mod, n1, n2)
 
+let n_left_shift (l: nexp) (r:nexp) : nexp =
+  match l, r with
+  | a, Num n -> Bin (Mult, a, Num (Common.pow ~base:2 n))
+  | _, _ -> Bin (LeftShift, l, r)
+
+let n_right_shift (l: nexp) (r:nexp) : nexp =
+  match l, r with
+  | a, Num n -> Bin (Div, a, Num (Common.pow ~base:2 n))
+  | _, _ -> Bin (RightShift, l, r)
+
 let n_bin o n1 n2 =
   try
     match o, n1, n2 with
@@ -230,26 +240,29 @@ let n_bin o n1 n2 =
     | Mult, _, _ -> n_mult n1 n2
     | Div, _, _ -> n_div n1 n2
     | Mod, _, _ -> n_mod n1 n2
+    | LeftShift, _, _ -> n_left_shift n1 n2
+    | RightShift, _, _ -> n_right_shift n1 n2
     | _, _, _ -> Bin (o, n1, n2)
   with
     Division_by_zero -> Bin (o, n1, n2)
-
-let b_rel o b1 b2 =
-  match b1, b2 with
-  | Bool b1, Bool b2 -> Bool (eval_brel o b1 b2)
-  | _, _ -> BRel (o, b1, b2)
 
 let b_or b1 b2 =
   match b1, b2 with
   | Bool true, _ | _, Bool true -> Bool true
   | Bool false, b | b, Bool false -> b
-  | _, _ -> b_rel BOr b1 b2
+  | _, _ -> BRel (BOr, b1, b2)
 
 let b_and b1 b2 =
   match b1, b2 with
   | Bool true, b | b, Bool true -> b
   | Bool false, _ | _, Bool false -> Bool false
-  | _, _ -> b_rel BAnd b1 b2
+  | _, _ -> BRel (BAnd, b1, b2)
+
+let b_rel o b1 b2 =
+  match o, b1, b2 with
+  | _, Bool b1, Bool b2 -> Bool (eval_brel o b1 b2)
+  | BAnd, b1, b2 -> b_and b1 b2
+  | BOr, b1, b2 -> b_or b1 b2
 
 let rec b_not : bexp -> bexp =
   function
@@ -273,6 +286,11 @@ let b_impl b1 b2 =
 
 let b_true = Bool true
 let b_false = Bool false
+
+let n_bit_not : nexp -> nexp =
+  function
+  | Num n -> Num (~- n)
+  | e -> BitNot e
 
 let cast_int : bexp -> nexp =
   function
