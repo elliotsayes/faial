@@ -641,7 +641,7 @@ module AccessState = struct
   let add_var (lbl:string) (f:Variable.t -> Stmt.t list) (st:t) : (t * Variable.t) =
     let count = !counter in
     counter := count + 1;
-    let name : string = "_unknown_" ^ string_of_int count in
+    let name : string = "@AccessState" ^ string_of_int count in
     let x = {Variable.name=name; Variable.label=Some lbl;Variable.location=None} in
     (f x @ st, x)
 

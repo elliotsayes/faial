@@ -354,7 +354,7 @@ module Unknown = struct
   let create (label:string) (st:t) : t * Variable.t =
     let count = Variable.Set.cardinal st in
     let v =
-      ("__unk" ^ string_of_int count)
+      ("@Unknown" ^ string_of_int count)
       |> Variable.from_name
       |> Variable.set_label label
     in

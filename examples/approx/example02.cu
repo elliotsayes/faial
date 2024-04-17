@@ -1,5 +1,5 @@
 //saxpy,ind,ctrl
-//_unknown_1, _unknown_2
+//@AccessState1, @AccessState2
 /*
 Example 2: data flows from array to conditional
 

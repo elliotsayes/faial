@@ -1,5 +1,5 @@
 //saxpy,ind,ctrl
-//_unknown_1, j, k
+//@AccessState1, j, k
 /*
 Example 3: data flows from array to lower bound of loop
 
