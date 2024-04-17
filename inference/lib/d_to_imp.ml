@@ -816,9 +816,17 @@ let rec parse_stmt
     | Some s ->
       if List.length s.params = List.length args then (
         let* args = with_msg "call.args" (cast_map Arg.parse) args in
-        args |> ret_args (fun args ->
-          let args = List.map2 (fun x y -> (x, y)) s.params args in
-          Imp.Stmt.Call {kernel=s.kernel; ty=s.ty; args}
+        let r =
+          args
+          |> ret_args (fun args ->
+            let args = List.map2 (fun x y -> (x, y)) s.params args in
+            Imp.Stmt.Call {kernel=s.kernel; ty=s.ty; args}
+          )
+        in
+        let* l = cast_map parse_decl l |> Result.map List.concat in
+        r
+        |> Result.map (fun s ->
+          Imp.Stmt.Decl l :: s
         )
       ) else
         root_cause "Args mismatch!"

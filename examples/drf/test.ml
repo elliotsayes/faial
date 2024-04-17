@@ -82,6 +82,8 @@ let tests = [
   "drf-assert-loop.cu", [], 0;
   (* Bug from generating unknowns from function calls *)
   "racy-funcion-call-unknowns.cu", [], 1;
+  (* Bug from generating unknowns from a kernel call *)
+  "racy-kernel-calls-return.cu", [], 1;
 ]
 
 (* These are kernels that are being documented, but are
