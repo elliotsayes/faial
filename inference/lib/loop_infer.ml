@@ -13,6 +13,7 @@ type comparator =
   | LtEq
   | Gt
   | GtEq
+  | RelMinus
 
 let parse_inc_op (o:string) : increment option =
   match o with
@@ -30,6 +31,7 @@ let parse_cmp (o:string) : comparator option =
   | ">" -> Some Gt
   | "<=" -> Some LtEq
   | ">=" -> Some GtEq
+  | "-" -> Some RelMinus
   | _ -> None
 
 type 'a unop = {op: 'a; arg: D_lang.Expr.t}
@@ -126,6 +128,7 @@ let cmp_to_s : comparator -> string =
   | Gt -> ">"
   | LtEq -> "<="
   | GtEq -> ">="
+  | RelMinus -> "-"
 
 let inc_to_s : increment -> string =
   function

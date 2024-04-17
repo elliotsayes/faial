@@ -681,12 +681,16 @@ module ForRange = struct
     (* (int i = 0; i <= 4; i++) *)
     | {init=lb; cond={op=LtEq; arg=ub; _}; _} ->
       (lb, ub, Increase)
+    (* (int i = 4; i - k; i++) *)
+    | {init=lb; cond={op=RelMinus; arg=ub; _}; _} ->
+      (lb, ub, Range.Increase)
     (* (int i = 4; i >= 0; i--) *)
     | {init=ub; cond={op=GtEq; arg=lb; _}; _} ->
       (lb, ub, Decrease)
     (* (int i = 4; i > 0; i--) *)
     | {init=ub; cond={op=Gt; arg=lb; _}; _} ->
       (Bin (Plus, Num 1, lb), ub, Decrease)
+
 
   let infer_step (r:t) : Range.Step.t option =
     match r.inc with
