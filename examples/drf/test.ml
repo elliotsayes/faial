@@ -80,6 +80,8 @@ let tests = [
   "macro.cu", [], 2; (* syntax error if the macro is not defined *)
   (* A conditional break is inferred as an assertion *)
   "drf-assert-loop.cu", [], 0;
+  (* Bug from generating unknowns from function calls *)
+  "racy-funcion-call-unknowns.cu", [], 1;
 ]
 
 (* These are kernels that are being documented, but are

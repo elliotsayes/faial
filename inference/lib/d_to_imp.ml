@@ -616,7 +616,7 @@ let parse_decl
       | Some n -> Imp.Decl.set ~ty x n
       | None -> Imp.Decl.unset ~ty x
     in
-    Ok (d :: Unknown.as_decls vars )
+    Ok (Unknown.as_decls vars @ [d])
   ) else (
     L.warning ("parse_decl: skipping non-int local variable '" ^ Variable.name x ^ "' type: " ^ C_type.to_string ty);
     Ok []
