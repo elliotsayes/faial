@@ -16,6 +16,9 @@ let label (x:t) =
 
 let label_opt (x:t) = x.label
 
+let set_label (label:string) (x:t) : t =
+  { x with label = Some label }
+
 let tid_x : t = from_name "threadIdx.x"
 let tid_y : t = from_name "threadIdx.y"
 let tid_z : t = from_name "threadIdx.z"

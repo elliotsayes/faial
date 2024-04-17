@@ -279,7 +279,7 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
   | UnaryOperator _
   | CXXOperatorCallExpr _ ->
     let lbl = D_lang.Expr.to_string e in
-    L.warning ("WARNING: parse_exp: rewriting to unknown: " ^ lbl);
+    L.warning ("parse_exp: rewriting to unknown: " ^ lbl);
     Ok (Unknown lbl)
 
   | _ ->
@@ -344,24 +344,24 @@ end
    and boolean expressions.
  *)
 module Unknown = struct
-  type t = int
+  type t = Variable.Set.t
 
-  let make : t = 0
+  let make : t = Variable.Set.empty
 
-  let get_var (st:t) = Variable.from_name ("__unk" ^ string_of_int st)
+  let is_empty : t -> bool =
+    Variable.Set.is_empty
 
   let create (label:string) (st:t) : t * Variable.t =
-    let x = get_var st in
-    (st + 1, { x with label = Some label })
+    let count = Variable.Set.cardinal st in
+    let v =
+      ("__unk" ^ string_of_int count)
+      |> Variable.from_name
+      |> Variable.set_label label
+    in
+    Variable.Set.add v st, v
 
   let get (st:t) : Variable.Set.t =
-    let rec add (c:int) : Variable.Set.t =
-      if c <= 0 then Variable.Set.empty
-      else
-        let c = c - 1 in
-        Variable.Set.add (get_var c) (add c)
-    in
-    add st
+    st
 
   let rec handle_n (u:t) (e:IExp.t) : (t * nexp) =
     match e with
@@ -461,14 +461,14 @@ module Unknown = struct
   (* Convert a d_nexp into an nexp only if there are no unknowns *)
   let try_to_nexp (n:IExp.t) : nexp option =
     let (u, n) = handle_n make n in
-    if u = 0
+    if is_empty u
     then Some n
     else None
 
   (* Convert a d_bexp into an bexp only if there are no unknowns *)
   let try_to_bexp (b:IExp.t) : bexp option =
     let (u, b) = handle_b make b in
-    if u = 0
+    if is_empty u
     then Some b
     else None
 
