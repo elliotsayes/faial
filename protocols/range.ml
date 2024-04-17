@@ -76,11 +76,11 @@ let to_string (r : t) : string =
   | _ -> "; " ^ Variable.name r.var ^ " " ^ Step.to_string r.step
   in
   let d = match r.dir with
-  | Increase -> "↑"
-  | Decrease -> "↓"
+  | Increase -> ""
+  | Decrease -> ";↓"
   in
   x ^ " ∈ " ^  C_type.to_string r.ty ^ " | " ^
-  lb ^ " <= " ^ x  ^  " < " ^ ub ^ s ^ "; " ^ d
+  lb ^ " ≤ " ^ x  ^  " ≤ " ^ ub ^ s ^ d
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
 
@@ -154,7 +154,7 @@ let to_cond (r:t) : bexp =
   @
   [
     (* lb <= x < ub *)
-    n_le lb x; n_lt x ub;
+    n_le lb x; n_le x ub;
     ty;
   ]
   |> b_and_ex

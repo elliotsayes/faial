@@ -84,6 +84,9 @@ let tests = [
   "racy-funcion-call-unknowns.cu", [], 1;
   (* Bug from generating unknowns from a kernel call *)
   "racy-kernel-calls-return.cu", [], 1;
+  "drf-loop1.cu", [], 0;
+  "drf-loop2.cu", [], 0;
+  "racy-loop1.cu", [], 1;
 ]
 
 (* These are kernels that are being documented, but are

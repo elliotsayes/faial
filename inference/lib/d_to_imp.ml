@@ -678,12 +678,12 @@ module ForRange = struct
     (* (int i = 0; i < 4; i++) *)
     | {init=lb; cond={op=Lt; arg=ub; _}; _} ->
       (lb, Bin (Minus, ub, Num 1), Range.Increase)
-    (* (int i = 4; i >= 0; i--) *)
-    | {init=ub; cond={op=GtEq; arg=lb; _}; _} ->
-      (lb, ub, Decrease)
     (* (int i = 0; i <= 4; i++) *)
     | {init=lb; cond={op=LtEq; arg=ub; _}; _} ->
       (lb, ub, Increase)
+    (* (int i = 4; i >= 0; i--) *)
+    | {init=ub; cond={op=GtEq; arg=lb; _}; _} ->
+      (lb, ub, Decrease)
     (* (int i = 4; i > 0; i--) *)
     | {init=ub; cond={op=Gt; arg=lb; _}; _} ->
       (Bin (Plus, Num 1, lb), ub, Decrease)
