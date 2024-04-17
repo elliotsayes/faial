@@ -177,12 +177,14 @@ module Solver = struct
     let pair f k =
       (k, f k)
     in
+    (* optimize *)
+    let ks = List.map Proto.Kernel.opt s.kernels in
     if s.explain then
-      SlicedCost (List.map (pair (sliced_cost s)) s.kernels)
+      SlicedCost (List.map (pair (sliced_cost s)) ks)
     else if s.show_ratio then
-      RatioCost (List.map (pair (ratio_cost s)) s.kernels)
+      RatioCost (List.map (pair (ratio_cost s)) ks)
     else
-      TotalCost (List.map (pair (total_cost s)) s.kernels)
+      TotalCost (List.map (pair (total_cost s)) ks)
 
 end
 

@@ -53,6 +53,31 @@ let location (x: t) : Location.t =
   |> shared_array
   |> Variable.location
 
+let optimize : t -> t =
+  let rec opt : t -> Variable.Set.t * t =
+    function
+    | Index a ->
+      let e = a.index in
+      Freenames.free_names_nexp e Variable.Set.empty,
+      Index { a with index = e }
+    | Loop (r, a) ->
+      let fns, a = opt a in
+      Freenames.free_names_range r fns, Loop (r, a)
+    | Cond (e, a) ->
+      let fns, a = opt a in
+      Freenames.free_names_bexp e fns, Cond (e, a)
+    | Decl (x, a) ->
+      let fns, a = opt a in
+      let a =
+        if Variable.Set.mem x fns then
+          Decl(x, a)
+        else
+          a
+      in
+      fns, a
+  in
+  fun a ->
+    opt a |> snd
 
 module Make (L:Logger.Logger) = struct
   module R = Uniform_range.Make(L)
@@ -101,6 +126,7 @@ module Make (L:Logger.Logger) = struct
     |> Proto.Code.subst_block_dim cfg.block_dim
     |> Proto.Code.subst_grid_dim cfg.grid_dim
     |> on_p
+    |> Seq.map optimize
 end
 
 module Silent = Make(Logger.Silent)

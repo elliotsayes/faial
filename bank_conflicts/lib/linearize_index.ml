@@ -85,6 +85,7 @@ module Make (L:Logger.Logger) = struct
             ~bytes_per_word:cfg.bytes_per_word
             ~byte_count:a.byte_count
           |> flatten_multi_dim a.dim
+          |> Constfold.n_opt
       )
 
 end
