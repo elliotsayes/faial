@@ -87,10 +87,15 @@ module Code = struct
     | _, _ -> Cond(b, p)
 
   let loop (r:Range.t) (p:t) : t =
-    match r.lower_bound, r.upper_bound, p with
-    | _, _, Skip -> Skip
-    | Num lb, Num ub, _ when lb >= ub -> Skip
-    | _, _, _ -> Loop (r, p)
+    if p = Skip then Skip else
+    let is_empty =
+      r
+      |> Range.is_empty
+      |> Exp.b_eval_res
+      |> Result.value ~default:false
+    in
+    if is_empty then Skip else
+    Loop (r, p)
 
   let decl ?(ty=C_type.int) (var:Variable.t) : t -> t =
     function

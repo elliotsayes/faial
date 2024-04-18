@@ -86,14 +86,18 @@ let tests = [
   "racy-kernel-calls-return.cu", [], 1;
   (* (int j = 0; j < n; j++) *)
   "drf-loop1.cu", [], 0;
-  (* (int j = n; j >= 0; j--) *)
-  "drf-loop2.cu", [], 0;
-  (* (int j = 0; j <= n; j++) *)
-  "racy-loop1.cu", [], 1;
   (* (int i = 0; i <= 4; i++) *)
   "drf-loop3.cu", [], 0;
+  (* (int j = n; j >= 0; j--) *)
+  "drf-loop2.cu", [], 0;
+  (* (int j = n; j > 0; j--) *)
+  "drf-loop5.cu", [], 0;
   (* (int i = 4; i - k; i++) *)
   "drf-loop4.cu", [], 0;
+
+  (* (int j = 0; j <= n; j++) *)
+  "racy-loop1.cu", ["-p"; "n=0"; "--index=[0]"], 1;
+
 ]
 
 (* These are kernels that are being documented, but are

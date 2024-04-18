@@ -165,10 +165,10 @@ let prev (r:t) : nexp =
   | Decrease -> Step.inc r.step (Var r.var)
 
 let has_next (r:t) : bexp =
-  n_lt r.lower_bound r.upper_bound
+  n_le r.lower_bound r.upper_bound
 
 let is_empty (r:t) : bexp =
-  n_ge r.lower_bound r.upper_bound
+  b_not (has_next r)
 
 let is_first (r:t) : bexp =
   n_eq (Var r.var) r.lower_bound
