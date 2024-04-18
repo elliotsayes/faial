@@ -7,6 +7,5 @@ void saxpy(unsigned int n, float a, float *x, float *y)
   for (int j = n; j >= 0; j--) {
     f += y[j];
   }
-  int offset = 1;
   y[i + n + 1] = a*x[i] + f;
 }
