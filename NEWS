@@ -1,12 +1,14 @@
 2024-04:
-- Bank conflicts: add better support for abstracted variables.
 - Inference: improved support for array aliasing with shared memory.
 - Inference: added support for assertions anywhere in the code
   (not just in the beginning of the kernel).
 - Inference: added support for inferring assertions from if(...)break;
   inside loops.
+- Inference: improved handling of boundary conditions of loops.
+- Inference: improved handling of bitwise not (~).
 - DRF: grid-level analysis was mistakenly taking into account
   shared memory some times.
+- Bank conflicts: add better support for abstracted variables.
 
 2024-03:
 - Inference: improved how we handle mutated variables in loops/conditionals.
