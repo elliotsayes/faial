@@ -19,9 +19,7 @@ test:
     - rm -f ./target/*/faial
     - eval $(opam config env)
     - ocamlc --version
-    - export PATH="$PATH:$PWD"
-    # Make sure faial-drf is not in the PATH
-    - which faial-drf; [ $? = 1 ]
+    - export PATH="$PWD:$PATH"
     - make
     - make test
 
