@@ -147,9 +147,12 @@ let () =
     (if given.status = Unix.WEXITED expected_status then (
       print_endline " ✔";
     ) else (
+      let exit_code = Subprocess.exit_code given.status |> string_of_int in
       print_endline " ✘";
+      print_endline ("------------------------ OUTPUT ------------------------");
       print_endline (given.stdout);
-      print_endline ("ERROR: Expected status: " ^ string_of_int expected_status ^ " but given: " ^ Subprocess.Completed2.to_string given);
+      print_endline (given.stderr);
+      print_endline ("ERROR: Expected return code " ^ string_of_int expected_status ^ " but got " ^ exit_code);
       exit 1
     ));
     Stdlib.flush_all ();

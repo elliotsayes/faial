@@ -115,6 +115,13 @@ let neither_to_string
   (* Close output to ensure it is processed *)
   close_out oc
 
+let exit_code : Unix.process_status -> int =
+  function
+  | WEXITED n
+  | WSIGNALED n
+  | WSTOPPED n ->
+    n
+
 let process_status_to_string : Unix.process_status -> string =
   function
   | WEXITED n -> "Process exited with return code: " ^ string_of_int n
