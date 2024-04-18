@@ -20,6 +20,8 @@ test:
     - eval $(opam config env)
     - ocamlc --version
     - export PATH="$PATH:$PWD"
+    # Make sure faial-drf is not in the PATH
+    - which faial-drf; [ $? = 1 ]
     - make
     - make test
 
