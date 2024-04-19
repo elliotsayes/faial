@@ -282,6 +282,15 @@ module Kernel = struct
     in
     constants k.pre []
 
+  let filter_access (f: Access.t -> bool) (k:Code.t t) : Code.t t =
+    { k with
+      code = Code.filter (
+      function
+      | Acc (_, a) -> f a
+      | _ -> true
+      ) k.code
+    }
+
   let filter_array (name:string) (k:Code.t t) : Code.t t =
     { k with
       (* update the set of arrays *)

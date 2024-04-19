@@ -34,6 +34,8 @@ module Solver = struct
     explain: bool;
     per_request: bool;
     ignore_absent: bool;
+    only_reads: bool;
+    only_writes: bool;
   }
 
   let make
@@ -57,6 +59,8 @@ module Solver = struct
     ~explain
     ~per_request
     ~ignore_absent
+    ~only_reads
+    ~only_writes
   :
     t
   =
@@ -86,6 +90,8 @@ module Solver = struct
       explain;
       per_request;
       ignore_absent;
+      only_reads;
+      only_writes;
     }
 
   let bank_conflict_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
@@ -189,7 +195,20 @@ module Solver = struct
       (k, f k)
     in
     (* optimize *)
-    let ks = List.map Proto.Kernel.opt s.kernels in
+    let retain_acc =
+      if s.only_reads then
+        Protocols.Access.is_read
+      else if s.only_writes then
+        Protocols.Access.is_write
+      else
+        fun a ->
+          Protocols.Access.is_read a || Protocols.Access.is_write a
+    in
+    let ks =
+      s.kernels
+      |> List.map (Proto.Kernel.filter_access retain_acc)
+      |> List.map Proto.Kernel.opt
+    in
     if s.explain then
       SlicedCost (List.map (pair (sliced_cost s)) ks)
     else if s.per_request then
@@ -371,6 +390,8 @@ let run
   ~output_json
   ~ignore_absent
   ~per_request
+  ~only_reads
+  ~only_writes
   (kernels : Proto.Code.t Proto.Kernel.t list)
 :
   unit
@@ -396,6 +417,8 @@ let run
     ~per_request
     ~kernels
     ~ignore_absent
+    ~only_reads
+    ~only_writes
   in
   if output_json then
     JUI.run app
@@ -426,7 +449,9 @@ let pico
   (asympt:bool)
   (count_shared_access:bool)
   (output_json:bool)
-  (per_request: bool)
+  (per_request:bool)
+  (only_reads:bool)
+  (only_writes:bool)
 =
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
   let block_dim = parsed.options.block_dim in
@@ -458,6 +483,8 @@ let pico
     ~output_json
     ~per_request
     ~ignore_absent
+    ~only_reads
+    ~only_writes
     kernels
 
 
@@ -578,6 +605,14 @@ let output_json =
   let doc = "Output in JSON." in
   Arg.(value & flag & info ["json"] ~doc)
 
+let only_reads =
+  let doc = "Only account for load transactions (access reads)." in
+  Arg.(value & flag & info ["only-reads"] ~doc)
+
+let only_writes =
+  let doc = "Only account for store transactions (access writes)." in
+  Arg.(value & flag & info ["only-writes"] ~doc)
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -603,6 +638,8 @@ let pico_t = Term.(
   $ count_shared_accesses
   $ output_json
   $ per_request
+  $ only_reads
+  $ only_writes
 )
 
 let info =
