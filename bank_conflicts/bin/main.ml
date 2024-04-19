@@ -29,13 +29,16 @@ module Solver = struct
     show_ra: bool;
     skip_simpl_ra: bool;
     asympt: bool;
-    params: Config.t;
+    config: Config.t;
     count_shared_access: bool;
     explain: bool;
     per_request: bool;
     ignore_absent: bool;
     only_reads: bool;
     only_writes: bool;
+    block_dim: Dim3.t;
+    grid_dim: Dim3.t;
+    params: (string * int) list;
   }
 
   let make
@@ -54,13 +57,16 @@ module Solver = struct
     ~skip_simpl_ra
     ~skip_distinct_vars
     ~asympt
-    ~params
+    ~config
     ~count_shared_access
     ~explain
     ~per_request
     ~ignore_absent
     ~only_reads
     ~only_writes
+    ~block_dim
+    ~grid_dim
+    ~params
   :
     t
   =
@@ -85,21 +91,24 @@ module Solver = struct
       show_ra;
       skip_simpl_ra;
       asympt;
-      params;
+      config;
       count_shared_access;
       explain;
       per_request;
       ignore_absent;
       only_reads;
       only_writes;
+      block_dim;
+      grid_dim;
+      params;
     }
 
   let bank_conflict_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
     fun locals idx ->
-      (Index_analysis.Default.transaction_count app.params locals idx) - 1
+      (Index_analysis.Default.transaction_count app.config locals idx) - 1
 
   let transaction_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
-      Index_analysis.Default.transaction_count app.params
+      Index_analysis.Default.transaction_count app.config
 
   let access_count (_:t) : Variable.Set.t -> Exp.nexp -> int =
     fun _ _ -> 1
@@ -130,7 +139,7 @@ module Solver = struct
     |> Result.map_error Errors.to_string
 
   let get_ra (a:t) (k:kernel) (idx_analysis: Variable.Set.t -> Exp.nexp -> int) : Ra.t =
-    let r = Ra.Default.from_kernel idx_analysis a.params k in
+    let r = Ra.Default.from_kernel idx_analysis a.config k in
     if a.skip_simpl_ra then r else Ra.simplify r
 
   type r_cost = (cost, string) Result.t
@@ -169,7 +178,7 @@ module Solver = struct
       else
         bank_conflict_count a
     in
-    Access_context.Default.from_kernel a.params k
+    Access_context.Default.from_kernel a.config k
     |> Seq.filter_map (fun s ->
       (* Convert a slice into an expression *)
       let r =
@@ -207,6 +216,12 @@ module Solver = struct
     let ks =
       s.kernels
       |> List.map (Proto.Kernel.filter_access retain_acc)
+      |> List.map (
+          Proto.Kernel.inline_all
+          ~block_dim:s.block_dim
+          ~grid_dim:s.grid_dim
+          ~globals:s.params
+        )
       |> List.map Proto.Kernel.opt
     in
     if s.explain then
@@ -385,13 +400,16 @@ let run
   ~skip_distinct_vars
   ~asympt
   ~only_cost
-  ~params
+  ~config
   ~count_shared_access
   ~output_json
   ~ignore_absent
   ~per_request
   ~only_reads
   ~only_writes
+  ~block_dim
+  ~grid_dim
+  ~params
   (kernels : Proto.Code.t Proto.Kernel.t list)
 :
   unit
@@ -411,7 +429,7 @@ let run
     ~skip_zero
     ~skip_simpl_ra
     ~skip_distinct_vars
-    ~params
+    ~config
     ~count_shared_access
     ~explain
     ~per_request
@@ -419,6 +437,9 @@ let run
     ~ignore_absent
     ~only_reads
     ~only_writes
+    ~block_dim
+    ~grid_dim
+    ~params
   in
   if output_json then
     JUI.run app
@@ -452,11 +473,12 @@ let pico
   (per_request:bool)
   (only_reads:bool)
   (only_writes:bool)
+  (params:(string * int) list)
 =
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
   let block_dim = parsed.options.block_dim in
   let grid_dim = parsed.options.grid_dim in
-  let params = Config.make ~block_dim ~grid_dim () in
+  let config = Config.make ~block_dim ~grid_dim () in
   let kernels : kernel list =
     parsed.kernels
     |> List.filter Proto.Kernel.has_shared_arrays
@@ -476,7 +498,7 @@ let pico
     ~cofloco_exe
     ~koat_exe
     ~skip_simpl_ra
-    ~params
+    ~config
     ~only_cost
     ~asympt
     ~count_shared_access
@@ -485,6 +507,9 @@ let pico
     ~ignore_absent
     ~only_reads
     ~only_writes
+    ~block_dim
+    ~grid_dim
+    ~params
     kernels
 
 
@@ -613,6 +638,10 @@ let only_writes =
   let doc = "Only account for store transactions (access writes)." in
   Arg.(value & flag & info ["only-writes"] ~doc)
 
+let params =
+  let doc = "Set the value of an integer parameter" in
+  Arg.(value & opt_all (pair ~sep:'=' string int) [] & info ["p"; "param"] ~docv:"KEYVAL" ~doc)
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -640,6 +669,7 @@ let pico_t = Term.(
   $ per_request
   $ only_reads
   $ only_writes
+  $ params
 )
 
 let info =

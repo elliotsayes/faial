@@ -6,56 +6,20 @@ open Stage0
   *)
 open Exp
 
-module Interval = struct
-  type t = { var: Variable.t; first_elem: Exp.nexp; last_elem: Exp.nexp}
-  let to_string (b:t) : string =
-    "{" ^
-      Exp.n_to_string b.first_elem ^ " ≤ " ^
-      Variable.name b.var ^ " ≤ " ^
-      Exp.n_to_string b.last_elem ^
-    "}"
-
-  let map (f:Exp.nexp -> Exp.nexp) (b:t) : t =
-    { b with
-      first_elem = f b.first_elem;
-      last_elem = f b.last_elem;}
-
-  module Make (S:Subst.SUBST) = struct
-    module M = Subst.Make(S)
-    let subst (s: S.t) : t -> t =
-      map (M.n_subst s)
-  end
-
-  module PSubstAssoc = Make(Subst.SubstAssoc)
-  module PSubstPair = Make(Subst.SubstPair)
-
-  let subst : (Variable.t * Exp.nexp) -> t -> t = PSubstPair.subst
-
-  let to_range (b:t) : Range.t =
-    {
-      var = b.var;
-      lower_bound = b.first_elem;
-      upper_bound = Exp.n_inc b.last_elem;
-      step = Plus (Num 1);
-      dir = Range.Increase;
-      ty = C_type.int;
-    }
-end
-
 type t =
   | Const of int
-  | Sum of Interval.t * t
+  | Sum of Set_range.t * t
   | Add of t list
 
 let rec to_string : t -> string =
   function
   | Const x -> string_of_int x
-  | Sum (b, s) -> "Σ_" ^ Interval.to_string b ^ " " ^ to_string s
+  | Sum (b, s) -> "Σ_" ^ Set_range.to_string b ^ " " ^ to_string s
   | Add l -> List.map to_string l |> Common.join " + "
 
 module MakeSubst (S:Subst.SUBST) = struct
   module M = Subst.Make(S)
-  module B = Interval.Make(S)
+  module B = Set_range.Make(S)
 
   let rec subst (s: S.t) : t -> t =
     function
@@ -159,16 +123,15 @@ let adapt_error (r:('a, string) Result.t) : ('a, Errors.t) Result.t =
 
 module Make (L:Logger.Logger) = struct
   module I = Index_analysis.Make(L)
-
-
+(*
 let rec flatten : t -> (Exp.nexp, string) Result.t =
-  let (let*) = Result.bind in
+  let ( let* ) = Result.bind in
   function
   | Const k -> Ok (Num k)
   | Sum (b, s) ->
     let x = b.var in
     let (ub, s) =
-      if b.first_elem = Num 1 then
+      if Reals.is_one b.first_elem then
         (b.last_elem, s)
       else
         let ub = n_inc (n_minus b.last_elem b.first_elem) in
@@ -345,38 +308,47 @@ let rec n_pow ~base (e:Exp.nexp) : Exp.nexp =
   | Bin (Plus, e1, e2) -> n_mult (n_pow ~base e1) (n_pow ~base e2)
   | Bin (Minus, e1, e2) -> n_div (n_pow ~base e1) (n_pow ~base e2)
   | _ -> NCall ("pow" ^ string_of_int base, e)
-
+*)
 (* Given a range, try to build a Sum *)
 let sum (r:Range.t) (s:t) : t option =
   if s = Const 0 then Some (Const 0)
   else
     match r with
     | {step = Plus (Num 1); _} ->
-      let b : Interval.t = {
+      let b : Set_range.t = {
         var = r.var;
-        first_elem = r.lower_bound;
-        last_elem = n_dec r.upper_bound;
+        first_elem = Reals.from_nexp r.lower_bound;
+        last_elem = Reals.from_nexp r.upper_bound;
       } in
       Some (Sum (b, s))
-
-    | {step = Plus k; _} ->
+    | {var; step = Plus step; dir; lower_bound; upper_bound; _} ->
       let open Exp in
+      let x = Var var in
       (*
-                ub - lb
-        iters = -------
-                    k
+                    ub - lb
+        last_elem = -------
+                      k
       *)
-      let iters = n_div (n_minus r.upper_bound r.lower_bound) k in
-      (* x := k (x + lb + 1) *)
-      let new_range_var = n_mult (n_plus (Var r.var) (n_inc r.lower_bound)) k in
-      let s = subst (r.var, new_range_var) s in
-      let b : Interval.t = {
-        var = r.var;
-        first_elem = Num 1;
-        last_elem = iters;
+      let new_range_var =
+        match dir with
+        | Increase ->
+          (* x := k (x + lb) *)
+          n_mult (n_plus x lower_bound) step
+        | Decrease ->
+          (* x := ub - (x * step) *)
+          n_minus upper_bound (n_mult x step)
+      in
+      let iters =
+        n_div (n_minus upper_bound lower_bound) step
+      in
+      let s = subst (var, new_range_var) s in
+      let b : Set_range.t = {
+        var;
+        first_elem = Reals.from_int 0;
+        last_elem = Reals.from_nexp iters;
       } in
       Some (Sum (b, s))
-
+  (*
     | {
         step = Mult (Num k);
         _
@@ -408,10 +380,11 @@ let sum (r:Range.t) (s:t) : t option =
         last_elem = iters;
       } in
       Some (Sum (b, s))
+      *)
   | _ -> None
 
 let rec from_ra : Ra.t -> (t, string) Result.t =
-  let (let*) = Result.bind in
+  let ( let* ) = Result.bind in
   function
   | Ra.Tick k -> Ok (Const k)
   | Ra.Skip -> Ok (Const 0)
@@ -429,7 +402,8 @@ let run_ra ~show_code (r: Ra.t) : (string, Errors.t) Result.t =
   from_ra r
   |> Result.map (fun s ->
     (if show_code then (to_string s |> print_endline) else ());
-    simplify s
+    (* simplify s *)
+    to_string s
   )
   |> adapt_error
 
