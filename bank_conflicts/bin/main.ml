@@ -32,7 +32,7 @@ module Solver = struct
     params: Config.t;
     count_shared_access: bool;
     explain: bool;
-    show_ratio: bool;
+    per_request: bool;
     ignore_absent: bool;
   }
 
@@ -55,7 +55,7 @@ module Solver = struct
     ~params
     ~count_shared_access
     ~explain
-    ~show_ratio
+    ~per_request
     ~ignore_absent
   :
     t
@@ -84,21 +84,19 @@ module Solver = struct
       params;
       count_shared_access;
       explain;
-      show_ratio;
+      per_request;
       ignore_absent;
     }
 
   let bank_conflict_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
-    Index_analysis.Default.analyze app.params
+    fun locals idx ->
+      (Index_analysis.Default.transaction_count app.params locals idx) - 1
+
+  let transaction_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
+      Index_analysis.Default.transaction_count app.params
 
   let access_count (_:t) : Variable.Set.t -> Exp.nexp -> int =
     fun _ _ -> 1
-
-  let access_analysis (app:t) : Variable.Set.t -> Exp.nexp -> int =
-    if app.count_shared_access then
-      access_count app
-    else
-      bank_conflict_count app
 
   type cost = {
     amount: string;
@@ -133,11 +131,17 @@ module Solver = struct
   type slice = Access_context.t * Ra.t * r_cost
 
   let total_cost (a:t) (k:kernel) : r_cost =
-    let r = get_ra a k (access_analysis a) in
+    let metric =
+      if a.count_shared_access then
+        access_count a
+      else
+        bank_conflict_count a
+    in
+    let r = get_ra a k metric in
     get_cost a r
 
-  let ratio_cost (a:t) (k:kernel) : r_cost =
-    let numerator = get_ra a k (bank_conflict_count a) in
+  let transactions_per_request (a:t) (k:kernel) : r_cost =
+    let numerator = get_ra a k (transaction_count a) in
     let denominator = get_ra a k (access_count a) in
     let start = Unix.gettimeofday () in
     Maxima.run_ra_ratio
@@ -151,7 +155,14 @@ module Solver = struct
     |> Result.map_error Errors.to_string
 
   let sliced_cost (a:t) (k:kernel) : slice list =
-    let idx_analysis = access_analysis a in
+    let idx_analysis =
+      if a.count_shared_access then
+        access_count a
+      else if a.per_request then
+        transaction_count a
+      else
+        bank_conflict_count a
+    in
     Access_context.Default.from_kernel a.params k
     |> Seq.filter_map (fun s ->
       (* Convert a slice into an expression *)
@@ -181,8 +192,8 @@ module Solver = struct
     let ks = List.map Proto.Kernel.opt s.kernels in
     if s.explain then
       SlicedCost (List.map (pair (sliced_cost s)) ks)
-    else if s.show_ratio then
-      RatioCost (List.map (pair (ratio_cost s)) ks)
+    else if s.per_request then
+      RatioCost (List.map (pair (transactions_per_request s)) ks)
     else
       TotalCost (List.map (pair (total_cost s)) ks)
 
@@ -359,7 +370,7 @@ let run
   ~count_shared_access
   ~output_json
   ~ignore_absent
-  ~show_ratio
+  ~per_request
   (kernels : Proto.Code.t Proto.Kernel.t list)
 :
   unit
@@ -382,7 +393,7 @@ let run
     ~params
     ~count_shared_access
     ~explain
-    ~show_ratio
+    ~per_request
     ~kernels
     ~ignore_absent
   in
@@ -415,7 +426,7 @@ let pico
   (asympt:bool)
   (count_shared_access:bool)
   (output_json:bool)
-  (show_ratio: bool)
+  (per_request: bool)
 =
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
   let block_dim = parsed.options.block_dim in
@@ -445,7 +456,7 @@ let pico
     ~asympt
     ~count_shared_access
     ~output_json
-    ~show_ratio
+    ~per_request
     ~ignore_absent
     kernels
 
@@ -549,11 +560,11 @@ let explain =
   let doc = "Show bank-conflicts per location." in
   Arg.(value & flag & info ["explain"] ~doc)
 
-let show_ratio =
-  let doc = "Show the ratio between bank-conflicts over number of shared " ^
-  "accesses (ranges from 0 .. 31)."
+let per_request =
+  let doc = "Average number of shared memorytransactions performed for each " ^
+  "shared memory access."
   in
-  Arg.(value & flag & info ["ratio"] ~doc)
+  Arg.(value & flag & info ["per-request"] ~doc)
 
 let show_code =
   let doc = "Show the code being sent to the solver if any." in
@@ -591,7 +602,7 @@ let pico_t = Term.(
   $ asympt
   $ count_shared_accesses
   $ output_json
-  $ show_ratio
+  $ per_request
 )
 
 let info =

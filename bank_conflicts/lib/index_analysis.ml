@@ -1,5 +1,6 @@
 open Stage0
 open Protocols
+
 (*
   Given an arithmetic expression perform index analysis that yields the
   number of bank conflicts:
@@ -88,10 +89,10 @@ module Make (L:Logger.Logger) = struct
         does _not_ contain any variables.
     4. Otherwise, return the max number of bank conflicts.
   *)
-  let analyze (params:Config.t) (thread_locals : Variable.Set.t) (n : Exp.nexp) : int =
+  let transaction_count (params:Config.t) (thread_locals : Variable.Set.t) (n : Exp.nexp) : int =
     let bc_fail (reason : string) : int =
       L.warning (reason ^ ": " ^ Exp.n_to_string n);
-      (params.num_banks - 1)
+      params.num_banks
     in
     let thread_locals = Variable.Set.diff thread_locals Variable.tid_var_set in
     let fvs = Freenames.free_names_nexp n Variable.Set.empty in
@@ -111,7 +112,9 @@ module Make (L:Logger.Logger) = struct
       in
       let n = OffsetAnalysis.remove_offset n in
       try
-        (Vectorized.access n ctx |> Vectorized.NMap.max).value - 1
+        let tsx : int = (Vectorized.access n ctx |> Vectorized.NMap.max).value in
+        assert (tsx >= 1); (* make sure there's at least one transaction being returned *)
+        tsx
       with
         Failure _ ->
         bc_fail "Could not analyze expression"
