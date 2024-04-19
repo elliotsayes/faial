@@ -28,7 +28,9 @@ let tests = [
   "30tid.cu", ["--blockDim=1024"; "--gridDim=1"; "--only-cost"], "1";
   "32tid.cu", ["--blockDim=1024"; "--gridDim=1"; "--only-cost"], "31";
   "loops-1.cu", ["--only-cost"], "Σ_{0 ≤ i ≤ n - 1} 1";
-  "loops-1-step.cu", ["-p"; "lb=2"; "-p"; "ub=33"; "--only-cost"], "Σ_{0 ≤ j ≤ 6} 1";
+  "loops-1-step-plus.cu", ["--only-cost"], "Σ_{0 ≤ j ≤ (ub - lb) / step} 1";
+  "loops-1-step-minus.cu", ["--only-cost"], "Σ_{0 ≤ j ≤ (ub - lb) / step} 1";
+  "loops-1-step-minus.cu", ["-p"; "lb=2"; "-p"; "ub=33"; "-p"; "step=5"; "--only-cost"], "Σ_{0 ≤ j ≤ 6} 1";
 ]
 
 (* These are kernels that are being documented, but are
@@ -44,7 +46,6 @@ let unsupported : Fpath.t list =
     "ifs-1.cu";
     "ifs-seq-3.cu";
     "loops-1-bitwise.cu";
-    "loops-1-step.cu";
     "loops-1-div.cu";
     "loops-1-minus.cu";
     "loops-1-tid.cu";

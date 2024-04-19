@@ -332,8 +332,8 @@ let sum (r:Range.t) (s:t) : t option =
       let new_range_var =
         match dir with
         | Increase ->
-          (* x := k (x + lb) *)
-          n_mult (n_plus x lower_bound) step
+          (* x := lb + step * x *)
+          n_plus lower_bound (n_mult x step)
         | Decrease ->
           (* x := ub - (x * step) *)
           n_minus upper_bound (n_mult x step)
