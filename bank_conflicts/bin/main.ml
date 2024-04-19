@@ -351,7 +351,7 @@ module JUI = struct
     let kernels =
       match Solver.run s with
       | TotalCost l -> `List (List.map (c_to_j "total_cost") l)
-      | RatioCost l -> `List (List.map (c_to_j "ratio_cost") l)
+      | RatioCost l -> `List (List.map (c_to_j "per_transaction") l)
       | SlicedCost s -> `List (List.map s_to_j s)
     in
     `Assoc [
