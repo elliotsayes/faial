@@ -15,7 +15,9 @@ let rec to_string : t -> string =
   function
   | Const x -> string_of_int x
   | Sum (b, s) -> "Σ_" ^ Set_range.to_string b ^ " " ^ to_string s
-  | Add l -> List.map to_string l |> Common.join " + "
+  | Add l ->
+    let l = List.map to_string l |> Common.join " + " in
+    "(" ^ l ^ ")"
 
 let subst ((x,v): Variable.t * Reals.t) : t -> t =
   let rec subst : t -> t =
