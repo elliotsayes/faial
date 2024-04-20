@@ -17,28 +17,21 @@ let rec to_string : t -> string =
   | Sum (b, s) -> "Σ_" ^ Set_range.to_string b ^ " " ^ to_string s
   | Add l -> List.map to_string l |> Common.join " + "
 
-module MakeSubst (S:Subst.SUBST) = struct
-  module M = Subst.Make(S)
-  module B = Set_range.Make(S)
-
-  let rec subst (s: S.t) : t -> t =
+let subst ((x,v): Variable.t * Reals.t) : t -> t =
+  let rec subst : t -> t =
     function
-    | Const k -> Const k
-    | Add l -> Add (List.map (subst s) l)
-    | Sum (b, p) ->
-      let b = B.subst s b in
-      let p = M.add s b.var (function
-        | Some s -> subst s p
-        | None -> p
+    | Const _ as e -> e
+    | Add l -> Add (List.map subst l)
+    | Sum (b, p)  ->
+      let b = Set_range.subst (x, v) b in
+      Sum (b,
+        if Variable.equal b.var x then
+          p
+        else
+          subst p
       )
-      in
-      Sum (b, p)
-end
-
-module PSubstAssoc = MakeSubst(Subst.SubstAssoc)
-module PSubstPair = MakeSubst(Subst.SubstPair)
-
-let subst : (Variable.t * Exp.nexp) -> t -> t = PSubstPair.subst
+  in
+  subst
 
 let add (l:t list) : t = Add l
 
@@ -314,12 +307,13 @@ let sum (r:Range.t) (s:t) : t option =
   if s = Const 0 then Some (Const 0)
   else
     match r with
-    | {step = Plus (Num 1); _} ->
-      let b : Set_range.t = {
-        var = r.var;
-        first_elem = Reals.from_nexp r.lower_bound;
-        last_elem = Reals.from_nexp r.upper_bound;
-      } in
+    | {var; upper_bound; lower_bound; step = Plus (Num 1); _} ->
+      let b =
+        Set_range.make
+        ~var
+        ~lower_bound:(Reals.from_nexp lower_bound)
+        ~upper_bound:(Reals.from_nexp upper_bound)
+      in
       Some (Sum (b, s))
     | {var; step = Plus step; dir; lower_bound; upper_bound; _} ->
       let open Exp in
@@ -338,22 +332,21 @@ let sum (r:Range.t) (s:t) : t option =
           (* x := ub - (x * step) *)
           n_minus upper_bound (n_mult x step)
       in
+      let new_range_var = Reals.from_nexp new_range_var in
       let iters =
         n_div (n_minus upper_bound lower_bound) step
       in
       let s = subst (var, new_range_var) s in
-      let b : Set_range.t = {
-        var;
-        first_elem = Reals.from_int 0;
-        last_elem = Reals.from_nexp iters;
-      } in
+      let b = Set_range.make
+        ~var
+        ~lower_bound:(Reals.from_int 0)
+        ~upper_bound:(Reals.from_nexp iters)
+      in
       Some (Sum (b, s))
-  (*
     | {
         step = Mult (Num k);
         _
       } when k >= 2 ->
-        let open Exp in
         (*
           log_k (ub - lb)
 
@@ -366,21 +359,28 @@ let sum (r:Range.t) (s:t) : t option =
               25, 50 <- log2 (100 / 3) = log2(100) - log2(3)
               25*2^0, 25*2^1
           *)
+      let i_lower_bound = Reals.from_nexp r.lower_bound in
+      let i_upper_bound = Reals.from_nexp r.upper_bound in
+      let f_lower_bound = i_lower_bound |> Reals.int_to_float in
+      let f_upper_bound = i_upper_bound |> Reals.int_to_float in
       let iters =
         (* we use subtraction of logs, rather than division of args of logs
             because ultimately we want to simplify the logs. *)
-        n_minus (n_log ~base:k r.upper_bound) (n_log ~base:k r.lower_bound)
+        Reals.i_minus
+          (Reals.floor (Reals.logarithm k f_upper_bound))
+          (Reals.floor (Reals.logarithm k f_lower_bound))
       in
       (* In summations we start with base 1; we decrement 1 so that we start in base 2^0 *)
-      let new_range_var = n_mult (r.lower_bound) (n_pow ~base:k (n_dec (Var r.var))) in
+      let new_range_var =
+        Reals.i_mult i_lower_bound (Reals.power_of k (Var r.var))
+      in
       let s = subst (r.var, new_range_var) s in
-      let b : Interval.t = {
-        var = r.var;
-        first_elem = Num 1;
-        last_elem = iters;
-      } in
+      let b = Set_range.make
+        ~var:r.var
+        ~lower_bound:(Num 1)
+        ~upper_bound:iters;
+      in
       Some (Sum (b, s))
-      *)
   | _ -> None
 
 let rec from_ra : Ra.t -> (t, string) Result.t =

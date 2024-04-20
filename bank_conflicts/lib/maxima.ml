@@ -1,6 +1,80 @@
 open Stage0
 open Protocols
 
+let brel_to_string : Exp.brel -> string =
+  function
+  | BOr -> "or"
+  | BAnd -> "and"
+
+let tr_op_to_string : Reals.tr_op -> string =
+  function
+  | Ceiling -> "ceiling"
+  | Floor -> "floor"
+
+let rec i_to_string : Reals.integer -> string =
+  function
+  | Var x -> Variable.name x
+  | Num x -> string_of_int x
+  | FloatToInt (o, e) -> tr_op_to_string o ^ "(" ^ f_to_string e ^ ")"
+  | Bin (o, e1, e2) ->
+    let e1 = i_to_string e1 in
+    let e2 = i_to_string e2 in
+    let infix =
+      match o with
+      | Plus | Minus | Mult | Div -> true
+      | Mod | LeftShift | RightShift | BitXOr | BitOr | BitAnd -> false
+    in
+    let o =
+      match o with
+      | Plus -> "+"
+      | Minus -> "-"
+      | Mult -> "*"
+      | Div -> "/"
+      | Mod -> "mod"
+      | LeftShift -> "bit_lsh"
+      | RightShift -> "bit_rsh"
+      | BitXOr -> "bit_xor"
+      | BitOr -> "bit_or"
+      | BitAnd -> "bit_and"
+    in
+    if infix then
+      "(" ^ e1 ^ o ^ e2 ^ ")"
+    else
+      o ^ "(" ^ e1 ^ ", " ^ e2 ^")"
+  | BitNot e ->
+    "bit_not(" ^ i_to_string e ^ ")"
+  | NIf (b, e1, e2) ->
+    "if is (" ^ b_to_string b ^ ") then " ^ i_to_string e1 ^ " else " ^
+    i_to_string e2 ^")"
+  | BoolToInt e -> i_to_string (NIf (e, Num 1, Num 0))
+  | PowerOf (base, e) ->
+    f_to_string (FUnop (Exponent, base, IntToFloat e))
+and b_to_string : Reals.boolean -> string =
+  function
+  | Bool true -> "true"
+  | Bool false -> "false"
+  | NRel (o, e1, e2) ->
+    "(" ^ i_to_string e1 ^ " " ^ Exp.nrel_to_string o ^
+    " " ^ i_to_string e2 ^ ")"
+  | BRel (o, e1, e2) ->
+    "(" ^ b_to_string e1 ^ " " ^ Exp.brel_to_string o ^
+    " " ^ b_to_string e2 ^ ")"
+  | BNot e ->
+    "not (" ^ b_to_string e ^ ")"
+  | IntToBool e ->
+    "bool(" ^ i_to_string e ^ ")"
+and f_to_string : Reals.floating_point -> string =
+  function
+  | FBin (o, e1, e2) ->
+    "(" ^ f_to_string e1 ^ " " ^ Reals.fbin_to_string o ^
+    " " ^ f_to_string e2 ^ ")"
+  | FUnop (Exponent, b, e) ->
+    string_of_int b ^ "^(" ^ f_to_string e ^ ")"
+  | FUnop (Logarithm, b, e) ->
+    "log(" ^ f_to_string e ^ ")/log(" ^ string_of_int b ^ ")"
+  | IntToFloat e ->
+    i_to_string e
+
 let rec from_symbolic : Symbolic.t -> string =
   function
   | Const k -> string_of_int k
@@ -8,8 +82,8 @@ let rec from_symbolic : Symbolic.t -> string =
     "sum(" ^
       from_symbolic s ^ ", " ^
       Variable.name b.var ^ ", " ^
-      Reals.to_string b.first_elem ^ ", " ^
-      Reals.to_string b.last_elem ^
+      i_to_string b.lower_bound ^ ", " ^
+      i_to_string b.upper_bound ^
     ")"
   | Add l -> List.map from_symbolic l |> Common.join " + "
 
@@ -43,9 +117,7 @@ let parse_maxima (x:string) : string option =
   )
 
 let run ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Result.t =
-  let expr =
-    "log2(x) := log(x)/log(2)$" ^
-    "pow2(x) := x^2\n$" ^ expr ^ ",logcontract,simpsum,ratsimp;" in
+  let expr = "load(\"bitwise\")$\n" ^ expr ^ ",logcontract,simpsum,ratsimp;" in
   (if verbose
     then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
     else ());
