@@ -44,7 +44,7 @@ let tests = [
   "loops-nested-2-ind.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 0 ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-tid.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | i ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-pow.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 1 ≤ j ≤ (⌊log₂((n - 1))⌋ - ⌊log₂(1)⌋)} 1";
-
+  "loops-nested-2-ind-step.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ ((n - 1) / step1)} Σ_{j | 0 ≤ j ≤ (((m - 1) - (i * step1)) / step2)} 1";
 ]
 
 (* These are kernels that are being documented, but are
