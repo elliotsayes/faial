@@ -131,7 +131,7 @@ module Solver = struct
       abort_when app.asympt "The Maxima backend does not support asympotic cost.";
       r |> Maxima.run_ra ~verbose:app.show_code ~exe:app.maxima_exe
     ) else
-      r |> Symbolic.Default.run_ra ~show_code:app.show_code
+      Ok (r |> Symbolic.Default.run_ra ~show_code:app.show_code)
     )
     |> Result.map (fun c ->
       {amount=c; analysis_duration=Unix.gettimeofday () -. start}
@@ -270,20 +270,14 @@ module TUI = struct
             "???"
         in
         let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
-        let cost = match Symbolic.Default.from_ra r with
-        | Ok e ->
-            PrintBox.(tree ("▶ Cost: "  ^ Symbolic.to_string e |> text)
-            [
-              tree ("▶ Cost (simplified):" |> text_with_style blue)
-              [
-                text_with_style blue simplified_cost |> hpad 1
-              ]
-            ])
-        | Error e ->
-          Logger.Colors.error e;
-          PrintBox.(tree ("▶ Cost (simplified):" |> text_with_style blue)
+        let cost =
+          let e = Symbolic.Default.from_ra r in
+          PrintBox.(tree ("▶ Cost: "  ^ Symbolic.to_string e |> text)
           [
-            text_with_style blue simplified_cost |> hpad 1
+            tree ("▶ Cost (simplified):" |> text_with_style blue)
+            [
+              text_with_style blue simplified_cost |> hpad 1
+            ]
           ])
         in
         (* Flatten the expression *)

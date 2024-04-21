@@ -31,19 +31,19 @@ let tests = [
   "loops-1-step-plus.cu", ["--only-cost"], "Σ_{j | 0 ≤ j ≤ ((ub - lb) / step)} 1";
   "loops-1-step-minus.cu", ["--only-cost"], "Σ_{j | 0 ≤ j ≤ ((ub - lb) / step)} 1";
   "loops-1-step-minus.cu", ["-p"; "lb=2"; "-p"; "ub=33"; "-p"; "step=5"; "--only-cost"], "Σ_{j | 0 ≤ j ≤ 6} 1";
-  "loops-1-div.cu", ["--only-cost"], "Σ_{i | 1 ≤ i ≤ (⌊log₂(512)⌋ - ⌊log₂(1)⌋)} 1";
+  "loops-1-div.cu", ["--only-cost"], "Σ_{i | 1 ≤ i ≤ 9} 1";
   "loops-1-bitwise.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ ((n << m) - 1)} 1";
   "loops-1-minus.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ n} 1";
   "loops-1-tid.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ (n - 1)} 1";
   "loops-1-multiple.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ 0} (1 + (3 + 7))";
-  "loops-1-pow.cu", ["--only-cost"; "--block-dim"; "512"], "Σ_{i | 1 ≤ i ≤ (⌊log₂(511)⌋ - ⌊log₂(1)⌋)} 1";
-  "loops-1-pow-2.cu", ["--only-cost"], "Σ_{i | 1 ≤ i ≤ (⌊log₂(1023)⌋ - ⌊log₂(1)⌋)} 1";
-  "loops-1-pow-unknown-bound.cu", ["--only-cost"], "Σ_{i | 1 ≤ i ≤ (⌊log₂((n - 1))⌋ - ⌊log₂(1)⌋)} 1";
-  "loops-1-rsh.cu", ["--only-cost"], "Σ_{i | 1 ≤ i ≤ (⌊log₂(512)⌋ - ⌊log₂(1)⌋)} 1";
+  "loops-1-pow.cu", ["--only-cost"; "--block-dim"; "512"], "Σ_{i | 1 ≤ i ≤ 8} 1";
+  "loops-1-pow-2.cu", ["--only-cost"], "Σ_{i | 1 ≤ i ≤ 9} 1";
+  "loops-1-pow-unknown-bound.cu", ["--only-cost"], "Σ_{i | 1 ≤ i ≤ ⌊log₂((n - 1))⌋} 1";
+  "loops-1-rsh.cu", ["--only-cost"], "Σ_{i | 1 ≤ i ≤ 9} 1";
   "loops-nested-2.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | i ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-ind.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 0 ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-tid.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | i ≤ j ≤ (n - 1)} 1";
-  "loops-nested-2-pow.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 1 ≤ j ≤ (⌊log₂((n - 1))⌋ - ⌊log₂(1)⌋)} 1";
+  "loops-nested-2-pow.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 1 ≤ j ≤ ⌊log₂((n - 1))⌋} 1";
   "loops-nested-2-ind-step.cu", ["--only-cost"], "Σ_{i | 0 ≤ i ≤ ((n - 1) / step1)} Σ_{j | 0 ≤ j ≤ (((m - 1) - (i * step1)) / step2)} 1";
 ]
 

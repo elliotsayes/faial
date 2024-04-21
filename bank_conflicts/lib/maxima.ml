@@ -6,7 +6,7 @@ let brel_to_string : Exp.brel -> string =
   | BOr -> "or"
   | BAnd -> "and"
 
-let tr_op_to_string : Reals.tr_op -> string =
+let tr_op_to_string : Reals.TruncateOp.t -> string =
   function
   | Ceiling -> "ceiling"
   | Floor -> "floor"
@@ -21,7 +21,7 @@ let rec i_to_string : Reals.integer -> string =
     let e2 = i_to_string e2 in
     let infix =
       match o with
-      | Plus | Minus | Mult | Div -> true
+      | Plus | Minus | Mult | Div | Pow -> true
       | Mod | LeftShift | RightShift | BitXOr | BitOr | BitAnd -> false
     in
     let o =
@@ -29,13 +29,14 @@ let rec i_to_string : Reals.integer -> string =
       | Plus -> "+"
       | Minus -> "-"
       | Mult -> "*"
-      | Div -> "/"
+      | Div -> "/" (* XXX: integer division *)
       | Mod -> "mod"
       | LeftShift -> "bit_lsh"
       | RightShift -> "bit_rsh"
       | BitXOr -> "bit_xor"
       | BitOr -> "bit_or"
       | BitAnd -> "bit_and"
+      | Pow -> "^"
     in
     if infix then
       "(" ^ e1 ^ o ^ e2 ^ ")"
@@ -43,12 +44,10 @@ let rec i_to_string : Reals.integer -> string =
       o ^ "(" ^ e1 ^ ", " ^ e2 ^")"
   | BitNot e ->
     "bit_not(" ^ i_to_string e ^ ")"
-  | NIf (b, e1, e2) ->
+  | If (b, e1, e2) ->
     "if is (" ^ b_to_string b ^ ") then " ^ i_to_string e1 ^ " else " ^
     i_to_string e2 ^")"
-  | BoolToInt e -> i_to_string (NIf (e, Num 1, Num 0))
-  | PowerOf (base, e) ->
-    f_to_string (FUnop (Exponent, base, IntToFloat e))
+  | BoolToInt e -> i_to_string (If (e, Num 1, Num 0))
 and b_to_string : Reals.boolean -> string =
   function
   | Bool true -> "true"
@@ -65,13 +64,9 @@ and b_to_string : Reals.boolean -> string =
     "bool(" ^ i_to_string e ^ ")"
 and f_to_string : Reals.floating_point -> string =
   function
-  | FBin (o, e1, e2) ->
-    "(" ^ f_to_string e1 ^ " " ^ Reals.fbin_to_string o ^
-    " " ^ f_to_string e2 ^ ")"
-  | FUnop (Exponent, b, e) ->
-    string_of_int b ^ "^(" ^ f_to_string e ^ ")"
-  | FUnop (Logarithm, b, e) ->
-    "log(" ^ f_to_string e ^ ")/log(" ^ string_of_int b ^ ")"
+  | Float f -> string_of_float f
+  | Log (b, e) ->
+    "log(" ^ f_to_string e ^ ")/log(" ^ i_to_string b ^ ")"
   | IntToFloat e ->
     i_to_string e
 
@@ -88,9 +83,7 @@ let rec from_symbolic : Symbolic.t -> string =
   | Add l -> List.map from_symbolic l |> Common.join " + "
 
 let from_ra (r: Ra.t) : (string, Errors.t) Result.t =
-  Symbolic.Default.from_ra r
-  |> Result.map from_symbolic
-  |> Symbolic.adapt_error
+  Ok (Symbolic.Default.from_ra r |> from_symbolic)
 
 let parse_maxima (x:string) : string option =
   if Common.contains ~substring:"incorrect syntax" x then None
