@@ -2,15 +2,18 @@ open Stage0
 
 (* -------- Define the actual tests: ------------- *)
 
+let per_request_tests = [
+  "setRowReadRow.cu", ["--only-reads"], "1";
+  "setRowReadRow.cu", ["--only-writes"], "1";
+  "setColReadCol.cu", ["--only-reads"], "32";
+  "setColReadCol.cu", ["--only-writes"], "32";
+  "setRowReadCol.cu", ["--only-reads"], "32";
+  "setRowReadCol.cu", ["--only-writes"], "1";
+  "setRowReadColPad.cu", ["--only-reads"], "1";
+  "setRowReadColPad.cu", ["--only-writes"], "1";
+]
+
 let tests = [
-  "setRowReadRow.cu", ["--per-request"; "--only-reads"], "1";
-  "setRowReadRow.cu", ["--per-request"; "--only-writes"], "1";
-  "setColReadCol.cu", ["--per-request"; "--only-reads"], "32";
-  "setColReadCol.cu", ["--per-request"; "--only-writes"], "32";
-  "setRowReadCol.cu", ["--per-request"; "--only-reads"], "32";
-  "setRowReadCol.cu", ["--per-request"; "--only-writes"], "1";
-  "setRowReadColPad.cu", ["--per-request"; "--only-reads"], "1";
-  "setRowReadColPad.cu", ["--per-request"; "--only-writes"], "1";
   "2tid.cu", ["--blockDim=1024"; "--gridDim=2";], "1";
   "4tid.cu", ["--blockDim=1024"; "--gridDim=1";], "3";
   "6tid.cu", ["--blockDim=1024"; "--gridDim=1";], "1";
@@ -90,7 +93,7 @@ let faial_bc ?(args=[]) (fname:Fpath.t) : Subprocess.t =
     (args @ [fname |> Fpath.to_string])
 
 let used_files : Fpath.Set.t =
-  tests
+  tests @ per_request_tests
   (* get just the filenames as paths *)
   |> List.map (fun (x, _, _) -> Fpath.v x)
   (* convert to a set *)
@@ -106,34 +109,52 @@ let missed_files (dir:Fpath.t) : Fpath.Set.t =
   let unsupported = Fpath.Set.of_list unsupported in
   Fpath.Set.diff (Fpath.Set.diff all_cu_files used_files) unsupported
 
+let run_test ((filename:string), (args:string list), (expected_output:string)) : unit =
+  let str_args = if args = [] then "" else (String.concat " " args ^ " ") in
+  let bullet = " - " in
+  print_string (bullet ^ "faial-bc " ^ str_args ^ filename);
+  Stdlib.flush_all ();
+  let given = faial_bc ~args (Fpath.v filename) |> Subprocess.run_split in
+  let expected_output = expected_output |> String.trim in
+  let given_output = given.stdout |> String.trim in
+  (if given.status = Unix.WEXITED 0 && expected_output = given_output then (
+    print_endline " ✔";
+  ) else (
+    print_endline " ✘";
+    print_endline ("----------------------- EXPECTED -----------------------");
+    print_endline (expected_output);
+    print_endline ("----------------------- GIVEN --------------------------");
+    print_endline (given_output);
+    print_endline ("----------------------- STDERR -------------------------");
+    print_endline (given.stderr);
+    exit 1
+  ));
+  Stdlib.flush_all ()
+
+
 let () =
   let open Fpath in
-  print_endline "Checking bank-conflicts examples:";
+  print_endline "-=- Checking bank-conflicts examples -=-\n";
+  print_string ("Per request tests ");
+  let per_request_tests =
+    match Subprocess.make "zmaxima" ["--version"] |> Subprocess.check_output with
+    | Some maxima_version ->
+      print_endline ("(" ^ String.trim maxima_version ^ ")");
+      per_request_tests
+    | None ->
+      print_endline "(MAXIMA NOT FOUND, tests skiped)";
+      []
+  in
+  per_request_tests
+  |> List.iter (fun (filename, args, expected_output) ->
+    run_test (filename, "--only-cost" :: "--per-request" :: args, expected_output)
+  );
+  print_endline ("\nOther tests:");
   tests
   |> List.iter (fun (filename, args, expected_output) ->
-    flush_all ();
-    let args = "--only-cost" :: args in
-    let str_args = if args = [] then "" else (String.concat " " args ^ " ") in
-    let bullet = " - " in
-    print_string (bullet ^ "faial-bc " ^ str_args ^ filename);
-    Stdlib.flush_all ();
-    let given = faial_bc ~args (v filename) |> Subprocess.run_split in
-    let expected_output = expected_output |> String.trim in
-    let given_output = given.stdout |> String.trim in
-    (if given.status = Unix.WEXITED 0 && expected_output = given_output then (
-      print_endline " ✔";
-    ) else (
-      print_endline " ✘";
-      print_endline ("----------------------- EXPECTED -----------------------");
-      print_endline (expected_output);
-      print_endline ("------------------------ GIVEN -------------------------");
-      print_endline (given_output);
-      print_endline ("----------------------- STDERR -------------------------");
-      print_endline (given.stderr);
-      exit 1
-    ));
-    Stdlib.flush_all ();
+    run_test (filename, "--only-cost" :: args, expected_output)
   );
+  print_endline "";
   unsupported |> List.iter (fun f ->
     if not (Files.exists f) then (
       print_endline ("Missing unsupported file: " ^ Fpath.to_string f);

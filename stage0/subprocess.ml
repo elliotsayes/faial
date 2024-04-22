@@ -153,6 +153,18 @@ module Completed2 = struct
   let is_ok (c:t) : bool =
     c.status = Unix.WEXITED 0
 
+  let check_stdout (c:t) : string option =
+    if is_ok c then
+      Some c.stdout
+    else
+      None
+
+  let check_stderr (c:t) : string option =
+    if is_ok c then
+      Some c.stderr
+    else
+      None
+
   let to_string (x:t) : string =
     process_status_to_string x.status
 end
@@ -170,6 +182,12 @@ module Completed1 = struct
   let is_ok (c:t) : bool =
     c.status = Unix.WEXITED 0
 
+  let check_output (c:t) : string option =
+    if is_ok c then
+      Some c.output
+    else
+      None
+
   let to_string (x:t) : string =
     process_status_to_string x.status
 end
@@ -186,9 +204,36 @@ let run_split ?(stdin="") (c:t) : Completed2.t =
 let run_combine ?(stdin="") (c:t) : Completed1.t =
   c
   |> quote
+  (* redirect stderr to stdout *)
+  |> fun x -> x ^ " 2>&1"
   |> Unix.open_process
   |> with_process_in_out (stdout_stderr_to_string ~stdin)
   |> (fun (s, o) -> Completed1.make ~output:o s)
+
+(* Runs a process and returns the output that results from
+   the combined stdout and stderr.
+   Returns the output only when the execution is successful
+   (status = 0). *)
+let check_output ?(stdin="") (c:t) : string option =
+  c
+  |> run_combine ~stdin
+  |> Completed1.check_output
+
+(* Runs a process and returns the contents of stderr.
+   Returns the stderr only when the execution is successful
+   (status = 0). *)
+let check_stderr ?(stdin="") (c:t) : string option =
+  c
+  |> run_split ~stdin
+  |> Completed2.check_stderr
+
+(* Runs a process and returns the contents of stdout.
+   Returns the stdout only when the execution is successful
+   (status = 0). *)
+let check_stdout ?(stdin="") (c:t) : string option =
+  c
+  |> run_split ~stdin
+  |> Completed2.check_stdout
 
 let run_echo ?(stdin="") (c:t) : Unix.process_status =
   c
