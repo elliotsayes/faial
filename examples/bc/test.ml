@@ -137,7 +137,7 @@ let () =
   print_endline "-=- Checking bank-conflicts examples -=-\n";
   print_string ("Per request tests ");
   let per_request_tests =
-    match Subprocess.make "zmaxima" ["--version"] |> Subprocess.check_output with
+    match Subprocess.make "maxima" ["--version"] |> Subprocess.check_output with
     | Some maxima_version ->
       print_endline ("(" ^ String.trim maxima_version ^ ")");
       per_request_tests
