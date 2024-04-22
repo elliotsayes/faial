@@ -55,7 +55,6 @@ let tests = [
    not currently being checked *)
 let unsupported : Fpath.t list =
   [
-    "example.cu";
     "2tid-racuda-1.cu";
     "2tid-seq-2.cu";
     "blockDim-tid.cu";
