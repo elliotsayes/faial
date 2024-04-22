@@ -5,7 +5,7 @@ void saxpy(int n, float a, float *x)
 {
   for (int i = 0; i < n; i++) {
     for (int j = i; j < n; j++) {
-      for (int k = 0; k < n; k++) {
+      for (int k = j; k < n; k++) {
       y[2 * threadIdx.x] = a*x[i];
       }
     }

@@ -380,3 +380,33 @@ let from_reals (x:Variable.t) : Reals.integer -> t option =
     None
   in
   from_i
+
+let rec optimize_reals (e:Reals.t) : Reals.t =
+  let fvs = Reals.free_names e Variable.Set.empty in
+  if Variable.Set.is_empty fvs then
+    Reals.optimize e
+  else
+    let x = Variable.Set.choose fvs in
+    match from_reals x e with
+    | Some p ->
+      p
+      |> to_seq_ord
+      |> Seq.filter_map (fun (coef, pow) ->
+          let coef = optimize_reals coef in
+          if Reals.is_zero coef then None
+          else Some (
+            match pow with
+            | 0 -> coef
+            | 1 -> Bin (Mult, coef, Var x)
+            | -1 -> Bin (Div, coef, Var x)
+            | _ ->
+              if pow < 0 then
+                Bin (Div, coef, Bin (Pow, Var x, Num pow))
+              else
+                Bin (Mult, coef, Bin (Pow, Var x, Num pow))
+          )
+        )
+      |> List.of_seq
+      |> List.fold_left Reals.plus Reals.zero
+      |> Reals.optimize
+    | None -> Reals.optimize e

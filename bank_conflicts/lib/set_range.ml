@@ -6,6 +6,12 @@ type t = {
   upper_bound: Reals.t;
 }
 
+let count (s:t) : int option =
+  match s.lower_bound, s.upper_bound with
+  | Num lower_bound, Num upper_bound ->
+    Some (max (1 + upper_bound - lower_bound) 0)
+  | _, _ -> None
+
 let make ~var ~lower_bound ~upper_bound : t =
   {var; lower_bound; upper_bound}
 
@@ -15,7 +21,6 @@ let to_string (b:t) : string =
     Variable.name b.var ^ " ≤ " ^
     Reals.to_string b.upper_bound ^
   "}"
-
 
 let subst (x : Variable.t * Reals.t) (s:t) : t =
   { s with

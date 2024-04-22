@@ -70,20 +70,21 @@ and f_to_string : Reals.floating_point -> string =
   | IntToFloat e ->
     i_to_string e
 
-let rec from_symbolic : Symbolic.t -> string =
+let rec from_summation : Summation.t -> string =
   function
   | Const k -> string_of_int k
   | Sum (b, s) ->
     "sum(" ^
-      from_symbolic s ^ ", " ^
+      from_summation s ^ ", " ^
       Variable.name b.var ^ ", " ^
       i_to_string b.lower_bound ^ ", " ^
       i_to_string b.upper_bound ^
     ")"
-  | Add l -> List.map from_symbolic l |> Common.join " + "
+  | Plus (lhs, rhs) ->
+    from_summation lhs ^ " + " ^ from_summation rhs
 
 let from_ra (r: Ra.t) : (string, Errors.t) Result.t =
-  Ok (Symbolic.Default.from_ra r |> from_symbolic)
+  Ok (Summation.from_ra r |> from_summation)
 
 let parse_maxima (x:string) : string option =
   if Common.contains ~substring:"incorrect syntax" x then None

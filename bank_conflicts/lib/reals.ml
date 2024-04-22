@@ -142,11 +142,14 @@ let zero : integer =
 let one : integer =
   Num 1
 
-let pow (base:integer) : integer -> integer =
-  match base with
-  | Num 0 -> fun _ -> Num 1
-  | Num 1 -> fun e -> e
-  | _ -> fun arg -> Bin (Pow, base, arg)
+let is_zero (e: t) : bool =
+  e = Num 0
+
+let pow (base:integer) (pow:integer) : integer =
+  match pow with
+  | Num 0 -> Num 1
+  | Num 1 -> base
+  | _ -> Bin (Pow, base, pow)
 
 let log (base:integer) (arg: floating_point) : floating_point =
   match base, arg with
@@ -267,6 +270,10 @@ let rec to_string : t -> string =
   | Num x -> string_of_int x
   | FloatToInt (Ceiling, e) -> "⌈" ^ f_to_string e ^ "⌉"
   | FloatToInt (Floor, e) -> "⌊" ^ f_to_string e ^ "⌋"
+  | Bin (Pow, base, Num p) ->
+    to_string base ^ superscript p
+  | Bin (Div, e1, e2) ->
+    "⌊" ^ to_string e1 ^ " / " ^ to_string e2 ^ "⌋"
   | Bin (o, e1, e2) ->
     "(" ^ to_string e1 ^ " " ^ BinOp.to_string o ^
     " " ^ to_string e2 ^ ")"
