@@ -14,6 +14,7 @@
    test_dlang
    test_loop
    test_prob_exp
+   test_maxima
  )
  (libraries stage0 protocols drf inference oUnit bank_conflicts)
 )

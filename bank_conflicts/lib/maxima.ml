@@ -16,6 +16,8 @@ let rec i_to_string : Reals.integer -> string =
   | Var x -> Variable.name x
   | Num x -> string_of_int x
   | FloatToInt (o, e) -> tr_op_to_string o ^ "(" ^ f_to_string e ^ ")"
+  | Bin (Div, e1, e2) ->
+    "floor(" ^ i_to_string e1 ^ "/" ^ i_to_string e2 ^ ")"
   | Bin (o, e1, e2) ->
     let e1 = i_to_string e1 in
     let e2 = i_to_string e2 in
@@ -52,6 +54,8 @@ and b_to_string : Reals.boolean -> string =
   function
   | Bool true -> "true"
   | Bool false -> "false"
+  | NRel (NEq, e1, e2) ->
+    "equal(" ^ i_to_string e1 ^ ", " ^ i_to_string e2 ^ ")"
   | NRel (o, e1, e2) ->
     "(" ^ i_to_string e1 ^ " " ^ Exp.nrel_to_string o ^
     " " ^ i_to_string e2 ^ ")"
@@ -83,8 +87,8 @@ let rec from_summation : Summation.t -> string =
   | Plus (lhs, rhs) ->
     from_summation lhs ^ " + " ^ from_summation rhs
 
-let from_ra (r: Ra.t) : (string, Errors.t) Result.t =
-  Ok (Summation.from_ra r |> from_summation)
+let from_ra (r: Ra.t) : string =
+  Summation.from_ra r |> from_summation
 
 let parse_maxima (x:string) : string option =
   if Common.contains ~substring:"incorrect syntax" x then None
@@ -110,8 +114,10 @@ let parse_maxima (x:string) : string option =
     |> Common.join "\n"
   )
 
+let compile (code:string) : string =
+  "load(\"bitwise\")$\n" ^ code ^ ",logcontract,simpsum,ratsimp;"
+
 let run ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Result.t =
-  let expr = "load(\"bitwise\")$\n" ^ expr ^ ",logcontract,simpsum,ratsimp;" in
   (if verbose
     then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
     else ());
@@ -127,13 +133,13 @@ let run_ra_ratio
 :
   (string, Errors.t) Result.t
 =
-  let (let*) = Result.bind in
   if Ra.is_zero denominator then Ok "0" else
-  let* numerator = from_ra numerator in
-  let* denominator = from_ra denominator in
-  run ~verbose ~exe ("(" ^ numerator ^ ") / (" ^ denominator ^ ")")
+  "(" ^ from_ra numerator ^ ") / (" ^ from_ra denominator ^ ")"
+  |> compile
+  |> run ~verbose ~exe
 
 let run_ra ?(verbose=false) ?(exe="maxima") (x:Ra.t) : (string, Errors.t) Result.t =
-  let (let*) = Result.bind in
-  let* s = from_ra x in
-  run ~verbose ~exe s
+  x
+  |> from_ra
+  |> compile
+  |> run ~verbose ~exe

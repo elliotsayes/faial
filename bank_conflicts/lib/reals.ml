@@ -228,8 +228,21 @@ let is_one : t -> bool =
   | Num 1 -> true
   | _ -> false
 
+let true_ : boolean = Bool true
+
+let false_ : boolean = Bool false
+
+let equal (e1:integer) (e2:integer) : boolean =
+  NRel (NEq, e1, e2)
+
 let n_rel (o:Exp.nrel) (e1:integer) (e2:integer) : boolean =
   NRel (o, e1, e2)
+
+let and_ (e1:boolean) (e2:boolean) : boolean =
+  BRel (BAnd, e1, e2)
+
+let or_ (e1:boolean) (e2:boolean) : boolean =
+  BRel (BOr, e1, e2)
 
 let b_rel (o:Exp.brel) (e1:boolean) (e2:boolean) : boolean =
   BRel (o, e1, e2)
@@ -393,3 +406,6 @@ let free_names : t -> Variable.Set.t -> Variable.Set.t =
       i_fns e
   in
   i_fns
+
+let b_free_names (b:boolean) : Variable.Set.t -> Variable.Set.t =
+  free_names (BoolToInt b)
