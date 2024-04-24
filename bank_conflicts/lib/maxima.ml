@@ -47,7 +47,7 @@ let rec i_to_string : Reals.integer -> string =
   | BitNot e ->
     "bit_not(" ^ i_to_string e ^ ")"
   | If (b, e1, e2) ->
-    "if is (" ^ b_to_string b ^ ") then " ^ i_to_string e1 ^ " else " ^
+    "(if (" ^ b_to_string b ^ ") then " ^ i_to_string e1 ^ " else " ^
     i_to_string e2 ^")"
   | BoolToInt e -> i_to_string (If (e, Num 1, Num 0))
 and b_to_string : Reals.boolean -> string =
@@ -56,16 +56,19 @@ and b_to_string : Reals.boolean -> string =
   | Bool false -> "false"
   | NRel (NEq, e1, e2) ->
     "equal(" ^ i_to_string e1 ^ ", " ^ i_to_string e2 ^ ")"
+  | NRel (NNeq, e1, e2) ->
+    "notequal(" ^ i_to_string e1 ^ ", " ^ i_to_string e2 ^ ")"
   | NRel (o, e1, e2) ->
     "(" ^ i_to_string e1 ^ " " ^ Exp.nrel_to_string o ^
     " " ^ i_to_string e2 ^ ")"
-  | BRel (o, e1, e2) ->
-    "(" ^ b_to_string e1 ^ " " ^ Exp.brel_to_string o ^
-    " " ^ b_to_string e2 ^ ")"
+  | BRel (BOr, e1, e2) ->
+    "(" ^ b_to_string e1 ^ " or " ^ b_to_string e2 ^ ")"
+  | BRel (BAnd, e1, e2) ->
+    "(" ^ b_to_string e1 ^ " and " ^ b_to_string e2 ^ ")"
   | BNot e ->
     "not (" ^ b_to_string e ^ ")"
   | IntToBool e ->
-    "bool(" ^ i_to_string e ^ ")"
+    "notequal(" ^ i_to_string e ^ ", 0)"
 and f_to_string : Reals.floating_point -> string =
   function
   | Float f -> string_of_float f
