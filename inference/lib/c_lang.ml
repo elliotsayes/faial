@@ -986,7 +986,15 @@ let rec parse_exp (j:json) : Expr.t j_result =
 
   | "IntegerLiteral" ->
     let* i = with_field "value" cast_string o in
-    Ok (IntegerLiteral (int_of_string i))
+    let i =
+      try
+        int_of_string i
+      with
+        Failure _ ->
+          prerr_endline ("Could not parse integer: " ^ i);
+          Int.max_int
+    in
+    Ok (IntegerLiteral i)
 
   | "MemberExpr" ->
     let* n = with_field "name" cast_string o in
