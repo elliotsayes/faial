@@ -991,8 +991,11 @@ let rec parse_exp (j:json) : Expr.t j_result =
         int_of_string i
       with
         Failure _ ->
-          prerr_endline ("Could not parse integer: " ^ i);
-          Int.max_int
+          prerr_endline ("Could not parse long: " ^ i);
+          if String.get i 0 = '-' then
+            Int.min_int
+          else
+            Int.max_int
     in
     Ok (IntegerLiteral i)
 
