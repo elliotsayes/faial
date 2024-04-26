@@ -39,6 +39,7 @@ module Solver = struct
     block_dim: Dim3.t;
     grid_dim: Dim3.t;
     params: (string * int) list;
+    flatten_slices: bool;
   }
 
   let make
@@ -67,6 +68,7 @@ module Solver = struct
     ~block_dim
     ~grid_dim
     ~params
+    ~flatten_slices
   :
     t
   =
@@ -94,6 +96,7 @@ module Solver = struct
       config;
       count_shared_access;
       explain;
+      flatten_slices;
       per_request;
       ignore_absent;
       only_reads;
@@ -169,7 +172,7 @@ module Solver = struct
     )
     |> Result.map_error Errors.to_string
 
-  let sliced_cost (a:t) (k:kernel) : slice list =
+  let sliced_cost ?(flatten=false) (a:t) (k:kernel) : slice list =
     let idx_analysis =
       if a.count_shared_access then
         access_count a
@@ -182,10 +185,10 @@ module Solver = struct
     |> Seq.filter_map (fun s ->
       (* Convert a slice into an expression *)
       let r =
-        Ra.Default.from_access_context
-          idx_analysis
-          (Params.to_set k.local_variables)
-          s
+        (if flatten then Access_context.flatten s else s)
+        |> Ra.Default.from_access_context
+            idx_analysis
+            (Params.to_set k.local_variables)
       in
       if Ra.is_zero r && a.skip_zero then
         None
@@ -225,7 +228,7 @@ module Solver = struct
       |> List.map Proto.Kernel.opt
     in
     if s.explain then
-      SlicedCost (List.map (pair (sliced_cost s)) ks)
+      SlicedCost (List.map (pair (sliced_cost ~flatten:s.flatten_slices s)) ks)
     else if s.per_request then
       RatioCost (List.map (pair (transactions_per_request s)) ks)
     else
@@ -343,6 +346,7 @@ module JUI = struct
               | Ok c ->
                 let open Solver in
                 [
+                "access", `String (Access_context.to_string s);
                 "cost", `String c.amount;
                 "analysis_duration_seconds", `Float c.analysis_duration
                 ]
@@ -404,6 +408,7 @@ let run
   ~block_dim
   ~grid_dim
   ~params
+  ~flatten_slices
   (kernels : Proto.Code.t Proto.Kernel.t list)
 :
   unit
@@ -434,6 +439,7 @@ let run
     ~block_dim
     ~grid_dim
     ~params
+    ~flatten_slices
   in
   if output_json then
     JUI.run app
@@ -468,6 +474,7 @@ let pico
   (only_reads:bool)
   (only_writes:bool)
   (params:(string * int) list)
+  (flatten_slices:bool)
 =
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
   let block_dim = parsed.options.block_dim in
@@ -504,6 +511,7 @@ let pico
     ~block_dim
     ~grid_dim
     ~params
+    ~flatten_slices
     kernels
 
 
@@ -636,6 +644,10 @@ let params =
   let doc = "Set the value of an integer parameter" in
   Arg.(value & opt_all (pair ~sep:'=' string int) [] & info ["p"; "param"] ~docv:"KEYVAL" ~doc)
 
+let flatten_slices =
+  let doc = "Remove context showing bank-conflicts per location." in
+  Arg.(value & flag & info ["flatten"] ~doc)
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -664,6 +676,7 @@ let pico_t = Term.(
   $ only_reads
   $ only_writes
   $ params
+  $ flatten_slices
 )
 
 let info =

@@ -1,12 +1,12 @@
 open Stage0
 open Protocols
 
-type shared_access = {shared_array: Variable.t; index: Exp.nexp}
+type access = {array: Variable.t; index: Exp.nexp}
 
 type t =
   | Loop of Range.t * t
   | Cond of Exp.bexp * t
-  | Index of shared_access
+  | Index of access
   | Decl of Variable.t * t
 
 module SubstMake (S:Subst.SUBST) = struct
@@ -41,17 +41,26 @@ let rec to_string : t -> string =
   | Decl (x, p) ->
       "var " ^ Variable.name x ^ " " ^ to_string p
 
-let rec shared_array : t -> Variable.t =
+let rec access : t -> access =
   function
-  | Index a -> a.shared_array
+  | Index a -> a
   | Loop (_, p)
   | Cond (_, p)
-  | Decl (_, p) -> shared_array p
+  | Decl (_, p) -> access p
+
+let array (a:t) : Variable.t =
+  (access a).array
+
+let index (a:t) : Exp.nexp =
+  (access a).index
 
 let location (x: t) : Location.t =
   x
-  |> shared_array
+  |> array
   |> Variable.location
+
+let flatten (a:t) : t =
+  Index (access a)
 
 let optimize : t -> t =
   let rec opt : t -> Variable.Set.t * t =
@@ -94,7 +103,7 @@ module Make (L:Logger.Logger) = struct
         l
         |> lin x
         |> Option.map (fun e ->
-            Seq.return (Index {shared_array=x; index=e})
+            Seq.return (Index {array=x; index=e})
           )
         |> Option.value ~default:Seq.empty
       | Sync _ ->
