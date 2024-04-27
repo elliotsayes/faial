@@ -7,6 +7,11 @@ let from_ra : Ra.t -> string =
     function
     | Skip -> indent depth ^ "tick 0\n"
     | Tick k -> indent depth ^ "tick " ^ string_of_int k ^ "\n"
+    | If (b, p, q) ->
+      indent depth ^ "if " ^ Exp.b_to_string b ^ ":\n" ^
+      translate (depth + 1) p ^
+      indent depth ^ "else:\n" ^
+      translate (depth + 1) q
     | Loop (r, s) ->
       indent depth ^ Variable.name r.var ^ " = " ^ Exp.n_to_string (Range.while_init r) ^ "\n" ^
       indent depth ^ "while " ^ Exp.b_to_string (Range.while_cond r) ^ ":\n" ^

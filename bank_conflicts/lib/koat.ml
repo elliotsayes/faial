@@ -60,6 +60,8 @@ let from_ra (env:Environ.t) (s:Ra.t) : prog =
       let (idx, l1) = translate idx p in
       let (idx, l2) = translate idx q in
       idx, l1 @ l2
+    | If (_, _, _) ->
+      failwith ("if")
     | Loop (r, s) ->
       let (idx', rest) = translate (idx + 2) s in
       let x = r.var in

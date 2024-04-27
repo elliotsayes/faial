@@ -80,6 +80,9 @@ and f_to_string : Reals.floating_point -> string =
 let rec from_summation : Summation.t -> string =
   function
   | Const k -> string_of_int k
+  | If (b, p, q) ->
+    "(if (" ^ b_to_string b ^ ") then " ^
+      from_summation p ^ " else " ^ from_summation q ^ ")"
   | Sum (b, s) ->
     "sum(" ^
       from_summation s ^ ", " ^

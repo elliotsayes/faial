@@ -26,9 +26,19 @@ module Fvs = struct
       let next_idx = Variable.Map.cardinal env in
       Variable.Map.add x next_idx env
 
-  let add_exp (e:Exp.nexp) (env:t) : t =
+  let add_n (e:Exp.nexp) (env:t) : t =
     let fvs = Freenames.free_names_nexp e Variable.Set.empty in
     Variable.Set.fold add_var fvs env
+
+  let add_b (e:Exp.bexp) : t -> t =
+    add_n (CastInt e)
+
+  let add_r (r:Range.t) (env:t) : t =
+    env
+    |> add_var r.var
+    |> add_n r.lower_bound
+    |> add_n r.upper_bound
+    |> add_n (Range.stride r)
 
 end
 

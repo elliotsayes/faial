@@ -1,6 +1,7 @@
 open Stage0
 open Protocols
 
+
 (*
   Given an arithmetic expression perform index analysis that yields the
   number of bank conflicts:
@@ -75,11 +76,51 @@ module Make (L:Logger.Logger) = struct
       | Offset _ -> Num 0
       | Index e -> e
       in
-      (if n = after then () else
+      (if n <> after then
         L.info ("Simplification: removed offset: " ^ Exp.n_to_string n ^ " 🡆 " ^ Exp.n_to_string after)
       );
       after
   end
+(*
+  module Sat = struct
+    type t = {
+      pre: Exp.bexp;
+      index: Exp.nexp;
+    }
+
+    let add (b:Exp.bexp) (e:t) : t =
+      { e with pre = Exp.b_and e.pre b }
+
+    let from_access_context : Access_context.t -> t =
+      let rec from : Access_context.t -> Variable.Set.t * t =
+        function
+        | Index e ->
+          let e = OffsetAnalysis.remove_offset e.index in
+          (Freenames.free_names_nexp e Variable.Set.empty,
+          {pre=Bool true; index=e})
+        | Decl (_, a) ->
+          context a
+        | Cond (b, a) ->
+          let fns, a = context a in
+          let fns = Freenames.free_names_bexp b fns in
+          (fns, add b a)
+        | Loop (r, a) ->
+          let fns, a = context a in
+          if Variable.Set.mem (Range.var r) fns then
+            (Freenames.free_names_range r fns, add (Range.to_cond r) a)
+          else
+            let b = Range.has_next r in
+            (Freenames.free_names_bexp b fns, add b a)
+      in
+      fun e ->
+      context e |> snd
+
+
+
+    let asdf (a:Access_context.t) : int =
+      let a = from_access_context a in
+
+  end*)
 
   (*
     1. If the expressions contains any thread-local variable, return the max
@@ -97,7 +138,7 @@ module Make (L:Logger.Logger) = struct
     let thread_locals = Variable.Set.diff thread_locals Variable.tid_var_set in
     let fvs = Freenames.free_names_nexp n Variable.Set.empty in
     let has_thread_locals : bool =
-      not (Variable.Set.inter thread_locals fvs |> Variable.Set.is_empty)
+        not (Variable.Set.inter thread_locals fvs |> Variable.Set.is_empty)
     in
     if has_thread_locals then
       bc_fail "Expression uses thread-local variables"

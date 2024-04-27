@@ -50,6 +50,8 @@ let from_ra (s: Ra.t) : t list =
       let (idx, l1) = translate idx p in
       let (idx, l2) = translate idx q in
       idx, (Comment "seq"::l1) @ l2
+    | If (_, _, _) ->
+      failwith ("if")
     | Loop (r, p) ->
       let (idx', rest) = translate (idx + 2) p in
       let init = Range.while_init r in

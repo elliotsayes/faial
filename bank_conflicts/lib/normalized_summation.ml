@@ -19,10 +19,10 @@ let normalize_range (r:Set_range.t) : (Reals.t * Reals.t) option=
 let subst ((x:Variable.t), (v:Reals.t)) : t -> t =
   let rec subst : t -> t =
     function
-    | Const e -> Const (Reals.subst (x, v) e)
+    | Const e -> Const (Reals.i_subst (x, v) e)
     | Plus (lhs, rhs) -> Plus (subst lhs, subst rhs)
     | Sum (y, ub, e) ->
-      let ub = Reals.subst (x, v) ub in
+      let ub = Reals.i_subst (x, v) ub in
       if Variable.equal x y then
         Sum (y, ub, e)
       else
@@ -32,6 +32,7 @@ let subst ((x:Variable.t), (v:Reals.t)) : t -> t =
 let rec from_summation : Summation.t -> t =
   function
   | Const n -> Const (Reals.from_int n)
+  | If (_, _, _) -> failwith "if"
   | Plus (lhs, rhs) -> Plus (from_summation lhs, from_summation rhs)
   | Sum (r, s) ->
     let s = from_summation s in

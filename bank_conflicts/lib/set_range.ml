@@ -24,8 +24,8 @@ let to_string (b:t) : string =
 
 let subst (x : Variable.t * Reals.t) (s:t) : t =
   { s with
-    lower_bound = Reals.subst x s.lower_bound;
-    upper_bound = Reals.subst x s.upper_bound;
+    lower_bound = Reals.i_subst x s.lower_bound;
+    upper_bound = Reals.i_subst x s.upper_bound;
   }
 
 let from_range : Range.t -> (Reals.t option * t) =

@@ -170,6 +170,7 @@ let has_next (r:t) : bexp =
 let is_empty (r:t) : bexp =
   b_not (has_next r)
 
+
 let is_first (r:t) : bexp =
   n_eq (Var r.var) r.lower_bound
 
@@ -423,3 +424,6 @@ let eval_res (r:t) : (int list, string) Result.t =
 
 let eval_opt (r:t) : int list option =
   eval_res r |> Result.to_option
+
+let eval_is_empty (r:t) : bool =
+  Exp.b_eval_res (is_empty r) = Ok true

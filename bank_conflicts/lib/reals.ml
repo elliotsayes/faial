@@ -318,30 +318,38 @@ and f_to_string : floating_point -> string =
     "log(" ^ to_string b ^", " ^ f_to_string e ^ ")"
   | IntToFloat e -> to_string e
 
-let subst ((x,v):Variable.t * t) : t -> t =
-  let rec i_subst (e: integer) : integer =
-    match e with
-    | Var y -> if Variable.equal x y then v else e
-    | Num _ -> e
-    | FloatToInt (o, e) -> FloatToInt (o, f_subst e)
-    | Bin (o, e1, e2) -> Bin (o, i_subst e1, i_subst e2)
-    | BitNot e -> BitNot (i_subst e)
-    | If (e1, e2, e3) -> If (b_subst e1, i_subst e2, i_subst e3)
-    | BoolToInt e -> BoolToInt (b_subst e)
-  and f_subst : floating_point -> floating_point =
-    function
-    | Float _ as f -> f
-    | Log (i, e) -> Log (i_subst i, f_subst e)
-    | IntToFloat e -> IntToFloat (i_subst e)
-  and b_subst: boolean -> boolean =
-    function
-    | Bool _ as e -> e
-    | NRel (o, e1, e2) -> NRel (o, i_subst e1, i_subst e2)
-    | BRel (o, e1, e2) -> BRel (o, b_subst e1, b_subst e2)
-    | BNot e -> BNot (b_subst e)
-    | IntToBool e -> IntToBool (i_subst e)
-  in
-  i_subst
+let rec i_subst ((x,v):Variable.t * t) : t -> t =
+  function
+  | Var y as e -> if Variable.equal x y then v else e
+  | Num _ as e -> e
+  | FloatToInt (o, e) ->
+    FloatToInt (o, f_subst (x,v) e)
+  | Bin (o, e1, e2) ->
+    Bin (o, i_subst (x,v) e1, i_subst (x,v) e2)
+  | BitNot e ->
+    BitNot (i_subst (x,v) e)
+  | If (e1, e2, e3) ->
+    If (b_subst (x,v) e1, i_subst (x,v) e2, i_subst (x,v) e3)
+  | BoolToInt e ->
+    BoolToInt (b_subst (x,v) e)
+and f_subst ((x,v):Variable.t * t) : floating_point -> floating_point =
+  function
+  | Float _ as f -> f
+  | Log (i, e) ->
+    Log (i_subst (x,v) i, f_subst (x,v) e)
+  | IntToFloat e ->
+    IntToFloat (i_subst (x,v) e)
+and b_subst ((x,v):Variable.t * t) : boolean -> boolean =
+  function
+  | Bool _ as e -> e
+  | NRel (o, e1, e2) ->
+    NRel (o, i_subst (x,v) e1, i_subst (x,v) e2)
+  | BRel (o, e1, e2) ->
+    BRel (o, b_subst (x,v) e1, b_subst (x,v) e2)
+  | BNot e ->
+    BNot (b_subst (x,v) e)
+  | IntToBool e ->
+    IntToBool (i_subst (x,v) e)
 
 let optimize : t -> t =
   let rec i_opt : t -> t =

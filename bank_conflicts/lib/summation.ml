@@ -7,6 +7,7 @@ open Protocols
 type t =
   | Const of int
   | Sum of Set_range.t * t
+  | If of Reals.boolean * t * t
   | Plus of t * t
 
 let plus (lhs:t) (rhs:t) : t =
@@ -21,6 +22,9 @@ let sum (s:Set_range.t) (e:t) =
 
 let rec to_string : t -> string =
   function
+  | If (b, p, q) ->
+    "if (" ^ Reals.b_to_string b ^ ") then " ^
+    to_string p ^ " else " ^ to_string q
   | Const x -> string_of_int x
   | Sum (b, s) -> "Σ_" ^ Set_range.to_string b ^ " " ^ to_string s
   | Plus (lhs, rhs) -> "(" ^ to_string lhs ^ " + " ^ to_string rhs ^ ")"
@@ -30,6 +34,8 @@ let subst ((x,v): Variable.t * Reals.t) : t -> t =
     function
     | Const _ as e -> e
     | Plus (lhs, rhs) -> Plus (subst lhs, subst rhs)
+    | If (b, p, q) ->
+      If (Reals.b_subst (x, v) b, subst p, subst q)
     | Sum (b, p)  ->
       let b = Set_range.subst (x, v) b in
       Sum (b,
@@ -63,8 +69,9 @@ let rec from_ra : Ra.t -> t =
   function
   | Ra.Tick k -> Const k
   | Ra.Skip -> Const 0
-  | Ra.Seq (p, q) -> Plus (from_ra p, from_ra q)
-  | Ra.Loop (r, p) -> range_sum r (from_ra p)
+  | If (b, p, q) -> If (Reals.from_bexp b, from_ra p, from_ra q)
+  | Seq (p, q) -> Plus (from_ra p, from_ra q)
+  | Loop (r, p) -> range_sum r (from_ra p)
 
 let run_ra ~show_code (r: Ra.t) : string =
   let s = from_ra r in

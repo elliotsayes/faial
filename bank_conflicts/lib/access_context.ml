@@ -4,9 +4,9 @@ open Protocols
 type access = {array: Variable.t; index: Exp.nexp}
 
 type t =
+  | Index of access
   | Loop of Range.t * t
   | Cond of Exp.bexp * t
-  | Index of access
   | Decl of Variable.t * t
 
 module SubstMake (S:Subst.SUBST) = struct
