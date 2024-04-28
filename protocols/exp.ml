@@ -2,9 +2,6 @@ open Stage0
 
 let (@) = Common.append_tr
 
-let tid = "$tid"
-let idx = "idx"
-
 type nbin =
   | BitOr
   | BitXOr
