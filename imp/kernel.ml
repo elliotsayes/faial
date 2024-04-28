@@ -81,7 +81,6 @@ let compile (k:t) : Proto.Code.t Proto.Kernel.t =
     (* Inline local variable assignment and ensure variables are distinct*)
     |> Encode_assigns.from_scoped (Params.to_set k.params)
     |> Encode_asserts.from_encode_assigns
-    |> Encode_asserts.to_proto
   in
   let (p, locals, pre) =
     let rec inline_header :
@@ -91,7 +90,7 @@ let compile (k:t) : Proto.Code.t Proto.Kernel.t =
     =
       fun (p, locals, pre) ->
       match p with
-      | Cond (b, p) -> inline_header (p, locals, b_and b pre)
+      | If (b, p, Skip) -> inline_header (p, locals, b_and b pre)
       | Decl {var=x; body=p; ty} -> inline_header (p, Params.add x ty locals, pre)
       | _ -> (p, locals, pre)
     in

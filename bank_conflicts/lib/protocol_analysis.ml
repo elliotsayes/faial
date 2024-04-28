@@ -47,7 +47,7 @@ module Make (L:Logger.Logger) = struct
         in
         Acc (x, a)
       | Skip -> Skip
-      | Cond (b, p) -> Cond (b, simpl p)
+      | If (b, p, q) -> If (b, simpl p, simpl q)
       | Decl d -> Decl {d with body= simpl d.body}
       | Loop (r, p) ->
         let p = simpl p in
@@ -59,7 +59,7 @@ module Make (L:Logger.Logger) = struct
               (n_ge (Var r.var) r.lower_bound)
               (n_lt (Var r.var) r.upper_bound)
           in
-          Loop (r', Cond(cnd, p))
+          Loop (r', If(cnd, p, Skip))
         | None ->
           Loop (r, p)
         )

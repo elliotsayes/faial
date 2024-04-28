@@ -1,27 +1,15 @@
 open Stage0
 
-let faial_drf_path : Fpath.t = Files.from_string "../../drf/bin/main.exe"
 
-let data_dep_path : Fpath.t = Files.from_string "../../index_dep/main.exe"
-
-let data_dep (fname:Fpath.t) : Subprocess.t =
-  Subprocess.make (Fpath.to_string data_dep_path) [fname |> Fpath.to_string]
-
-let faial_drf (fname:Fpath.t) : Subprocess.t =
-  Subprocess.make (Fpath.to_string faial_drf_path) [
-    fname |> Fpath.to_string;
-    "--show-flat-acc";
-  ]
-
-let run ~filename:(filename:string) : string option =
+let run ~data_dep ~faial_drf (f:Fpath.t) : string option =
   let (approx, variables) =
-    match Common.get_lines ~offset:0 ~count:2 filename with
+    match Common.get_lines ~offset:0 ~count:2 (Fpath.to_string f) with
     | [l1; l2] ->
       (Slice.from_start 2 |> Slice.substring l1 |> String.trim,
        Slice.from_start 2 |> Slice.substring l2 |> String.trim)
     | _ -> failwith "impossible"
   in
-  let exe = data_dep (Fpath.v filename) in
+  let exe = data_dep f in
   let given = exe |> Subprocess.run_split in
   let output = given.stdout |> String.trim in
   if given.status <> Unix.WEXITED 0 then Some (
@@ -31,7 +19,7 @@ let run ~filename:(filename:string) : string option =
   if output <> approx then Some (
     "Expecting '" ^ approx ^ "' got '" ^ output ^ "'"
   ) else
-  let exe = faial_drf (Fpath.v filename) in
+  let exe = faial_drf f in
   let given = exe |> Subprocess.run_split in
   let output = given.stdout |> Common.string_split_lines in
   let output =
@@ -54,20 +42,43 @@ let run ~filename:(filename:string) : string option =
 
 let () =
   print_endline "Checking examples for approximation analysis:";
-  "."
-  |> Fpath.v
+  let base_dir =
+    Array.get Sys.argv 0
+    |> Fpath.v
+    |> Fpath.parent (* get the parent directory *)
+  in
+  let data_dep_path : Fpath.t =
+    Fpath.append
+      base_dir
+      (Files.from_string "../../index_dep/main.exe")
+  in
+  let data_dep (fname:Fpath.t) : Subprocess.t =
+    Subprocess.make (Fpath.to_string data_dep_path) [fname |> Fpath.to_string]
+  in
+  let faial_drf_path : Fpath.t =
+    Fpath.append
+      base_dir
+      (Files.from_string "../../drf/bin/main.exe")
+  in
+  let faial_drf (fname:Fpath.t) : Subprocess.t =
+    Subprocess.make (Fpath.to_string faial_drf_path) [
+      fname |> Fpath.to_string;
+      "--show-flat-acc";
+    ]
+  in
+  base_dir
   |> Files.read_dir
   |> List.filter (Fpath.has_ext ".cu")
   |> List.sort Fpath.compare
-  |> List.iter (fun filename ->
-    let filename = Fpath.to_string filename in
-    print_string (" - " ^ filename);
+  |> List.iter (fun f ->
+    print_string (" - " ^ (Fpath.filename f));
     Stdlib.flush_all ();
-    (match run ~filename with
+    (match run ~data_dep ~faial_drf f with
     | None ->
       print_endline " ✔"
     | Some e ->
       print_endline " ✘\n";
+      print_endline ("faial-drf --show-flat-acc " ^ Fpath.filename f);
       print_endline e;
       print_endline "";
       exit 1

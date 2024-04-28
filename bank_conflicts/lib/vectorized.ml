@@ -280,8 +280,9 @@ let eval ?(verbose=true) : Proto.Code.t -> t -> NMap.t =
     | Acc _ ->
       failwith ("Unsupported access")
     | Decl {body=p; _} -> eval cost p ctx
-    | Cond (b, p) ->
-      restrict b ctx |> eval cost p
+    | If (b, p, q) ->
+      let cost = restrict b ctx |> eval cost p in
+      restrict (Exp.b_not b) ctx |> eval cost q
     | Loop (r, body) ->
       let has_next = Range.has_next r in
       if b_eval has_next ctx |> BMap.some_true then

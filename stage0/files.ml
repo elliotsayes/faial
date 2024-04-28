@@ -20,7 +20,7 @@ let from_string (x:string) : Fpath.t =
 
 let read_dir (dir: Fpath.t) : Fpath.t list =
   Sys.readdir (Fpath.to_string dir)
-  |> Array.map Fpath.v
+  |> Array.map (fun x -> Fpath.append dir (Fpath.v x))
   |> Array.to_list
 
 let exists (f:Fpath.t) : bool =

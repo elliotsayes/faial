@@ -110,9 +110,10 @@ module Make (L:Logger.Logger) = struct
         Seq.empty
       | Decl {body=p; var; _} ->
         on_p p |> Seq.map (fun (i:t) -> Decl (var, i))
-      | Cond (b, p) ->
-        on_p p
-        |> Seq.map (fun (i:t) : t -> Cond (b, i))
+      | If (b, p, q) ->
+        Seq.append
+          (on_p p |> Seq.map (fun (p:t) : t -> Cond (b, p)))
+          (on_p q |> Seq.map (fun (q:t) : t -> Cond (Exp.b_not b, q)))
       | Loop (r, p) ->
         on_p p
         |> Seq.map (fun i ->

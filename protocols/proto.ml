@@ -9,7 +9,7 @@ module Code = struct
   type t =
     | Acc of (Variable.t * Access.t)
     | Sync of Location.t option
-    | Cond of bexp * t
+    | If of bexp * t * t
     | Loop of Range.t * t
     | Seq of t * t
     | Skip
@@ -22,7 +22,7 @@ module Code = struct
     | Skip
     | Acc _ -> p
     | Seq (p, q) -> Seq (filter f p, filter f q)
-    | Cond (b, p) -> Cond (b, filter f p)
+    | If (b, p, q) -> If (b, filter f p, filter f q)
     | Decl d -> Decl { d with body = filter f d.body }
     | Loop (r, p) -> Loop (r, filter f p)
 
@@ -30,9 +30,8 @@ module Code = struct
     f i ||
     match i with
     | Acc _ | Sync _ | Skip -> false
-    | Cond (_, p) | Loop (_, p) | Decl {body=p; _} -> exists f p
-    | Seq (p, q) -> exists f p || exists f q
-
+    | Loop (_, p) | Decl {body=p; _} -> exists f p
+    | If (_, p, q) | Seq (p, q) -> exists f p || exists f q
 
   (** Replace variables by constants. *)
 
@@ -44,9 +43,10 @@ module Code = struct
       | Seq (p, q) -> Seq (subst s p, subst s q)
       | Acc (x, e) -> Acc (x, M.a_subst s e)
       | Sync l -> Sync l
-      | Cond (b, p) -> Cond (
+      | If (b, p, q) -> If (
           M.b_subst s b,
-          subst s p
+          subst s p,
+          subst s q
         )
       | Decl d ->
         M.add s d.var (function
@@ -80,11 +80,12 @@ module Code = struct
     | Skip, p | p, Skip -> p
     | _, _ -> Seq (p, q)
 
-  let cond (b:bexp) (p:t) : t =
-    match b, p with
-    | Bool true, _ -> p
-    | _, Skip | Bool false, _ -> Skip
-    | _, _ -> Cond(b, p)
+  let if_ (b:bexp) (p:t) (q:t) : t =
+    match b, p, q with
+    | Bool b, _, _ -> if b then p else q
+    | _, Skip, Skip -> Skip
+    | _, Skip, _ -> If (b_not b, q, Skip)
+    | _, _, _ -> If(b, p, q)
 
   let loop (r:Range.t) (p:t) : t =
     if p = Skip then Skip else
@@ -109,7 +110,7 @@ module Code = struct
     | Seq (p, q) -> seq (opt p) (opt q)
     | Acc (x, e) -> Acc (x, Constfold.a_opt e)
     | Sync l -> Sync l
-    | Cond(b, p) -> cond (Constfold.b_opt b) (opt p)
+    | If (b, p, q) -> if_ (Constfold.b_opt b) (opt p) (opt q)
     | Loop (r, p) -> loop (Constfold.r_opt r) (opt p)
 
   let subst_block_dim (block_dim:Dim3.t) (p:t) : t =
@@ -137,9 +138,10 @@ module Code = struct
       | Acc _
       | Sync _
         -> (i, xs)
-      | Cond (b, p) ->
+      | If (b, p, q) ->
         let (p, xs) = uniq p xs in
-        (Cond (b, p), xs)
+        let (q, xs) = uniq q xs in
+        (If (b, p, q), xs)
       | Decl d ->
         let x = d.var in
         let p = d.body in
@@ -179,9 +181,16 @@ module Code = struct
     | Skip -> [Line "skip;"]
     | Sync _ -> [Line "sync;"]
     | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
-    | Cond (b, p1) -> [
+    | If (b, p, Skip) -> [
         Line ("if (" ^ b_to_string b ^ ") {");
-        Block (to_s p1);
+        Block (to_s p);
+        Line "}"
+      ]
+    | If (b, p, q) -> [
+        Line ("if (" ^ b_to_string b ^ ") {");
+        Block (to_s p);
+        Line ("} else {");
+        Block (to_s q);
         Line "}"
       ]
     | Decl d ->
@@ -375,9 +384,10 @@ module Kernel = struct
       match p with
       | Decl {var=x; body=p; ty;} -> inline (Params.add x ty vars) p
       | Acc _ | Skip | Sync _ -> (vars, p)
-      | Cond (b, p) ->
+      | If (b, p, q) ->
         let (vars, p) = inline vars p in
-        (vars, Cond (b, p))
+        let (vars, q) = inline vars q in
+        (vars, If (b, p, q))
       | Loop (r, p) ->
         let (vars, p) = inline vars p in
         (vars, Loop (r, p))

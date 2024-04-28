@@ -164,16 +164,18 @@ module Make (L:Logger.Logger) = struct
         |> Option.value ~default:Skip
       | Sync _ -> Skip
       | Decl {body=p; var; _} -> from_p (Variable.Set.add var locals) p
-      | Cond (b, p) ->
+      | If (b, p, q) ->
         let fns =
           Variable.Set.inter
             (Freenames.free_names_bexp b Variable.Set.empty)
             (Variable.Set.union locals Variable.tid_var_set)
         in
+        let p = from_p locals p in
+        let q = from_p locals q in
         if Variable.Set.is_empty fns then
-          If (b, from_p locals p, Skip)
+          If (b, p, q)
         else
-          from_p locals p
+          Seq (p, q)
       | Loop (r, p) ->
         let r = R.uniform cfg.block_dim r |> Option.value ~default:r in
         Loop (r, from_p locals p)

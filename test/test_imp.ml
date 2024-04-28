@@ -160,20 +160,19 @@ let tests = "test_predicates" >::: [
     let p : Proto.Code.t = p
       |> Encode_assigns.from_scoped Variable.Set.empty
       |> Encode_asserts.from_encode_assigns
-      |> Encode_asserts.to_proto
     in
     (* Test: *)
     begin
       match p with
       | Decl {body=Seq (
           Acc (_, {index=[e1]; _}),
-          Acc (_, {index=[e2]; _})); _} ->
+          Seq (Acc (_, {index=[e2]; _}), Skip) ); _} ->
         let inc e = n_plus (Num 32) e in
         let tid = Var tid in
         assert_nexp tid e1;
         assert_nexp (inc tid) e2;
         ()
-      | _ -> assert_failure (Proto.Code.to_string p)
+      | _ -> assert_failure ("Pattern matching failed:\n" ^ Proto.Code.to_string p)
     end;
     ()
   );
@@ -221,7 +220,6 @@ let tests = "test_predicates" >::: [
     let p : Proto.Code.t = p
       |> Encode_assigns.from_scoped Variable.Set.empty
       |> Encode_asserts.from_encode_assigns
-      |> Encode_asserts.to_proto
     in
     (* Test: *)
     begin
@@ -229,15 +227,19 @@ let tests = "test_predicates" >::: [
       | Decl {var=y; body=Seq (
           Acc (_, {index=[e1]; _}),
           Seq (
-          Acc (_, {index=[e2]; _}),
-          Acc (_, {index=[e3]; _}))); _} when Variable.name y = "threadIdx.x" ->
+            Acc (_, {index=[e2]; _}),
+            Seq (
+              Acc (_, {index=[e3]; _}),
+              Skip)
+            )
+        ); _} when Variable.name y = "threadIdx.x" ->
         let tid = Var (Variable.from_name "threadIdx.x") in
         let inc e = Bin (Plus, Num 32, e) in
         assert_nexp tid e1;
         assert_nexp (inc tid) e2;
         assert_nexp (inc (inc tid)) e3;
         ()
-      | _ -> assert_failure (Proto.Code.to_string p)
+      | _ -> assert_failure ("Pattern matching failed:\n" ^ Proto.Code.to_string p)
     end;
     ()
 
@@ -310,15 +312,19 @@ let tests = "test_predicates" >::: [
     let p : Proto.Code.t = p
       |> Encode_assigns.from_scoped Variable.Set.empty
       |> Encode_asserts.from_encode_assigns
-      |> Encode_asserts.to_proto
     in
     match p with
     | Decl {var=y1;
-        body=Decl {var=y2; body=Acc (_, {index=[x1; x2]; _}); _}; _}
+        body=Decl {
+          var=y2;
+          body=Seq (Acc (_, {index=[x1; x2]; _}), Skip) ;
+        _};
+        _
+      }
         when Variable.name y1 = "x" && Variable.name y2 = "x1" ->
       assert_nexp (Var (Variable.from_name "x")) x1;
       assert_nexp (Var (Variable.from_name "x1")) x2;
-    | _ -> assert_failure (Proto.Code.to_string p)
+    | _ -> assert_failure ("Pattern matching failed:\n" ^ Proto.Code.to_string p)
   )
 ]
 

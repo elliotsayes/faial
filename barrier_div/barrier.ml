@@ -15,7 +15,10 @@ module Code = struct
     | Sync l -> Seq.return (Barrier l)
     | Decl {ty; var; body=s} ->
       from_proto s |> Seq.map (fun body -> Decl {ty; body; var})
-    | Cond (b, s) -> from_proto s |> Seq.map (fun s -> Cond (b, s))
+    | If (b, p, q) ->
+      Seq.append
+        (from_proto p |> Seq.map (fun p -> Cond (b, p)))
+        (from_proto q |> Seq.map (fun q -> Cond (Exp.b_not b, q)))
     | Seq (s1, s2) -> from_proto s1 |> Seq.append (from_proto s2)
     | Loop (r, s) -> from_proto s |> Seq.map (fun s -> Loop (r, s))
 

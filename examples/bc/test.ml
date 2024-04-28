@@ -49,7 +49,7 @@ let tests = [
   "loops-nested-2-tid.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | i ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-pow.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 1 ≤ j ≤ ⌊log₂((n - 1))⌋} 1";
   "loops-nested-2-ind-step.cu", [], "Σ_{i | 0 ≤ i ≤ ⌊(n - 1) / step1⌋} Σ_{j | 0 ≤ j ≤ ⌊((m - 1) - (i * step1)) / step2⌋} 1";
-  "ifs-2.cu", [], "(if ((n < 4)) then 1 else 0 + if ((n >= 4)) then 3 else 0)"
+  "ifs-2.cu", [], "if ((n < 4)) then 1 else 3"
 ]
 
 (* These are kernels that are being documented, but are
@@ -83,7 +83,7 @@ let unsupported : Fpath.t list =
     "2tid-racuda-1.cu";
     "2tid-racuda-2.cu";
     "2tid-racuda-3.cu";
-  ] |> List.map Fpath.v
+  ] |> List.map (fun x -> Fpath.(v "." / x))
 
 let faial_bc_path : Fpath.t = Files.from_string "../../bank_conflicts/bin/main.exe"
 
@@ -95,7 +95,7 @@ let faial_bc ?(args=[]) (fname:Fpath.t) : Subprocess.t =
 let used_files : Fpath.Set.t =
   tests @ per_request_tests
   (* get just the filenames as paths *)
-  |> List.map (fun (x, _, _) -> Fpath.v x)
+  |> List.map (fun (x, _, _) -> Fpath.(v "." / x))
   (* convert to a set *)
   |> Fpath.Set.of_list
 
@@ -155,12 +155,13 @@ let () =
     run_test (filename, "--only-cost" :: args, expected_output)
   );
   print_endline "";
+  print_endline ("Skiped files:");
   unsupported |> List.iter (fun f ->
     if not (Files.exists f) then (
       print_endline ("Missing unsupported file: " ^ Fpath.to_string f);
       exit 1
     ) else (
-      print_endline ("TODO:  " ^ Fpath.to_string f);
+      print_endline (" - " ^ Fpath.to_string f);
     )
   );
   let missed = missed_files (v ".") in
@@ -174,5 +175,6 @@ let () =
     in
     print_endline ("");
     print_endline ("ERROR: The following files are not being checked: " ^ missed);
+    exit (-1);
   ) else
     ()

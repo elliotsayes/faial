@@ -107,7 +107,7 @@ let unsupported : Fpath.t list =
   [
     "drf-warp.cu";
     "racy-warp.cu";
-  ] |> List.map Fpath.v
+  ] |> List.map (fun x -> Fpath.(v "." / x))
 
 (* ---- Testing-specific code ----- *)
 
@@ -119,7 +119,7 @@ let faial_drf ?(args=[]) (fname:Fpath.t) : Subprocess.t =
 let used_files : Fpath.Set.t =
   tests
   (* get just the filenames as paths *)
-  |> List.map (fun (x, _, _) -> Fpath.v x)
+  |> List.map (fun (x, _, _) -> Fpath.(v "." / x))
   (* convert to a set *)
   |> Fpath.Set.of_list
 
@@ -181,5 +181,6 @@ let () =
     in
     print_endline ("");
     print_endline ("ERROR: The following files are not being checked: " ^ missed);
+    exit (-1);
   ) else
     ()

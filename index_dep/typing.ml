@@ -39,8 +39,10 @@ module Context = struct
     function
     | Acc (x, y) -> Seq.return (Acc (x, y))
     | Sync _ | Skip -> Seq.empty
-    | Cond (b, p) ->
-      from_code p |> Seq.map (fun c -> Cond (b, c))
+    | If (b, p, q) ->
+      Seq.append
+        (from_code p |> Seq.map (fun p -> Cond (b, p)))
+        (from_code q |> Seq.map (fun q -> Cond (Exp.b_not b, q)))
     | Loop (r, p) ->
       from_code p |> Seq.map (fun c -> Loop (r, c))
     | Seq (p, q) ->
@@ -49,7 +51,7 @@ module Context = struct
       from_code body |> Seq.map (fun body -> Decl {var; ty; body})
 
   let from_kernel (k: Proto.Code.t Proto.Kernel.t) : t Seq.t =
-    Cond (k.pre, k.code)
+    If (k.pre, k.code, Skip)
     |> from_code
 
   let rec is_control_independent (env:Variable.Set.t) : t -> bool =
