@@ -150,7 +150,7 @@ module Vec3 = struct
 
 end
 
-module Task = struct
+module TaskState = struct
   type t = {
     locals: Environ.t;
     access: Access.t;
@@ -186,26 +186,29 @@ module Witness = struct
     indices : string list;
     data_approx: Variable.Set.t;
     control_approx: Variable.Set.t;
-    tasks : Task.t * Task.t;
+    tasks : TaskState.t * TaskState.t;
     globals: Environ.t;
   }
 
   let filter_variables (vars:Variable.Set.t) (w:t) : t =
     let (t1, t2) = w.tasks in
     { w with
-      tasks = (Task.filter_variables vars t1, Task.filter_variables vars t2);
+      tasks = (
+        TaskState.filter_variables vars t1,
+        TaskState.filter_variables vars t2
+      );
       globals = Environ.filter_variables vars w.globals;
     }
 
   let can_conflict (x:t) : bool =
     let (t1, t2) = x.tasks in
-    Task.can_conflict t1 t2
+    TaskState.can_conflict t1 t2
 
   let to_json (x:t) : json =
     let (t1, t2) = x.tasks in
     `Assoc [
-      "task1", Task.to_json t1;
-      "task2", Task.to_json t2;
+      "task1", TaskState.to_json t1;
+      "task2", TaskState.to_json t2;
       "indices", `List (List.map (fun x -> `String x) x.indices);
       "globals", Environ.to_json x.globals;
     ]
@@ -248,7 +251,7 @@ module Witness = struct
     in
     (* Parse a single index, in this case 1 *)
     let parse_idx (idx:int) : string =
-      let parse (tid:task) : string option =
+      let parse (tid:Task.t) : string option =
         List.assoc_opt (Symbexp.Ids.index tid idx) kvs
       in
       match parse Task1 with
@@ -279,7 +282,7 @@ module Witness = struct
       Environ.parse (Proof.labels proof) parse_num m
     in
     let inst1, inst2 =
-      let parse_inst_id (tid:task) : int =
+      let parse_inst_id (tid:Task.t) : int =
         env
         |> Environ.get (Symbexp.Ids.access_id tid)
         |> Option.get
@@ -328,12 +331,12 @@ module Witness = struct
     let t2_locals = fix_locals t2_locals in
     let t1_labels = fix_labels (labels_of "$T1") in
     let t2_labels = fix_labels (labels_of "$T2") in
-    let t1 = Task.{
+    let t1 = TaskState.{
       locals = {variables=t1_locals;labels=t1_labels};
       access = a1.access;
       location = Some a1.location;
     } in
-    let t2 = Task.{
+    let t2 = TaskState.{
       locals = {variables=t2_locals;labels=t2_labels};
       access = a2.access;
       location = Some a2.location;

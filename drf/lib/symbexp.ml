@@ -13,18 +13,18 @@ open Flatacc
 
 
 module Ids = struct
-  let prefix (t:task) : string = "$" ^ task_to_string t ^ "$"
+  let prefix (t:Task.t) : string = "$" ^ Task.to_string t ^ "$"
   (* Variable representing index accessing the array *)
-  let index (t:task) (n:int) : string = prefix t ^ "idx$" ^ string_of_int n
+  let index (t:Task.t) (n:int) : string = prefix t ^ "idx$" ^ string_of_int n
   (* The access identifier *)
-  let access_id (t:task) : string = prefix t ^ "id"
+  let access_id (t:Task.t) : string = prefix t ^ "id"
 end
 
 module Gen = struct
   let var (x:string) : nexp = Var (Variable.from_name x)
-  let index (t:task) (n:int) : nexp = Ids.index t n |> var
+  let index (t:Task.t) (n:int) : nexp = Ids.index t n |> var
   (* Access mode *)
-  let mode (t:task) : nexp = var (Ids.prefix t ^ "mode")
+  let mode (t:Task.t) : nexp = var (Ids.prefix t ^ "mode")
 
   let mode_read : nexp = Num 0
   let mode_write : nexp = Num 1
@@ -41,16 +41,16 @@ module Gen = struct
         | Block -> mode_atomic_block
       )
 
-  let assign_mode (t:task) (m:Access.Mode.t): bexp =
+  let assign_mode (t:Task.t) (m:Access.Mode.t): bexp =
     n_eq (mode t) (mode_to_nexp m)
 
-  let access_id (t:task) : nexp = Ids.access_id t |> var
+  let access_id (t:Task.t) : nexp = Ids.access_id t |> var
 
   (* assign identifier of the conditional access *)
-  let assign_access_id (t:task) (aid:int) : bexp =
+  let assign_access_id (t:Task.t) (aid:int) : bexp =
     n_eq (access_id t) (Num aid)
 
-  let assign_index (op:Exp.nrel) (t:task) (idx:int) (n:nexp) : bexp =
+  let assign_index (op:Exp.nrel) (t:Task.t) (idx:int) (n:nexp) : bexp =
     n_rel op (index t idx) n
 
   (* Constrains the indices to be all non-negative and match for both threads. *)
@@ -70,10 +70,10 @@ module Gen = struct
     )
     |> b_and_ex
 
-  let project (t:task) (x:Variable.t) : Variable.t =
+  let project (t:Task.t) (x:Variable.t) : Variable.t =
     (* Add a suffix to all variables to make them unique. Use $ to ensure
       these variables did not come from C *)
-    let task_suffix (t:task) = "$" ^ task_to_string t in
+    let task_suffix (t:Task.t) = "$" ^ Task.to_string t in
     Variable.update_name (fun n -> n ^ task_suffix t) x
 
   let mode_spec arch : bexp =
@@ -116,19 +116,19 @@ end
   For each thread-local variable x generate x$1 and x$2 to represent the
   thread-local assignments of each thread.
  *)
-let project_access (locals:Variable.Set.t) (t:task) (ca:CondAccess.t) : CondAccess.t =
-  let rec inline_proj_n (t:task) (n: nexp) : nexp =
+let project_access (locals:Variable.Set.t) (t:Task.t) (ca:CondAccess.t) : CondAccess.t =
+  let rec inline_proj_n (t:Task.t) (n: nexp) : nexp =
     match n with
     | Num _ -> n
     | CastInt e -> CastInt (inline_proj_b t e)
     | Var x when Variable.Set.mem x locals -> Var (Gen.project t x)
     | Var _ -> n
     | BitNot e -> BitNot (inline_proj_n t e)
-    | Other e -> inline_proj_n (other_task t) e
+    | Other e -> inline_proj_n (Task.other t) e
     | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
     | NIf (b, n1, n2) -> NIf (inline_proj_b t b, inline_proj_n t n1, inline_proj_n t n2)
     | NCall (x, n) -> NCall (x, inline_proj_n t n)
-  and inline_proj_b (t:task) (b: bexp) : bexp =
+  and inline_proj_b (t:Task.t) (b: bexp) : bexp =
     match b with
     | CastBool e -> CastBool (inline_proj_n t e)
     | Pred (x, n) -> Pred (x, inline_proj_n t n)
@@ -174,7 +174,7 @@ module SymAccess = struct
     " }"
 
   (* Given a task generator serialize a conditional access *)
-  let to_bexp ?(assign_index=true) (t:task) (a:t) : bexp =
+  let to_bexp ?(assign_index=true) (t:Task.t) (a:t) : bexp =
     (
       Gen.assign_access_id t a.id ::
       a.condition :: (* assign the pre-condition of the access *)
@@ -189,7 +189,7 @@ module SymAccess = struct
   (* When we lower the representation, we do not want to have source code
     locations, just an id. *)
 
-  let from_cond_access (locals:Variable.Set.t) (t:task) (idx:int) (ca:CondAccess.t) : t =
+  let from_cond_access (locals:Variable.Set.t) (t:Task.t) (idx:int) (ca:CondAccess.t) : t =
     let ca = project_access locals t ca in
     {
       id = idx;
@@ -198,7 +198,7 @@ module SymAccess = struct
     }
 end
 
-let cond_access_to_bexp (locals:Variable.Set.t) (t:task) (a:CondAccess.t) : bexp =
+let cond_access_to_bexp (locals:Variable.Set.t) (t:Task.t) (a:CondAccess.t) : bexp =
   let a = project_access locals t a in
   (
     a.cond ::
@@ -252,7 +252,7 @@ module Proof = struct
 
 
   let _assign_dim3 ~x ~y ~z (idx1:Dim3.t option) (idx2:Dim3.t option) (p:t) : t =
-    let gen_dim3 (tid:task) (idx:Dim3.t) : bexp =
+    let gen_dim3 (tid:Task.t) (idx:Dim3.t) : bexp =
       b_and_ex [
         n_eq (Var (Gen.project tid x)) (Num idx.x);
         n_eq (Var (Gen.project tid y)) (Num idx.y);
@@ -372,7 +372,7 @@ module Proof = struct
       ...
       tid = access_n
     *)
-    let assign_accesses (t:task) : bexp =
+    let assign_accesses (t:Task.t) : bexp =
       code
       |> Flatacc.Code.to_list (* get conditional accesses *)
       |> List.map (Flatacc.CondAccess.add_cond runtime)
