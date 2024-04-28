@@ -147,7 +147,8 @@ end
 module CodeGen (N:NUMERIC_OPS) = struct
 	let parse_num = N.parse_num
 
-	let nbin_to_expr (op:nbin) : Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = match op with
+	let nbin_to_expr : N_binary.t -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr =
+    function
 		| BitAnd -> N.mk_bit_and
 		| BitOr -> N.mk_bit_or
 		| BitXOr -> N.mk_bit_xor

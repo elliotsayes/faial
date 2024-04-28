@@ -17,7 +17,7 @@ module BinOp = struct
     | Mod
     | Pow
 
-  let from_nbin : Exp.nbin -> t =
+  let from_nbin : N_binary.t -> t =
     function
     | BitOr -> BitOr
     | BitXOr -> BitXOr

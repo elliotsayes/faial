@@ -77,7 +77,7 @@ module IExp = struct
     | Var of Variable.t
     | Num of int
     | BitNot of t
-    | Bin of nbin * t * t
+    | Bin of N_binary.t * t * t
     | NCall of string * t
     | NIf of t * t * t
     | Other of t
@@ -106,7 +106,7 @@ module IExp = struct
     | Num x -> string_of_int x
     | BitNot e -> "~ (" ^ to_string e ^ ")"
     | Bin (o, l, r) ->
-      "(" ^ to_string l ^ ") " ^ nbin_to_string o ^ " (" ^ to_string r ^ ")"
+      "(" ^ to_string l ^ ") " ^ N_binary.to_string o ^ " (" ^ to_string r ^ ")"
     | NCall (o, e) -> o ^ "(" ^ to_string e ^ ")"
     | NIf (e1, e2, e3) ->
       let e1 = to_string e1 in

@@ -1,6 +1,6 @@
 (* Evaluate expressions and return int32 *)
-let eval_nbin (o:Exp.nbin) : Int32.t -> Int32.t -> Int32.t =
-  match o with
+let eval_nbin : N_binary.t -> Int32.t -> Int32.t -> Int32.t =
+  function
   | BitAnd -> Int32.logand
   | BitXOr -> Int32.logxor
   | BitOr -> Int32.logor

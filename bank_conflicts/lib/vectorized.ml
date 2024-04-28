@@ -181,7 +181,7 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
     NMap.map (fun v -> ~- v) n
 
   | Bin (o, n1, n2) ->
-    let o = Exp.eval_nbin o in
+    let o = N_binary.eval o in
     let n1 = n_eval n1 ctx in
     let n2 = n_eval n2 ctx in
     (try

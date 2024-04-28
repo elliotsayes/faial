@@ -2,18 +2,6 @@ open Stage0
 
 let (@) = Common.append_tr
 
-type nbin =
-  | BitOr
-  | BitXOr
-  | BitAnd
-  | LeftShift
-  | RightShift
-  | Plus
-  | Minus
-  | Mult
-  | Div
-  | Mod
-
 type nrel =
   | NEq
   | NNeq
@@ -29,7 +17,7 @@ type brel =
 type nexp =
   | Var of Variable.t
   | Num of int
-  | Bin of nbin * nexp * nexp
+  | Bin of N_binary.t * nexp * nexp
   | BitNot of nexp
   | NCall of string * nexp
   | NIf of bexp * nexp * nexp
@@ -43,19 +31,6 @@ and bexp =
   | BNot of bexp
   | Pred of string * nexp
   | CastBool of nexp
-
-let eval_nbin (o:nbin) : int -> int -> int =
-  match o with
-  | BitAnd -> (land)
-  | BitXOr -> (lxor)
-  | BitOr -> (lor)
-  | Plus -> (+)
-  | Minus -> (-)
-  | Mult -> ( * )
-  | Div -> (/)
-  | Mod -> Common.modulo
-  | LeftShift -> (lsl)
-  | RightShift -> (lsr)
 
 let eval_nrel o: int -> int -> bool =
   match o with
@@ -85,7 +60,7 @@ let rec n_eval_res (n: nexp) : (int, string) Result.t =
   | Bin (o, n1, n2) ->
     let* n1 = n_eval_res n1 in
     let* n2 = n_eval_res n2 in
-    Ok (eval_nbin o n1 n2)
+    Ok (N_binary.eval o n1 n2)
   | NCall (x,_) -> Error ("n_eval: call " ^ x)
   | NIf (b, n1, n2) ->
     let* b = b_eval_res b in
@@ -217,8 +192,8 @@ let n_right_shift (l: nexp) (r:nexp) : nexp =
 let n_bin o n1 n2 =
   try
     match o, n1, n2 with
-    | _, Num n1, Num n2 -> Num (eval_nbin o n1 n2)
-    | Plus, _, _ -> n_plus n1 n2
+    | _, Num n1, Num n2 -> Num (N_binary.eval o n1 n2)
+    | N_binary.Plus, _, _ -> n_plus n1 n2
     | Minus, _, _ -> n_minus n1 n2
     | Mult, _, _ -> n_mult n1 n2
     | Div, _, _ -> n_div n1 n2
@@ -340,18 +315,6 @@ and b_mem (x:Variable.t) : bexp -> bool =
   | BNot e -> b_mem x e
   | Pred (_, e) -> n_mem x e
 
-let nbin_to_string : nbin -> string = function
-  | Plus -> "+"
-  | Minus -> "-"
-  | Mult -> "*"
-  | Div -> "/"
-  | Mod -> "%"
-  | LeftShift -> "<<"
-  | RightShift -> ">>"
-  | BitXOr -> "^"
-  | BitOr -> "|"
-  | BitAnd -> "&"
-
 let nrel_to_string (r:nrel) : string =
   match r with
   | NEq -> "=="
@@ -384,7 +347,7 @@ and n_to_string : nexp -> string = function
   | Var x -> Variable.name x
   | BitNot n -> "~" ^ n_par n
   | Bin (b, a1, a2) ->
-    n_par a1 ^ " " ^ nbin_to_string b ^ " " ^ n_par a2
+    n_par a1 ^ " " ^ N_binary.to_string b ^ " " ^ n_par a2
   | NCall (x, arg) ->
     x ^ "(" ^ n_to_string arg ^ ")"
   | NIf (b, n1, n2) ->

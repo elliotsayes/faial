@@ -384,8 +384,9 @@ let while_cond (r:t) : bexp =
 (* An increment of a while loop *)
 let while_inc (r:t) : nexp =
   let x = Var r.var in
-  let o, e1, e2 = match r.dir, r.step with
-    | Increase, Step.Plus e -> Plus, x, e
+  let o, e1, e2 =
+    match r.dir, r.step with
+    | Increase, Step.Plus e -> N_binary.Plus, x, e
     | Decrease, Step.Plus e -> Minus, x, e
     | Increase, Step.Mult e -> Mult, x, e
     | Decrease, Step.Mult e -> Div, x, e
