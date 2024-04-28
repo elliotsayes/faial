@@ -47,12 +47,12 @@ module Make (L:Logger.Logger) = struct
       | Num n -> Offset (Num n)
       | Var x when Variable.is_tid x -> Index (Var x)
       | Var x -> Offset (Var x)
-      | BitNot e ->
-        map (fun e -> BitNot e) (from_nexp e)
-      | Bin (o, e1, e2) when o = Plus || o = Minus ->
-        index_or (fun e1 e2 -> Bin (o, e1, e2)) (from_nexp e1) (from_nexp e2)
-      | Bin (o, e1, e2) ->
-        index_and (fun e1 e2 -> Bin (o, e1, e2)) (from_nexp e1) (from_nexp e2)
+      | Unary (o, e) ->
+        map (fun e -> Unary (o, e)) (from_nexp e)
+      | Binary (o, e1, e2) when o = Plus || o = Minus ->
+        index_or (fun e1 e2 -> Binary (o, e1, e2)) (from_nexp e1) (from_nexp e2)
+      | Binary (o, e1, e2) ->
+        index_and (fun e1 e2 -> Binary (o, e1, e2)) (from_nexp e1) (from_nexp e2)
       | NCall (f, e) -> map (fun e -> NCall (f, e)) (from_nexp e)
       | Other e -> map (fun e -> Other e) (from_nexp e)
       | CastInt e ->

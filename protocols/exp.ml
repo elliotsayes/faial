@@ -17,8 +17,8 @@ type brel =
 type nexp =
   | Var of Variable.t
   | Num of int
-  | Bin of N_binary.t * nexp * nexp
-  | BitNot of nexp
+  | Binary of N_binary.t * nexp * nexp
+  | Unary of N_unary.t * nexp
   | NCall of string * nexp
   | NIf of bexp * nexp * nexp
   | Other of nexp
@@ -54,10 +54,10 @@ let rec n_eval_res (n: nexp) : (int, string) Result.t =
   | CastInt b ->
     let* b = b_eval_res b in
     Ok (if b then 1 else 0)
-  | BitNot n ->
+  | Unary (o, n) ->
     let* n = n_eval_res n in
-    Ok (~- n)
-  | Bin (o, n1, n2) ->
+    Ok (N_unary.eval o n)
+  | Binary (o, n1, n2) ->
     let* n1 = n_eval_res n1 in
     let* n2 = n_eval_res n2 in
     Ok (N_binary.eval o n1 n2)
@@ -134,11 +134,11 @@ let n_plus n1 n2 =
   match n1, n2 with
   | Num 0, n | n, Num 0 -> n
   | Num n1, Num n2 -> Num (n1 + n2)
-  | Num n1, Bin (Plus, Num n2, e)
-  | Bin (Plus, Num n1, e), Num n2 ->
-    Bin (Plus, Num (n1 + n2), e)
-  | _, Num _ -> Bin (Plus, n2, n1)
-  | _, _ -> Bin (Plus, n1, n2)
+  | Num n1, Binary (Plus, Num n2, e)
+  | Binary (Plus, Num n1, e), Num n2 ->
+    Binary (Plus, Num (n1 + n2), e)
+  | _, Num _ -> Binary (Plus, n2, n1)
+  | _, _ -> Binary (Plus, n1, n2)
 
 let n_inc (n:nexp) : nexp =
   n_plus n (Num 1)
@@ -147,7 +147,7 @@ let n_minus n1 n2 =
   match n1, n2 with
   | n, Num 0 -> n
   | Num n1, Num n2 -> Num (n1 - n2)
-  | _, _ -> Bin (Minus, n1, n2)
+  | _, _ -> Binary (Minus, n1, n2)
 
 let n_dec (n:nexp) : nexp =
   n_minus n (Num 1)
@@ -157,14 +157,14 @@ let n_mult n1 n2 =
   | Num 1, n | n, Num 1 -> n
   | Num 0, _ | _, Num 0 -> Num 0
   | Num n1, Num n2 -> Num (n1 * n2)
-  | Num n1, Bin (Mult, Num n2, e)
-  | Num n1, Bin (Mult, e, Num n2)
-  | Bin (Mult, Num n1, e), Num n2
-  | Bin (Mult, e, Num n1), Num n2 ->
-    Bin (Mult, Num (n1 * n2), e)
-  | _, _ -> Bin (Mult, n1, n2)
+  | Num n1, Binary (Mult, Num n2, e)
+  | Num n1, Binary (Mult, e, Num n2)
+  | Binary (Mult, Num n1, e), Num n2
+  | Binary (Mult, e, Num n1), Num n2 ->
+    Binary (Mult, Num (n1 * n2), e)
+  | _, _ -> Binary (Mult, n1, n2)
 
-let n_uminus n = n_mult (Num (-1)) n
+let n_uminus (n:nexp) : nexp = Unary (N_unary.Negate, n)
 
 let n_div n1 n2 =
   match n1, n2 with
@@ -172,22 +172,22 @@ let n_div n1 n2 =
   | Num 0, _ -> Num 0
   | _, Num 0 -> failwith ("Division by 0")
   | Num n1, Num n2 -> Num (n1 / n2)
-  | _, _ -> Bin (Div, n1, n2)
+  | _, _ -> Binary (Div, n1, n2)
 
 let n_mod n1 n2 =
   match n1, n2 with
   | Num n1, Num n2 -> Num (Common.modulo n1 n2)
-  | _, _ -> Bin (Mod, n1, n2)
+  | _, _ -> Binary (Mod, n1, n2)
 
 let n_left_shift (l: nexp) (r:nexp) : nexp =
   match l, r with
-  | a, Num n -> Bin (Mult, a, Num (Common.pow ~base:2 n))
-  | _, _ -> Bin (LeftShift, l, r)
+  | a, Num n -> Binary (Mult, a, Num (Common.pow ~base:2 n))
+  | _, _ -> Binary (LeftShift, l, r)
 
 let n_right_shift (l: nexp) (r:nexp) : nexp =
   match l, r with
-  | a, Num n -> Bin (Div, a, Num (Common.pow ~base:2 n))
-  | _, _ -> Bin (RightShift, l, r)
+  | a, Num n -> Binary (Div, a, Num (Common.pow ~base:2 n))
+  | _, _ -> Binary (RightShift, l, r)
 
 let n_bin o n1 n2 =
   try
@@ -200,9 +200,9 @@ let n_bin o n1 n2 =
     | Mod, _, _ -> n_mod n1 n2
     | LeftShift, _, _ -> n_left_shift n1 n2
     | RightShift, _, _ -> n_right_shift n1 n2
-    | _, _, _ -> Bin (o, n1, n2)
+    | _, _, _ -> Binary (o, n1, n2)
   with
-    Division_by_zero -> Bin (o, n1, n2)
+    Division_by_zero -> Binary (o, n1, n2)
 
 let b_or b1 b2 =
   match b1, b2 with
@@ -248,7 +248,7 @@ let b_false = Bool false
 let n_bit_not : nexp -> nexp =
   function
   | Num n -> Num (Int32.(of_int n |> lognot |> to_int))
-  | e -> BitNot e
+  | e -> Unary (BitNot, e)
 
 let cast_int : bexp -> nexp =
   function
@@ -300,9 +300,9 @@ let rec n_mem (x:Variable.t) : nexp -> bool =
   | CastInt b -> b_mem x b
   | Var y -> Variable.equal x y
   | Num _ -> false
-  | Bin (_, e1, e2) ->
+  | Binary (_, e1, e2) ->
     n_mem x e1 || n_mem x e2
-  | BitNot e | NCall (_, e) | Other e -> n_mem x e
+  | Unary (_, e) | NCall (_, e) | Other e -> n_mem x e
   | NIf (b, e1, e2) ->
     b_mem x b || n_mem x e1 || n_mem x e2
 
@@ -338,15 +338,15 @@ let rec n_par (n:nexp) : string =
   | CastInt _
     -> n_to_string n
   | NIf _
-  | BitNot _
-  | Bin _
+  | Unary _
+  | Binary _
     -> "(" ^ n_to_string n ^ ")"
 
 and n_to_string : nexp -> string = function
   | Num n -> string_of_int n
   | Var x -> Variable.name x
-  | BitNot n -> "~" ^ n_par n
-  | Bin (b, a1, a2) ->
+  | Unary (o, n) -> N_unary.to_string o ^ n_par n
+  | Binary (b, a1, a2) ->
     n_par a1 ^ " " ^ N_binary.to_string b ^ " " ^ n_par a2
   | NCall (x, arg) ->
     x ^ "(" ^ n_to_string arg ^ ")"

@@ -16,9 +16,9 @@ let rec i_to_string : Reals.integer -> string =
   | Var x -> Variable.name x
   | Num x -> string_of_int x
   | FloatToInt (o, e) -> tr_op_to_string o ^ "(" ^ f_to_string e ^ ")"
-  | Bin (Div, e1, e2) ->
+  | Binary (Div, e1, e2) ->
     "floor(" ^ i_to_string e1 ^ "/" ^ i_to_string e2 ^ ")"
-  | Bin (o, e1, e2) ->
+  | Binary (o, e1, e2) ->
     let e1 = i_to_string e1 in
     let e2 = i_to_string e2 in
     let infix =
@@ -44,8 +44,10 @@ let rec i_to_string : Reals.integer -> string =
       "(" ^ e1 ^ o ^ e2 ^ ")"
     else
       o ^ "(" ^ e1 ^ ", " ^ e2 ^")"
-  | BitNot e ->
+  | Unary (BitNot, e) ->
     "bit_not(" ^ i_to_string e ^ ")"
+  | Unary (Negate, e) ->
+    "-(" ^ i_to_string e ^ ")"
   | If (b, e1, e2) ->
     "(if (" ^ b_to_string b ^ ") then " ^ i_to_string e1 ^ " else " ^
     i_to_string e2 ^")"

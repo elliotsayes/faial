@@ -38,6 +38,7 @@ module type NUMERIC_OPS = sig
   val mk_gt: binop
   val mk_lt: binop
   val mk_not: unop
+  val mk_unary_minus: unop
   val parse_num: string -> string
 end
 
@@ -60,6 +61,7 @@ module ArithmeticOps : NUMERIC_OPS = struct
   let mk_ge = Arithmetic.mk_ge
   let mk_gt = Arithmetic.mk_gt
   let mk_lt = Arithmetic.mk_lt
+  let mk_unary_minus = Arithmetic.mk_unary_minus
   let mk_not = missing1 "~"
   let parse_num (x:string) = x
 end
@@ -122,6 +124,7 @@ module BitVectorOps (W:WordSize) = struct
 	let mk_gt = BitVector.mk_sgt
 	let mk_lt = BitVector.mk_slt
 	let mk_not = BitVector.mk_not
+	let mk_unary_minus = BitVector.mk_neg
 	let parse_num x =
 		(* Input is: #x0000004000000000 *)
 		let offset n x = String.sub x n (String.length x - n) in
@@ -160,7 +163,8 @@ module CodeGen (N:NUMERIC_OPS) = struct
 		| Div -> N.mk_div
 		| Mod -> N.mk_mod
 
-	let nrel_to_expr : nrel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
+	let nrel_to_expr : nrel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr =
+    function
 		| NEq -> Boolean.mk_eq
 		| NNeq -> fun ctx n1 n2 -> Boolean.mk_not ctx (Boolean.mk_eq ctx n1 n2)
 		| NLe -> N.mk_le
@@ -168,7 +172,8 @@ module CodeGen (N:NUMERIC_OPS) = struct
 		| NLt -> N.mk_lt
 		| NGt -> N.mk_gt
 
-	let brel_to_expr : brel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr = function
+	let brel_to_expr : brel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr =
+    function
 		| BOr -> fun ctx b1 b2 -> Boolean.mk_or ctx [b1; b2]
 		| BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
 
@@ -177,15 +182,17 @@ module CodeGen (N:NUMERIC_OPS) = struct
     | Var x -> Variable.name x |> N.mk_var ctx
     | CastInt b ->
       n_to_expr ctx (n_if b (Num 1) (Num 0))
-    | BitNot n ->
+    | Unary (BitNot, n) ->
       N.mk_not ctx (n_to_expr ctx n)
+    | Unary (Negate, n) ->
+      N.mk_unary_minus ctx (n_to_expr ctx n)
     | Other n ->
         let n : string = Exp.n_to_string n in
         raise (Not_implemented ("n_to_expr: not implemented for Other of " ^ n))
     | NCall _ ->
         failwith "b_to_expr: invoke Predicates.inline to remove predicates"
     | Num (n:int) -> N.mk_num ctx n
-    | Bin (op, n1, n2) ->
+    | Binary (op, n1, n2) ->
         (nbin_to_expr op) ctx (n_to_expr ctx n1) (n_to_expr ctx n2)
     | NIf (b, n1, n2) -> Boolean.mk_ite ctx
         (b_to_expr ctx b) (n_to_expr ctx n1) (n_to_expr ctx n2)
@@ -230,6 +237,7 @@ module SignedBitVectorOps (W:WordSize) = struct
   let mk_gt = BitVector.mk_sgt
   let mk_lt = BitVector.mk_slt
   let mk_not = BitVector.mk_not
+  let mk_unary_minus = BitVector.mk_neg
   let parse_num x =
     (* Input is: #x0000004000000000 *)
     let offset n x = String.sub x n (String.length x - n) in

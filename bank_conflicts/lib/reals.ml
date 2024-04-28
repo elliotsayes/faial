@@ -60,8 +60,8 @@ type integer =
   | Var of Variable.t
   | Num of int
   | FloatToInt of TruncateOp.t * floating_point
-  | Bin of BinOp.t * integer * integer
-  | BitNot of integer
+  | Binary of BinOp.t * integer * integer
+  | Unary of N_unary.t * integer
   | If of boolean * integer * integer
   | BoolToInt of boolean
 
@@ -149,7 +149,7 @@ let pow (base:integer) (pow:integer) : integer =
   match pow with
   | Num 0 -> Num 1
   | Num 1 -> base
-  | _ -> Bin (Pow, base, pow)
+  | _ -> Binary (Pow, base, pow)
 
 let log (base:integer) (arg: floating_point) : floating_point =
   match base, arg with
@@ -162,13 +162,13 @@ let div (lhs:integer) (rhs:integer) : integer =
   | e, Num 1 -> e
   | Num lhs, Num rhs -> Num (lhs / rhs)
   | Num 0, _ -> Num 0
-  | lhs, rhs -> Bin (Div, lhs, rhs)
+  | lhs, rhs -> Binary (Div, lhs, rhs)
 
 let minus (lhs:integer) (rhs:integer) : integer =
   match lhs, rhs with
   | Num lhs, Num rhs -> Num (lhs - rhs)
   | e, Num 0 -> e
-  | lhs, rhs -> Bin (Minus, lhs, rhs)
+  | lhs, rhs -> Binary (Minus, lhs, rhs)
 
 let uminus (e:integer) : integer =
   minus (Num 0) e
@@ -177,14 +177,14 @@ let mult (lhs:integer) (rhs:integer) : integer =
   match lhs, rhs with
   | Num 0, _ | _, Num 0 -> Num 0
   | Num 1, e | e, Num 1 -> e
-  | lhs, rhs -> Bin (Mult, lhs, rhs)
+  | lhs, rhs -> Binary (Mult, lhs, rhs)
 
 let plus (lhs:integer) (rhs:integer) : integer =
   match lhs, rhs with
   | Num lhs, Num rhs -> Num (lhs + rhs)
   | Num 0, e | e, Num 0 -> e
   | _, _ ->
-    Bin (Plus, lhs, rhs)
+    Binary (Plus, lhs, rhs)
 
 let inc (e:integer) : integer =
   plus e (Num 1)
@@ -199,7 +199,7 @@ let bin (o:BinOp.t) (lhs:integer) (rhs:integer) : integer =
   | Plus -> plus lhs rhs
   | Minus -> minus lhs rhs
   | Pow -> pow lhs rhs
-  | o -> Bin (o, lhs, rhs)
+  | o -> Binary (o, lhs, rhs)
 
 let ceiling : floating_point -> integer =
   function
@@ -220,8 +220,8 @@ let if_ (cond: boolean) (e1:integer) (e2:integer) : integer =
 
 let bit_not : integer -> integer =
   function
-  | BitNot e -> e
-  | e -> BitNot e
+  | Unary (BitNot, e) -> e
+  | e -> Unary (BitNot, e)
 
 let is_one : t -> bool =
   function
@@ -259,9 +259,9 @@ let rec from_nexp : Exp.nexp -> t =
   function
   | Var x -> Var x
   | Num x -> Num x
-  | Bin (b, e1, e2) ->
+  | Binary (b, e1, e2) ->
     bin (BinOp.from_nbin b) (from_nexp e1) (from_nexp e2)
-  | BitNot e -> BitNot (from_nexp e)
+  | Unary (o, e) -> Unary (o, from_nexp e)
   | NCall _ -> failwith "NCall(_,_)"
   | Other _ -> failwith "Other _"
   | NIf (e1, e2, e3) ->
@@ -283,15 +283,15 @@ let rec to_string : t -> string =
   | Num x -> string_of_int x
   | FloatToInt (Ceiling, e) -> "⌈" ^ f_to_string e ^ "⌉"
   | FloatToInt (Floor, e) -> "⌊" ^ f_to_string e ^ "⌋"
-  | Bin (Pow, base, Num p) ->
+  | Binary (Pow, base, Num p) ->
     to_string base ^ superscript p
-  | Bin (Div, e1, e2) ->
+  | Binary (Div, e1, e2) ->
     "⌊" ^ to_string e1 ^ " / " ^ to_string e2 ^ "⌋"
-  | Bin (o, e1, e2) ->
+  | Binary (o, e1, e2) ->
     "(" ^ to_string e1 ^ " " ^ BinOp.to_string o ^
     " " ^ to_string e2 ^ ")"
-  | BitNot e ->
-    "~(" ^ to_string e ^ ")"
+  | Unary (o, e) ->
+    N_unary.to_string o ^ "(" ^ to_string e ^ ")"
   | If (b, e1, e2) ->
     "(" ^ b_to_string b ^ ")?(" ^ to_string e1 ^ "):(" ^
     to_string e2 ^")"
@@ -324,10 +324,10 @@ let rec i_subst ((x,v):Variable.t * t) : t -> t =
   | Num _ as e -> e
   | FloatToInt (o, e) ->
     FloatToInt (o, f_subst (x,v) e)
-  | Bin (o, e1, e2) ->
-    Bin (o, i_subst (x,v) e1, i_subst (x,v) e2)
-  | BitNot e ->
-    BitNot (i_subst (x,v) e)
+  | Binary (o, e1, e2) ->
+    Binary (o, i_subst (x,v) e1, i_subst (x,v) e2)
+  | Unary (o, e) ->
+    Unary (o, i_subst (x,v) e)
   | If (e1, e2, e3) ->
     If (b_subst (x,v) e1, i_subst (x,v) e2, i_subst (x,v) e3)
   | BoolToInt e ->
@@ -357,8 +357,9 @@ let optimize : t -> t =
     | Var _ as e -> e
     | Num _ as e -> e
     | FloatToInt (o, e) -> float_to_int o (f_opt e)
-    | Bin (o, e1, e2) -> bin o (i_opt e1) (i_opt e2)
-    | BitNot e -> bit_not (i_opt e)
+    | Binary (o, e1, e2) -> bin o (i_opt e1) (i_opt e2)
+    | Unary (BitNot, e) -> bit_not (i_opt e)
+    | Unary (Negate, e) -> Unary (Negate, i_opt e)
     | If (e1, e2, e3) -> if_ (b_opt e1) (i_opt e2) (i_opt e3)
     | BoolToInt e -> bool_to_int (b_opt e)
   and f_opt : floating_point -> floating_point =
@@ -383,9 +384,9 @@ let free_names : t -> Variable.Set.t -> Variable.Set.t =
     | Var x -> fun fns -> Variable.Set.add x fns
     | Num _ -> fun fns -> fns
     | FloatToInt (_, e) -> f_fns e
-    | Bin (_, e1, e2) ->
+    | Binary (_, e1, e2) ->
       fun fns -> i_fns e1 fns |> i_fns e2
-    | BitNot e -> i_fns e
+    | Unary (_, e) -> i_fns e
     | If (e1, e2, e3) ->
       fun fns ->
         b_fns e1 fns |> i_fns e2 |> i_fns e3

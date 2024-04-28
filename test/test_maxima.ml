@@ -41,20 +41,22 @@ let i_tests =
     FloatToInt (Floor, Float 1.9), Float.floor 1.9 |> Int.of_float;
     FloatToInt (Ceiling, Float 1.9), Float.ceil 1.9 |> Int.of_float;
 
-    Bin (Plus, x_, Num 1), x + 1;
-    Bin (LeftShift, x_, Num 1), Int.shift_left x 1;
-    Bin (RightShift, x_, Num 1), Int.shift_right x 1;
-    Bin (Mult, x_, Num 13), x * 13;
-    Bin (Minus, x_, Num 13), x - 13;
-    Bin (Mod, x_, Num 13), x mod 13;
-    Bin (BitXOr, x_, Num 13), Int.logxor x 13;
-    Bin (BitOr, x_, Num 13), Int.logor x 13;
-    Bin (BitAnd, x_, Num 13), Int.logand x 13;
-    Bin (Pow, Num 2, Num 3), 8;
+    Binary (Plus, x_, Num 1), x + 1;
+    Binary (LeftShift, x_, Num 1), Int.shift_left x 1;
+    Binary (RightShift, x_, Num 1), Int.shift_right x 1;
+    Binary (Mult, x_, Num 13), x * 13;
+    Binary (Minus, x_, Num 13), x - 13;
+    Binary (Mod, x_, Num 13), x mod 13;
+    Binary (BitXOr, x_, Num 13), Int.logxor x 13;
+    Binary (BitOr, x_, Num 13), Int.logor x 13;
+    Binary (BitAnd, x_, Num 13), Int.logand x 13;
+    Binary (Pow, Num 2, Num 3), 8;
     (* Make sure we are working with integer division *)
-    Bin (Div, Num 1, Bin (Plus, Num 0, Num 4)), 1 / (0 + 4);
+    Binary (Div, Num 1, Binary (Plus, Num 0, Num 4)), 1 / (0 + 4);
 
-    BitNot (Num 10), Int.lognot 10;
+    Unary (BitNot, Num 10), Int.lognot 10;
+
+    Unary (Negate, Num 10), (-10);
 
     If (Bool true, Num 2, Num 3), 2;
 

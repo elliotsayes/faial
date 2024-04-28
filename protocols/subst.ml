@@ -38,8 +38,8 @@ module Make (S:SUBST) = struct
       end
     | CastInt b -> CastInt (b_subst s b)
     | Num _ -> n
-    | BitNot e -> BitNot (n_subst s e)
-    | Bin (o, n1, n2) -> Bin (o, n_subst s n1, n_subst s n2)
+    | Unary (o, e) -> Unary (o, n_subst s e)
+    | Binary (o, n1, n2) -> Binary (o, n_subst s n1, n_subst s n2)
     | NIf (b, n1, n2) -> NIf (b_subst s b, n_subst s n1, n_subst s n2)
     | NCall (x, a) -> NCall (x, n_subst s a)
     | Other e -> Other (n_subst s e)

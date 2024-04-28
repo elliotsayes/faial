@@ -76,8 +76,8 @@ module IExp = struct
   type n =
     | Var of Variable.t
     | Num of int
-    | BitNot of t
-    | Bin of N_binary.t * t * t
+    | Unary of N_unary.t * t
+    | Binary of N_binary.t * t * t
     | NCall of string * t
     | NIf of t * t * t
     | Other of t
@@ -104,8 +104,8 @@ module IExp = struct
     function
     | Var x -> Variable.name x
     | Num x -> string_of_int x
-    | BitNot e -> "~ (" ^ to_string e ^ ")"
-    | Bin (o, l, r) ->
+    | Unary (o, e) -> N_unary.to_string o ^ " (" ^ to_string e ^ ")"
+    | Binary (o, l, r) ->
       "(" ^ to_string l ^ ") " ^ N_binary.to_string o ^ " (" ^ to_string r ^ ")"
     | NCall (o, e) -> o ^ "(" ^ to_string e ^ ")"
     | NIf (e1, e2, e3) ->
@@ -156,16 +156,16 @@ let parse_bin (op:string) (l:IExp.t) (r:IExp.t) : IExp.t =
   | ">=" -> BExp (NRel (NGe, l, r))
   | ">"  -> BExp (NRel (NGt, l, r))
   (* int -> int -> int *)
-  | "+" -> NExp (Bin (Plus, l, r))
-  | "-" -> NExp (Bin (Minus, l, r))
-  | "*"  -> NExp (Bin (Mult, l, r))
-  | "/" -> NExp (Bin (Div, l, r))
-  | "%" -> NExp (Bin (Mod, l, r))
-  | ">>" -> NExp (Bin (RightShift, l, r))
-  | "<<" -> NExp (Bin (LeftShift, l, r))
-  | "^" -> NExp (Bin (BitXOr, l, r))
-  | "|" -> NExp (Bin (BitOr, l, r))
-  | "&" -> NExp (Bin (BitAnd, l, r))
+  | "+" -> NExp (Binary (Plus, l, r))
+  | "-" -> NExp (Binary (Minus, l, r))
+  | "*"  -> NExp (Binary (Mult, l, r))
+  | "/" -> NExp (Binary (Div, l, r))
+  | "%" -> NExp (Binary (Mod, l, r))
+  | ">>" -> NExp (Binary (RightShift, l, r))
+  | "<<" -> NExp (Binary (LeftShift, l, r))
+  | "^" -> NExp (Binary (BitXOr, l, r))
+  | "|" -> NExp (Binary (BitOr, l, r))
+  | "&" -> NExp (Binary (BitAnd, l, r))
   | _ ->
     L.warning ("parse_bin: rewriting to unknown binary operator: " ^ op);
     let lbl =
@@ -216,16 +216,16 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
 
   | UnaryOperator {opcode="~"; child=e; _} ->
     let* n = parse_e "child" e in
-    ret_n (BitNot n)
+    ret_n (Unary (BitNot, n))
 
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _}
     when Variable.name n = "divUp" ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
     (*  (n1 + n2 - 1)/n2 *)
-    let n2_minus_1 : IExp.n = Bin (Minus, n2, NExp (Num 1)) in
-    let n1_plus_n2_minus_1 : IExp.n = Bin (Plus, n1, NExp n2_minus_1) in
-    ret_n (Bin (Div, NExp n1_plus_n2_minus_1, n2))
+    let n2_minus_1 : IExp.n = Binary (Minus, n2, NExp (Num 1)) in
+    let n1_plus_n2_minus_1 : IExp.n = Binary (Plus, n1, NExp n2_minus_1) in
+    ret_n (Binary (Div, NExp n1_plus_n2_minus_1, n2))
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__other_int" ->
     let* n = parse_e "arg" n in
@@ -255,7 +255,7 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
 
   | BinaryOperator {lhs=l; opcode="&"; rhs=IntegerLiteral 1; _} ->
     let* n = parse_exp l in
-    ret_b (NRel (NEq, NExp (Bin (Mod, n, NExp (Num 2))), NExp (Num 0)))
+    ret_b (NRel (NEq, NExp (Binary (Mod, n, NExp (Num 2))), NExp (Num 0)))
 
   | BinaryOperator {opcode="&"; lhs=n1; rhs=BinaryOperator {opcode="-"; lhs=n2; rhs=IntegerLiteral 1; _}; ty=ty} ->
     parse_exp (BinaryOperator {opcode="%"; lhs=n1; rhs=n2; ty=ty})
@@ -314,7 +314,7 @@ module Arg = struct
       in
       let* l = with_msg "parse_loc.address" parse_loc address in
       let* offset = with_msg "parse_loc.offset"parse_exp offset in
-      Ok {l with offset = NExp (Bin (Plus, offset, l.offset))}
+      Ok {l with offset = NExp (Binary (Plus, offset, l.offset))}
     | e ->
       root_cause (
         "WARNING: parse_loc: unsupported expression: " ^ D_lang.Expr.to_string e
@@ -369,16 +369,16 @@ module Unknown = struct
       (match n with
       | Var x -> (u, Exp.Var x)
       | Num x -> (u, Exp.Num x)
-      | Bin (o, n1, n2) ->
+      | Binary (o, n1, n2) ->
         let (u, n1) = handle_n u n1 in
         let (u, n2) = handle_n u n2 in
-        (u, Exp.Bin (o, n1, n2))
+        (u, Exp.Binary (o, n1, n2))
       | Other n ->
         let (u, n) = handle_n u n in
         (u, Exp.Other n)
-      | BitNot n ->
+      | Unary (o, n) ->
         let (u, n) = handle_n u n in
-        (u, Exp.BitNot n)
+        (u, Exp.Unary (o, n))
       | NCall (x, n) ->
         let (u, n) = handle_n u n in
         (u, Exp.NCall (x, n))
@@ -677,7 +677,7 @@ module ForRange = struct
     function
     (* (int i = 0; i < 4; i++) *)
     | {init=lb; cond={op=Lt; arg=ub; _}; _} ->
-      (lb, Bin (Minus, ub, Num 1), Range.Increase)
+      (lb, Binary (Minus, ub, Num 1), Range.Increase)
     (* (int i = 0; i <= 4; i++) *)
     | {init=lb; cond={op=LtEq; arg=ub; _}; _} ->
       (lb, ub, Increase)
@@ -689,7 +689,7 @@ module ForRange = struct
       (lb, ub, Decrease)
     (* (int i = 4; i > 0; i--) *)
     | {init=ub; cond={op=Gt; arg=lb; _}; _} ->
-      (Bin (Plus, Num 1, lb), ub, Decrease)
+      (Binary (Plus, Num 1, lb), ub, Decrease)
 
 
   let infer_step (r:t) : Range.Step.t option =

@@ -159,7 +159,7 @@ let tests = "tests" >::: [
   );
   "highest_power" >:: (fun _ ->
     assert_eval 8 (Range.highest_power ~base:2 (Num 10));
-    assert_eval 8 (Range.highest_power ~base:2 (Bin (Plus, Num 5, Num 5)));
+    assert_eval 8 (Range.highest_power ~base:2 (Binary (Plus, Num 5, Num 5)));
     ()
   );
   "all" >:: (fun _ ->

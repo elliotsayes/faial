@@ -123,9 +123,9 @@ let project_access (locals:Variable.Set.t) (t:Task.t) (ca:CondAccess.t) : CondAc
     | CastInt e -> CastInt (inline_proj_b t e)
     | Var x when Variable.Set.mem x locals -> Var (Gen.project t x)
     | Var _ -> n
-    | BitNot e -> BitNot (inline_proj_n t e)
+    | Unary (o, e) -> Unary (o, inline_proj_n t e)
     | Other e -> inline_proj_n (Task.other t) e
-    | Bin (o, n1, n2) -> Bin (o, inline_proj_n t n1, inline_proj_n t n2)
+    | Binary (o, n1, n2) -> Binary (o, inline_proj_n t n1, inline_proj_n t n2)
     | NIf (b, n1, n2) -> NIf (inline_proj_b t b, inline_proj_n t n1, inline_proj_n t n2)
     | NCall (x, n) -> NCall (x, inline_proj_n t n)
   and inline_proj_b (t:Task.t) (b: bexp) : bexp =

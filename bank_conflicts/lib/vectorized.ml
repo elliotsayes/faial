@@ -176,11 +176,11 @@ let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
     |> Array.map (fun v -> if v then 1 else 0)
     |> NMap.from_array
 
-  | BitNot e ->
+  | Unary (o, e) ->
     let n = n_eval e ctx in
-    NMap.map (fun v -> ~- v) n
+    NMap.map (fun v -> N_unary.eval o v) n
 
-  | Bin (o, n1, n2) ->
+  | Binary (o, n1, n2) ->
     let o = N_binary.eval o in
     let n1 = n_eval n1 ctx in
     let n2 = n_eval n2 ctx in

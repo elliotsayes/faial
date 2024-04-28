@@ -51,9 +51,9 @@ let tests = "tests" >::: [
   "mult1" >:: (fun _ ->
     let p1 = [(Num 6, 3); (Num 9, 1); (Num 10, -1)] |> Poly.from_list in
     let expected = [
-      Bin (Mult, Num 2, Num 6), 3;
-      Bin (Mult, Num 2, Num 9), 1;
-      Bin (Mult, Num 2, Num 10), -1;
+      Binary (Mult, Num 2, Num 6), 3;
+      Binary (Mult, Num 2, Num 9), 1;
+      Binary (Mult, Num 2, Num 10), -1;
     ] |> Poly.from_list in
     assert_p_equal expected (Poly.mult1 (Num 2) p1)
   );
@@ -67,9 +67,9 @@ let tests = "tests" >::: [
   "mult2" >:: (fun _ ->
     let p1 = [(Num 6, 3); (Num 9, 1); (Num 10, -1)] |> Poly.from_list in
     let expected = [
-      Bin (Mult, Num 2, Num 6), 5;
-      Bin (Mult, Num 2, Num 9), 3;
-      Bin (Mult, Num 2, Num 10), 1;
+      Binary (Mult, Num 2, Num 6), 5;
+      Binary (Mult, Num 2, Num 9), 3;
+      Binary (Mult, Num 2, Num 10), 1;
     ] |> Poly.from_list in
     assert_p_equal expected (Poly.mult2 (Num 2) 2 p1);
     let p1 = [Num 1, -1] |> Poly.from_list in
@@ -80,13 +80,13 @@ let tests = "tests" >::: [
   "inverse" >:: (fun _ ->
     let p1 = [(Num 6, 3); (Num 9, 1); (Num 10, -1)] |> Poly.from_list in
     let expected = [
-      (Bin (Div, Num 1, Num 6), -3);
-      (Bin (Div, Num 1, Num 9), -1);
-      (Bin (Div, Num 1, Num 10), 1)
+      (Binary (Div, Num 1, Num 6), -3);
+      (Binary (Div, Num 1, Num 9), -1);
+      (Binary (Div, Num 1, Num 10), 1)
     ] |> Poly.from_list in
     assert_p_equal expected (Poly.inverse p1);
     let p1 = Poly.from_list [ (Num 1, 1) ] in
-    let expected = Poly.from_list [ (Bin (Div, Num 1, Num 1), -1) ] in
+    let expected = Poly.from_list [ (Binary (Div, Num 1, Num 1), -1) ] in
     assert_p_equal expected (inverse p1)
   );
 
@@ -106,10 +106,10 @@ let tests = "tests" >::: [
     let p2 = Poly.from_list [(Num 4, 1); (Num 5, 0) ] in
     assert_p_equal
       (Poly.from_list [
-        Bin (Mult, Num 4, Num 2), 3;
-        Bin (Mult, Num 5, Num 2), 2;
-        Bin (Mult, Num 4, Num 3), 1;
-        Bin (Mult, Num 5, Num 3), 0;
+        Binary (Mult, Num 4, Num 2), 3;
+        Binary (Mult, Num 5, Num 2), 2;
+        Binary (Mult, Num 4, Num 3), 1;
+        Binary (Mult, Num 5, Num 3), 0;
       ])
       (Poly.mult p1 p2)
   );
@@ -118,14 +118,20 @@ let tests = "tests" >::: [
     (*1 / (1024 * gridDim.x)*)
     let x = Variable.from_name "x" in
     (* 1 / (1024 x) *)
-    let given = Bin (Div, Num 1, Bin (Mult, Num 1024, Var x)) in
-    let generated = Bin (Mult, Bin (Div, Num 1, Num 1024), Bin (Div, Num 1, Var x)) in
+    let given = Binary (Div, Num 1, Binary (Mult, Num 1024, Var x)) in
+    let generated =
+      Binary (
+        Mult,
+        Binary (Div, Num 1, Num 1024),
+        Binary (Div, Num 1, Var x)
+      )
+    in
     assert_poly x ~given ~generated
   );
 
   "from_reals" >:: (fun _ ->
     let x = Variable.from_name "x" in
-    let given = Bin (Div, Var x, Var x) |> Poly.from_reals x |> Option.get in
+    let given = Binary (Div, Var x, Var x) |> Poly.from_reals x |> Option.get in
     let expected = Exp0 (Num 1) in
     assert_p_equal expected given
   );
@@ -140,7 +146,7 @@ let tests = "tests" >::: [
 
   "err2" >:: (fun _ ->
     let x = Variable.from_name "x" in
-    let given = Bin (Div, Var x, Var x) in
+    let given = Binary (Div, Var x, Var x) in
     let generated = Num 1 in
     assert_poly x ~given ~generated
   );

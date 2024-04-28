@@ -234,7 +234,7 @@ let tests = "test_predicates" >::: [
             )
         ); _} when Variable.name y = "threadIdx.x" ->
         let tid = Var (Variable.from_name "threadIdx.x") in
-        let inc e = Bin (Plus, Num 32, e) in
+        let inc e = Binary (Plus, Num 32, e) in
         assert_nexp tid e1;
         assert_nexp (inc tid) e2;
         assert_nexp (inc (inc tid)) e3;

@@ -311,10 +311,10 @@ let highest_power ~base : nexp -> nexp =
 
 let last_mult ~lower_bound ~upper_bound (step:int) : nexp =
   if step >= 2 then
-    Bin (
+    Binary (
       Mult,
       lower_bound,
-      (highest_power ~base:step (Bin (Div, upper_bound, lower_bound)))
+      (highest_power ~base:step (Binary (Div, upper_bound, lower_bound)))
     )
   else
     failwith ("last_mult: invalid base: " ^ string_of_int step)
@@ -334,10 +334,10 @@ let last_mult ~lower_bound ~upper_bound (step:int) : nexp =
  *)
 let last_div ~lower_bound ~upper_bound (step:int) : nexp =
   if step >= 2 then
-    Bin (
+    Binary (
       Div,
       upper_bound,
-      (highest_power ~base:step (Bin (Div, upper_bound, lower_bound)))
+      (highest_power ~base:step (Binary (Div, upper_bound, lower_bound)))
     )
   else
     failwith ("last_mult: invalid base: " ^ string_of_int step)
@@ -391,7 +391,7 @@ let while_inc (r:t) : nexp =
     | Increase, Step.Mult e -> Mult, x, e
     | Decrease, Step.Mult e -> Div, x, e
   in
-  Bin (o, e1, e2)
+  Binary (o, e1, e2)
 
 let next (r:t) : t =
   match r.dir with

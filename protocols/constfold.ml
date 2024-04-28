@@ -38,7 +38,8 @@ let rec n_opt (a : nexp) : nexp =
   | Var _ 
   | Num _ -> a
   | NCall (x, e) -> NCall (x, n_opt e)
-  | BitNot e -> n_bit_not (n_opt e)
+  | Unary (BitNot, e) -> n_bit_not (n_opt e)
+  | Unary (Negate, e) -> n_uminus (n_opt e)
   | CastInt b -> cast_int (b_opt b)
   | Other e -> Other (n_opt e)
   | NIf (b, n1, n2) ->
@@ -46,7 +47,7 @@ let rec n_opt (a : nexp) : nexp =
     let n1 = n_opt n1 in
     let n2 = n_opt n2 in
     n_if b n1 n2
-  | Bin (b, a1, a2) ->
+  | Binary (b, a1, a2) ->
     let a1 = n_opt a1 in
     let a2 = n_opt a2 in
     n_bin b a1 a2

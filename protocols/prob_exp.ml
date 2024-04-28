@@ -31,11 +31,14 @@ let rec n_eval_res ?(env=default_env) (n:Exp.nexp) : (Int32.t, string) Result.t 
     let* b = b_eval_res ~env b in
     Ok (Int32.of_int (if b then 1 else 0))
   | Var x -> env x
-  | BitNot e ->
+  | Unary (BitNot, e) ->
     let* n = n_eval_res ~env e in
     Ok (Int32.neg n)
+  | Unary (Negate, e) ->
+    let* n = n_eval_res ~env e in
+    Ok (Int32.mul Int32.minus_one n)
   | Num n -> Ok (Int32.of_int n)
-  | Bin (o, n1, n2) ->
+  | Binary (o, n1, n2) ->
     let* n1 = n_eval_res ~env n1 in
     let* n2 = n_eval_res ~env n2 in
     Ok (eval_nbin o n1 n2)

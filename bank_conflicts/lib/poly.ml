@@ -357,26 +357,26 @@ let from_reals (x:Variable.t) : Reals.integer -> t option =
   function
   | Var y when Variable.equal x y ->
     Some (Exp1 {constant=Reals.zero; coefficient=Reals.one})
-  | Bin (Plus, e1, e2) ->
+  | Binary (Plus, e1, e2) ->
     let* e1 = from_i e1 in
     let* e2 = from_i e2 in
     Some (add e1 e2)
-  | Bin (Minus, e1, e2) ->
+  | Binary (Minus, e1, e2) ->
     let* e1 = from_i e1 in
     let* e2 = from_i e2 in
     Some (add e1 (uminus e2))
-  | Bin (Mult, e1, e2) ->
+  | Binary (Mult, e1, e2) ->
     let* e1 = from_i e1 in
     let* e2 = from_i e2 in
     Some (mult e1 e2)
-  | Bin (Div, e1, e2) ->
+  | Binary (Div, e1, e2) ->
     let* e1 = from_i e1 in
     let* e2 = from_i e2 in
     Some (div e1 e2)
   | Num _ as n-> Some (Exp0 n)
   | Var _ as n -> Some (Exp0 n)
-  | Bin _ | FloatToInt _
-  | BitNot _ | If _ | BoolToInt _ ->
+  | Binary _ | FloatToInt _
+  | Unary _ | If _ | BoolToInt _ ->
     None
   in
   from_i
@@ -397,13 +397,13 @@ let rec optimize_reals (e:Reals.t) : Reals.t =
           else Some (
             match pow with
             | 0 -> coef
-            | 1 -> Bin (Mult, coef, Var x)
-            | -1 -> Bin (Div, coef, Var x)
+            | 1 -> Binary (Mult, coef, Var x)
+            | -1 -> Binary (Div, coef, Var x)
             | _ ->
               if pow < 0 then
-                Bin (Div, coef, Bin (Pow, Var x, Num pow))
+                Binary (Div, coef, Binary (Pow, Var x, Num pow))
               else
-                Bin (Mult, coef, Bin (Pow, Var x, Num pow))
+                Binary (Mult, coef, Binary (Pow, Var x, Num pow))
           )
         )
       |> List.of_seq

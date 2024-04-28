@@ -22,10 +22,10 @@ let tests = "test_predicates" >::: [
     let tidx = Var Variable.tid_x in
     assert_index ~expected:tidx ~given:tidx;
     assert_offset ~expected:(Num 10) ~given:(Num 10);
-    assert_offset ~expected:(Bin (Plus, Num 10, Num 20)) ~given:(Bin (Plus, Num 10, Num 20));
-    assert_index ~expected:tidx ~given:(Bin (Plus, tidx, Num 20));
-    assert_index ~expected:(Bin (Mult, tidx, Num 20)) ~given:(Bin (Mult, tidx, Num 20));
-    assert_index ~expected:(Bin (Mult, tidx, Num 20)) ~given:(Bin (Mult, Bin (Plus, tidx, Num 5), Num 20));
+    assert_offset ~expected:(Binary (Plus, Num 10, Num 20)) ~given:(Binary (Plus, Num 10, Num 20));
+    assert_index ~expected:tidx ~given:(Binary (Plus, tidx, Num 20));
+    assert_index ~expected:(Binary (Mult, tidx, Num 20)) ~given:(Binary (Mult, tidx, Num 20));
+    assert_index ~expected:(Binary (Mult, tidx, Num 20)) ~given:(Binary (Mult, Binary (Plus, tidx, Num 5), Num 20));
     ()
   );
 ]

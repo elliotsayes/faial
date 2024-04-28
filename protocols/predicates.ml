@@ -63,9 +63,9 @@ let get_predicates (b:bexp) : t list =
   and get_names_n (n:nexp) (ns:StringSet.t) : StringSet.t =
     match n with
     | Var _ | Num _ -> ns
-    | Bin (_, n1, n2) -> get_names_n n1 ns |> get_names_n n2
+    | Binary (_, n1, n2) -> get_names_n n1 ns |> get_names_n n2
     | NIf (b, n1, n2) -> get_names_b b ns |> get_names_n n1 |> get_names_n n2
-    | NCall (_, n) | Other n | BitNot n -> get_names_n n ns
+    | NCall (_, n) | Other n | Unary (_, n) -> get_names_n n ns
     | CastInt b -> get_names_b b ns
   in
   get_names_b b StringSet.empty
@@ -81,8 +81,8 @@ let inline: bexp -> bexp =
       -> n
     | CastInt b -> CastInt (inline_b b)
     | Other e -> Other (inline_n e)
-    | BitNot e -> BitNot (inline_n e)
-    | Bin (o, n1, n2) -> Bin (o, inline_n n1, inline_n n2)
+    | Unary (o, e) -> Unary (o, inline_n e)
+    | Binary (o, n1, n2) -> Binary (o, inline_n n1, inline_n n2)
     | NIf (b, n1, n2) -> NIf (inline_b b, inline_n n1, inline_n n2)
   and inline_b (b: bexp) : bexp =
     match b with
