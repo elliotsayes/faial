@@ -84,7 +84,7 @@ module IExp = struct
 
   and b =
     | Bool of bool
-    | NRel of nrel * t * t
+    | NRel of N_rel.t * t * t
     | BRel of brel * t * t
     | BNot of t
     | Pred of string * t
@@ -119,7 +119,7 @@ module IExp = struct
     function
     | Bool b -> if b then "true" else "false"
     | NRel (o, e1, e2) ->
-      let o = nrel_to_string o in
+      let o = N_rel.to_string o in
       let e1 = to_string e1 in
       let e2 = to_string e2 in
       "(" ^ e1 ^ ") " ^ o ^ " (" ^ e2 ^ ")"

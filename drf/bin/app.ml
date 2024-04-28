@@ -256,9 +256,9 @@ let run (a:t) : Analysis.t list =
       kernel
       |> translate arch a
       |> Symbexp.translate arch
-      |> Symbexp.add_rel_index Exp.NLe a.le_index
-      |> Symbexp.add_rel_index Exp.NGe a.ge_index
-      |> Symbexp.add_rel_index Exp.NEq a.eq_index
+      |> Symbexp.add_rel_index N_rel.NLe a.le_index
+      |> Symbexp.add_rel_index N_rel.NGe a.ge_index
+      |> Symbexp.add_rel_index N_rel.NEq a.eq_index
       |> Symbexp.add ~tid:a.thread_idx_1 ~bid:a.block_idx_1
       |> Symbexp.add ~tid:a.thread_idx_2 ~bid:a.block_idx_2
       |> show a.show_symbexp Symbexp.print_kernels

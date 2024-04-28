@@ -50,7 +50,7 @@ module Gen = struct
   let assign_access_id (t:Task.t) (aid:int) : bexp =
     n_eq (access_id t) (Num aid)
 
-  let assign_index (op:Exp.nrel) (t:Task.t) (idx:int) (n:nexp) : bexp =
+  let assign_index (op:N_rel.t) (t:Task.t) (idx:int) (n:nexp) : bexp =
     n_rel op (index t idx) n
 
   (* Constrains the indices to be all non-negative and match for both threads. *)
@@ -181,7 +181,7 @@ module SymAccess = struct
       Gen.assign_mode t a.access.mode :: (* assign the mode *)
       if assign_index then
         (* assign the values of the index *)
-        List.mapi (Gen.assign_index Exp.NEq t) a.access.index
+        List.mapi (Gen.assign_index N_rel.NEq t) a.access.index
       else [] (* otherwise do not generate *)
     )
     |> b_and_ex
@@ -202,7 +202,7 @@ let cond_access_to_bexp (locals:Variable.Set.t) (t:Task.t) (a:CondAccess.t) : be
   let a = project_access locals t a in
   (
     a.cond ::
-    List.mapi (Gen.assign_index Exp.NEq t) a.access.index
+    List.mapi (Gen.assign_index N_rel.NEq t) a.access.index
   )
   |> b_and_ex
 
@@ -240,7 +240,7 @@ module Proof = struct
   let add_goal (b:bexp) (p:t) : t =
     { p with goal = b_and p.goal b }
 
-  let add_rel_index (o:Exp.nrel) (idx:int list) (p:t) : t =
+  let add_rel_index (o:N_rel.t) (idx:int list) (p:t) : t =
     let idx_eq =
       idx
       |> List.mapi (fun i v ->
@@ -440,7 +440,7 @@ module Proof = struct
 end
 
 let add_rel_index
-  (o:Exp.nrel)
+  (o:N_rel.t)
   (idx:int list)
   (s:Proof.t Streamutil.stream)
 :

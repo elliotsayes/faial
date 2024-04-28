@@ -215,7 +215,7 @@ and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
     |> BMap.from_array
 
   | NRel (o, n1, n2) ->
-    let o = Exp.eval_nrel o in
+    let o = N_rel.eval o in
     let n1 = n_eval n1 ctx in
     let n2 = n_eval n2 ctx in
     n_map2 o n1 n2

@@ -61,7 +61,7 @@ and b_to_string : Reals.boolean -> string =
   | NRel (NNeq, e1, e2) ->
     "notequal(" ^ i_to_string e1 ^ ", " ^ i_to_string e2 ^ ")"
   | NRel (o, e1, e2) ->
-    "(" ^ i_to_string e1 ^ " " ^ Exp.nrel_to_string o ^
+    "(" ^ i_to_string e1 ^ " " ^ N_rel.to_string o ^
     " " ^ i_to_string e2 ^ ")"
   | BRel (BOr, e1, e2) ->
     "(" ^ b_to_string e1 ^ " or " ^ b_to_string e2 ^ ")"

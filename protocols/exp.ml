@@ -2,14 +2,6 @@ open Stage0
 
 let (@) = Common.append_tr
 
-type nrel =
-  | NEq
-  | NNeq
-  | NLt
-  | NLe
-  | NGt
-  | NGe
-
 type brel =
   | BOr
   | BAnd
@@ -26,20 +18,11 @@ type nexp =
 
 and bexp =
   | Bool of bool
-  | NRel of nrel * nexp * nexp
+  | NRel of N_rel.t * nexp * nexp
   | BRel of brel * bexp * bexp
   | BNot of bexp
   | Pred of string * nexp
   | CastBool of nexp
-
-let eval_nrel o: int -> int -> bool =
-  match o with
-  | NEq -> (=)
-  | NNeq -> (<>)
-  | NLe -> (<=)
-  | NGe -> (>=)
-  | NLt -> (<)
-  | NGt -> (>)
 
 let eval_brel o : bool -> bool -> bool =
   match o with
@@ -47,7 +30,7 @@ let eval_brel o : bool -> bool -> bool =
   | BAnd -> (&&)
 
 let rec n_eval_res (n: nexp) : (int, string) Result.t =
-  let (let*) = Result.bind in
+  let ( let* ) = Result.bind in
   match n with
   | Var x -> Error ("n_eval: variable " ^ Variable.name x)
   | Num n -> Ok n
@@ -77,7 +60,7 @@ and b_eval_res (b: bexp) : (bool, string) Result.t =
   | NRel (o, n1, n2) ->
     let* n1 = n_eval_res n1 in
     let* n2 = n_eval_res n2 in
-    Ok (eval_nrel o n1 n2)
+    Ok (N_rel.eval o n1 n2)
   | BRel (o, b1, b2) ->
     let* b1 = b_eval_res b1 in
     let* b2 = b_eval_res b2 in
@@ -106,7 +89,7 @@ let b_eval (b: bexp) : bool =
 
 let n_rel o n1 n2 =
   match n1, n2 with
-  | Num n1, Num n2 -> Bool (eval_nrel o n1 n2)
+  | Num n1, Num n2 -> Bool (N_rel.eval o n1 n2)
   | _, _ -> NRel (o, n1, n2)
 
 let num (n:int) : nexp = Num n
@@ -315,15 +298,6 @@ and b_mem (x:Variable.t) : bexp -> bool =
   | BNot e -> b_mem x e
   | Pred (_, e) -> n_mem x e
 
-let nrel_to_string (r:nrel) : string =
-  match r with
-  | NEq -> "=="
-  | NLe -> "<="
-  | NLt -> "<"
-  | NGe -> ">="
-  | NGt -> ">"
-  | NNeq -> "!="
-
 let brel_to_string (r:brel) : string =
   match r with
   | BOr -> "||"
@@ -359,7 +333,7 @@ and b_to_string : bexp -> string = function
   | Bool b -> if b then "true" else "false"
   | CastBool e -> "bool(" ^ n_to_string e ^ ")"
   | NRel (b, n1, n2) ->
-    n_to_string n1 ^ " " ^ nrel_to_string b ^ " " ^ n_to_string n2
+    n_to_string n1 ^ " " ^ N_rel.to_string b ^ " " ^ n_to_string n2
   | BRel (b, b1, b2) ->
     b_par b1 ^ " " ^ brel_to_string b ^ " " ^ b_par b2
   | BNot b -> "!" ^ b_par b
