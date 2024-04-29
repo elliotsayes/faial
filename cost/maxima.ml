@@ -13,7 +13,12 @@ let tr_op_to_string : Reals.TruncateOp.t -> string =
 
 let rec i_to_string : Reals.integer -> string =
   function
-  | Var x -> Variable.name x
+  | Var x ->
+    let x = Variable.name x in
+    if x = "step" then
+      "__step__"
+    else
+      x
   | Num x -> string_of_int x
   | FloatToInt (o, e) -> tr_op_to_string o ^ "(" ^ f_to_string e ^ ")"
   | Binary (Div, e1, e2) ->
