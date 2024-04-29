@@ -13,6 +13,7 @@ let from_stmt : Stmt.t -> string =
       indent depth ^ "else:\n" ^
       translate (depth + 1) q
     | Loop (r, s) ->
+      let r = { r with dir = Range.Increase } in
       indent depth ^ Variable.name r.var ^ " = " ^ Exp.n_to_string (Range.while_init r) ^ "\n" ^
       indent depth ^ "while " ^ Exp.b_to_string (Range.while_cond r) ^ ":\n" ^
       translate (depth + 1) s ^
