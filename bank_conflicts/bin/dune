@@ -6,7 +6,7 @@
     ; 1st-party
     cmdliner z3 printbox printbox-text
     ; 1st-pary
-    bank_conflicts ra inference
+    bank_conflicts ra inference cost
   )
 )
 

@@ -1,4 +1,3 @@
-open Stage0
 
 module Reason = struct
   type t =

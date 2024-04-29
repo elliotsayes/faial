@@ -95,7 +95,7 @@ let rec from_summation : Summation.t -> string =
   | Plus (lhs, rhs) ->
     from_summation lhs ^ " + " ^ from_summation rhs
 
-let from_stmt (r: Stmt.t) : string =
+let from_stmt (r: Ra.Stmt.t) : string =
   Summation.from_stmt r |> from_summation
 
 let parse_maxima (x:string) : string option =
@@ -141,7 +141,7 @@ let run_ratio
 :
   (string, Errors.t) Result.t
 =
-  if Stmt.is_zero denominator then Ok "0" else
+  if Ra.Stmt.is_zero denominator then Ok "0" else
   "(" ^
     from_stmt numerator ^ ") / (" ^
     from_stmt denominator ^ ")"
@@ -151,7 +151,7 @@ let run_ratio
 let run
   ?(verbose=false)
   ?(exe="maxima")
-  (x:Stmt.t)
+  (x:Ra.Stmt.t)
 :
   (string, Errors.t) Result.t
 =

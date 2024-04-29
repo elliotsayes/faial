@@ -3,6 +3,7 @@ open Inference
 open Bank_conflicts
 open Protocols
 open Ra
+open Cost
 
 type kernel = Proto.Code.t Proto.Kernel.t
 

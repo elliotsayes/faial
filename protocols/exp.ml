@@ -302,7 +302,8 @@ let rec n_par (n:nexp) : string =
   | Binary _
     -> "(" ^ n_to_string n ^ ")"
 
-and n_to_string : nexp -> string = function
+and n_to_string : nexp -> string =
+  function
   | Num n -> string_of_int n
   | Var x -> Variable.name x
   | Unary (o, n) -> N_unary.to_string o ^ n_par n
