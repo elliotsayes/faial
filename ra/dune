@@ -1,0 +1,7 @@
+(library
+  (name ra)
+  (libraries
+    ; 3rd-party
+    str
+    ; 1st-party
+    stage0 protocols))

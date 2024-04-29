@@ -2,6 +2,7 @@ open Stage0
 open Inference
 open Bank_conflicts
 open Protocols
+open Ra
 
 type kernel = Proto.Code.t Proto.Kernel.t
 
@@ -121,32 +122,32 @@ module Solver = struct
     analysis_duration: float;
   }
 
-  let get_cost (app:t) (r:Ra.t) : (cost, string) Result.t =
-    (if app.show_ra then (Ra.to_string r |> print_endline) else ());
+  let get_cost (app:t) (r:Ra.Stmt.t) : (cost, string) Result.t =
+    (if app.show_ra then (Ra.Stmt.to_string r |> print_endline) else ());
     let start = Unix.gettimeofday () in
     (if app.use_absynth then
-      r |> Absynth.run_ra ~verbose:app.show_code ~exe:app.absynth_exe ~asympt:app.asympt
+      r |> Absynth.run ~verbose:app.show_code ~exe:app.absynth_exe ~asympt:app.asympt
     else if app.use_cofloco then
-      r |> Cofloco.run_ra ~verbose:app.show_code ~exe:app.cofloco_exe ~asympt:app.asympt
+      r |> Cofloco.run ~verbose:app.show_code ~exe:app.cofloco_exe ~asympt:app.asympt
     else if app.use_koat then
-      r |> Koat.run_ra ~verbose:app.show_code ~exe:app.koat_exe ~asympt:app.asympt
+      r |> Koat.run ~verbose:app.show_code ~exe:app.koat_exe ~asympt:app.asympt
     else if app.use_maxima then (
       abort_when app.asympt "The Maxima backend does not support asympotic cost.";
-      r |> Maxima.run_ra ~verbose:app.show_code ~exe:app.maxima_exe
+      r |> Maxima.run ~verbose:app.show_code ~exe:app.maxima_exe
     ) else
-      Ok (r |> Summation.run_ra ~show_code:app.show_code)
+      Ok (r |> Summation.run ~show_code:app.show_code)
     )
     |> Result.map (fun c ->
       {amount=c; analysis_duration=Unix.gettimeofday () -. start}
     )
     |> Result.map_error Errors.to_string
 
-  let get_ra (a:t) (k:kernel) (idx_analysis: Variable.Set.t -> Exp.nexp -> int) : Ra.t =
-    let r = Ra.Default.from_kernel idx_analysis a.config k in
-    if a.skip_simpl_ra then r else Ra.simplify r
+  let get_ra (a:t) (k:kernel) (idx_analysis: Variable.Set.t -> Exp.nexp -> int) : Ra.Stmt.t =
+    let r = Ra_compiler.Default.from_kernel idx_analysis a.config k in
+    if a.skip_simpl_ra then r else Ra.Stmt.simplify r
 
   type r_cost = (cost, string) Result.t
-  type slice = Access_context.t * Ra.t * r_cost
+  type slice = Access_context.t * Ra.Stmt.t * r_cost
 
   let total_cost (a:t) (k:kernel) : r_cost =
     let metric =
@@ -162,7 +163,7 @@ module Solver = struct
     let numerator = get_ra a k (transaction_count a) in
     let denominator = get_ra a k (access_count a) in
     let start = Unix.gettimeofday () in
-    Maxima.run_ra_ratio
+    Maxima.run_ratio
       ~verbose:a.show_code
       ~exe:a.maxima_exe
       ~numerator
@@ -186,11 +187,11 @@ module Solver = struct
       (* Convert a slice into an expression *)
       let r =
         (if flatten then Access_context.flatten s else s)
-        |> Ra.Default.from_access_context
+        |> Ra_compiler.Default.from_access_context
             idx_analysis
             (Params.to_set k.local_variables)
       in
-      if Ra.is_zero r && a.skip_zero then
+      if Ra.Stmt.is_zero r && a.skip_zero then
         None
       else
         Some (s, r, get_cost a r)
@@ -274,7 +275,7 @@ module TUI = struct
         in
         let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
         let cost =
-          let e = Summation.from_ra r in
+          let e = Summation.from_stmt r in
           PrintBox.(tree ("▶ Cost: "  ^ Summation.to_string e |> text)
           [
             tree ("▶ Cost (simplified):" |> text_with_style blue)

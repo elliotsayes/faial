@@ -65,16 +65,16 @@ let range_sum (r:Range.t) (s:t) : t =
     | None ->
       sum b s
 
-let rec from_ra : Ra.t -> t =
+let rec from_stmt : Stmt.t -> t =
   function
-  | Ra.Tick k -> Const k
-  | Ra.Skip -> Const 0
-  | If (b, p, q) -> If (Reals.from_bexp b, from_ra p, from_ra q)
-  | Seq (p, q) -> Plus (from_ra p, from_ra q)
-  | Loop (r, p) -> range_sum r (from_ra p)
+  | Stmt.Tick k -> Const k
+  | Skip -> Const 0
+  | If (b, p, q) -> If (Reals.from_bexp b, from_stmt p, from_stmt q)
+  | Seq (p, q) -> Plus (from_stmt p, from_stmt q)
+  | Loop (r, p) -> range_sum r (from_stmt p)
 
-let run_ra ~show_code (r: Ra.t) : string =
-  let s = from_ra r in
+let run ~show_code (r: Stmt.t) : string =
+  let s = from_stmt r in
   (if show_code then (to_string s |> print_endline) else ());
   to_string s
 

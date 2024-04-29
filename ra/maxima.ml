@@ -95,8 +95,8 @@ let rec from_summation : Summation.t -> string =
   | Plus (lhs, rhs) ->
     from_summation lhs ^ " + " ^ from_summation rhs
 
-let from_ra (r: Ra.t) : string =
-  Summation.from_ra r |> from_summation
+let from_stmt (r: Stmt.t) : string =
+  Summation.from_stmt r |> from_summation
 
 let parse_maxima (x:string) : string option =
   if Common.contains ~substring:"incorrect syntax" x then None
@@ -125,7 +125,7 @@ let parse_maxima (x:string) : string option =
 let compile (code:string) : string =
   "load(\"bitwise\")$\n" ^ code ^ ",logcontract,simpsum,ratsimp;"
 
-let run ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Result.t =
+let run_exe ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Result.t =
   (if verbose
     then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
     else ());
@@ -133,7 +133,7 @@ let run ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Resu
   |> Subprocess.run_combine ~stdin:expr
   |> Errors.handle_result parse_maxima
 
-let run_ra_ratio
+let run_ratio
   ~verbose
   ~exe
   ~numerator
@@ -141,13 +141,21 @@ let run_ra_ratio
 :
   (string, Errors.t) Result.t
 =
-  if Ra.is_zero denominator then Ok "0" else
-  "(" ^ from_ra numerator ^ ") / (" ^ from_ra denominator ^ ")"
+  if Stmt.is_zero denominator then Ok "0" else
+  "(" ^
+    from_stmt numerator ^ ") / (" ^
+    from_stmt denominator ^ ")"
   |> compile
-  |> run ~verbose ~exe
+  |> run_exe ~verbose ~exe
 
-let run_ra ?(verbose=false) ?(exe="maxima") (x:Ra.t) : (string, Errors.t) Result.t =
+let run
+  ?(verbose=false)
+  ?(exe="maxima")
+  (x:Stmt.t)
+:
+  (string, Errors.t) Result.t
+=
   x
-  |> from_ra
+  |> from_stmt
   |> compile
-  |> run ~verbose ~exe
+  |> run_exe ~verbose ~exe

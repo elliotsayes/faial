@@ -1,3 +1,4 @@
+(*
 open Protocols
 open Stage0
 
@@ -410,3 +411,4 @@ let rec optimize_reals (e:Reals.t) : Reals.t =
       |> List.fold_left Reals.plus Reals.zero
       |> Reals.optimize
     | None -> Reals.optimize e
+*)

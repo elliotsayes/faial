@@ -16,7 +16,7 @@
    test_prob_exp
    test_maxima
  )
- (libraries stage0 protocols drf inference oUnit bank_conflicts)
+ (libraries stage0 ra protocols drf inference oUnit bank_conflicts)
 )
 
 (cram

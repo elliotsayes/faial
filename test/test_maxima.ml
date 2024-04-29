@@ -1,6 +1,6 @@
 open Stage0
 open Protocols
-open Bank_conflicts
+open Ra
 open Reals
 
 let compile
@@ -107,7 +107,7 @@ let unit_test
     print_endline("Generated maxima:\n" ^ generated);
     print_endline("Expected output: " ^ expected_output)
   in
-  match generated |> Maxima.run with
+  match generated |> Maxima.run_exe with
   | Ok given_output ->
     if expected_output <> given_output then (
       debug ();

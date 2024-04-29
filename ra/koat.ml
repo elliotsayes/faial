@@ -37,10 +37,10 @@ type prog = {env:Environ.t; code:inst list}
 let rule (src:int) ?(cost=0) ?(dst=[]) ?(cnd=[]) () : inst =
   Rule (Rule.make ~src ~cost ~dst ~cnd)
 
-let from_ra (env:Environ.t) (s:Ra.t) : prog =
+let from_stmt (env:Environ.t) (s:Stmt.t) : prog =
   let open Exp in
   (* Compute a map from variable to its identifier *)
-  let rec translate (idx:int) : Ra.t -> int * inst list =
+  let rec translate (idx:int) : Stmt.t -> int * inst list =
     function
     | Skip ->
       idx + 1,
@@ -121,7 +121,7 @@ let parse_cost (env:Environ.t) (x:string) : string option =
   let x = Environ.decode (String.trim x) env |> Str.global_replace r_id "\\1" in
   Some x
 
-let run ?(asympt=false) ?(exe="koat2") ?(verbose=false) (env:Environ.t) (expr:string) : (string, Errors.t) Result.t =
+let run_exe ?(asympt=false) ?(exe="koat2") ?(verbose=false) (env:Environ.t) (expr:string) : (string, Errors.t) Result.t =
   (if verbose
     then prerr_endline ("KoAT output:\n" ^ expr ^ "\n")
     else ());
@@ -130,7 +130,14 @@ let run ?(asympt=false) ?(exe="koat2") ?(verbose=false) (env:Environ.t) (expr:st
   |> Subprocess.run_combine ~stdin:expr
   |> Errors.handle_result (parse env)
 
-let run_ra ?(asympt=false) ?(exe="koat2") ?(verbose=false) (s:Ra.t) : (string, Errors.t) Result.t =
-  let env = Ra.to_environ s in
-  let expr = from_ra env s |> to_string in
-  run ~asympt ~exe ~verbose env expr
+let run
+  ?(asympt=false)
+  ?(exe="koat2")
+  ?(verbose=false)
+  (s:Stmt.t)
+:
+  (string, Errors.t) Result.t
+=
+  let env = Stmt.to_environ s in
+  let expr = from_stmt env s |> to_string in
+  run_exe ~asympt ~exe ~verbose env expr

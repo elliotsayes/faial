@@ -28,9 +28,9 @@ type t =
 let rule (src:int) ?(cost=0) ?(dst=[]) ?(cnd=[]) () : t =
   Rule {src; cost; dst; cnd}
 
-let from_ra (s: Ra.t) : t list =
-  let rec translate (idx:int) : Ra.t -> int * t list =
-    let open Ra in
+let from_stmt (s: Stmt.t) : t list =
+  let rec translate (idx:int) : Stmt.t -> int * t list =
+    let open Stmt in
     function
     | Skip ->
       idx + 1,
@@ -114,7 +114,7 @@ let parse_asympt (env:Environ.t) (x:string) : string option =
   let x = if x = "constant" then "1" else x in
   Some ("O(" ^ x ^ ")")
 
-let run
+let run_exe
   ?(asympt=false)
   ?(verbose=false)
   ?(exe="cofloco")
@@ -131,7 +131,14 @@ let run
   |> Subprocess.run_combine ~stdin:expr
   |> Errors.handle_result (parse env)
 
-let run_ra ?(asympt=false) ?(verbose=false) ?(exe="cofloco") (s:Ra.t) : (string, Errors.t) Result.t =
-  let env = Ra.to_environ s in
-  let expr = from_ra s |> to_string env in
-  run ~asympt ~verbose ~exe env expr
+let run
+  ?(asympt=false)
+  ?(verbose=false)
+  ?(exe="cofloco")
+  (s:Stmt.t)
+:
+  (string, Errors.t) Result.t
+=
+  let env = Stmt.to_environ s in
+  let expr = from_stmt s |> to_string env in
+  run_exe ~asympt ~verbose ~exe env expr

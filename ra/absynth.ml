@@ -1,9 +1,9 @@
 open Stage0
 open Protocols
 
-let from_ra : Ra.t -> string =
+let from_stmt : Stmt.t -> string =
   let indent (depth:int) : string = String.make depth '\t' in
-  let rec translate (depth:int) : Ra.t -> string =
+  let rec translate (depth:int) : Stmt.t -> string =
     function
     | Skip -> indent depth ^ "tick 0\n"
     | Tick k -> indent depth ^ "tick " ^ string_of_int k ^ "\n"
@@ -52,7 +52,7 @@ let parse_absynth (x:string) : string option =
   let* (_, x) = Common.split ':' x in
   Some (String.trim x)
 
-let run ?(asympt=false) ?(verbose=false) ?(exe="absynth") (data:string) : (string, Errors.t) Result.t =
+let run_exe ?(asympt=false) ?(verbose=false) ?(exe="absynth") (data:string) : (string, Errors.t) Result.t =
   (if verbose
     then prerr_endline ("Absynth output:\n" ^ data ^ "\n")
     else ());
@@ -64,5 +64,12 @@ let run ?(asympt=false) ?(verbose=false) ?(exe="absynth") (data:string) : (strin
   )
   |> Errors.handle_result parse_absynth
 
-let run_ra ?(asympt=false) ?(verbose=false) ?(exe="absynth") (x:Ra.t) : (string, Errors.t) Result.t =
-  run ~asympt ~verbose ~exe (from_ra x)
+let run
+  ?(asympt=false)
+  ?(verbose=false)
+  ?(exe="absynth")
+  (x:Stmt.t)
+:
+  (string, Errors.t) Result.t
+=
+  run_exe ~asympt ~verbose ~exe (from_stmt x)
