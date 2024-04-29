@@ -221,7 +221,7 @@ and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
     n_map2 o n1 n2
 
   | BRel (o, b1, b2) ->
-    let o = Exp.eval_brel o in
+    let o = B_rel.eval o in
     let b1 = b_eval b1 ctx in
     let b2 = b_eval b2 ctx in
     BMap.pointwise o b1 b2

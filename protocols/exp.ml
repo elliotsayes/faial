@@ -2,10 +2,6 @@ open Stage0
 
 let (@) = Common.append_tr
 
-type brel =
-  | BOr
-  | BAnd
-
 type nexp =
   | Var of Variable.t
   | Num of int
@@ -19,15 +15,10 @@ type nexp =
 and bexp =
   | Bool of bool
   | NRel of N_rel.t * nexp * nexp
-  | BRel of brel * bexp * bexp
+  | BRel of B_rel.t * bexp * bexp
   | BNot of bexp
   | Pred of string * nexp
   | CastBool of nexp
-
-let eval_brel o : bool -> bool -> bool =
-  match o with
-  | BOr -> (||)
-  | BAnd -> (&&)
 
 let rec n_eval_res (n: nexp) : (int, string) Result.t =
   let ( let* ) = Result.bind in
@@ -64,7 +55,7 @@ and b_eval_res (b: bexp) : (bool, string) Result.t =
   | BRel (o, b1, b2) ->
     let* b1 = b_eval_res b1 in
     let* b2 = b_eval_res b2 in
-    Ok (eval_brel o b1 b2)
+    Ok (B_rel.eval o b1 b2)
   | BNot b ->
     let* b = b_eval_res b in
     Ok (not b)
@@ -201,8 +192,8 @@ let b_and b1 b2 =
 
 let b_rel o b1 b2 =
   match o, b1, b2 with
-  | _, Bool b1, Bool b2 -> Bool (eval_brel o b1 b2)
-  | BAnd, b1, b2 -> b_and b1 b2
+  | _, Bool b1, Bool b2 -> Bool (B_rel.eval o b1 b2)
+  | B_rel.BAnd, b1, b2 -> b_and b1 b2
   | BOr, b1, b2 -> b_or b1 b2
 
 let rec b_not : bexp -> bexp =
@@ -298,11 +289,6 @@ and b_mem (x:Variable.t) : bexp -> bool =
   | BNot e -> b_mem x e
   | Pred (_, e) -> n_mem x e
 
-let brel_to_string (r:brel) : string =
-  match r with
-  | BOr -> "||"
-  | BAnd -> "&&"
-
 let rec n_par (n:nexp) : string =
   match n with
   | Num _
@@ -335,7 +321,7 @@ and b_to_string : bexp -> string = function
   | NRel (b, n1, n2) ->
     n_to_string n1 ^ " " ^ N_rel.to_string b ^ " " ^ n_to_string n2
   | BRel (b, b1, b2) ->
-    b_par b1 ^ " " ^ brel_to_string b ^ " " ^ b_par b2
+    b_par b1 ^ " " ^ B_rel.to_string b ^ " " ^ b_par b2
   | BNot b -> "!" ^ b_par b
   | Pred (x, v) -> x ^ "(" ^ n_to_string v ^ ")"
 
@@ -361,7 +347,7 @@ let b_to_s : bexp -> Indent.t list =
     | Pred _
       -> [Line (b_to_string b)]
     | BRel (o, _, _) ->
-      let op = brel_to_string o in
+      let op = B_rel.to_string o in
       b
       |> (if in_and then b_and_split else b_or_split)
       |> List.map (fun b ->

@@ -1,7 +1,7 @@
 open Stage0
 open Protocols
 
-let brel_to_string : Exp.brel -> string =
+let brel_to_string : B_rel.t -> string =
   function
   | BOr -> "or"
   | BAnd -> "and"

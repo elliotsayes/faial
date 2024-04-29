@@ -1,7 +1,5 @@
 open Protocols
 
-type brel = Exp.brel
-
 module BinOp = struct
   type t =
     | BitOr
@@ -72,7 +70,7 @@ and floating_point =
 and boolean =
   | Bool of bool
   | NRel of N_rel.t * integer * integer
-  | BRel of brel * boolean * boolean
+  | BRel of B_rel.t * boolean * boolean
   | BNot of boolean
   | IntToBool of integer
 
@@ -243,7 +241,7 @@ let and_ (e1:boolean) (e2:boolean) : boolean =
 let or_ (e1:boolean) (e2:boolean) : boolean =
   BRel (BOr, e1, e2)
 
-let b_rel (o:Exp.brel) (e1:boolean) (e2:boolean) : boolean =
+let b_rel (o:B_rel.t) (e1:boolean) (e2:boolean) : boolean =
   BRel (o, e1, e2)
 
 let not_ (e:boolean) : boolean =
@@ -303,7 +301,7 @@ and b_to_string : boolean -> string =
     "(" ^ to_string e1 ^ " " ^ N_rel.to_string o ^
     " " ^ to_string e2 ^ ")"
   | BRel (o, e1, e2) ->
-    "(" ^ b_to_string e1 ^ " " ^ Exp.brel_to_string o ^
+    "(" ^ b_to_string e1 ^ " " ^ B_rel.to_string o ^
     " " ^ b_to_string e2 ^ ")"
   | BNot e ->
     "!(" ^ b_to_string e ^ ")"

@@ -85,7 +85,7 @@ module IExp = struct
   and b =
     | Bool of bool
     | NRel of N_rel.t * t * t
-    | BRel of brel * t * t
+    | BRel of B_rel.t * t * t
     | BNot of t
     | Pred of string * t
 
@@ -124,7 +124,7 @@ module IExp = struct
       let e2 = to_string e2 in
       "(" ^ e1 ^ ") " ^ o ^ " (" ^ e2 ^ ")"
     | BRel (o, e1, e2) ->
-      let o = brel_to_string o in
+      let o = B_rel.to_string o in
       let e1 = to_string e1 in
       let e2 = to_string e2 in
       "(" ^ e1 ^ ") " ^ o ^ " (" ^ e2 ^ ")"

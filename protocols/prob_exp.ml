@@ -62,7 +62,7 @@ and b_eval_res ?(env=default_env) (b: Exp.bexp) : (bool, string) Result.t =
   | BRel (o, b1, b2) ->
     let* b1 = b_eval_res ~env b1 in
     let* b2 = b_eval_res ~env b2 in
-    Ok (Exp.eval_brel o b1 b2)
+    Ok (B_rel.eval o b1 b2)
   | BNot b ->
     let* b = b_eval_res ~env b in
     Ok (not b)

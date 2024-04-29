@@ -172,7 +172,7 @@ module CodeGen (N:NUMERIC_OPS) = struct
 		| NLt -> N.mk_lt
 		| NGt -> N.mk_gt
 
-	let brel_to_expr : brel -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr =
+	let brel_to_expr : B_rel.t -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr =
     function
 		| BOr -> fun ctx b1 b2 -> Boolean.mk_or ctx [b1; b2]
 		| BAnd -> fun ctx b1 b2 -> Boolean.mk_and ctx [b1; b2]
