@@ -7,6 +7,11 @@ let from_stmt : Stmt.t -> string =
     function
     | Skip -> indent depth ^ "tick 0\n"
     | Tick k -> indent depth ^ "tick " ^ string_of_int k ^ "\n"
+    | Choice (p, q) ->
+      indent depth ^ "if random:\n" ^
+      translate (depth + 1) p ^
+      indent depth ^ "else:\n" ^
+      translate (depth + 1) q
     | If (b, p, q) ->
       indent depth ^ "if " ^ Exp.b_to_string b ^ ":\n" ^
       translate (depth + 1) p ^

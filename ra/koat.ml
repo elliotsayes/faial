@@ -56,6 +56,7 @@ let from_stmt (env:Environ.t) (s:Stmt.t) : prog =
           ~cost:k
           ~dst:[{id=idx+1;args=[]}] ();
       ]
+    | Choice _ -> failwith "choice"
     | Seq (p, q) ->
       let (idx, l1) = translate idx p in
       let (idx, l2) = translate idx q in

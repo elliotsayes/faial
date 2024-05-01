@@ -42,6 +42,7 @@ module Solver = struct
     grid_dim: Dim3.t;
     params: (string * int) list;
     flatten_slices: bool;
+    approx_ifs: bool;
   }
 
   let make
@@ -71,6 +72,7 @@ module Solver = struct
     ~grid_dim
     ~params
     ~flatten_slices
+    ~approx_ifs
   :
     t
   =
@@ -106,6 +108,7 @@ module Solver = struct
       block_dim;
       grid_dim;
       params;
+      approx_ifs;
     }
 
   let bank_conflict_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
@@ -144,7 +147,8 @@ module Solver = struct
     |> Result.map_error Errors.to_string
 
   let get_ra (a:t) (k:kernel) (idx_analysis: Variable.Set.t -> Exp.nexp -> int) : Ra.Stmt.t =
-    let r = Ra_compiler.Default.from_kernel idx_analysis a.config k in
+    let strategy = if a.approx_ifs then Ra_compiler.Approximate else Ra_compiler.Exact in
+    let r = Ra_compiler.Default.from_kernel ~strategy idx_analysis a.config k in
     if a.skip_simpl_ra then r else Ra.Stmt.simplify r
 
   type r_cost = (cost, string) Result.t
@@ -411,6 +415,7 @@ let run
   ~grid_dim
   ~params
   ~flatten_slices
+  ~approx_ifs
   (kernels : Proto.Code.t Proto.Kernel.t list)
 :
   unit
@@ -442,6 +447,7 @@ let run
     ~grid_dim
     ~params
     ~flatten_slices
+    ~approx_ifs
   in
   if output_json then
     JUI.run app
@@ -477,6 +483,7 @@ let pico
   (only_writes:bool)
   (params:(string * int) list)
   (flatten_slices:bool)
+  (approx_ifs:bool)
 =
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
   let block_dim = parsed.options.block_dim in
@@ -514,6 +521,7 @@ let pico
     ~grid_dim
     ~params
     ~flatten_slices
+    ~approx_ifs
     kernels
 
 
@@ -650,6 +658,10 @@ let flatten_slices =
   let doc = "Remove context showing bank-conflicts per location." in
   Arg.(value & flag & info ["flatten"] ~doc)
 
+let approx_ifs =
+  let doc = "Approximate conditionals." in
+  Arg.(value & flag & info ["approx"] ~doc)
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -679,6 +691,7 @@ let pico_t = Term.(
   $ only_writes
   $ params
   $ flatten_slices
+  $ approx_ifs
 )
 
 let info =

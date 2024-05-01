@@ -1,6 +1,10 @@
 open Stage0
 open Protocols
 
+type t =
+  | Exact
+  | Approximate
+
 module Make (L:Logger.Logger) = struct
   module R = Uniform_range.Make(L)
   module L = Linearize_index.Make(L)
@@ -20,12 +24,18 @@ module Make (L:Logger.Logger) = struct
     from
 
   let from_kernel
+    ?(strategy=Exact)
     (idx_analysis : Variable.Set.t -> Exp.nexp -> int)
     (cfg:Config.t)
     (k: Proto.Code.t Proto.Kernel.t)
   :
     Ra.Stmt.t
   =
+    let if_ : Exp.bexp -> Ra.Stmt.t -> Ra.Stmt.t -> Ra.Stmt.t =
+      match strategy with
+      | Exact -> Ra.Stmt.Opt.if_
+      | Approximate -> fun _ -> Ra.Stmt.Opt.choice
+    in
     let lin = L.linearize cfg k.arrays in
     let rec from_p (locals:Variable.Set.t) : Proto.Code.t -> Ra.Stmt.t =
       function
@@ -49,7 +59,7 @@ module Make (L:Logger.Logger) = struct
         let p = from_p locals p in
         let q = from_p locals q in
         if Variable.Set.is_empty fns then
-          If (b, p, q)
+          if_ b p q
         else
           Seq (p, q)
       | Loop (r, p) ->

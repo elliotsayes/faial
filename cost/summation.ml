@@ -5,21 +5,52 @@ open Protocols
   2. Flattens a summation expression as a single numeric expression.
   *)
 
+module Op = struct
+  type t =
+    | Plus
+    | Max
+    | Min
+
+  let to_string : t -> string =
+    function
+    | Plus -> "+"
+    | Max -> "max"
+    | Min -> "min"
+
+  let eval : t -> int -> int -> int =
+    function
+    | Plus -> (+)
+    | Max -> max
+    | Min -> min
+end
+
 type t =
   | Const of int
   | Sum of Set_range.t * t
   | If of Reals.boolean * t * t
-  | Plus of t * t
+  | Bin of Op.t * t * t
 
-let plus (lhs:t) (rhs:t) : t =
-  match lhs, rhs with
-  | Const lhs, Const rhs -> Const (lhs + rhs)
-  | _, _ -> Plus (lhs, rhs)
 
 let sum (s:Set_range.t) (e:t) =
   match Set_range.count s, e with
   | Some n1, Const n2 -> Const (n1 * n2)
   | _, _ -> Sum (s, e)
+
+let plus (lhs:t) (rhs:t) : t =
+  match lhs, rhs with
+  | Const lhs, Const rhs -> Const (lhs + rhs)
+  | Const 0, e | e, Const 0 -> e
+  | _, _ -> Bin (Plus, lhs, rhs)
+
+let max (lhs:t) (rhs:t) : t =
+  match lhs, rhs with
+  | Const lhs, Const rhs -> Const (max lhs rhs)
+  | _, _ -> Bin (Max, lhs, rhs)
+
+let min (lhs:t) (rhs:t) : t =
+  match lhs, rhs with
+  | Const lhs, Const rhs -> Const (min lhs rhs)
+  | _, _ -> Bin (Min, lhs, rhs)
 
 let rec to_string : t -> string =
   function
@@ -28,13 +59,14 @@ let rec to_string : t -> string =
     to_string p ^ " else " ^ to_string q
   | Const x -> string_of_int x
   | Sum (b, s) -> "Σ_" ^ Set_range.to_string b ^ " " ^ to_string s
-  | Plus (lhs, rhs) -> "(" ^ to_string lhs ^ " + " ^ to_string rhs ^ ")"
+  | Bin (Plus, lhs, rhs) -> "(" ^ to_string lhs ^ " + " ^ to_string rhs ^ ")"
+  | Bin (o, lhs, rhs) -> Op.to_string o ^ "(" ^ to_string lhs ^ ", " ^ to_string rhs ^ ")"
 
 let subst ((x,v): Variable.t * Reals.t) : t -> t =
   let rec subst : t -> t =
     function
     | Const _ as e -> e
-    | Plus (lhs, rhs) -> Plus (subst lhs, subst rhs)
+    | Bin (o, lhs, rhs) -> Bin (o, subst lhs, subst rhs)
     | If (b, p, q) ->
       If (Reals.b_subst (x, v) b, subst p, subst q)
     | Sum (b, p)  ->
@@ -66,13 +98,14 @@ let range_sum (r:Range.t) (s:t) : t =
     | None ->
       sum b s
 
-let rec from_stmt : Ra.Stmt.t -> t =
+let rec from_stmt ?(choice=max) : Ra.Stmt.t -> t =
   function
   | Ra.Stmt.Tick k -> Const k
   | Skip -> Const 0
-  | If (b, p, q) -> If (Reals.from_bexp b, from_stmt p, from_stmt q)
-  | Seq (p, q) -> Plus (from_stmt p, from_stmt q)
-  | Loop (r, p) -> range_sum r (from_stmt p)
+  | If (b, p, q) -> If (Reals.from_bexp b, from_stmt ~choice p, from_stmt ~choice q)
+  | Seq (p, q) -> plus (from_stmt ~choice p) (from_stmt ~choice q)
+  | Loop (r, p) -> range_sum r (from_stmt ~choice p)
+  | Choice (lhs, rhs) -> choice (from_stmt ~choice lhs) (from_stmt ~choice rhs)
 
 let run ~show_code (r: Ra.Stmt.t) : string =
   let s = from_stmt r in

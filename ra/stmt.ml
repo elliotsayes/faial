@@ -7,6 +7,7 @@ type t =
   | Loop of Range.t * t
   | Seq of t * t
   | If of Exp.bexp * t * t
+  | Choice of t * t
 
 let rec is_zero : t -> bool =
   function
@@ -14,7 +15,7 @@ let rec is_zero : t -> bool =
   | Tick 0 -> true
   | Tick _ -> false
   | Loop (_, r) -> is_zero r
-  | Seq (p, q) -> is_zero p && is_zero q
+  | Seq (p, q) | Choice (p, q) -> is_zero p && is_zero q
   | If (_, p, q) -> is_zero p && is_zero q
 
 let to_environ (s:t) : Environ.t =
@@ -26,7 +27,7 @@ let to_environ (s:t) : Environ.t =
       env
       |> fvs p
       |> Environ.Fvs.add_r r
-    | Seq (p, q) ->
+    | Seq (p, q) | Choice (p, q) ->
       env
       |> fvs p
       |> fvs q
@@ -47,6 +48,7 @@ module MakeSubst (S:Subst.SUBST) = struct
     | Skip -> Skip
     | Tick k -> Tick k
     | Seq (p, q) -> Seq (subst s p, subst s q)
+    | Choice (p, q) -> Choice (subst s p, subst s q)
     | If (b, p, q) -> If (M.b_subst s b, subst s p, subst s q)
     | Loop (r, p) ->
       let r = M.r_subst s r in
@@ -67,6 +69,14 @@ let rec indent : t -> Indent.t list =
   | Tick k -> [Line ("tick(" ^ string_of_int k ^ ");")]
   | Skip -> [Line "skip;"]
   | Seq (p, q) -> indent p @ indent q
+  | Choice (p, q) ->
+    [
+      Line ("if <> {");
+      Block (indent p);
+      Line ("} else {");
+      Block (indent q);
+      Line ("}")
+    ]
   | If (b, p, q) ->
     [
       Line ("if (" ^ Exp.b_to_string b ^ ") {");
@@ -106,6 +116,9 @@ module Opt = struct
       Skip
     else
       Loop (r, p)
+
+  let choice (p:t) (q:t) : t =
+    Choice (p, q)
 end
 
 let rec simplify : t -> t =
@@ -114,6 +127,7 @@ let rec simplify : t -> t =
   | Tick n -> Opt.tick n
   | If (b, p, q) ->
     Opt.if_ (Constfold.b_opt b) (simplify p) (simplify q)
+  | Choice (p, q) -> Opt.choice (simplify p) (simplify q)
   | Loop (r,p) ->
     Opt.loop (Constfold.r_opt r) (simplify p)
   | Seq (p, q) ->

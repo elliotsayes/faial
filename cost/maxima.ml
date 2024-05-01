@@ -97,8 +97,11 @@ let rec from_summation : Summation.t -> string =
       i_to_string b.lower_bound ^ ", " ^
       i_to_string b.upper_bound ^
     ")"
-  | Plus (lhs, rhs) ->
+  | Bin (Plus, lhs, rhs) ->
     from_summation lhs ^ " + " ^ from_summation rhs
+  | Bin (o, lhs, rhs) ->
+    Summation.Op.to_string o ^
+    "(" ^ from_summation lhs ^ ", " ^ from_summation rhs ^ ")"
 
 let from_stmt (r: Ra.Stmt.t) : string =
   Summation.from_stmt r |> from_summation
@@ -130,7 +133,10 @@ let parse_maxima (x:string) : string option =
 let compile (code:string) : string =
   "load(\"bitwise\")$\n" ^ code ^ ",logcontract,simpsum,ratsimp;"
 
-let run_exe ?(verbose=false) ?(exe="maxima") (expr:string) : (string, Errors.t) Result.t =
+let run_exe
+  ?(verbose=false)
+  ?(exe="maxima")
+  (expr:string) : (string, Errors.t) Result.t =
   (if verbose
     then prerr_endline ("maxima output:\n" ^ expr ^ "\n")
     else ());
