@@ -38,7 +38,7 @@ let tests = [
   "loops-1-bitwise.cu", [], "Σ_{i | 0 ≤ i ≤ ((n << m) - 1)} 1";
   "loops-1-minus.cu", [], "Σ_{i | 0 ≤ i ≤ n} 1";
   "loops-1-tid.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} 1";
-  "loops-1-multiple.cu", [], "Σ_{i | 0 ≤ i ≤ 0} (1 + (3 + 7))";
+  "loops-1-multiple.cu", [], "11";
   "loops-1-pow.cu", ["--block-dim"; "512"], "8";
   "loops-1-pow-2.cu", [], "9";
   "loops-1-pow-unknown-bound.cu", [], "Σ_{i | 1 ≤ i ≤ ⌊log₂((n - 1))⌋} 1";
