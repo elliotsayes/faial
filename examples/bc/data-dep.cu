@@ -2,7 +2,7 @@
 // --blockDim=[1024,1,1] --gridDim=2
 __shared__ float y[1024];
 
-int f(int);
+__device__ int f(int);
 
 __global__
 void saxpy(int n, float a, float *x)

@@ -98,14 +98,28 @@ let range_sum (r:Range.t) (s:t) : t =
     | None ->
       sum b s
 
-let rec from_stmt ?(choice=max) : Ra.Stmt.t -> t =
-  function
-  | Ra.Stmt.Tick k -> Const k
-  | Skip -> Const 0
-  | If (b, p, q) -> If (Reals.from_bexp b, from_stmt ~choice p, from_stmt ~choice q)
-  | Seq (p, q) -> plus (from_stmt ~choice p) (from_stmt ~choice q)
-  | Loop (r, p) -> range_sum r (from_stmt ~choice p)
-  | Choice (lhs, rhs) -> choice (from_stmt ~choice lhs) (from_stmt ~choice rhs)
+module Strategy = struct
+  type stmt = t
+  type t =
+  | Max
+  | Min
+  let choice : t -> stmt -> stmt -> stmt =
+    function
+    | Max -> max
+    | Min -> min
+end
+
+let from_stmt ?(strategy=Strategy.Max) : Ra.Stmt.t -> t =
+  let rec from_stmt : Ra.Stmt.t -> t =
+    function
+    | Ra.Stmt.Tick k -> Const k
+    | Skip -> Const 0
+    | If (b, p, q) -> If (Reals.from_bexp b, from_stmt p, from_stmt q)
+    | Seq (p, q) -> plus (from_stmt p) (from_stmt q)
+    | Loop (r, p) -> range_sum r (from_stmt p)
+    | Choice (lhs, rhs) -> Strategy.choice strategy (from_stmt lhs) (from_stmt rhs)
+  in
+  from_stmt
 
 let run ~show_code (r: Ra.Stmt.t) : string =
   let s = from_stmt r in

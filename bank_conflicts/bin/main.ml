@@ -43,6 +43,7 @@ module Solver = struct
     params: (string * int) list;
     flatten_slices: bool;
     approx_ifs: bool;
+    cost: Summation.Strategy.t;
   }
 
   let make
@@ -73,6 +74,7 @@ module Solver = struct
     ~params
     ~flatten_slices
     ~approx_ifs
+    ~cost
   :
     t
   =
@@ -109,14 +111,37 @@ module Solver = struct
       grid_dim;
       params;
       approx_ifs;
+      cost;
     }
+
+  let gen_transaction_count
+    (default:int)
+    (app:t)
+    (s:Variable.Set.t)
+    (e:Exp.nexp)
+  :
+    int
+  =
+    match Index_analysis.Default.transaction_count app.config s e with
+    | Ok e -> e
+    | Error e ->
+      Logger.Colors.warning e;
+      default
+
+  let min_transaction_count : t -> Variable.Set.t -> Exp.nexp -> int =
+    gen_transaction_count 1
+
+  let max_transaction_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
+    gen_transaction_count app.config.warp_count app
+
+  let transaction_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
+    match app.cost with
+    | Summation.Strategy.Max -> max_transaction_count app
+    | Min -> min_transaction_count app
 
   let bank_conflict_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
     fun locals idx ->
-      (Index_analysis.Default.transaction_count app.config locals idx) - 1
-
-  let transaction_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
-      Index_analysis.Default.transaction_count app.config
+      (transaction_count app locals idx) - 1
 
   let access_count (_:t) : Variable.Set.t -> Exp.nexp -> int =
     fun _ _ -> 1
@@ -416,6 +441,7 @@ let run
   ~params
   ~flatten_slices
   ~approx_ifs
+  ~cost
   (kernels : Proto.Code.t Proto.Kernel.t list)
 :
   unit
@@ -448,6 +474,7 @@ let run
     ~params
     ~flatten_slices
     ~approx_ifs
+    ~cost
   in
   if output_json then
     JUI.run app
@@ -484,6 +511,7 @@ let pico
   (params:(string * int) list)
   (flatten_slices:bool)
   (approx_ifs:bool)
+  (cost:Summation.Strategy.t)
 =
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
   let block_dim = parsed.options.block_dim in
@@ -522,6 +550,7 @@ let pico
     ~params
     ~flatten_slices
     ~approx_ifs
+    ~cost
     kernels
 
 
@@ -662,6 +691,10 @@ let approx_ifs =
   let doc = "Approximate conditionals." in
   Arg.(value & flag & info ["approx"] ~doc)
 
+let cost =
+  let doc = "Generate minimum cost for approximate costs (default is maximum cost)." in
+  Arg.(value & opt (enum ["min", Summation.Strategy.Min; "max", Summation.Strategy.Max]) Summation.Strategy.Max & info ["cost"] ~doc)
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -692,6 +725,7 @@ let pico_t = Term.(
   $ params
   $ flatten_slices
   $ approx_ifs
+  $ cost
 )
 
 let info =

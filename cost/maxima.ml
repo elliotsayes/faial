@@ -103,8 +103,8 @@ let rec from_summation : Summation.t -> string =
     Summation.Op.to_string o ^
     "(" ^ from_summation lhs ^ ", " ^ from_summation rhs ^ ")"
 
-let from_stmt (r: Ra.Stmt.t) : string =
-  Summation.from_stmt r |> from_summation
+let from_stmt ?(strategy=Summation.Strategy.Max) (r: Ra.Stmt.t) : string =
+  Summation.from_stmt ~strategy r |> from_summation
 
 let parse_maxima (x:string) : string option =
   if Common.contains ~substring:"incorrect syntax" x then None
