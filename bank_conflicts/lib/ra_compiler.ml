@@ -12,16 +12,17 @@ module Make (L:Logger.Logger) = struct
   let from_access_context
     (idx_analysis : Variable.Set.t -> Exp.nexp -> int)
   :
-    Variable.Set.t -> Access_context.t -> Ra.Stmt.t
+    Access_context.Kernel.t -> Ra.Stmt.t
   =
-    let rec from (locals:Variable.Set.t) : Access_context.t -> Ra.Stmt.t =
+    let rec from (locals:Variable.Set.t) : Access_context.Code.t -> Ra.Stmt.t =
       function
-      | Index a -> Tick (idx_analysis locals a.index)
+      | Index a -> Tick (idx_analysis locals a)
       | Cond (_, p) -> from locals p
       | Decl (x, p) -> from (Variable.Set.add x locals) p
       | Loop (r, p) -> Loop (r, from locals p)
     in
-    from
+    fun k ->
+      from (Params.to_set k.local_variables) k.code
 
   let from_kernel
     ?(strategy=Exact)

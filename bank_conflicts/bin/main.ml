@@ -177,7 +177,7 @@ module Solver = struct
     if a.skip_simpl_ra then r else Ra.Stmt.simplify r
 
   type r_cost = (cost, string) Result.t
-  type slice = Access_context.t * Ra.Stmt.t * r_cost
+  type slice = Access_context.Kernel.t * Ra.Stmt.t * r_cost
 
   let total_cost (a:t) (k:kernel) : r_cost =
     let metric =
@@ -212,14 +212,13 @@ module Solver = struct
       else
         bank_conflict_count a
     in
-    Access_context.Default.from_kernel a.config k
+    Access_context.Kernel.from_proto a.config k
     |> Seq.filter_map (fun s ->
       (* Convert a slice into an expression *)
       let r =
-        (if flatten then Access_context.flatten s else s)
+        (if flatten then Access_context.Kernel.flatten s else s)
         |> Ra_compiler.Default.from_access_context
             idx_analysis
-            (Params.to_set k.local_variables)
       in
       if Ra.Stmt.is_zero r && a.skip_zero then
         None
@@ -316,10 +315,10 @@ module TUI = struct
         in
         (* Flatten the expression *)
         ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
-        s |> Access_context.location |> Tui_helper.LocationUI.print;
+        s |> Access_context.Kernel.location |> Tui_helper.LocationUI.print;
         print_endline "";
         PrintBox.(
-          tree (s |> Access_context.to_string |> String.cat "▶ Context: " |> text)
+          tree (s |> Access_context.Kernel.to_string |> String.cat "▶ Context: " |> text)
           [cost]
         ) |> PrintBox_text.output stdout;
         print_endline "\n"
@@ -362,7 +361,7 @@ module JUI = struct
         `List (
           l
           |> List.map (fun (s, _, e) ->
-            let loc = Access_context.location s in
+            let loc = Access_context.Kernel.location s in
             let loc = [
               "location",
                 `Assoc [
@@ -377,7 +376,7 @@ module JUI = struct
               | Ok c ->
                 let open Solver in
                 [
-                "access", `String (Access_context.to_string s);
+                "access", `String (Access_context.Kernel.to_string s);
                 "cost", `String c.amount;
                 "analysis_duration_seconds", `Float c.analysis_duration
                 ]

@@ -10,7 +10,7 @@ let run_kernel ~ignore_parsing_errors (fname:string): unit =
   in
   k.kernels |> List.iter (fun k ->
     let k = Proto.Kernel.apply_arch Architecture.Block k in
-    let cidi = Typing.per_kernel k in
+    let cidi = Approx.Check.per_kernel k in
     let ci = if cidi.control_independent then "ind" else "ctrl" in
     let di = if cidi.data_independent then "ind" else "data" in
     print_endline (k.name ^ "," ^ di ^ "," ^ ci)
@@ -24,10 +24,10 @@ let run_acc ~ignore_parsing_errors (fname:string): unit =
   in
   k.kernels |> List.iter (fun k ->
     let k = Proto.Kernel.apply_arch Architecture.Block k in
-    Typing.per_access k
+    Approx.Check.per_access k
     |> List.iter (fun (c, cidi) ->
-      let l = Typing.Context.location c |> Location.to_string in
-      print_endline (k.name ^ "," ^ Typing.to_string cidi ^ "," ^ l)
+      let l = Approx.Code.location c |> Location.to_string in
+      print_endline (k.name ^ "," ^ Approx.Check.to_string cidi ^ "," ^ l)
     )
   )
 

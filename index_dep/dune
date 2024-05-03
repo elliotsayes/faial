@@ -1,5 +1,0 @@
-
-(executable
- (name main)
- (modules main typing)
- (libraries inference stage0 protocols cmdliner))
