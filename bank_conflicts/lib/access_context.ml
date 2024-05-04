@@ -32,13 +32,20 @@ module Code = struct
   let rec to_string : t -> string =
     function
     | Loop (r, acc) ->
-        "for (" ^ Range.to_string r ^ ") " ^ to_string acc
+        "for (" ^ Range.to_string r ^ ")\n" ^ to_string acc
     | Cond (b, acc) ->
-        "if (" ^ Exp.b_to_string b ^ ") " ^ to_string acc
+        "if (" ^ Exp.b_to_string b ^ ")\n" ^ to_string acc
     | Index a ->
         "[" ^ Exp.n_to_string a ^ "]"
     | Decl (x, p) ->
-        "var " ^ Variable.name x ^ " " ^ to_string p
+        "var " ^ Variable.name x ^ " " ^ to_string p ^ "\n"
+
+  let rec map_index (f:Exp.nexp -> Exp.nexp) : t -> t =
+    function
+    | Index a -> Index (f a)
+    | Loop (r, p) -> Loop (r, map_index f p)
+    | Cond (e, p) -> Cond (e, map_index f p)
+    | Decl (x, p) -> Decl (x, map_index f p)
 
   let rec index : t -> Exp.nexp =
     function
@@ -50,7 +57,7 @@ module Code = struct
   let flatten (a:t) : t =
     Index (index a)
 
-  let optimize : t -> t =
+  let trim_decls : t -> t =
     let rec opt : t -> Variable.Set.t * t =
       function
       | Index e ->
@@ -74,16 +81,89 @@ module Code = struct
     in
     fun a ->
       opt a |> snd
-(*
-  let rec to_approx : t -> Approx.Code.t =
-    function
-    | Index a -> Acc (a.array, Access.read [a.index])
-    | Loop (r, a) -> Loop (r, to_approx a)
-    | Cond (b, a) -> Cond (b, to_approx a)
-    | Decl (x, a) -> Approx.Code.decl x (to_approx a)
-*)
+
+  let minimize : t -> t =
+    let rec min : t -> Exp.bexp list * Variable.Set.t * t =
+      function
+      | Index e ->
+        [],
+        Freenames.free_names_nexp e Variable.Set.empty,
+        Index e
+      | Loop (r, a) ->
+        let l, fns, a = min a in
+        if Variable.Set.mem r.var fns then
+          let r_fns = Freenames.free_names_range r Variable.Set.empty in
+          let loop_l, l = List.partition (Exp.b_mem r.var) l in
+          if Variable.Set.inter r_fns fns |> Variable.Set.is_empty then
+            l, fns, a
+          else
+            let a =
+              if loop_l = [] then
+                a
+              else
+                Cond (Exp.b_and_ex loop_l, a)
+            in
+            l, Variable.Set.union r_fns (Variable.Set.add r.var fns), Loop (r, a)
+        else
+          l, fns, a
+      | Cond (e, a) ->
+        let l, fns, a = min a in
+        let e_l =
+          Exp.b_and_split e
+          (* only keep variables that mention variables from the body *)
+          |> List.filter (Exp.b_exists (fun x -> Variable.Set.mem x fns))
+        in
+        Common.append_rev1 e_l l, Freenames.free_names_bexp e fns, a
+      | Decl (x, a) ->
+        let l, fns, a = min a in
+        let a =
+          if Variable.Set.mem x fns then
+            Decl (x, a)
+          else
+            a
+        in
+        l, fns, a
+    in
+    fun a ->
+      let l, _, a = min a in
+      if l = [] then
+        a
+      else
+        Cond (Exp.b_and_ex l, a)
+
+  let transaction_count (params:Config.t) : Variable.Set.t -> t -> (int, string) Result.t =
+    let rec transaction_count (locals:Variable.Set.t) : t -> (int, string) Result.t =
+      function
+      | Index a ->
+        a
+        |> Index_analysis.transaction_count params locals
+      | Loop (r, a) ->
+        let locals =
+          if Range.exists (fun x -> Variable.Set.mem x locals) r then
+            Variable.Set.add r.var locals
+          else
+            locals
+        in
+        transaction_count locals a
+      | Cond (_, a) ->
+        transaction_count locals a
+      | Decl (x, a) ->
+        transaction_count (Variable.Set.add x locals) a
+    in
+    transaction_count
+
+  let to_approx (x:Variable.t) : t -> Approx.Code.t =
+    let rec to_approx : t -> Approx.Code.t =
+      function
+      | Index a -> Acc (x, Access.read [a])
+      | Loop (r, a) -> Loop (r, to_approx a)
+      | Cond (b, a) -> Cond (b, to_approx a)
+      | Decl (x, a) -> Approx.Code.decl x (to_approx a)
+    in
+    to_approx
 
   module Make (L:Logger.Logger) = struct
+    module O = Offset_analysis.Make(L)
     module R = Uniform_range.Make(L)
     module L = Linearize_index.Make(L)
 
@@ -101,6 +181,7 @@ module Code = struct
           l
           |> lin x
           |> Option.map (fun e ->
+              let e = O.remove_offset e in
               Seq.return (x, Index e)
             )
           |> Option.value ~default:Seq.empty
@@ -156,11 +237,31 @@ module Kernel = struct
     code: Code.t;
   }
 
+  let transaction_count (params:Config.t) (k:t) : (int, string) Result.t =
+    Code.transaction_count params (Params.to_set k.local_variables) k.code
+
   let location (k:t) : Location.t =
     Variable.location k.array
 
   let to_string (k:t) : string =
     Code.to_string k.code
+
+  let minimize (k:t) : t =
+    { k with code = Code.minimize k.code }
+
+  let map_index (f:Exp.nexp -> Exp.nexp) (k:t) : t =
+    {k with code = Code.map_index f k.code }
+
+  let to_check (k:t) : Approx.Check.t =
+    let code = Code.to_approx k.array k.code in
+    let vars =
+      Variable.Set.union
+        (Params.to_set k.global_variables) Variable.tid_var_set
+    in
+    Approx.Check.from_code vars code
+
+  let trim_decls (k:t) : t =
+    { k with code = Code.trim_decls k.code; }
 
   module Make (L:Logger.Logger) = struct
     module R = Uniform_range.Make(L)
@@ -180,7 +281,7 @@ module Kernel = struct
       |> Proto.Code.subst_grid_dim cfg.grid_dim
       |> Code.from_proto k.arrays cfg
       |> Seq.map (fun (array, p) ->
-        let code = Code.optimize (Cond (k.pre, p)) in
+        let code = if k.pre = Bool true then p else Code.Cond (k.pre, p) in
         {
           name = k.name;
           global_variables = k.global_variables;

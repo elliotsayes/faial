@@ -269,25 +269,31 @@ let rec b_or_split : bexp -> bexp list =
 
 
 (* Checks if variable [x] is in the given expression *)
-let rec n_mem (x:Variable.t) : nexp -> bool =
+let rec n_exists (f:Variable.t -> bool) : nexp -> bool =
   function
-  | CastInt b -> b_mem x b
-  | Var y -> Variable.equal x y
+  | CastInt b -> b_exists f b
+  | Var x -> f x
   | Num _ -> false
   | Binary (_, e1, e2) ->
-    n_mem x e1 || n_mem x e2
-  | Unary (_, e) | NCall (_, e) | Other e -> n_mem x e
+    n_exists f e1 || n_exists f e2
+  | Unary (_, e) | NCall (_, e) | Other e -> n_exists f e
   | NIf (b, e1, e2) ->
-    b_mem x b || n_mem x e1 || n_mem x e2
+    b_exists f b || n_exists f e1 || n_exists f e2
 
-and b_mem (x:Variable.t) : bexp -> bool =
+and b_exists (f:Variable.t -> bool) : bexp -> bool =
   function
   | Bool _ -> false
-  | CastBool n -> n_mem x n
-  | NRel (_, e1, e2) -> n_mem x e1 || n_mem x e2
-  | BRel (_, e1, e2) -> b_mem x e1 || b_mem x e2
-  | BNot e -> b_mem x e
-  | Pred (_, e) -> n_mem x e
+  | Pred (_, e) | CastBool e -> n_exists f e
+  | NRel (_, e1, e2) -> n_exists f e1 || n_exists f e2
+  | BRel (_, e1, e2) -> b_exists f e1 || b_exists f e2
+  | BNot e -> b_exists f e
+
+(* Checks if variable [x] is in the given expression *)
+let n_mem (x:Variable.t) : nexp -> bool =
+  n_exists (Variable.equal x)
+
+let b_mem (x:Variable.t) : bexp -> bool =
+  b_exists (Variable.equal x)
 
 let rec n_par (n:nexp) : string =
   match n with

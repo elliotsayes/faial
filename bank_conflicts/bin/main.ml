@@ -122,7 +122,8 @@ module Solver = struct
   :
     int
   =
-    match Index_analysis.Default.transaction_count app.config s e with
+    let e = Offset_analysis.Default.remove_offset e in
+    match Index_analysis.transaction_count app.config s e with
     | Ok e -> e
     | Error e ->
       Logger.Colors.warning e;
@@ -177,7 +178,14 @@ module Solver = struct
     if a.skip_simpl_ra then r else Ra.Stmt.simplify r
 
   type r_cost = (cost, string) Result.t
-  type slice = Access_context.Kernel.t * Ra.Stmt.t * r_cost
+  module Conflict = struct
+    type t = {
+      kernel: Access_context.Kernel.t;
+      transaction_count: (int, string) Result.t;
+      ra: Ra.Stmt.t;
+      cost: r_cost;
+    }
+  end
 
   let total_cost (a:t) (k:kernel) : r_cost =
     let metric =
@@ -203,7 +211,7 @@ module Solver = struct
     )
     |> Result.map_error Errors.to_string
 
-  let sliced_cost ?(flatten=false) (a:t) (k:kernel) : slice list =
+  let sliced_cost ?(flatten=false) (a:t) (k:kernel) : Conflict.t list =
     let idx_analysis =
       if a.count_shared_access then
         access_count a
@@ -223,13 +231,18 @@ module Solver = struct
       if Ra.Stmt.is_zero r && a.skip_zero then
         None
       else
-        Some (s, r, get_cost a r)
+        Some Conflict.{
+          transaction_count=Access_context.Kernel.transaction_count a.config s;
+          kernel=s;
+          ra=r;
+          cost=get_cost a r;
+        }
     )
     |> List.of_seq
 
   type summary =
     | TotalCost of (kernel * r_cost) list
-    | SlicedCost of (kernel * slice list) list
+    | SlicedCost of (kernel * Conflict.t list) list
     | RatioCost of (kernel * r_cost) list
 
   let run (s:t) : summary =
@@ -290,37 +303,61 @@ module TUI = struct
         prerr_endline e;
         exit (-1)
     in
-    let print_slice ((k:kernel), (s:Solver.slice list)) : unit =
+    let print_slice ((k:kernel), (s:Solver.Conflict.t list)) : unit =
       ANSITerminal.(print_string [Bold; Foreground Green] ("\n### Kernel '" ^ k.name ^ "' ###\n\n"));
       Logger.Colors.info ("Shared accesses found: " ^ string_of_int (List.length s));
       Stdlib.flush_all ();
       s
-      |> List.iter (fun (s, r, c) ->
-        let simplified_cost = match c with
+      |> List.iter (fun conflict ->
+        let open Solver.Conflict in
+        let _min_s =
+          conflict.kernel
+          |> Access_context.Kernel.minimize
+        in
+        let _simplified_cost = match conflict.cost with
           | Ok s -> Solver.(s.amount)
           | Error e ->
             Logger.Colors.error e;
             "???"
         in
-        let blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
+        let _blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
+        let ci_di =
+          conflict.kernel
+          |> Access_context.Kernel.to_check
+          |> Approx.Check.to_string
+        in
         let cost =
-          let e = Summation.from_stmt r in
-          PrintBox.(tree ("▶ Cost: "  ^ Summation.to_string e |> text)
-          [
-            tree ("▶ Cost (simplified):" |> text_with_style blue)
-            [
-              text_with_style blue simplified_cost |> hpad 1
-            ]
-          ])
+          let _e = Summation.from_stmt conflict.ra in
+          let open PrintBox in
+          [|
+            [|
+              text_with_style Style.bold "Bank conflicts";
+              text (
+                match conflict.transaction_count with
+                | Ok x -> string_of_int x
+                | Error _ -> "32 (potential)"
+              )
+            |];
+            [|
+              text_with_style Style.bold "Approximation"; text ci_di;
+            |];
+            [|
+              text_with_style Style.bold "Context";
+              text (
+                conflict.kernel
+                |> Access_context.Kernel.trim_decls
+                |> Access_context.Kernel.to_string
+              )
+            |]
+          |]
+          |> grid
+          |> frame
         in
         (* Flatten the expression *)
         ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
-        s |> Access_context.Kernel.location |> Tui_helper.LocationUI.print;
+        conflict.kernel |> Access_context.Kernel.location |> Tui_helper.LocationUI.print;
         print_endline "";
-        PrintBox.(
-          tree (s |> Access_context.Kernel.to_string |> String.cat "▶ Context: " |> text)
-          [cost]
-        ) |> PrintBox_text.output stdout;
+        PrintBox_text.output stdout cost;
         print_endline "\n"
       )
     in
@@ -360,8 +397,9 @@ module JUI = struct
       let accs : json =
         `List (
           l
-          |> List.map (fun (s, _, e) ->
-            let loc = Access_context.Kernel.location s in
+          |> List.map (fun c ->
+            let open Solver.Conflict in
+            let loc = Access_context.Kernel.location c.kernel in
             let loc = [
               "location",
                 `Assoc [
@@ -372,13 +410,17 @@ module JUI = struct
                 ]
               ]
             in
-            let cost = match e with
-              | Ok c ->
+            let cost = match c.cost with
+              | Ok e ->
                 let open Solver in
                 [
-                "access", `String (Access_context.Kernel.to_string s);
-                "cost", `String c.amount;
-                "analysis_duration_seconds", `Float c.analysis_duration
+                ("index_analysis",
+                  match c.transaction_count with
+                  | Ok e -> `Int e
+                  | Error _ -> `Null);
+                "access", `String (c.kernel |> Access_context.Kernel.trim_decls |> Access_context.Kernel.to_string);
+                "cost", `String e.amount;
+                "analysis_duration_seconds", `Float e.analysis_duration
                 ]
               | Error e -> ["error", `String e]
             in

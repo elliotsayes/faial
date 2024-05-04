@@ -428,3 +428,6 @@ let eval_opt (r:t) : int list option =
 
 let eval_is_empty (r:t) : bool =
   Exp.b_eval_res (is_empty r) = Ok true
+
+let exists (f:Variable.t -> bool) (r:t) : bool =
+  n_exists f r.lower_bound || n_exists f r.upper_bound
