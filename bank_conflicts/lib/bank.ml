@@ -223,84 +223,83 @@ module Code = struct
     = Default.from_proto
 end
 
-module Kernel = struct
-  type t = {
-    (* The kernel name *)
-    name : string;
-    (* The array name *)
-    array: Variable.t;
-    (* The internal variables are used in the code of the kernel.  *)
-    global_variables: Params.t;
-    (* The internal variables are used in the code of the kernel.  *)
-    local_variables: Params.t;
-    (* The code of a kernel performs the actual memory accesses. *)
-    code: Code.t;
-  }
+type t = {
+  (* The kernel name *)
+  name : string;
+  (* The array name *)
+  array: Variable.t;
+  (* The internal variables are used in the code of the kernel.  *)
+  global_variables: Params.t;
+  (* The internal variables are used in the code of the kernel.  *)
+  local_variables: Params.t;
+  (* The code of a kernel performs the actual memory accesses. *)
+  code: Code.t;
+}
 
-  let transaction_count (params:Config.t) (k:t) : (int, string) Result.t =
-    Code.transaction_count params (Params.to_set k.local_variables) k.code
+let transaction_count (params:Config.t) (k:t) : (int, string) Result.t =
+  Code.transaction_count params (Params.to_set k.local_variables) k.code
 
-  let location (k:t) : Location.t =
-    Variable.location k.array
+let location (k:t) : Location.t =
+  Variable.location k.array
 
-  let to_string (k:t) : string =
-    Code.to_string k.code
+let to_string (k:t) : string =
+  Code.to_string k.code
 
-  let minimize (k:t) : t =
-    { k with code = Code.minimize k.code }
+let minimize (k:t) : t =
+  { k with code = Code.minimize k.code }
 
-  let map_index (f:Exp.nexp -> Exp.nexp) (k:t) : t =
-    {k with code = Code.map_index f k.code }
+let map_index (f:Exp.nexp -> Exp.nexp) (k:t) : t =
+  {k with code = Code.map_index f k.code }
 
-  let to_check (k:t) : Approx.Check.t =
-    let code = Code.to_approx k.array k.code in
-    let vars =
-      Variable.Set.union
-        (Params.to_set k.global_variables) Variable.tid_var_set
-    in
-    Approx.Check.from_code vars code
+let to_check (k:t) : Approx.Check.t =
+  let code = Code.to_approx k.array k.code in
+  let vars =
+    Variable.Set.union
+      (Params.to_set k.global_variables) Variable.tid_var_set
+  in
+  Approx.Check.from_code vars code
 
-  let trim_decls (k:t) : t =
-    { k with code = Code.trim_decls k.code; }
+let trim_decls (k:t) : t =
+  { k with code = Code.trim_decls k.code; }
 
-  module Make (L:Logger.Logger) = struct
-    module R = Uniform_range.Make(L)
-    module L = Linearize_index.Make(L)
+module Make (L:Logger.Logger) = struct
+  module R = Uniform_range.Make(L)
+  module L = Linearize_index.Make(L)
 
-    (*
-    Given a kernel return a sequence of slices.
-    *)
-    let from_proto
-      (cfg:Config.t)
-      (k: Proto.Code.t Proto.Kernel.t)
-    :
-      t Seq.t
-    =
-      k.code
-      |> Proto.Code.subst_block_dim cfg.block_dim
-      |> Proto.Code.subst_grid_dim cfg.grid_dim
-      |> Code.from_proto k.arrays cfg
-      |> Seq.map (fun (array, p) ->
-        let code = if k.pre = Bool true then p else Code.Cond (k.pre, p) in
-        {
-          name = k.name;
-          global_variables = k.global_variables;
-          local_variables = k.local_variables;
-          code;
-          array;
-        }
-      )
-
-  end
-
-  module Silent = Make(Logger.Silent)
-  module Default = Make(Logger.Colors)
-  let from_proto :
-    Config.t ->
-    Proto.Code.t Proto.Kernel.t ->
+  (*
+  Given a kernel return a sequence of slices.
+  *)
+  let from_proto
+    (cfg:Config.t)
+    (k: Proto.Code.t Proto.Kernel.t)
+  :
     t Seq.t
-  = Default.from_proto
+  =
+    k.code
+    |> Proto.Code.subst_block_dim cfg.block_dim
+    |> Proto.Code.subst_grid_dim cfg.grid_dim
+    |> Code.from_proto k.arrays cfg
+    |> Seq.map (fun (array, p) ->
+      let code = if k.pre = Bool true then p else Code.Cond (k.pre, p) in
+      {
+        name = k.name;
+        global_variables = k.global_variables;
+        local_variables = k.local_variables;
+        code;
+        array;
+      }
+    )
 
-  let flatten (k:t) : t =
-    { k with code = Code.flatten k.code }
 end
+
+module Silent = Make(Logger.Silent)
+module Default = Make(Logger.Colors)
+let from_proto :
+  Config.t ->
+  Proto.Code.t Proto.Kernel.t ->
+  t Seq.t
+= Default.from_proto
+
+let flatten (k:t) : t =
+  { k with code = Code.flatten k.code }
+

@@ -12,9 +12,9 @@ module Make (L:Logger.Logger) = struct
   let from_access_context
     (idx_analysis : Variable.Set.t -> Exp.nexp -> int)
   :
-    Access_context.Kernel.t -> Ra.Stmt.t
+    Bank.t -> Ra.Stmt.t
   =
-    let rec from (locals:Variable.Set.t) : Access_context.Code.t -> Ra.Stmt.t =
+    let rec from (locals:Variable.Set.t) : Bank.Code.t -> Ra.Stmt.t =
       function
       | Index a -> Tick (idx_analysis locals a)
       | Cond (_, p) -> from locals p

@@ -180,7 +180,7 @@ module Solver = struct
   type r_cost = (cost, string) Result.t
   module Conflict = struct
     type t = {
-      kernel: Access_context.Kernel.t;
+      kernel: Bank.t;
       transaction_count: (int, string) Result.t;
       ra: Ra.Stmt.t;
       cost: r_cost;
@@ -220,11 +220,11 @@ module Solver = struct
       else
         bank_conflict_count a
     in
-    Access_context.Kernel.from_proto a.config k
+    Bank.from_proto a.config k
     |> Seq.filter_map (fun s ->
       (* Convert a slice into an expression *)
       let r =
-        (if flatten then Access_context.Kernel.flatten s else s)
+        (if flatten then Bank.flatten s else s)
         |> Ra_compiler.Default.from_access_context
             idx_analysis
       in
@@ -232,7 +232,7 @@ module Solver = struct
         None
       else
         Some Conflict.{
-          transaction_count=Access_context.Kernel.transaction_count a.config s;
+          transaction_count=Bank.transaction_count a.config s;
           kernel=s;
           ra=r;
           cost=get_cost a r;
@@ -312,7 +312,7 @@ module TUI = struct
         let open Solver.Conflict in
         let _min_s =
           conflict.kernel
-          |> Access_context.Kernel.minimize
+          |> Bank.minimize
         in
         let _simplified_cost = match conflict.cost with
           | Ok s -> Solver.(s.amount)
@@ -323,7 +323,7 @@ module TUI = struct
         let _blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
         let ci_di =
           conflict.kernel
-          |> Access_context.Kernel.to_check
+          |> Bank.to_check
           |> Approx.Check.to_string
         in
         let cost =
@@ -345,8 +345,8 @@ module TUI = struct
               text_with_style Style.bold "Context";
               text (
                 conflict.kernel
-                |> Access_context.Kernel.trim_decls
-                |> Access_context.Kernel.to_string
+                |> Bank.trim_decls
+                |> Bank.to_string
               )
             |]
           |]
@@ -355,7 +355,7 @@ module TUI = struct
         in
         (* Flatten the expression *)
         ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
-        conflict.kernel |> Access_context.Kernel.location |> Tui_helper.LocationUI.print;
+        conflict.kernel |> Bank.location |> Tui_helper.LocationUI.print;
         print_endline "";
         PrintBox_text.output stdout cost;
         print_endline "\n"
@@ -399,7 +399,7 @@ module JUI = struct
           l
           |> List.map (fun c ->
             let open Solver.Conflict in
-            let loc = Access_context.Kernel.location c.kernel in
+            let loc = Bank.location c.kernel in
             let loc = [
               "location",
                 `Assoc [
@@ -418,7 +418,11 @@ module JUI = struct
                   match c.transaction_count with
                   | Ok e -> `Int e
                   | Error _ -> `Null);
-                "access", `String (c.kernel |> Access_context.Kernel.trim_decls |> Access_context.Kernel.to_string);
+                "access", `String (
+                  c.kernel
+                  |> Bank.trim_decls
+                  |> Bank.to_string
+                );
                 "cost", `String e.amount;
                 "analysis_duration_seconds", `Float e.analysis_duration
                 ]
