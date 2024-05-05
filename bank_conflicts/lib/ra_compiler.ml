@@ -22,7 +22,7 @@ module Make (L:Logger.Logger) = struct
       | Loop (r, p) -> Loop (r, from locals p)
     in
     fun k ->
-      from (Params.to_set k.local_variables) k.code
+      from k.local_variables k.code
 
   let from_kernel
     ?(strategy=Exact)

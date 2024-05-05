@@ -229,15 +229,15 @@ type t = {
   (* The array name *)
   array: Variable.t;
   (* The internal variables are used in the code of the kernel.  *)
-  global_variables: Params.t;
+  global_variables: Variable.Set.t;
   (* The internal variables are used in the code of the kernel.  *)
-  local_variables: Params.t;
+  local_variables: Variable.Set.t;
   (* The code of a kernel performs the actual memory accesses. *)
   code: Code.t;
 }
 
 let transaction_count (params:Config.t) (k:t) : (int, string) Result.t =
-  Code.transaction_count params (Params.to_set k.local_variables) k.code
+  Code.transaction_count params k.local_variables k.code
 
 let location (k:t) : Location.t =
   Variable.location k.array
@@ -253,10 +253,7 @@ let map_index (f:Exp.nexp -> Exp.nexp) (k:t) : t =
 
 let to_check (k:t) : Approx.Check.t =
   let code = Code.to_approx k.array k.code in
-  let vars =
-    Variable.Set.union
-      (Params.to_set k.global_variables) Variable.tid_var_set
-  in
+  let vars = Variable.Set.union k.global_variables Variable.tid_var_set in
   Approx.Check.from_code vars code
 
 let trim_decls (k:t) : t =
@@ -283,8 +280,8 @@ module Make (L:Logger.Logger) = struct
       let code = if k.pre = Bool true then p else Code.Cond (k.pre, p) in
       {
         name = k.name;
-        global_variables = k.global_variables;
-        local_variables = k.local_variables;
+        global_variables = Params.to_set k.global_variables;
+        local_variables = Params.to_set k.local_variables;
         code;
         array;
       }

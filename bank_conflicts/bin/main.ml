@@ -320,12 +320,6 @@ module TUI = struct
             Logger.Colors.error e;
             "???"
         in
-        let _blue = PrintBox.Style.(set_bold true (set_fg_color Blue default)) in
-        let ci_di =
-          conflict.kernel
-          |> Bank.to_check
-          |> Approx.Check.to_string
-        in
         let cost =
           let _e = Summation.from_stmt conflict.ra in
           let open PrintBox in
@@ -339,7 +333,12 @@ module TUI = struct
               )
             |];
             [|
-              text_with_style Style.bold "Approximation"; text ci_di;
+              text_with_style Style.bold "Thread-divergence";
+              text (
+                conflict.kernel
+                |> Divergence_analysis.from_bank
+                |> Divergence_analysis.to_string
+              )
             |];
             [|
               text_with_style Style.bold "Context";
@@ -348,7 +347,7 @@ module TUI = struct
                 |> Bank.trim_decls
                 |> Bank.to_string
               )
-            |]
+            |];
           |]
           |> grid
           |> frame
@@ -422,6 +421,11 @@ module JUI = struct
                   c.kernel
                   |> Bank.trim_decls
                   |> Bank.to_string
+                );
+                "thread_divergence_analysis", `String (
+                  c.kernel
+                  |> Divergence_analysis.from_bank
+                  |> Divergence_analysis.to_string
                 );
                 "cost", `String e.amount;
                 "analysis_duration_seconds", `Float e.analysis_duration
