@@ -124,6 +124,15 @@ type t = {
   use_array: Variable.t -> bool
 }
 
+let to_string (ctx:t) : string =
+  let env =
+    ctx.env
+    |> Variable.Map.bindings
+    |> List.map (fun (x, y) -> "  " ^ Variable.name x ^ "=" ^ NMap.to_string y)
+    |> String.concat "\n"
+  in
+  "env:\n" ^ env
+
 let make ~bank_count ~warp_count ~use_array : t = {
   cond = Exp.Bool true;
   env = Variable.Map.empty;

@@ -4,9 +4,9 @@ open Inference
 open Bank_conflicts
 
 let load_data (fname : string) : (string * int) list =
-  try
+   try
     let open Yojson.Basic in
-    let j = from_file fname in
+    let j = from_file ~fname fname in
     j
     |> Util.to_assoc
     |> List.filter_map (fun (k, v) ->
@@ -15,7 +15,10 @@ let load_data (fname : string) : (string * int) list =
       |> Option.map (fun v -> (k, v))
     )
   with
-    _ -> []
+    | Yojson.Json_error e | Sys_error e ->
+      prerr_endline ("Error parsing '" ^ fname ^ "': " ^ e);
+      []
+
 
 let shared_arrays (k:Proto.Code.t Proto.Kernel.t) : Variable.Set.t =
   Variable.Map.bindings k.arrays
@@ -29,9 +32,18 @@ let shared_arrays (k:Proto.Code.t Proto.Kernel.t) : Variable.Set.t =
 
 let create_ctx ~bank_count ~env:(env:(string*int) list) ~arrays : Vectorized.t =
   let use_array x = Variable.Set.mem x arrays in
-  let ctx = Vectorized.make ~bank_count ~warp_count:bank_count ~use_array
-    |> Vectorized.put_tids (Dim3.{x=bank_count; y=1; z=1})
+  let block_dim =
+    let x = List.assoc_opt "blockDim.x" env |> Option.value ~default:32 in
+    let y = List.assoc_opt "blockDim.y" env |> Option.value ~default:1 in
+    let z = List.assoc_opt "blockDim.z" env |> Option.value ~default:1 in
+    Dim3.{x; y; z}
   in
+  print_endline (Dim3.to_string block_dim);
+  let ctx =
+    Vectorized.make ~bank_count ~warp_count:bank_count ~use_array
+    |> Vectorized.put_tids block_dim
+  in
+  print_endline (Vectorized.to_string ctx);
   List.fold_left (fun ctx ((k:string), (v:int)) ->
     print_endline (k ^ " = " ^ string_of_int v);
     let k = Variable.from_name k in
@@ -47,6 +59,12 @@ let main (fname : string) : unit =
     let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
     let proto = imp |> List.map Imp.Kernel.compile in
     let env = load_data "env.json" in
+    print_string "env.json:";
+    print_endline (
+      env
+      |> List.map (fun (x, y) -> x ^ "=" ^ string_of_int y)
+      |> String.concat ", "
+    );
     (try
       List.iter (fun p ->
         let ctx = create_ctx ~bank_count:32 ~env ~arrays:(shared_arrays p) in
