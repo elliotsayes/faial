@@ -16,6 +16,7 @@ type 'a index = {index:int; value:'a}
 module NMap : sig
   type t
   val make : int -> (int -> int) -> t
+  val random : int -> unit -> t
   val constant : count:int -> value:int -> t
   val pointwise: (int -> int -> int) -> t -> t -> t
   val to_string : t -> string
@@ -28,6 +29,9 @@ end = struct
   type t = int array
 
   let make (count:int) (f:int -> int) : t  = Array.init count f
+
+  let random (count:int) () =
+    make count (fun _ -> Random.nativebits () |> Nativeint.to_int)
 
   let constant ~count ~value : t = Array.make count value
 
@@ -296,6 +300,28 @@ let access ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
 
 let add = NMap.pointwise (+)
 
+type loop =
+  | Next of Range.t * t
+  | End
+
+let iter_res (r:Range.t) (ctx:t) : (loop, string) Result.t =
+  let has_next = Range.has_next r in
+  let* b = b_eval_res has_next ctx in
+  if BMap.some_true b then
+    let* lo = n_eval_res r.lower_bound ctx in
+    let r = Range.next r in
+    (* run one iteration *)
+    Ok (Next (r,
+      ctx
+      |> restrict has_next
+      |> put r.var lo
+    ))
+  else
+    Ok End
+
+let iter (r:Range.t) (ctx:t) : loop =
+  iter_res r ctx |> Result.get_ok
+
 let eval ?(verbose=true) : Proto.Code.t -> t -> NMap.t =
   let rec eval (cost:NMap.t) (p:Proto.Code.t) (ctx:t) : NMap.t =
     match p with
@@ -313,21 +339,15 @@ let eval ?(verbose=true) : Proto.Code.t -> t -> NMap.t =
       let cost = restrict b ctx |> eval cost p in
       restrict (Exp.b_not b) ctx |> eval cost q
     | Loop (r, body) ->
-      let has_next = Range.has_next r in
-      if b_eval has_next ctx |> BMap.some_true then
-        let lo = n_eval r.lower_bound ctx in
-        let r = Range.next r in
-        (* run one iteration *)
-        let cost = eval cost body (
-            ctx
-            |> restrict has_next
-            |> put r.var lo
-          )
-        in
+      (match iter r ctx with
+      | Next (r, ctx') ->
+        let cost = eval cost body ctx' in
         (* run the rest of the loop *)
         eval cost (Loop (r, body)) ctx
-      else
+      | End ->
+        (* Loop is done *)
         cost
+      )
     | Seq (p, q) ->
       let cost = eval cost p ctx in
       eval cost q ctx

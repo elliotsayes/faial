@@ -162,6 +162,44 @@ module Code = struct
     in
     to_approx
 
+  let gen_random (_:Variable.t) (ctx:Vectorized.t) : Vectorized.NMap.t Option.t =
+    Some (Vectorized.NMap.random ctx.warp_count ())
+
+  let eval_res
+    ?(generate_var=gen_random)
+  :
+    Vectorized.t -> t -> (int, string) Result.t
+  =
+    let ( let* ) = Result.bind in
+    let rec eval (max_cost:int) (ctx:Vectorized.t) : t -> (int, string) Result.t =
+      function
+      | Index a ->
+        let* v = Vectorized.n_eval_res a ctx in
+        Ok ((Vectorized.NMap.max v).value)
+      | Decl (x, a) ->
+        let ctx =
+          match generate_var x ctx with
+          | Some v -> Vectorized.put x v ctx
+          | None -> ctx
+        in
+        eval max_cost ctx a
+      | Cond (e, a) ->
+        let* v = Vectorized.b_eval_res e ctx in
+        if Vectorized.BMap.some_true v then
+          eval max_cost (Vectorized.restrict e ctx) a
+        else
+          Ok max_cost
+      | Loop (r, a) ->
+        let* l = Vectorized.iter_res r ctx in
+        (match l with
+          | Next (r, ctx') ->
+            let* max_cost = eval max_cost ctx' a in
+            eval max_cost ctx (Loop (r, a))
+          | End -> Ok max_cost
+        )
+    in
+    eval 1
+
   module Make (L:Logger.Logger) = struct
     module O = Offset_analysis.Make(L)
     module R = Uniform_range.Make(L)
@@ -213,8 +251,10 @@ module Code = struct
       in
       on_p
   end
+
   module Silent = Make(Logger.Silent)
   module Default = Make(Logger.Colors)
+
   let from_proto :
       Memory.t Variable.Map.t ->
       Config.t ->
