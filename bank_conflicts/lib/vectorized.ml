@@ -167,79 +167,99 @@ let put_tids (block_dim:Dim3.t) (ctx:t) : t =
   |> put Variable.tid_y n_tidy
   |> put Variable.tid_z n_tidz
 
-let rec n_eval (n: Exp.nexp) (ctx:t) : NMap.t =
+let ( let* ) = Result.bind
+
+let rec n_eval_res (n: Exp.nexp) (ctx:t) : (NMap.t, string) Result.t =
   match n with
   | Var x ->
     (match Variable.Map.find_opt x ctx.env with
-    | Some x -> x
-    | None -> failwith ("n_eval: undefined: " ^ Variable.name x))
+    | Some x -> Ok x
+    | None -> Error ("undefined variable: " ^ Variable.name x))
 
-  | Num n -> NMap.constant ~count:ctx.warp_count ~value:n
+  | Num n -> Ok (NMap.constant ~count:ctx.warp_count ~value:n)
 
   | CastInt (CastBool n) ->
-    n_eval n ctx
+    n_eval_res n ctx
 
   | CastInt e ->
-    b_eval e ctx
-    |> BMap.to_array
-    |> Array.map (fun v -> if v then 1 else 0)
-    |> NMap.from_array
+    let* e = b_eval_res e ctx in
+    Ok (
+      e
+      |> BMap.to_array
+      |> Array.map (fun v -> if v then 1 else 0)
+      |> NMap.from_array
+    )
 
   | Unary (o, e) ->
-    let n = n_eval e ctx in
-    NMap.map (fun v -> N_unary.eval o v) n
+    let* n = n_eval_res e ctx in
+    Ok (NMap.map (N_unary.eval o) n)
 
   | Binary (o, n1, n2) ->
     let o = N_binary.eval o in
-    let n1 = n_eval n1 ctx in
-    let n2 = n_eval n2 ctx in
+    let* n1 = n_eval_res n1 ctx in
+    let* n2 = n_eval_res n2 ctx in
     (try
-      NMap.pointwise o n1 n2
+      Ok (NMap.pointwise o n1 n2)
     with
       Division_by_zero ->
-        failwith ("n_eval: division by zero: " ^ Exp.n_to_string n))
+        Error ("division by zero: " ^ Exp.n_to_string n))
 
   | NIf (b, n1, n2) ->
-    n_map3
-      (fun b x1 x2 -> if b then x1 else x2)
-      (b_eval b ctx)
-      (n_eval n1 ctx)
-      (n_eval n2 ctx)
+    let* b = b_eval_res b ctx in
+    let* n1 = n_eval_res n1 ctx in
+    let* n2 = n_eval_res n2 ctx in
+    Ok (
+      n_map3
+        (fun b x1 x2 -> if b then x1 else x2)
+        b
+        n1
+        n2
+    )
 
-  | NCall (x,_) -> failwith ("n_eval: call " ^ x)
+  | NCall (x,_) -> Error ("unknown function call: " ^ x)
 
-  | Other _ -> failwith "n_eval: other"
+  | Other _ -> Error ("cannot evaluate other: " ^ Exp.n_to_string n)
 
-and b_eval (b: Exp.bexp) (ctx:t) : BMap.t =
+and b_eval_res (b: Exp.bexp) (ctx:t) : (BMap.t, string) Result.t =
   match b with
-  | Bool b -> BMap.constant ~count:ctx.bank_count ~value:b
+  | Bool b -> Ok (BMap.constant ~count:ctx.bank_count ~value:b)
 
   | CastBool (CastInt e) ->
-    b_eval e ctx
+    b_eval_res e ctx
 
   | CastBool e ->
-    n_eval e ctx
-    |> NMap.to_array
-    |> Array.map (fun v -> v <> 0)
-    |> BMap.from_array
+    let* e = n_eval_res e ctx in
+    Ok (
+      e
+      |> NMap.to_array
+      |> Array.map (fun v -> v <> 0)
+      |> BMap.from_array
+    )
 
   | NRel (o, n1, n2) ->
     let o = N_rel.eval o in
-    let n1 = n_eval n1 ctx in
-    let n2 = n_eval n2 ctx in
-    n_map2 o n1 n2
+    let* n1 = n_eval_res n1 ctx in
+    let* n2 = n_eval_res n2 ctx in
+    Ok (n_map2 o n1 n2)
 
   | BRel (o, b1, b2) ->
     let o = B_rel.eval o in
-    let b1 = b_eval b1 ctx in
-    let b2 = b_eval b2 ctx in
-    BMap.pointwise o b1 b2
+    let* b1 = b_eval_res b1 ctx in
+    let* b2 = b_eval_res b2 ctx in
+    Ok (BMap.pointwise o b1 b2)
 
   | BNot b ->
-    b_eval b ctx |> BMap.map (fun x -> not x)
+    let* b = b_eval_res b ctx in
+    Ok (BMap.map (fun x -> not x) b)
 
   | Pred (x, _) ->
-    failwith ("b_eval: pred " ^ x)
+    Error ("cannot evaluate predicate: " ^ x)
+
+let n_eval (e:Exp.nexp) (ctx:t) : NMap.t =
+  n_eval_res e ctx |> Result.get_ok
+
+let b_eval (e:Exp.bexp) (ctx:t) : BMap.t =
+  b_eval_res e ctx |> Result.get_ok
 
 let access ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
   let idx_bid =
