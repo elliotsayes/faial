@@ -334,11 +334,9 @@ let last_mult ~lower_bound ~upper_bound (step:int) : nexp =
  *)
 let last_div ~lower_bound ~upper_bound (step:int) : nexp =
   if step >= 2 then
-    Binary (
-      Div,
-      upper_bound,
-      (highest_power ~base:step (Binary (Div, upper_bound, lower_bound)))
-    )
+    Exp.n_div
+      upper_bound
+      (highest_power ~base:step (Exp.n_div upper_bound lower_bound))
   else
     failwith ("last_mult: invalid base: " ^ string_of_int step)
 
