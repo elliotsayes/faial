@@ -165,12 +165,12 @@ module CodeGen (N:NUMERIC_OPS) = struct
 
 	let nrel_to_expr : N_rel.t -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr =
     function
-		| NEq -> Boolean.mk_eq
-		| NNeq -> fun ctx n1 n2 -> Boolean.mk_not ctx (Boolean.mk_eq ctx n1 n2)
-		| NLe -> N.mk_le
-		| NGe -> N.mk_ge
-		| NLt -> N.mk_lt
-		| NGt -> N.mk_gt
+    | Eq -> Boolean.mk_eq
+    | Neq -> fun ctx n1 n2 -> Boolean.mk_not ctx (Boolean.mk_eq ctx n1 n2)
+    | Le -> N.mk_le
+    | Ge -> N.mk_ge
+    | Lt -> N.mk_lt
+    | Gt -> N.mk_gt
 
 	let brel_to_expr : B_rel.t -> Z3.context -> Expr.expr -> Expr.expr -> Expr.expr =
     function

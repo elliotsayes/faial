@@ -33,6 +33,9 @@ let from_name
 =
   {name;ty;kind}
 
+let equal (e1:t) (e2:t) : bool =
+  Variable.equal e1.name e2.name
+
 let from_ty_var
   ?(kind=Kind.Var)
   (ty_var:Ty_variable.t)

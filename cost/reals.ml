@@ -230,7 +230,7 @@ let true_ : boolean = Bool true
 let false_ : boolean = Bool false
 
 let equal (e1:integer) (e2:integer) : boolean =
-  NRel (NEq, e1, e2)
+  NRel (Eq, e1, e2)
 
 let n_rel (o:N_rel.t) (e1:integer) (e2:integer) : boolean =
   NRel (o, e1, e2)

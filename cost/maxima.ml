@@ -61,9 +61,9 @@ and b_to_string : Reals.boolean -> string =
   function
   | Bool true -> "true"
   | Bool false -> "false"
-  | NRel (NEq, e1, e2) ->
+  | NRel (Eq, e1, e2) ->
     "equal(" ^ i_to_string e1 ^ ", " ^ i_to_string e2 ^ ")"
-  | NRel (NNeq, e1, e2) ->
+  | NRel (Neq, e1, e2) ->
     "notequal(" ^ i_to_string e1 ^ ", " ^ i_to_string e2 ^ ")"
   | NRel (o, e1, e2) ->
     "(" ^ i_to_string e1 ^ " " ^ N_rel.to_string o ^

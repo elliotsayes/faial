@@ -277,8 +277,8 @@ module Kernel = struct
     let rec constants (b: bexp) (kvs:(string*int) list) : (string*int) list =
       match b with
       | CastBool (CastInt b) -> constants b kvs
-      | NRel (NEq, Var x, Num n)
-      | NRel (NEq, Num n, Var x) ->
+      | NRel (Eq, Var x, Num n)
+      | NRel (Eq, Num n, Var x) ->
         (Variable.name x, n) :: kvs
       | BRel (BAnd, b1, b2) ->
         constants b1 kvs |> constants b2

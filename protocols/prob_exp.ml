@@ -14,12 +14,12 @@ let eval_nbin : N_binary.t -> Int32.t -> Int32.t -> Int32.t =
 
 let eval_nrel : N_rel.t -> Int32.t -> Int32.t -> bool =
   function
-  | NEq -> (=)
-  | NNeq -> (<>)
-  | NLe -> (<=)
-  | NGe -> (>=)
-  | NLt -> (<)
-  | NGt -> (>)
+  | Eq -> (=)
+  | Neq -> (<>)
+  | Le -> (<=)
+  | Ge -> (>=)
+  | Lt -> (<)
+  | Gt -> (>)
 
 let default_env (x:Variable.t) : (Int32.t, string) Result.t =
   Error ("n_eval: variable " ^ Variable.name x)

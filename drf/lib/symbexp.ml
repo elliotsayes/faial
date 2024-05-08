@@ -181,7 +181,7 @@ module SymAccess = struct
       Gen.assign_mode t a.access.mode :: (* assign the mode *)
       if assign_index then
         (* assign the values of the index *)
-        List.mapi (Gen.assign_index N_rel.NEq t) a.access.index
+        List.mapi (Gen.assign_index N_rel.Eq t) a.access.index
       else [] (* otherwise do not generate *)
     )
     |> b_and_ex
@@ -202,7 +202,7 @@ let cond_access_to_bexp (locals:Variable.Set.t) (t:Task.t) (a:CondAccess.t) : be
   let a = project_access locals t a in
   (
     a.cond ::
-    List.mapi (Gen.assign_index N_rel.NEq t) a.access.index
+    List.mapi (Gen.assign_index N_rel.Eq t) a.access.index
   )
   |> b_and_ex
 

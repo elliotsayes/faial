@@ -68,12 +68,12 @@ let b_tests : (Reals.boolean * bool) list =
     Bool true, true;
     Bool false, false;
 
-    NRel (NEq, Num 1, Num 2), 1 = 2;
-    NRel (NNeq, Num 1, Num 2), 1 <> 2;
-    NRel (NGt, Num 1, Num 2), 1 > 2;
-    NRel (NGe, Num 1, Num 2), 1 >= 2;
-    NRel (NLt, Num 1, Num 2), 1 < 2;
-    NRel (NLe, Num 1, Num 2), 1 <= 2;
+    NRel (Eq, Num 1, Num 2), 1 = 2;
+    NRel (Neq, Num 1, Num 2), 1 <> 2;
+    NRel (Gt, Num 1, Num 2), 1 > 2;
+    NRel (Ge, Num 1, Num 2), 1 >= 2;
+    NRel (Lt, Num 1, Num 2), 1 < 2;
+    NRel (Le, Num 1, Num 2), 1 <= 2;
 
     BRel (BOr, true_, false_), true || false;
     BRel (BAnd, true_, false_), true && false;

@@ -78,26 +78,52 @@ let b_eval (b: bexp) : bool =
   | Ok b -> b
   | Error e -> failwith e
 
-let n_rel o n1 n2 =
-  match n1, n2 with
-  | Num n1, Num n2 -> Bool (N_rel.eval o n1 n2)
-  | _, _ -> NRel (o, n1, n2)
-
 let num (n:int) : nexp = Num n
 
 let n_zero = Num 0
 
-let n_lt = n_rel NLt
+let n_lt (e1:nexp) (e2:nexp) : bexp =
+  match e1, e2 with
+  | Num e1, Num e2 -> Bool (e1 < e2)
+  | _, _ -> NRel (Lt, e1, e2)
 
-let n_gt = n_rel NGt
+let n_gt (e1:nexp) (e2:nexp) : bexp =
+  match e1, e2 with
+  | Num e1, Num e2 -> Bool (e1 > e2)
+  | _, _ -> NRel (Gt, e1, e2)
 
-let n_le = n_rel NLe
+let n_le (e1:nexp) (e2:nexp) : bexp =
+  match e1, e2 with
+  | Num e1, Num e2 -> Bool (e1 <= e2)
+  | _, _ -> NRel (Le, e1, e2)
 
-let n_ge = n_rel NGe
+let n_ge (e1:nexp) (e2:nexp) : bexp =
+  match e1, e2 with
+  | Num e1, Num e2 -> Bool (e1 >= e2)
+  | _, _ -> NRel (Ge, e1, e2)
 
-let n_eq = n_rel NEq
+let n_eq (e1:nexp) (e2:nexp) : bexp =
+  match e1, e2 with
+  | CastInt e, Num 0 | Num 0, CastInt e-> BNot e
+  | CastInt e, Num 1 | Num 1, CastInt e -> e
+  | Num e1, Num e2 -> Bool (e1 = e2)
+  | _, _ -> NRel (Eq, e1, e2)
 
-let n_neq = n_rel NNeq
+let n_neq (e1:nexp) (e2:nexp) : bexp =
+  match e1, e2 with
+  | CastInt e, Num 0 -> e
+  | Num e1, Num e2 -> Bool (e1 <> e2)
+  | _, _ -> NRel (Neq, e1, e2)
+
+let n_rel : N_rel.t -> nexp -> nexp -> bexp =
+  function
+  | N_rel.Lt -> n_lt
+  | Gt -> n_gt
+  | Eq -> n_eq
+  | Neq -> n_neq
+  | Le -> n_le
+  | Ge -> n_ge
+
 
 let n_if b n1 n2 =
   match b with
@@ -201,12 +227,12 @@ let rec b_not : bexp -> bexp =
   | BNot b -> b
   | BRel (BAnd, b1, b2) -> b_or (b_not b1) (b_not b2)
   | BRel (BOr, b1, b2) -> b_and (b_not b1) (b_not b2)
-  | NRel (NEq, n1, n2) -> n_neq n1 n2
-  | NRel (NNeq, n1, n2) -> n_eq n1 n2
-  | NRel (NLt, n1, n2) -> n_rel NGe n1 n2
-  | NRel (NGt, n1, n2) -> n_rel NLe n1 n2
-  | NRel (NLe, n1, n2) -> n_rel NGt n1 n2
-  | NRel (NGe, n1, n2) -> n_rel NLt n1 n2
+  | NRel (Eq, n1, n2) -> n_neq n1 n2
+  | NRel (Neq, n1, n2) -> n_eq n1 n2
+  | NRel (Lt, n1, n2) -> n_ge n1 n2
+  | NRel (Gt, n1, n2) -> n_le n1 n2
+  | NRel (Le, n1, n2) -> n_gt n1 n2
+  | NRel (Ge, n1, n2) -> n_lt n1 n2
   | Bool b -> Bool (not b)
   | b -> BNot b
 
