@@ -44,6 +44,7 @@ module Solver = struct
     flatten_slices: bool;
     approx_ifs: bool;
     cost: Summation.Strategy.t;
+    simulate: bool;
   }
 
   let make
@@ -75,6 +76,7 @@ module Solver = struct
     ~flatten_slices
     ~approx_ifs
     ~cost
+    ~simulate
   :
     t
   =
@@ -112,6 +114,7 @@ module Solver = struct
       params;
       approx_ifs;
       cost;
+      simulate;
     }
 
   let gen_transaction_count
@@ -234,11 +237,15 @@ module Solver = struct
         Some Conflict.{
           transaction_count=Bank.transaction_count a.config s;
           bank=s;
-          cost=s
-            |> Bank.eval_res
-                ~bank_count:a.config.num_banks
-                ~warp_count:a.config.warp_count
-                ~block_dim:a.block_dim
+          cost=
+            if a.simulate then
+              s
+              |> Bank.eval_res
+                  ~bank_count:a.config.num_banks
+                  ~warp_count:a.config.warp_count
+                  ~block_dim:a.block_dim
+            else
+              Error "Run with --simulate to output simulated cost."
         }
     )
     |> List.of_seq
@@ -489,6 +496,7 @@ let run
   ~flatten_slices
   ~approx_ifs
   ~cost
+  ~simulate
   (kernels : Proto.Code.t Proto.Kernel.t list)
 :
   unit
@@ -522,6 +530,7 @@ let run
     ~flatten_slices
     ~approx_ifs
     ~cost
+    ~simulate
   in
   if output_json then
     JUI.run app
@@ -559,6 +568,7 @@ let pico
   (flatten_slices:bool)
   (approx_ifs:bool)
   (cost:Summation.Strategy.t)
+  (simulate:bool)
 =
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
   let block_dim = parsed.options.block_dim in
@@ -598,6 +608,7 @@ let pico
     ~flatten_slices
     ~approx_ifs
     ~cost
+    ~simulate
     kernels
 
 
@@ -742,6 +753,10 @@ let cost =
   let doc = "Generate minimum cost for approximate costs (default is maximum cost)." in
   Arg.(value & opt (enum ["min", Summation.Strategy.Min; "max", Summation.Strategy.Max]) Summation.Strategy.Max & info ["cost"] ~doc)
 
+let simulate =
+  let doc = "Simulate the cost if possible." in
+  Arg.(value & flag & info ["sim"] ~doc)
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -773,6 +788,7 @@ let pico_t = Term.(
   $ flatten_slices
   $ approx_ifs
   $ cost
+  $ simulate
 )
 
 let info =
