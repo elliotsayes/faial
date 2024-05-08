@@ -210,30 +210,39 @@ module Code = struct
       (arrays:Memory.t Variable.Map.t)
       (cfg:Config.t)
     :
-      Proto.Code.t -> (Variable.t * t) Seq.t
+      Variable.Set.t -> Proto.Code.t -> (Variable.t * t) Seq.t
     =
       let open Exp in
       let lin = L.linearize cfg arrays in
-      let rec on_p : Proto.Code.t -> (Variable.t * t) Seq.t =
+      let rec on_p (locals:Variable.Set.t) : Proto.Code.t -> (Variable.t * t) Seq.t =
         function
         | Acc (x, {index=l; _}) ->
           l
           |> lin x
           |> Option.map (fun e ->
-              let e = O.remove_offset e in
+              let e = O.remove_offset locals e in
               Seq.return (x, Index e)
             )
           |> Option.value ~default:Seq.empty
         | Sync _ ->
           Seq.empty
         | Decl {body=p; var; _} ->
-          on_p p |> Seq.map (fun (x, i) -> x, Decl (var, i))
+          p
+          |> on_p (Variable.Set.add var locals)
+          |> Seq.map (fun (x, i) -> x, Decl (var, i))
         | If (b, p, q) ->
           Seq.append
-            (on_p p |> Seq.map (fun (x,p) -> x, Cond (b, p)))
-            (on_p q |> Seq.map (fun (x,q) -> x, Cond (Exp.b_not b, q)))
+            (on_p locals p |> Seq.map (fun (x,p) -> x, Cond (b, p)))
+            (on_p locals q |> Seq.map (fun (x,q) -> x, Cond (Exp.b_not b, q)))
         | Loop (r, p) ->
-          on_p p
+          let locals =
+            let r_locals = Freenames.free_names_range r Variable.Set.empty in
+            if Variable.Set.inter locals r_locals |> Variable.Set.is_empty then
+              locals
+            else
+              Variable.Set.add (Range.var r) locals
+          in
+          on_p locals p
           |> Seq.map (fun (x,i) ->
             match R.uniform cfg.block_dim r with
             | Some r' ->
@@ -248,7 +257,7 @@ module Code = struct
           )
         | Skip -> Seq.empty
         | Seq (p, q) ->
-          Seq.append (on_p p) (on_p q)
+          Seq.append (on_p locals p) (on_p locals q)
       in
       on_p
   end
@@ -259,9 +268,11 @@ module Code = struct
   let from_proto :
       Memory.t Variable.Map.t ->
       Config.t ->
+      Variable.Set.t ->
       Proto.Code.t ->
       (Variable.t * t) Seq.t
     = Default.from_proto
+
 end
 
 type t = {
@@ -303,7 +314,7 @@ let trim_decls (k:t) : t =
 module Make (L:Logger.Logger) = struct
   module R = Uniform_range.Make(L)
   module L = Linearize_index.Make(L)
-
+(*   module C = Code.Make(L) *)
   (*
   Given a kernel return a sequence of slices.
   *)
@@ -313,16 +324,17 @@ module Make (L:Logger.Logger) = struct
   :
     t Seq.t
   =
+    let local_variables = Params.to_set k.local_variables in
     k.code
     |> Proto.Code.subst_block_dim cfg.block_dim
     |> Proto.Code.subst_grid_dim cfg.grid_dim
-    |> Code.from_proto k.arrays cfg
+    |> Code.from_proto k.arrays cfg local_variables
     |> Seq.map (fun (array, p) ->
       let code = if k.pre = Bool true then p else Code.Cond (k.pre, p) in
       {
         name = k.name;
         global_variables = Params.to_set k.global_variables;
-        local_variables = Params.to_set k.local_variables;
+        local_variables;
         code;
         array;
       }

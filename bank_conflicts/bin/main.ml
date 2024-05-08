@@ -122,7 +122,7 @@ module Solver = struct
   :
     int
   =
-    let e = Offset_analysis.Default.remove_offset e in
+    let e = Offset_analysis.Default.remove_offset s e in
     match Index_analysis.transaction_count app.config s e with
     | Ok e -> e
     | Error e ->

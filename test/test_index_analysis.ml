@@ -10,10 +10,10 @@ let assert_offset ~expected ~given : unit =
   assert_equal expected given ~msg
 
 let assert_index ~expected ~given : unit =
-  assert_offset ~expected:(Index expected) ~given:(Offset_analysis.from_nexp given)
+  assert_offset ~expected:(Index expected) ~given:(Offset_analysis.from_nexp Variable.Set.empty given)
 
 let assert_offset ~expected ~given : unit =
-  assert_offset ~expected:(Offset expected) ~given:(Offset_analysis.from_nexp given)
+  assert_offset ~expected:(Offset expected) ~given:(Offset_analysis.from_nexp Variable.Set.empty given)
 
 let tests = "test_predicates" >::: [
   "imp_to_post_1" >:: (fun _ ->

@@ -34,29 +34,33 @@ let index_and (f:Exp.nexp -> Exp.nexp -> Exp.nexp) (e1: t) (e2: t) : t =
   | Index e1, Index e2 -> Index (f e1 e2)
   | Offset e1, Offset e2 -> Offset (f e1 e2)
 
-let rec from_nexp : Exp.nexp -> t =
-  function
-  | Num n -> Offset (Num n)
-  | Var x when Variable.is_tid x -> Index (Var x)
-  | Var x -> Offset (Var x)
-  | Unary (o, e) ->
-    map (fun e -> Unary (o, e)) (from_nexp e)
-  | Binary (o, e1, e2) when o = Plus || o = Minus ->
-    index_or (fun e1 e2 -> Binary (o, e1, e2)) (from_nexp e1) (from_nexp e2)
-  | Binary (o, e1, e2) ->
-    index_and (fun e1 e2 -> Binary (o, e1, e2)) (from_nexp e1) (from_nexp e2)
-  | NCall (f, e) -> map (fun e -> NCall (f, e)) (from_nexp e)
-  | Other e -> map (fun e -> Other e) (from_nexp e)
-  | CastInt e ->
-    if Freenames.contains_tid_bexp e then
-      Index (CastInt e)
-    else
-      Offset (CastInt e)
-  | NIf (c, n1, n2) ->
-    if Freenames.contains_tid_bexp c then
-      Index (NIf (c, n1, n2))
-    else
-      index_and (fun n1 n2 -> NIf (c, n1, n2)) (from_nexp n1) (from_nexp n2)
+let from_nexp (locals:Variable.Set.t) : Exp.nexp -> t =
+  let locals = Variable.Set.union locals Variable.tid_var_set in
+  let rec from_nexp : Exp.nexp -> t =
+    function
+    | Num n -> Offset (Num n)
+    | Var x when Variable.Set.mem x locals -> Index (Var x)
+    | Var x -> Offset (Var x)
+    | Unary (o, e) ->
+      map (fun e -> Unary (o, e)) (from_nexp e)
+    | Binary (o, e1, e2) when o = Plus || o = Minus ->
+      index_or (fun e1 e2 -> Binary (o, e1, e2)) (from_nexp e1) (from_nexp e2)
+    | Binary (o, e1, e2) ->
+      index_and (fun e1 e2 -> Binary (o, e1, e2)) (from_nexp e1) (from_nexp e2)
+    | NCall (f, e) -> map (fun e -> NCall (f, e)) (from_nexp e)
+    | Other e -> map (fun e -> Other e) (from_nexp e)
+    | CastInt e ->
+      if Exp.b_exists (fun x -> Variable.Set.mem x locals) e then
+        Index (CastInt e)
+      else
+        Offset (CastInt e)
+    | NIf (c, n1, n2) ->
+      if Exp.b_exists (fun x -> Variable.Set.mem x locals) c then
+        Index (NIf (c, n1, n2))
+      else
+        index_and (fun n1 n2 -> NIf (c, n1, n2)) (from_nexp n1) (from_nexp n2)
+  in
+  from_nexp
 
 let to_string : t -> string =
   function
@@ -66,10 +70,11 @@ let to_string : t -> string =
 module Make (L:Logger.Logger) = struct
   open Exp
 
-  let remove_offset (n: Exp.nexp) : Exp.nexp =
-    let after = match from_nexp n with
-    | Offset _ -> Num 0
-    | Index e -> e
+  let remove_offset (locals:Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
+    let after =
+      match from_nexp locals n with
+      | Offset _ -> Num 0
+      | Index e -> e
     in
     (if n <> after then
       L.info ("Simplification: removed offset: " ^ Exp.n_to_string n ^ " 🡆 " ^ Exp.n_to_string after)
