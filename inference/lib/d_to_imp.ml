@@ -133,11 +133,17 @@ module IExp = struct
     | Pred (o, e) ->
       o ^ "(" ^ to_string e ^ ")"
 
+  let or_ (e1:t) (e2:t) : b =
+    BRel (BOr, e1, e2)
+
+  let n_eq (e1:t) (e2:t) : b =
+    NRel (Eq, e1, e2)
+
   let thread_equal (e:t) : b =
-    NRel (NEq, e, NExp (Other e))
+    n_eq e (NExp (Other e))
 
   let thread_distinct (e:t) : b =
-    NRel (NNeq, e, NExp (Other e))
+    NRel (Neq, e, NExp (Other e))
 
 end
 
@@ -149,12 +155,12 @@ let parse_bin (op:string) (l:IExp.t) (r:IExp.t) : IExp.t =
   | "||" -> BExp (BRel (BOr, l, r))
   | "&&" -> BExp (BRel (BAnd, l, r))
   (* int -> int -> bool *) 
-  | "==" -> BExp (NRel (NEq, l, r))
-  | "!=" -> BExp (NRel (NNeq, l, r))
-  | "<=" -> BExp (NRel (NLe, l, r))
-  | "<"  -> BExp (NRel (NLt, l, r))
-  | ">=" -> BExp (NRel (NGe, l, r))
-  | ">"  -> BExp (NRel (NGt, l, r))
+  | "==" -> BExp (NRel (Eq, l, r))
+  | "!=" -> BExp (NRel (Neq, l, r))
+  | "<=" -> BExp (NRel (Le, l, r))
+  | "<"  -> BExp (NRel (Lt, l, r))
+  | ">=" -> BExp (NRel (Ge, l, r))
+  | ">"  -> BExp (NRel (Gt, l, r))
   (* int -> int -> int *)
   | "+" -> NExp (Binary (Plus, l, r))
   | "-" -> NExp (Binary (Minus, l, r))
@@ -246,19 +252,33 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _} when Variable.name n = "min" ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
-    ret_n (NIf (BExp (NRel (NLt, n1, n2)), n1, n2))
+    ret_n (NIf (BExp (NRel (Lt, n1, n2)), n1, n2))
 
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _} when Variable.name n = "max" ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
-    ret_n (NIf (BExp (NRel (NGt, n1, n2)), n1, n2))
+    ret_n (NIf (BExp (NRel (Gt, n1, n2)), n1, n2))
 
   | BinaryOperator {lhs=l; opcode="&"; rhs=IntegerLiteral 1; _} ->
     let* n = parse_exp l in
-    ret_b (NRel (NEq, NExp (Binary (Mod, n, NExp (Num 2))), NExp (Num 0)))
+    ret_b (NRel (Eq, NExp (Binary (Mod, n, NExp (Num 2))), NExp (Num 0)))
 
-  | BinaryOperator {opcode="&"; lhs=n1; rhs=BinaryOperator {opcode="-"; lhs=n2; rhs=IntegerLiteral 1; _}; ty=ty} ->
-    parse_exp (BinaryOperator {opcode="%"; lhs=n1; rhs=n2; ty=ty})
+  | BinaryOperator {
+      opcode="==";
+      lhs=BinaryOperator {
+        opcode="&";
+        lhs=Ident n1 as e;
+        rhs=BinaryOperator {
+          opcode="-";
+          lhs=Ident n2;
+          rhs=IntegerLiteral 1; _
+        }; _
+      };
+      rhs=IntegerLiteral 0;
+      _
+    } when Decl_expr.equal n1 n2 ->
+    let* n = parse_e "arg" e in
+    ret_b (IExp.or_ (BExp (Pred ("pow2", n))) (BExp (IExp.n_eq n (NExp (Num 0)))))
 
   | BinaryOperator {opcode=o; lhs=n1; rhs=n2; _} ->
     let* n1 = parse_e "lhs" n1 in
