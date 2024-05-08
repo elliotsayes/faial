@@ -50,7 +50,7 @@ let () =
   let data_dep_path : Fpath.t =
     Fpath.append
       base_dir
-      (Files.from_string "../../index_dep/main.exe")
+      (Files.from_string "../../approx/bin/main.exe")
   in
   let data_dep (fname:Fpath.t) : Subprocess.t =
     Subprocess.make (Fpath.to_string data_dep_path) [fname |> Fpath.to_string]

@@ -41,10 +41,10 @@ let transaction_count
         ~use_array:(fun _ -> true)
       |> put_tids params.block_dim
     in
-    try
-      let tsx : int = (Vectorized.access n ctx |> Vectorized.NMap.max).value in
+    match Vectorized.access_res n ctx with
+    | Ok v ->
+      let tsx : int = (v |> Vectorized.NMap.max).value in
       assert (tsx >= 1); (* make sure there's at least one transaction being returned *)
       Ok tsx
-    with
-      Failure _ ->
-      bc_fail "Could not analyze expression"
+    | Error x ->
+      bc_fail x

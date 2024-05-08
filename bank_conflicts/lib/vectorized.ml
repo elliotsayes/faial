@@ -265,16 +265,18 @@ let n_eval (e:Exp.nexp) (ctx:t) : NMap.t =
 let b_eval (e:Exp.bexp) (ctx:t) : BMap.t =
   b_eval_res e ctx |> Result.get_ok
 
-let access ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
+let access_res ?(verbose=false) (index:Exp.nexp) (ctx:t) : (NMap.t, string) Result.t =
+  let* idx = n_eval_res index ctx in
   let idx_bid =
-    let idx = n_eval index ctx |> NMap.to_array in
+    let idx = idx |> NMap.to_array in
     (* We handle "gracefully" index out of bounds *)
     let bid = Array.map (fun x -> Common.modulo x ctx.bank_count) idx in
     Array.combine idx bid
   in
   (* Create a mutable array *)
   let tsx = Array.make ctx.bank_count IntSet.empty in
-  b_eval ctx.cond ctx
+  let* b = b_eval_res ctx.cond ctx in
+  b
   |> BMap.to_array
   |> Array.combine idx_bid
   |> Array.iter (fun ((idx, bid), enabled) ->
@@ -296,7 +298,10 @@ let access ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
       ))
     else ()
   );
-  tsx
+  Ok tsx
+
+let access ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
+  access_res ~verbose index ctx |> Result.get_ok
 
 let add = NMap.pointwise (+)
 

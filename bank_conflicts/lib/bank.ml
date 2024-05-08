@@ -174,8 +174,9 @@ module Code = struct
     let rec eval (max_cost:int) (ctx:Vectorized.t) : t -> (int, string) Result.t =
       function
       | Index a ->
-        let* v = Vectorized.n_eval_res a ctx in
-        Ok ((Vectorized.NMap.max v).value)
+        let* v = Vectorized.access_res ~verbose:true a ctx in
+        let x = (Vectorized.NMap.max v).value in
+        Ok (max x max_cost)
       | Decl (x, a) ->
         let ctx =
           match generate_var x ctx with
@@ -328,6 +329,16 @@ module Make (L:Logger.Logger) = struct
     )
 
 end
+
+let eval_res ~bank_count ~warp_count ~block_dim (k:t) : (int, string) Result.t =
+  let ctx =
+    Vectorized.make
+      ~bank_count
+      ~warp_count
+      ~use_array:(fun _ -> true)
+    |> Vectorized.put_tids block_dim
+  in
+  Code.eval_res ctx k.code
 
 module Silent = Make(Logger.Silent)
 module Default = Make(Logger.Colors)

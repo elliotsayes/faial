@@ -178,12 +178,12 @@ module Solver = struct
     if a.skip_simpl_ra then r else Ra.Stmt.simplify r
 
   type r_cost = (cost, string) Result.t
+
   module Conflict = struct
     type t = {
-      kernel: Bank.t;
+      bank: Bank.t;
       transaction_count: (int, string) Result.t;
-      ra: Ra.Stmt.t;
-      cost: r_cost;
+      cost: (int, string) Result.t;
     }
   end
 
@@ -233,9 +233,12 @@ module Solver = struct
       else
         Some Conflict.{
           transaction_count=Bank.transaction_count a.config s;
-          kernel=s;
-          ra=r;
-          cost=get_cost a r;
+          bank=s;
+          cost=s
+            |> Bank.eval_res
+                ~bank_count:a.config.num_banks
+                ~warp_count:a.config.warp_count
+                ~block_dim:a.block_dim
         }
     )
     |> List.of_seq
@@ -310,18 +313,12 @@ module TUI = struct
       s
       |> List.iter (fun conflict ->
         let open Solver.Conflict in
-        let _min_s =
-          conflict.kernel
-          |> Bank.minimize
-        in
-        let _simplified_cost = match conflict.cost with
-          | Ok s -> Solver.(s.amount)
-          | Error e ->
-            Logger.Colors.error e;
-            "???"
+        let bc =
+          match conflict.transaction_count, conflict.cost with
+          | Ok e, _ | _, Ok e -> string_of_int e
+          | _, _ -> "32 (potential)"
         in
         let cost =
-          let _e = Summation.from_stmt conflict.ra in
           let open PrintBox in
           [|
             [|
@@ -329,13 +326,13 @@ module TUI = struct
               text (
                 match conflict.transaction_count with
                 | Ok x -> string_of_int x
-                | Error _ -> "32 (potential)"
+                | Error _ -> bc
               )
             |];
             [|
               text_with_style Style.bold "Thread-divergence";
               text (
-                conflict.kernel
+                conflict.bank
                 |> Divergence_analysis.from_bank
                 |> Divergence_analysis.to_string
               )
@@ -343,7 +340,7 @@ module TUI = struct
             [|
               text_with_style Style.bold "Context";
               text (
-                conflict.kernel
+                conflict.bank
                 |> Bank.trim_decls
                 |> Bank.to_string
               )
@@ -354,7 +351,7 @@ module TUI = struct
         in
         (* Flatten the expression *)
         ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
-        conflict.kernel |> Bank.location |> Tui_helper.LocationUI.print;
+        conflict.bank |> Bank.location |> Tui_helper.LocationUI.print;
         print_endline "";
         PrintBox_text.output stdout cost;
         print_endline "\n"
@@ -398,7 +395,7 @@ module JUI = struct
           l
           |> List.map (fun c ->
             let open Solver.Conflict in
-            let loc = Bank.location c.kernel in
+            let loc = Bank.location c.bank in
             let loc = [
               "location",
                 `Assoc [
@@ -409,28 +406,29 @@ module JUI = struct
                 ]
               ]
             in
-            let cost = match c.cost with
-              | Ok e ->
-                let open Solver in
-                [
-                ("index_analysis",
+            let cost =
+              [
+                "index_analysis", (
                   match c.transaction_count with
                   | Ok e -> `Int e
-                  | Error _ -> `Null);
+                  | Error _ -> `Null
+                );
                 "access", `String (
-                  c.kernel
+                  c.bank
                   |> Bank.trim_decls
                   |> Bank.to_string
                 );
                 "thread_divergence_analysis", `String (
-                  c.kernel
+                  c.bank
                   |> Divergence_analysis.from_bank
                   |> Divergence_analysis.to_string
                 );
-                "cost", `String e.amount;
-                "analysis_duration_seconds", `Float e.analysis_duration
-                ]
-              | Error e -> ["error", `String e]
+                "cost", (
+                  match c.cost with
+                  | Ok e -> `Int e
+                  | Error _ -> `Null
+                );
+              ]
             in
             `Assoc (loc @ cost)
           )

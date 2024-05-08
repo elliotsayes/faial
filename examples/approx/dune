@@ -1,7 +1,7 @@
 (test
   (name test)
   (deps (glob_files *.cu)
-    ../../index_dep/main.exe
+    ../../approx/bin/main.exe
   )
   (libraries stage0
     ; 3rd-party:

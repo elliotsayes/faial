@@ -1,20 +1,19 @@
 open Bank_conflicts
 open OUnit2
 open Protocols
-open Index_analysis
 
 let assert_offset ~expected ~given : unit =
   let msg =
-    "Expected: " ^ Default.OffsetAnalysis.to_string expected ^ "\n" ^
-    "Given: " ^ Default.OffsetAnalysis.to_string given
+    "Expected: " ^ Offset_analysis.to_string expected ^ "\n" ^
+    "Given: " ^ Offset_analysis.to_string given
   in
   assert_equal expected given ~msg
 
 let assert_index ~expected ~given : unit =
-  assert_offset ~expected:(Index expected) ~given:(Default.OffsetAnalysis.from_nexp given)
+  assert_offset ~expected:(Index expected) ~given:(Offset_analysis.from_nexp given)
 
 let assert_offset ~expected ~given : unit =
-  assert_offset ~expected:(Offset expected) ~given:(Default.OffsetAnalysis.from_nexp given)
+  assert_offset ~expected:(Offset expected) ~given:(Offset_analysis.from_nexp given)
 
 let tests = "test_predicates" >::: [
   "imp_to_post_1" >:: (fun _ ->
