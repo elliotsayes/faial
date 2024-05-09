@@ -291,6 +291,7 @@ module Warp = struct
       bank: int;
       accesses: Task.t list;
       indices: IntSet.t;
+      count: int;
     }
 
     let to_string (e:t) : string =
@@ -304,31 +305,30 @@ module Warp = struct
       bc ^ " @ " ^ bank ^ " " ^ accs
 
     let make (bank:int) : t =
-      {bank; accesses=[]; indices=IntSet.empty}
+      {bank; accesses=[]; indices=IntSet.empty; count=0}
 
     let count (e:t) : int =
       IntSet.cardinal e.indices
 
+    let max (lhs:t) (rhs:t) : t =
+      if lhs.count >= rhs.count then
+        lhs
+      else
+        rhs
+
     let add (task:Task.t) (tsx:t) : t =
+      let indices = IntSet.add task.index tsx.indices in
       { tsx with
         accesses = task :: tsx.accesses;
-        indices = IntSet.add task.index tsx.indices;
+        indices;
+        count = IntSet.cardinal indices;
       }
   end
 
   type t = Transaction.t array
 
   let max (b:t) : Transaction.t =
-    let max_tsx = ref (Array.get b 0) in
-    let max_count = ref (Transaction.count (!max_tsx)) in
-    Array.iter (fun tsx ->
-      let count = Transaction.count tsx in
-      if count > !max_count then (
-        max_tsx := tsx;
-        max_count := count;
-      ) else ()
-    ) b;
-    !max_tsx
+    Array.fold_left Transaction.max (Array.get b 0) b
 
   let transaction_count (w:t) : int =
     max w |> Transaction.count
