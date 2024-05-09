@@ -364,15 +364,22 @@ module TUI = struct
               |> List.map (fun (a:Vectorized.Warp.Task.t) ->
                   text (string_of_int a.index)
                 )
-              |> (fun x -> text "Index:" :: x)
+              |> (fun x -> text_with_style Style.bold "Index" :: x)
               |> Array.of_list
             in
             let tids =
               accs
               |> List.map (fun (a:Vectorized.Warp.Task.t) ->
-                  text (string_of_int a.id)
+                  let id =
+                    match a.id with
+                      {x; y; z} ->
+                      "x:" ^ string_of_int x ^ ", " ^
+                      "y:" ^ string_of_int y ^ ", " ^
+                      "z:" ^ string_of_int z
+                  in
+                  text id
                 )
-              |> (fun x -> text "Thread:" :: x)
+              |> (fun x -> text_with_style Style.bold "threadIdx" :: x)
               |> Array.of_list
             in
             [

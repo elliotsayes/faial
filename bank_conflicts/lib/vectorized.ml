@@ -1,5 +1,6 @@
 open Stage0
 open Protocols
+module IntSet = Common.IntSet
 
 let pointwise (f:'a -> 'a -> 'b) (l1:'a list) (l2:'a list) :
   'b list
@@ -117,9 +118,6 @@ let n_map2 (f:int -> int -> bool) (n1:NMap.t) (n2:NMap.t) : BMap.t =
   let n2 = NMap.to_array n2 in
   Array.map2 f n1 n2 |> BMap.from_array
 
-module IntMap = Map.Make(struct type t = int let compare = compare end)
-module IntSet = Set.Make(struct type t = int let compare = compare end)
-
 type t = {
   bank_count: int;
   warp_count: int;
@@ -152,6 +150,9 @@ let restrict (b:Exp.bexp) (ctx:t) : t =
 let put (x:Variable.t) (v:NMap.t) (ctx:t) : t =
   { ctx with env = Variable.Map.add x v ctx.env }
 
+let get (x:Variable.t) (ctx:t) : NMap.t option =
+  Variable.Map.find_opt x ctx.env
+
 let zero_cost (ctx:t) : NMap.t =
   NMap.constant ~count:ctx.bank_count ~value:0
 
@@ -170,6 +171,23 @@ let put_tids (block_dim:Dim3.t) (ctx:t) : t =
   |> put Variable.tid_x n_tidx
   |> put Variable.tid_y n_tidy
   |> put Variable.tid_z n_tidz
+
+let tid_opt (ctx:t) : Dim3.t array option =
+  let ( let* ) = Option.bind in
+  let* tid_x = get Variable.tid_x ctx |> Option.map NMap.to_array in
+  let* tid_y = get Variable.tid_y ctx |> Option.map NMap.to_array in
+  let* tid_z = get Variable.tid_z ctx |> Option.map NMap.to_array in
+  let tid_xy = Array.combine tid_x tid_y in
+  let tid_xyz = Array.combine tid_xy tid_z in
+  Some (
+    tid_xyz
+    |> Array.map (fun ((x, y), z) ->
+      Dim3.{x; y; z}
+    )
+  )
+
+let tid (ctx:t) : Dim3.t array =
+  tid_opt ctx |> Option.get
 
 let from_config
   (params:Config.t)
@@ -279,11 +297,11 @@ let b_eval (e:Exp.bexp) (ctx:t) : BMap.t =
 module Warp = struct
   module Task = struct
     type t = {
-      id: int;
+      id: Dim3.t;
       index: int;
     }
     let to_string (e:t) : string =
-      "[" ^ string_of_int e.index ^ "]:" ^ string_of_int e.id
+      "[" ^ string_of_int e.index ^ "]:" ^ Dim3.to_string e.id
   end
 
   module Transaction = struct
@@ -340,6 +358,7 @@ module Warp = struct
     (bank_count:int)
     (indices:int array)
     (enabled:bool array)
+    (tids:Dim3.t array)
   : t =
     let banks = Array.init bank_count Transaction.make in
     enabled
@@ -347,6 +366,7 @@ module Warp = struct
     |> Array.iteri (fun id (index, enabled) ->
       if enabled then
         let bid = Common.modulo index bank_count in
+        let id = Array.get tids id in
         let tsx = Transaction.add Task.{id; index} (Array.get banks bid) in
         Array.set banks bid tsx
       else ()
@@ -370,7 +390,8 @@ let to_warp
     |> Array.for_all (fun (idx, enabled) -> not enabled || idx >= 0)
   in
   if is_valid then
-    Ok (Warp.make ctx.bank_count idx enabled)
+    let tids = tid ctx in
+    Ok (Warp.make ctx.bank_count idx enabled tids)
   else
     Error "index out of bounds"
 

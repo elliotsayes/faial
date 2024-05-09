@@ -29,6 +29,9 @@ module StringMap = Map.Make(StringOT)
 module StringMapUtil = MapUtil(StringMap)
 module StringMapSetUtil = MapSetUtil(StringSet)(StringMap)
 
+module IntMap = Map.Make(struct type t = int let compare = compare end)
+module IntSet = Set.Make(struct type t = int let compare = compare end)
+
 let append_tr (l1:'a list) (l2:'a list) : 'a list =
   let rec app (ret:'a list -> 'a list) (l:'a list) : 'a list =
     match l with

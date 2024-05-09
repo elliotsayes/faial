@@ -1,5 +1,6 @@
 open Stage0
 open Protocols
+module IntMap = Common.IntMap
 
 module Code = struct
   type t =
@@ -135,6 +136,7 @@ module Code = struct
     let idx = index a in
     let ctx = Vectorized.from_config params in
     Vectorized.to_warp idx ctx
+
 
   let transaction_count (params:Config.t) : Variable.Set.t -> t -> (int, string) Result.t =
     let rec transaction_count (locals:Variable.Set.t) : t -> (int, string) Result.t =
