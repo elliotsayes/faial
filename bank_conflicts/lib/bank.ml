@@ -131,6 +131,11 @@ module Code = struct
       else
         Cond (Exp.b_and_ex l, a)
 
+  let to_warp (params:Config.t) (a:t) : (Vectorized.Warp.t, string) Result.t =
+    let idx = index a in
+    let ctx = Vectorized.from_config params in
+    Vectorized.to_warp idx ctx
+
   let transaction_count (params:Config.t) : Variable.Set.t -> t -> (int, string) Result.t =
     let rec transaction_count (locals:Variable.Set.t) : t -> (int, string) Result.t =
       function
@@ -174,7 +179,7 @@ module Code = struct
     let rec eval (max_cost:int) (ctx:Vectorized.t) : t -> (int, string) Result.t =
       function
       | Index a ->
-        let* v = Vectorized.access_res ~verbose:true a ctx in
+        let* v = Vectorized.max_transactions_res ~verbose:true a ctx in
         let x = (Vectorized.NMap.max v).value in
         Ok (max x max_cost)
       | Decl (x, a) ->
@@ -307,6 +312,9 @@ let to_check (k:t) : Approx.Check.t =
   let code = Code.to_approx k.array k.code in
   let vars = Variable.Set.union k.global_variables Variable.tid_var_set in
   Approx.Check.from_code vars code
+
+let to_warp (params:Config.t) (k:t) : (Vectorized.Warp.t, string) Result.t =
+  Code.to_warp params k.code
 
 let trim_decls (k:t) : t =
   { k with code = Code.trim_decls k.code; }

@@ -1,3 +1,8 @@
+2024-05:
+- Bank conflicts: reworked index analysis, which now shows the
+  bank that generates the conflict, the threads accessing it,
+  as well as the indices involved.
+
 2024-04:
 - Inference: improved support for array aliasing with shared memory.
 - Inference: added support for assertions anywhere in the code

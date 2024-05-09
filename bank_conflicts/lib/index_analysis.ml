@@ -33,15 +33,8 @@ let transaction_count
   if has_thread_locals then
     bc_fail "Expression uses thread-local variables"
   else
-    let ctx =
-      let open Vectorized in
-        make
-        ~bank_count:params.num_banks
-        ~warp_count:params.warp_count
-        ~use_array:(fun _ -> true)
-      |> put_tids params.block_dim
-    in
-    match Vectorized.access_res n ctx with
+    let ctx = Vectorized.from_config params in
+    match Vectorized.max_transactions_res n ctx with
     | Ok v ->
       let tsx : int = (v |> Vectorized.NMap.max).value in
       assert (tsx >= 1); (* make sure there's at least one transaction being returned *)

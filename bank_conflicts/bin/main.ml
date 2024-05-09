@@ -185,7 +185,7 @@ module Solver = struct
   module Conflict = struct
     type t = {
       bank: Bank.t;
-      transaction_count: (int, string) Result.t;
+      warp: (Vectorized.Warp.t, string) Result.t;
       cost: (int, string) Result.t;
     }
   end
@@ -235,7 +235,7 @@ module Solver = struct
         None
       else
         Some Conflict.{
-          transaction_count=Bank.transaction_count a.config s;
+          warp=Bank.to_warp a.config s;
           bank=s;
           cost=
             if a.simulate then
@@ -321,20 +321,17 @@ module TUI = struct
       |> List.iter (fun conflict ->
         let open Solver.Conflict in
         let bc =
-          match conflict.transaction_count, conflict.cost with
-          | Ok e, _ | _, Ok e -> string_of_int e
+          match conflict.warp, conflict.cost with
+          | Ok w, _ -> Vectorized.Warp.transaction_count w |> string_of_int
+          | _, Ok e -> string_of_int e
           | _, _ -> "32 (potential)"
         in
         let cost =
           let open PrintBox in
-          [|
+          [
             [|
               text_with_style Style.bold "Bank conflicts";
-              text (
-                match conflict.transaction_count with
-                | Ok x -> string_of_int x
-                | Error _ -> bc
-              )
+              text bc
             |];
             [|
               text_with_style Style.bold "Thread-divergence";
@@ -352,7 +349,41 @@ module TUI = struct
                 |> Bank.to_string
               )
             |];
-          |]
+          ]
+          @
+          (match conflict.warp with
+          | Ok w ->
+            let tsx = Vectorized.Warp.max w in
+            let b = string_of_int tsx.bank in
+            let accs =
+              tsx.accesses
+              |> List.sort compare
+            in
+            let idx =
+              accs
+              |> List.map (fun (a:Vectorized.Warp.Task.t) ->
+                  text (string_of_int a.index)
+                )
+              |> (fun x -> text "Index:" :: x)
+              |> Array.of_list
+            in
+            let tids =
+              accs
+              |> List.map (fun (a:Vectorized.Warp.Task.t) ->
+                  text (string_of_int a.id)
+                )
+              |> (fun x -> text "Thread:" :: x)
+              |> Array.of_list
+            in
+            [
+              [|
+                text_with_style Style.bold ("Bank " ^ b);
+                grid [| tids; idx; |];
+              |]
+            ]
+          | Error _ -> []
+          )
+          |> Array.of_list
           |> grid
           |> frame
         in
@@ -416,8 +447,8 @@ module JUI = struct
             let cost =
               [
                 "index_analysis", (
-                  match c.transaction_count with
-                  | Ok e -> `Int e
+                  match c.warp with
+                  | Ok e -> `Int (Vectorized.Warp.transaction_count e)
                   | Error _ -> `Null
                 );
                 "access", `String (

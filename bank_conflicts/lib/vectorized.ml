@@ -171,6 +171,17 @@ let put_tids (block_dim:Dim3.t) (ctx:t) : t =
   |> put Variable.tid_y n_tidy
   |> put Variable.tid_z n_tidz
 
+let from_config
+  (params:Config.t)
+:
+  t
+=
+  make
+  ~bank_count:params.num_banks
+  ~warp_count:params.warp_count
+  ~use_array:(fun _ -> true)
+  |> put_tids params.block_dim
+
 let ( let* ) = Result.bind
 
 let rec n_eval_res (n: Exp.nexp) (ctx:t) : (NMap.t, string) Result.t =
@@ -265,7 +276,110 @@ let n_eval (e:Exp.nexp) (ctx:t) : NMap.t =
 let b_eval (e:Exp.bexp) (ctx:t) : BMap.t =
   b_eval_res e ctx |> Result.get_ok
 
-let access_res ?(verbose=false) (index:Exp.nexp) (ctx:t) : (NMap.t, string) Result.t =
+module Warp = struct
+  module Task = struct
+    type t = {
+      id: int;
+      index: int;
+    }
+    let to_string (e:t) : string =
+      "[" ^ string_of_int e.index ^ "]:" ^ string_of_int e.id
+  end
+
+  module Transaction = struct
+    type t = {
+      bank: int;
+      accesses: Task.t list;
+      indices: IntSet.t;
+    }
+
+    let to_string (e:t) : string =
+      let accs =
+        e.accesses
+        |> List.map Task.to_string
+        |> String.concat ", "
+      in
+      let bc = IntSet.cardinal e.indices |> string_of_int in
+      let bank = string_of_int e.bank in
+      bc ^ " @ " ^ bank ^ " " ^ accs
+
+    let make (bank:int) : t =
+      {bank; accesses=[]; indices=IntSet.empty}
+
+    let count (e:t) : int =
+      IntSet.cardinal e.indices
+
+    let add (task:Task.t) (tsx:t) : t =
+      { tsx with
+        accesses = task :: tsx.accesses;
+        indices = IntSet.add task.index tsx.indices;
+      }
+  end
+
+  type t = Transaction.t array
+
+  let max (b:t) : Transaction.t =
+    let max_tsx = ref (Array.get b 0) in
+    let max_count = ref (Transaction.count (!max_tsx)) in
+    Array.iter (fun tsx ->
+      let count = Transaction.count tsx in
+      if count > !max_count then (
+        max_tsx := tsx;
+        max_count := count;
+      ) else ()
+    ) b;
+    !max_tsx
+
+  let transaction_count (w:t) : int =
+    max w |> Transaction.count
+
+  let to_string (w:t) : string =
+    max w |> Transaction.to_string
+
+  let make
+    (bank_count:int)
+    (indices:int array)
+    (enabled:bool array)
+  : t =
+    let banks = Array.init bank_count Transaction.make in
+    enabled
+    |> Array.combine indices
+    |> Array.iteri (fun id (index, enabled) ->
+      if enabled then
+        let bid = Common.modulo index bank_count in
+        let tsx = Transaction.add Task.{id; index} (Array.get banks bid) in
+        Array.set banks bid tsx
+      else ()
+    );
+    banks
+
+end
+
+let to_warp
+  (index:Exp.nexp)
+  (ctx:t)
+:
+  (Warp.t, string) Result.t
+=
+  let* idx = n_eval_res index ctx in
+  let* enabled = b_eval_res ctx.cond ctx in
+  let idx = NMap.to_array idx in
+  let enabled = BMap.to_array enabled in
+  let is_valid : bool =
+    Array.combine idx enabled
+    |> Array.for_all (fun (idx, enabled) -> not enabled || idx >= 0)
+  in
+  if is_valid then
+    Ok (Warp.make ctx.bank_count idx enabled)
+  else
+    Error "index out of bounds"
+
+let transactions_res
+  (index:Exp.nexp)
+  (ctx:t)
+:
+  (IntSet.t array, string) Result.t
+=
   let* idx = n_eval_res index ctx in
   let idx_bid =
     let idx = idx |> NMap.to_array in
@@ -285,6 +399,10 @@ let access_res ?(verbose=false) (index:Exp.nexp) (ctx:t) : (NMap.t, string) Resu
       Array.set tsx bid elems
     else ()
   );
+  Ok tsx
+
+let max_transactions_res ?(verbose=false) (index:Exp.nexp) (ctx:t) : (NMap.t, string) Result.t =
+  let* tsx = transactions_res index ctx in
   let tsx = Array.map IntSet.cardinal tsx |> NMap.from_array in
   (if verbose then (
       let msg =
@@ -300,8 +418,8 @@ let access_res ?(verbose=false) (index:Exp.nexp) (ctx:t) : (NMap.t, string) Resu
   );
   Ok tsx
 
-let access ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
-  access_res ~verbose index ctx |> Result.get_ok
+let max_transactions ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
+  max_transactions_res ~verbose index ctx |> Result.get_ok
 
 let add = NMap.pointwise (+)
 
@@ -334,7 +452,7 @@ let eval ?(verbose=true) : Proto.Code.t -> t -> NMap.t =
     | Skip -> cost
     | Acc (x, {index=[n]; _}) ->
       if ctx.use_array x then
-        add cost (access ~verbose n ctx)
+        add cost (max_transactions ~verbose n ctx)
       else
         cost
     | Acc _ ->
