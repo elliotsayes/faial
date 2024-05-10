@@ -325,6 +325,9 @@ module Warp = struct
     let make (bank:int) : t =
       {bank; accesses=[]; indices=IntSet.empty; count=0}
 
+    let zero : t =
+      make 0
+
     let count (e:t) : int =
       IntSet.cardinal e.indices
 
@@ -345,8 +348,8 @@ module Warp = struct
 
   type t = Transaction.t array
 
-  let max (b:t) : Transaction.t =
-    Array.fold_left Transaction.max (Array.get b 0) b
+  let max : t -> Transaction.t =
+    Array.fold_left Transaction.max Transaction.zero
 
   let transaction_count (w:t) : int =
     max w |> Transaction.count
