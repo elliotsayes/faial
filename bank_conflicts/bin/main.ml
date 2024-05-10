@@ -314,7 +314,7 @@ module TUI = struct
         let bc =
           match conflict.index, conflict.sim with
           | _, Ok e ->
-            let e = Transaction.count e |> string_of_int in
+            let e = (Transaction.count e  - 1)|> string_of_int in
             let pot =
               if Divergence_analysis.is_known conflict.divergence then
                 ""
@@ -323,7 +323,7 @@ module TUI = struct
             in
             e ^ pot
           | Ok e, _ ->
-            let e = Transaction.count e |> string_of_int in
+            let e = (Transaction.count e - 1) |> string_of_int in
             let pot =
               if Divergence_analysis.is_thread_uniform conflict.divergence then
                 ""
@@ -331,7 +331,7 @@ module TUI = struct
                 " (potential)"
             in
             e ^ pot
-          | _, _ -> "32 (potential)"
+          | _, _ -> "31 (potential)"
         in
         let cost =
           let open PrintBox in
@@ -373,8 +373,6 @@ module TUI = struct
                 |> List.map (fun (a:Transaction.Task.t) ->
                     text (string_of_int a.index)
                   )
-                |> (fun x -> text_with_style Style.bold "Index" :: x)
-                |> Array.of_list
               in
               let tids =
                 accs
@@ -388,13 +386,19 @@ module TUI = struct
                     in
                     text id
                   )
-                |> (fun x -> text_with_style Style.bold "threadIdx" :: x)
+              in
+              let rows =
+                (
+                [| text_with_style Style.bold "threadIdx"; text_with_style Style.bold "Index" |]
+                ::
+                List.map2 (fun x y -> [| x; y |]) tids idx
+                )
                 |> Array.of_list
               in
               [
                 [|
                   text_with_style Style.bold ("Bank " ^ b);
-                  grid [| tids; idx; |];
+                  grid rows;
                 |]
               ]
             | Error _ -> []
