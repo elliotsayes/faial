@@ -132,11 +132,10 @@ module Code = struct
       else
         Cond (Exp.b_and_ex l, a)
 
-  let to_warp (params:Config.t) (a:t) : (Vectorized.Warp.t, string) Result.t =
+  let to_warp (params:Config.t) (a:t) : (Warp.t, string) Result.t =
     let idx = index a in
     let ctx = Vectorized.from_config params in
     Vectorized.to_warp idx ctx
-
 
   let transaction_count (params:Config.t) : Variable.Set.t -> t -> (int, string) Result.t =
     let rec transaction_count (locals:Variable.Set.t) : t -> (int, string) Result.t =
@@ -175,38 +174,46 @@ module Code = struct
   let eval_res
     ?(generate_var=gen_random)
   :
-    Vectorized.t -> t -> (int, string) Result.t
+    Vectorized.t -> t -> (Transaction.t, string) Result.t
   =
     let ( let* ) = Result.bind in
-    let rec eval (max_cost:int) (ctx:Vectorized.t) : t -> (int, string) Result.t =
+    let rec eval
+      (tsx:Transaction.t)
+      (ctx:Vectorized.t)
+    :
+      t -> (Transaction.t, string) Result.t
+    =
       function
       | Index a ->
-        let* v = Vectorized.max_transactions_res ~verbose:true a ctx in
-        let x = (Vectorized.NMap.max v).value in
-        Ok (max x max_cost)
+        let* w =
+          ctx
+          |> Vectorized.to_warp a
+          |> Result.map Warp.max
+        in
+        Ok (Transaction.max w tsx)
       | Decl (x, a) ->
         let ctx =
           match generate_var x ctx with
           | Some v -> Vectorized.put x v ctx
           | None -> ctx
         in
-        eval max_cost ctx a
+        eval tsx ctx a
       | Cond (e, a) ->
         let* v = Vectorized.b_eval_res e ctx in
         if Vectorized.BMap.some_true v then
-          eval max_cost (Vectorized.restrict e ctx) a
+          eval tsx (Vectorized.restrict e ctx) a
         else
-          Ok max_cost
+          Ok tsx
       | Loop (r, a) ->
         let* l = Vectorized.iter_res r ctx in
         (match l with
           | Next (r, ctx') ->
-            let* max_cost = eval max_cost ctx' a in
-            eval max_cost ctx (Loop (r, a))
-          | End -> Ok max_cost
+            let* tsx = eval tsx ctx' a in
+            eval tsx ctx (Loop (r, a))
+          | End -> Ok tsx
         )
     in
-    eval 1
+    eval Transaction.zero
 
   module Make (L:Logger.Logger) = struct
     module O = Offset_analysis.Make(L)
@@ -315,7 +322,7 @@ let to_check (k:t) : Approx.Check.t =
   let vars = Variable.Set.union k.global_variables Variable.tid_var_set in
   Approx.Check.from_code vars code
 
-let to_warp (params:Config.t) (k:t) : (Vectorized.Warp.t, string) Result.t =
+let to_warp (params:Config.t) (k:t) : (Warp.t, string) Result.t =
   Code.to_warp params k.code
 
 let trim_decls (k:t) : t =
@@ -352,14 +359,13 @@ module Make (L:Logger.Logger) = struct
 
 end
 
-let eval_res ~bank_count ~warp_count ~block_dim (k:t) : (int, string) Result.t =
-  let ctx =
-    Vectorized.make
-      ~bank_count
-      ~warp_count
-      ~use_array:(fun _ -> true)
-    |> Vectorized.put_tids block_dim
-  in
+let eval_res
+  (params:Config.t)
+  (k:t)
+:
+  (Transaction.t, string) Result.t
+=
+  let ctx = Vectorized.from_config params in
   Code.eval_res ctx k.code
 
 module Silent = Make(Logger.Silent)

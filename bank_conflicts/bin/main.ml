@@ -185,8 +185,9 @@ module Solver = struct
   module Conflict = struct
     type t = {
       bank: Bank.t;
-      warp: (Vectorized.Warp.t, string) Result.t;
-      cost: (int, string) Result.t;
+      divergence: Divergence_analysis.t;
+      index: (Transaction.t, string) Result.t;
+      sim: (Transaction.t, string) Result.t;
     }
   end
 
@@ -235,15 +236,12 @@ module Solver = struct
         None
       else
         Some Conflict.{
-          warp=Bank.to_warp a.config s;
+          index=Bank.to_warp a.config s |> Result.map Warp.max;
           bank=s;
-          cost=
+          divergence = Divergence_analysis.from_bank s;
+          sim=
             if a.simulate then
-              s
-              |> Bank.eval_res
-                  ~bank_count:a.config.num_banks
-                  ~warp_count:a.config.warp_count
-                  ~block_dim:a.block_dim
+              Bank.eval_res a.config s
             else
               Error "Run with --simulate to output simulated cost."
         }
@@ -321,25 +319,37 @@ module TUI = struct
       |> List.iter (fun conflict ->
         let open Solver.Conflict in
         let bc =
-          match conflict.warp, conflict.cost with
-          | Ok w, _ -> Vectorized.Warp.transaction_count w |> string_of_int
-          | _, Ok e -> string_of_int e
+          match conflict.index, conflict.sim with
+          | _, Ok e ->
+            let e = Transaction.count e |> string_of_int in
+            let pot =
+              if Divergence_analysis.is_known conflict.divergence then
+                ""
+              else
+                " (potential)"
+            in
+            e ^ pot
+          | Ok e, _ ->
+            let e = Transaction.count e |> string_of_int in
+            let pot =
+              if Divergence_analysis.is_thread_uniform conflict.divergence then
+                ""
+              else
+                " (potential)"
+            in
+            e ^ pot
           | _, _ -> "32 (potential)"
         in
         let cost =
           let open PrintBox in
           [
             [|
-              text_with_style Style.bold "Bank conflicts";
+              text_with_style Style.bold "Max bank conflicts";
               text bc
             |];
             [|
               text_with_style Style.bold "Thread-divergence";
-              text (
-                conflict.bank
-                |> Divergence_analysis.from_bank
-                |> Divergence_analysis.to_string
-              )
+              text (Divergence_analysis.to_string conflict.divergence);
             |];
             [|
               text_with_style Style.bold "Context";
@@ -351,44 +361,50 @@ module TUI = struct
             |];
           ]
           @
-          (match conflict.warp with
-          | Ok w ->
-            let tsx = Vectorized.Warp.max w in
-            let b = string_of_int tsx.bank in
-            let accs =
-              tsx.accesses
-              |> List.sort compare
+          (
+            let tsx =
+              if Result.is_ok conflict.sim then
+                conflict.sim
+              else
+                conflict.index
             in
-            let idx =
-              accs
-              |> List.map (fun (a:Vectorized.Warp.Task.t) ->
-                  text (string_of_int a.index)
-                )
-              |> (fun x -> text_with_style Style.bold "Index" :: x)
-              |> Array.of_list
-            in
-            let tids =
-              accs
-              |> List.map (fun (a:Vectorized.Warp.Task.t) ->
-                  let id =
-                    match a.id with
-                      {x; y; z} ->
-                      "x:" ^ string_of_int x ^ ", " ^
-                      "y:" ^ string_of_int y ^ ", " ^
-                      "z:" ^ string_of_int z
-                  in
-                  text id
-                )
-              |> (fun x -> text_with_style Style.bold "threadIdx" :: x)
-              |> Array.of_list
-            in
-            [
-              [|
-                text_with_style Style.bold ("Bank " ^ b);
-                grid [| tids; idx; |];
-              |]
-            ]
-          | Error _ -> []
+            match tsx with
+            | Ok tsx ->
+              let b = string_of_int tsx.bank in
+              let accs =
+                tsx.accesses
+                |> List.sort compare
+              in
+              let idx =
+                accs
+                |> List.map (fun (a:Transaction.Task.t) ->
+                    text (string_of_int a.index)
+                  )
+                |> (fun x -> text_with_style Style.bold "Index" :: x)
+                |> Array.of_list
+              in
+              let tids =
+                accs
+                |> List.map (fun (a:Transaction.Task.t) ->
+                    let id =
+                      match a.id with
+                        {x; y; z} ->
+                        "x:" ^ string_of_int x ^ ", " ^
+                        "y:" ^ string_of_int y ^ ", " ^
+                        "z:" ^ string_of_int z
+                    in
+                    text id
+                  )
+                |> (fun x -> text_with_style Style.bold "threadIdx" :: x)
+                |> Array.of_list
+              in
+              [
+                [|
+                  text_with_style Style.bold ("Bank " ^ b);
+                  grid [| tids; idx; |];
+                |]
+              ]
+            | Error _ -> []
           )
           |> Array.of_list
           |> grid
@@ -454,8 +470,8 @@ module JUI = struct
             let cost =
               [
                 "index_analysis", (
-                  match c.warp with
-                  | Ok e -> `Int (Vectorized.Warp.transaction_count e)
+                  match c.index with
+                  | Ok e -> `Int (Transaction.count e)
                   | Error _ -> `Null
                 );
                 "access", `String (
@@ -469,8 +485,8 @@ module JUI = struct
                   |> Divergence_analysis.to_string
                 );
                 "cost", (
-                  match c.cost with
-                  | Ok e -> `Int e
+                  match c.sim with
+                  | Ok e -> `Int (Transaction.count e)
                   | Error _ -> `Null
                 );
               ]

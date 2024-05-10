@@ -58,6 +58,14 @@ type t =
   | ThreadDivergent
   | PossiblyThreadDivergent
 
+let is_thread_uniform (x:t) : bool =
+  x = ThreadUniform
+
+let is_known : t -> bool =
+  function
+  | ThreadUniform | ThreadDivergent -> true
+  | PossiblyThreadDivergent -> false
+
 let from_bank (b:Bank.t) : t =
   if is_uniform b then
     ThreadUniform
