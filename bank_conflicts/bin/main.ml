@@ -41,7 +41,6 @@ module Solver = struct
     block_dim: Dim3.t;
     grid_dim: Dim3.t;
     params: (string * int) list;
-    flatten_slices: bool;
     approx_ifs: bool;
     cost: Summation.Strategy.t;
     simulate: bool;
@@ -73,7 +72,6 @@ module Solver = struct
     ~block_dim
     ~grid_dim
     ~params
-    ~flatten_slices
     ~approx_ifs
     ~cost
     ~simulate
@@ -104,7 +102,6 @@ module Solver = struct
       config;
       count_shared_access;
       explain;
-      flatten_slices;
       per_request;
       ignore_absent;
       only_reads;
@@ -215,41 +212,31 @@ module Solver = struct
     )
     |> Result.map_error Errors.to_string
 
-  let sliced_cost ?(flatten=false) (a:t) (k:kernel) : Conflict.t list =
-    let idx_analysis =
-      if a.count_shared_access then
-        access_count a
-      else if a.per_request then
-        transaction_count a
-      else
-        bank_conflict_count a
-    in
+  let sliced_cost (a:t) (k:kernel) : Conflict.t list =
     Bank.from_proto a.config k
-    |> Seq.filter_map (fun s ->
-      (* Convert a slice into an expression *)
-      let r =
-        (if flatten then Bank.flatten s else s)
-        |> Ra_compiler.Default.from_access_context
-            idx_analysis
+    |> Seq.filter_map (fun bank ->
+      let index = Bank.to_warp a.config bank |> Result.map Warp.max in
+      let bc =
+        index
+        |> Result.map Transaction.count
+        |> Result.value ~default:a.config.num_banks
       in
-      if Ra.Stmt.is_zero r && a.skip_zero then
+      let divergence = Divergence_analysis.from_bank bank in
+      let sim =
+        if a.simulate && Divergence_analysis.is_known divergence && bc > 1 then
+          Bank.eval_res ~max_count:bc a.config bank
+        else
+          Error "Run with --simulate to output simulated cost."
+      in
+      (* Convert a slice into an expression *)
+      if bc <= 1 && a.skip_zero then
         None
       else
-        let tsx = Bank.to_warp a.config s |> Result.map Warp.max in
-        let bc =
-          tsx
-          |> Result.map Transaction.count
-          |> Result.value ~default:a.config.num_banks
-        in
         Some Conflict.{
-          index=tsx;
-          bank=s;
-          divergence = Divergence_analysis.from_bank s;
-          sim=
-            if a.simulate && bc > 1 then
-              Bank.eval_res ~max_count:bc a.config s
-            else
-              Error "Run with --simulate to output simulated cost."
+          index;
+          bank;
+          divergence;
+          sim;
         }
     )
     |> List.of_seq
@@ -285,7 +272,7 @@ module Solver = struct
       |> List.map Proto.Kernel.opt
     in
     if s.explain then
-      SlicedCost (List.map (pair (sliced_cost ~flatten:s.flatten_slices s)) ks)
+      SlicedCost (List.map (pair (sliced_cost s)) ks)
     else if s.per_request then
       RatioCost (List.map (pair (transactions_per_request s)) ks)
     else
@@ -553,7 +540,6 @@ let run
   ~block_dim
   ~grid_dim
   ~params
-  ~flatten_slices
   ~approx_ifs
   ~cost
   ~simulate
@@ -587,7 +573,6 @@ let run
     ~block_dim
     ~grid_dim
     ~params
-    ~flatten_slices
     ~approx_ifs
     ~cost
     ~simulate
@@ -625,7 +610,6 @@ let pico
   (only_reads:bool)
   (only_writes:bool)
   (params:(string * int) list)
-  (flatten_slices:bool)
   (approx_ifs:bool)
   (cost:Summation.Strategy.t)
   (simulate:bool)
@@ -665,7 +649,6 @@ let pico
     ~block_dim
     ~grid_dim
     ~params
-    ~flatten_slices
     ~approx_ifs
     ~cost
     ~simulate
@@ -801,10 +784,6 @@ let params =
   let doc = "Set the value of an integer parameter" in
   Arg.(value & opt_all (pair ~sep:'=' string int) [] & info ["p"; "param"] ~docv:"KEYVAL" ~doc)
 
-let flatten_slices =
-  let doc = "Remove context showing bank-conflicts per location." in
-  Arg.(value & flag & info ["flatten"] ~doc)
-
 let approx_ifs =
   let doc = "Approximate conditionals." in
   Arg.(value & flag & info ["approx"] ~doc)
@@ -845,7 +824,6 @@ let pico_t = Term.(
   $ only_reads
   $ only_writes
   $ params
-  $ flatten_slices
   $ approx_ifs
   $ cost
   $ simulate
