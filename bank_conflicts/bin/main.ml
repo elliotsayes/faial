@@ -481,7 +481,7 @@ module JUI = struct
                   |> Divergence_analysis.from_bank
                   |> Divergence_analysis.to_string
                 );
-                "cost", (
+                "sim", (
                   match c.sim with
                   | Ok e -> `Int (Transaction.count e)
                   | Error _ -> `Null
