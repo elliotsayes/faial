@@ -172,11 +172,13 @@ module Code = struct
     Some (Vectorized.NMap.random ctx.warp_count ())
 
   let eval_res
-    ?(generate_var=gen_random)
+    ?(max_count=(-1))
   :
     Vectorized.t -> t -> (Transaction.t, string) Result.t
   =
     let ( let* ) = Result.bind in
+    fun ctx ->
+    let max_count = if max_count < 0 then ctx.bank_count else max_count in
     let rec eval
       (tsx:Transaction.t)
       (ctx:Vectorized.t)
@@ -191,12 +193,9 @@ module Code = struct
           |> Result.map Warp.max
         in
         Ok (Transaction.max w tsx)
-      | Decl (x, a) ->
-        let ctx =
-          match generate_var x ctx with
-          | Some v -> Vectorized.put x v ctx
-          | None -> ctx
-        in
+      | Decl (_, a) ->
+        (* Ignore variables so that if eval uses an unknown variable it
+           gets stuck. *)
         eval tsx ctx a
       | Cond (e, a) ->
         let* v = Vectorized.b_eval_res e ctx in
@@ -209,15 +208,17 @@ module Code = struct
         (match l with
           | Next (r, ctx') ->
             let* tsx = eval tsx ctx' a in
-            eval tsx ctx (Loop (r, a))
+            if tsx.count >= max_count then
+              Ok tsx
+            else
+              eval tsx ctx (Loop (r, a))
           | End -> Ok tsx
         )
     in
-    eval Transaction.zero
+    eval Transaction.zero ctx
 
   module Make (L:Logger.Logger) = struct
     module O = Offset_analysis.Make(L)
-    module R = Uniform_range.Make(L)
     module L = Linearize_index.Make(L)
 
     let from_proto
@@ -256,13 +257,7 @@ module Code = struct
               Variable.Set.add (Range.var r) locals
           in
           on_p locals p
-          |> Seq.map (fun (x,i) ->
-            match R.uniform cfg.block_dim r with
-            | Some r' ->
-              x, Loop (r', Cond(Range.bounds r, i))
-            | None ->
-              x, Loop (r, i)
-          )
+          |> Seq.map (fun (x,i) -> x, Loop (r, i))
         | Skip -> Seq.empty
         | Seq (p, q) ->
           Seq.append (on_p locals p) (on_p locals q)
@@ -325,7 +320,6 @@ let trim_decls (k:t) : t =
 module Make (L:Logger.Logger) = struct
   module R = Uniform_range.Make(L)
   module L = Linearize_index.Make(L)
-(*   module C = Code.Make(L) *)
   (*
   Given a kernel return a sequence of slices.
   *)
@@ -354,13 +348,14 @@ module Make (L:Logger.Logger) = struct
 end
 
 let eval_res
+  ?(max_count=(-1))
   (params:Config.t)
   (k:t)
 :
   (Transaction.t, string) Result.t
 =
   let ctx = Vectorized.from_config params in
-  Code.eval_res ctx k.code
+  Code.eval_res ~max_count ctx k.code
 
 module Silent = Make(Logger.Silent)
 module Default = Make(Logger.Colors)

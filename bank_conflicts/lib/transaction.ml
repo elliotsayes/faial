@@ -36,7 +36,7 @@ let zero : t =
   make 0
 
 let count (e:t) : int =
-  IntSet.cardinal e.indices
+  e.count
 
 let max (lhs:t) (rhs:t) : t =
   if lhs.count >= rhs.count then

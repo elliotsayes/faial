@@ -235,13 +235,19 @@ module Solver = struct
       if Ra.Stmt.is_zero r && a.skip_zero then
         None
       else
+        let tsx = Bank.to_warp a.config s |> Result.map Warp.max in
+        let bc =
+          tsx
+          |> Result.map Transaction.count
+          |> Result.value ~default:a.config.num_banks
+        in
         Some Conflict.{
-          index=Bank.to_warp a.config s |> Result.map Warp.max;
+          index=tsx;
           bank=s;
           divergence = Divergence_analysis.from_bank s;
           sim=
-            if a.simulate then
-              Bank.eval_res a.config s
+            if a.simulate && bc > 1 then
+              Bank.eval_res ~max_count:bc a.config s
             else
               Error "Run with --simulate to output simulated cost."
         }
