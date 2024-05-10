@@ -159,6 +159,15 @@ let to_cond (r:t) : bexp =
   ]
   |> b_and_ex
 
+(*
+  Returns the bounds of the range variable
+  as a boolean expression: lb <= x <= ub
+*)
+let bounds (r:t) : bexp =
+  b_and
+    (n_ge (Var r.var) r.lower_bound)
+    (n_le (Var r.var) r.upper_bound)
+
 let prev (r:t) : nexp =
   match r.dir with
   | Increase -> Step.dec r.step (Var r.var)

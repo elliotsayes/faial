@@ -226,7 +226,6 @@ module Code = struct
     :
       Variable.Set.t -> Proto.Code.t -> (Variable.t * t) Seq.t
     =
-      let open Exp in
       let lin = L.linearize cfg arrays in
       let rec on_p (locals:Variable.Set.t) : Proto.Code.t -> (Variable.t * t) Seq.t =
         function
@@ -260,12 +259,7 @@ module Code = struct
           |> Seq.map (fun (x,i) ->
             match R.uniform cfg.block_dim r with
             | Some r' ->
-              let cnd =
-                b_and
-                  (n_ge (Var r.var) r.lower_bound)
-                  (n_lt (Var r.var) r.upper_bound)
-              in
-              x, Loop (r', Cond(cnd, i))
+              x, Loop (r', Cond(Range.bounds r, i))
             | None ->
               x, Loop (r, i)
           )
