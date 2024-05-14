@@ -12,7 +12,11 @@ module Rule = struct
 
   let to_string (env:Environ.t) (x:t) =
     let arr l = "(" ^ Common.join "," l ^ ")" in
-    let b_to_s = Environ.b_to_string env in
+    let b_to_s s =
+      s
+      |> Environ.b_to_string env
+      |> Common.replace ~substring:"==" ~by:"="
+    in
     let cnd = List.map b_to_s x.cnd in
     let cost = string_of_int x.cost in
     let src : string = Environ.c_to_string env (src x) in
@@ -36,6 +40,12 @@ type prog = {env:Environ.t; code:inst list}
 
 let rule (src:int) ?(cost=0) ?(dst=[]) ?(cnd=[]) () : inst =
   Rule (Rule.make ~src ~cost ~dst ~cnd)
+
+let jump ?(cost=0) ~src ~dst () : inst =
+  rule src ~cost ~cnd:[] ~dst:[{id=dst; args=[]}] ()
+
+let cond_jump (cnd:Exp.bexp) ?(cost=0) ~src ~dst () : inst =
+  rule src ~cost ~cnd:[cnd] ~dst:[{id=dst; args=[]}] ()
 
 let from_stmt (env:Environ.t) (s:Stmt.t) : prog =
   let open Exp in
@@ -61,8 +71,20 @@ let from_stmt (env:Environ.t) (s:Stmt.t) : prog =
       let (idx, l1) = translate idx p in
       let (idx, l2) = translate idx q in
       idx, l1 @ l2
-    | If (_, _, _) ->
-      failwith ("if")
+    | If (c, p, q) ->
+      (*
+
+        idx -> idx + 1 -> .... -> idx_l
+          \--------------------> idx_l + 1 -> ... -> idx_r
+       *)
+      let (idx_l, l1) = translate (idx + 1) p in
+      let (idx_r, l2) = translate (idx_l + 1) q in
+      idx_r + 1, [
+        cond_jump c ~src:idx ~dst:(idx + 1) ();
+        cond_jump (Exp.b_not c) ~src:idx ~dst:(idx_l + 1) ();
+        jump ~src:idx_l ~dst:(idx_r + 1) ();
+        jump ~src:idx_r ~dst:(idx_r + 1) ();
+      ] @ l1 @ l2
     | Loop (r, s) ->
       let (idx', rest) = translate (idx + 2) s in
       let x = r.var in

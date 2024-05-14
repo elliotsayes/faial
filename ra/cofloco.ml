@@ -12,6 +12,7 @@ module Rule = struct
       b
       |> Environ.b_to_string env
       |> Common.replace ~substring:"<=" ~by:"=<"
+      |> Common.replace ~substring:"!=" ~by:"\\="
     in
     let src : string = Environ.c_to_string env (src x) in
     let cnd = List.map b_to_s x.cnd in
@@ -27,6 +28,12 @@ type t =
 
 let rule (src:int) ?(cost=0) ?(dst=[]) ?(cnd=[]) () : t =
   Rule {src; cost; dst; cnd}
+
+let jump ?(cost=0) ~src ~dst () : t =
+  rule src ~cost ~cnd:[] ~dst:[{id=dst; args=[]}] ()
+
+let cond_jump (cnd:Exp.bexp) ?(cost=0) ~src ~dst () : t =
+  rule src ~cost ~cnd:[cnd] ~dst:[{id=dst; args=[]}] ()
 
 let from_stmt (s: Stmt.t) : t list =
   let rec translate (idx:int) : Stmt.t -> int * t list =
@@ -51,8 +58,21 @@ let from_stmt (s: Stmt.t) : t list =
       let (idx, l1) = translate idx p in
       let (idx, l2) = translate idx q in
       idx, (Comment "seq"::l1) @ l2
-    | If (_, _, _) ->
-      failwith ("if")
+    | If (c, p, q) ->
+      (*
+
+        idx -> idx + 1 -> .... -> idx_l
+          \--------------------> idx_l + 1 -> ... -> idx_r
+       *)
+      let (idx_l, l1) = translate (idx + 1) p in
+      let (idx_r, l2) = translate (idx_l + 1) q in
+      idx_r + 1, [
+        Comment ("if " ^ Exp.b_to_string c);
+        cond_jump c ~src:idx ~dst:(idx + 1) ();
+        cond_jump (Exp.b_not c) ~src:idx ~dst:(idx_l + 1) ();
+        jump ~src:idx_l ~dst:(idx_r + 1) ();
+        jump ~src:idx_r ~dst:(idx_r + 1) ();
+      ] @ l1 @ l2
     | Loop (r, p) ->
       let (idx', rest) = translate (idx + 2) p in
       let init = Range.while_init r in
