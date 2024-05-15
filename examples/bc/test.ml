@@ -87,7 +87,7 @@ let unsupported : Fpath.t list =
     "2tid-racuda-3.cu";
   ] |> List.map (fun x -> Fpath.(v "." / x))
 
-let faial_bc_path : Fpath.t = Files.from_string "../../bank_conflicts/bin/main.exe"
+let faial_bc_path : Fpath.t = Files.from_string "../../total_cost/main.exe"
 
 let faial_bc ?(args=[]) (fname:Fpath.t) : Subprocess.t =
   Subprocess.make
@@ -114,7 +114,7 @@ let missed_files (dir:Fpath.t) : Fpath.Set.t =
 let run_test ((filename:string), (args:string list), (expected_output:string)) : unit =
   let str_args = if args = [] then "" else (String.concat " " args ^ " ") in
   let bullet = " - " in
-  print_string (bullet ^ "faial-bc " ^ str_args ^ filename);
+  print_string (bullet ^ "faial-cost " ^ str_args ^ filename);
   Stdlib.flush_all ();
   let given = faial_bc ~args (Fpath.v filename) |> Subprocess.run_split in
   let expected_output = expected_output |> String.trim in

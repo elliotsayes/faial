@@ -5,7 +5,14 @@ GITLAB_CACHE = /tmp/gitlab-cache
 BUILD = _build/default
 BIN = $(BUILD)/bin
 TEST = _build/test
-all: c-ast faial-bc faial-drf data-dep faial-bc-dyn faial-sync faial-gen
+all: c-ast \
+	faial-bc \
+	faial-drf \
+	data-dep \
+	faial-bc-dyn \
+	faial-sync \
+	faial-gen \
+	faial-cost
 
 clean:
 	$(DUNE) clean
@@ -33,6 +40,10 @@ faial-bc-dyn:
 faial-bc:
 	$(DUNE) build $(BUILD)/bank_conflicts/bin/main.exe
 	cp -f $(BUILD)/bank_conflicts/bin/main.exe faial-bc
+
+faial-cost:
+	$(DUNE) build $(BUILD)/total_cost/main.exe
+	cp -f $(BUILD)/total_cost/main.exe faial-cost
 
 faial-sync:
 	$(DUNE) build barrier_div/main.exe
