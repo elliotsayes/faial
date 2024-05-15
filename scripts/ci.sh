@@ -1,7 +1,7 @@
 #!/bin/bash
 set -x
 # c-to-json:
-wget -nv --content-disposition "https://gitlab.com/umb-svl/c-to-json/-/jobs/artifacts/master/raw/build/c-to-json-bin.tar.bz2?job=build&inline=false" -O c-to-json-bin.tar.bz2 &&
+wget -nv --content-disposition "https://gitlab.com/umb-svl/c-to-json/-/jobs/artifacts/main/raw/build/c-to-json-bin.tar.bz2?job=build" -O c-to-json-bin.tar.bz2 &&
 tar xvf c-to-json-bin.tar.bz2 &&
 rm c-to-json-bin.tar.bz2 &&
 # faial:
