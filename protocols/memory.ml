@@ -1,42 +1,31 @@
 open Stage0
 
-module Hierarchy = struct
-  type t =
-    | SharedMemory
-    | GlobalMemory
-
-  let to_string : t -> string =
-    function
-    | SharedMemory -> "shared"
-    | GlobalMemory -> "global"
-end
-
 type t = {
-  hierarchy: Hierarchy.t;
+  hierarchy: Mem_hierarchy.t;
   size: int list; (* Empty means unknown *)
   data_type: string list; (* Empty means unknown *)
 }
 
 let is_global (x:t) : bool =
-  x.hierarchy = Hierarchy.GlobalMemory
+  Mem_hierarchy.is_global x.hierarchy
 
 let is_shared (x:t) : bool =
-  x.hierarchy = Hierarchy.SharedMemory
+  Mem_hierarchy.is_shared x.hierarchy
 
-let make (h:Hierarchy.t) : t = {
+let make (h:Mem_hierarchy.t) : t = {
   hierarchy = h;
   size = [];
   data_type = [];
 }
 
-let from_type (h:Hierarchy.t) (ty:C_type.t) : t =
+let from_type (h:Mem_hierarchy.t) (ty:C_type.t) : t =
   {
     hierarchy = h;
     size = C_type.get_array_length ty;
     data_type = C_type.get_array_type ty;
   }
 
-let make_map (h:Hierarchy.t) (vs:Variable.t list) : t Variable.Map.t =
+let make_map (h:Mem_hierarchy.t) (vs:Variable.t list) : t Variable.Map.t =
   vs
   |> List.map (fun x -> (x, make h))
   |> Variable.Map.of_list
@@ -50,7 +39,7 @@ let to_string (a:t) : string =
     List.map string_of_int a.size
     |> Common.join ", "
   in
-  let h = a.hierarchy |> Hierarchy.to_string in
+  let h = a.hierarchy |> Mem_hierarchy.to_string in
   h ^ " " ^ ty ^ "[" ^ size ^ "]"
 
 let map_to_string (vs:t Variable.Map.t) : string =

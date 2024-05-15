@@ -1000,7 +1000,7 @@ let parse_param
 :
   param option d_result
 =
-  let mk_array (h:Memory.Hierarchy.t) (ty:C_type.t) : Memory.t =
+  let mk_array (h:Mem_hierarchy.t) (ty:C_type.t) : Memory.t =
     {
       hierarchy = h;
       size = C_type.get_array_length ty;
@@ -1019,9 +1019,9 @@ let parse_param
   else if C_type.is_array ty then (
     let h =
       if p.is_shared then
-        Memory.Hierarchy.SharedMemory
+        Mem_hierarchy.SharedMemory
       else
-        Memory.Hierarchy.GlobalMemory
+        Mem_hierarchy.GlobalMemory
     in
     Ok (Some (Either.Right (p.ty_var.name, mk_array h ty)))
   ) else Ok None

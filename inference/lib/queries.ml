@@ -946,7 +946,7 @@ module Kernel = struct
         let open Memory in
         `Assoc [
           "name", `String (Variable.name k);
-          "hierarchy", `String (a.hierarchy |> Hierarchy.to_string);
+          "hierarchy", `String (a.hierarchy |> Mem_hierarchy.to_string);
           "size", `List (List.map (fun x -> `Int x) a.size);
           "data_type", `List (List.map (fun x -> `String x) a.data_type);
         ]
