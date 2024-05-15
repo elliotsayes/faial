@@ -5,6 +5,6 @@ __global__
 void saxpy(int n, float a, float *x)
 {
   for (int i = 1; i < 1024; i *= 2) {
-    y[i * threadIdx.x] = a*x[i];
+    y[2 * threadIdx.x] = a*x[i];
   }
 }

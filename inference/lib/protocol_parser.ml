@@ -2,8 +2,8 @@ open Stage0
 open Protocols
 
 
-type imp_kernel = Imp.p_kernel
-type proto_kernel = Proto.prog Proto.kernel
+type imp_kernel = Imp.Kernel.t
+type proto_kernel = Proto.Code.t Proto.Kernel.t
 
 type 'a t = {options: Gv_parser.t; kernels: 'a list}
 
@@ -14,11 +14,22 @@ module Make (L:Logger.Logger) = struct
     ?(abort_on_parsing_failure=true)
     ?(block_dim=None)
     ?(grid_dim=None)
+    ?(includes=[])
+    ?(macros=[])
+    ?(exit_status=2)
+    ?(cu_to_json="cu-to-json")
     (fname:string)
   :
     imp_kernel t
   =
-    let j = Cu_to_json.cu_to_json ~ignore_fail:(not abort_on_parsing_failure) fname in
+    let j = Cu_to_json.cu_to_json
+      ~ignore_fail:(not abort_on_parsing_failure)
+      ~on_error:(fun _ -> exit exit_status)
+      ~includes
+      ~macros
+      ~exe:cu_to_json
+      fname
+    in
     let options : Gv_parser.t = match Gv_parser.parse fname with
       | Some gv ->
         Logger.Colors.info ("Found GPUVerify args in source file: " ^ Gv_parser.to_string gv);
@@ -45,42 +56,50 @@ module Make (L:Logger.Logger) = struct
           Stdlib.flush_all ();
           {options; kernels}
         | Error e ->
-          C_lang.print_program k1;
+          C_lang.Program.print k1;
           print_endline "------";
-          D_lang.print_program k2;
+          D_lang.Program.print k2;
           print_endline "-------";
           D_to_imp.print_error e;
-          exit(-1)
+          exit(exit_status)
         )
 
     | Error e ->
       Rjson.print_error e;
-      exit(-1)
+      exit(exit_status)
 
   let to_proto
     ?(abort_on_parsing_failure=true)
     ?(block_dim=None)
     ?(grid_dim=None)
+    ?(includes=[])
+    ?(exit_status=2)
+    ?(inline_calls=true)
+    ?(only_globals=true)
+    ?(macros=[])
+    ?(cu_to_json="cu-to-json")
     (fname:string)
   :
     proto_kernel t
   =
-    let parsed = to_imp ~abort_on_parsing_failure ~block_dim ~grid_dim fname in
+    let parsed =
+      to_imp
+      ~cu_to_json
+      ~abort_on_parsing_failure
+      ~block_dim
+      ~grid_dim
+      ~includes
+      ~exit_status
+      ~macros
+      fname
+    in
     { parsed with
       kernels =
       parsed.kernels
-      |> List.map (fun p ->
-        let p = Imp.compile p in
-        let key_vals =
-          Proto.kernel_constants p
-          |> List.filter (fun (x,_) ->
-            (* Make sure we only replace thread-global variables *)
-            Variable.Set.mem (Variable.from_name x) p.kernel_global_variables
-          )
-        in
-        let key_vals = Gv_parser.to_assoc parsed.options @ key_vals in
-        let p = Proto.replace_constants key_vals p in
-        p
+      |> (if inline_calls then Imp.Inline_calls.inline_calls else fun x -> x)
+      |> List.map Imp.Kernel.compile
+      |> List.filter (fun k ->
+        not only_globals || (only_globals && Proto.Kernel.is_global k)
       )
     }
 end

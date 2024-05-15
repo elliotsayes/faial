@@ -1,8 +1,0 @@
-# We declare exactly one shared location, named x
-shared x;
-
-# We declare a thread-global constant
-const local i where distinct [i];
-
-rw x[i];
-rw x[i + 1];

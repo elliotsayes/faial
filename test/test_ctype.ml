@@ -1,5 +1,5 @@
 open Stage0
-open Inference
+open Protocols
 
 open OUnit2
 open C_type

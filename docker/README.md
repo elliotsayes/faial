@@ -7,3 +7,19 @@
 
 - `dev.Dockerfile` demos downloading and building the toolchain from
   scratch
+
+- `user.Dockerfile` a Docker container with the `faial` toolchain installed.
+
+
+Hello, world:
+```
+$ docker-compose build user
+$ docker-compose run user
+# faial-drf saxpy.cu
+```
+
+If you want to mount a directory without editing `docker-compose.yaml`, then:
+```
+$ docker-compose build user
+$ docker run -it --mount type=bind,source=path/to/cuda-files,target=/home/faial user
+```

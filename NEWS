@@ -1,0 +1,57 @@
+2024-05:
+- Bank conflicts: reworked index analysis, which now shows the
+  bank that generates the conflict, the threads accessing it,
+  as well as the indices involved.
+
+2024-04:
+- Inference: improved support for array aliasing with shared memory.
+- Inference: added support for assertions anywhere in the code
+  (not just in the beginning of the kernel).
+- Inference: added support for inferring assertions from if(...)break;
+  inside loops.
+- Inference: improved handling of boundary conditions of loops.
+- Inference: improved handling of bitwise not (~).
+- DRF: grid-level analysis was mistakenly taking into account
+  shared memory some times.
+- Bank conflicts: add better support for abstracted variables.
+
+2024-03:
+- Inference: improved how we handle mutated variables in loops/conditionals.
+- Inference: added support for preserving the types from declarations.
+- Inference: now recognizes typedef.
+- Inference: fixed a regression where certain functions weren't being
+  recognized (introduced with kernel calls)
+- Inference: added support for enumeration.
+- Inference: improved support for kernel calls.
+- Inference: improved support for array aliasing.
+- Inference: added support for bitwise not (~).
+- DRF: analysis is more precise by using typing information.
+- DRF: only check a given blockIdx
+
+2024-02:
+- DRF: initial support for scoped atomic operations (no support for
+  threadfence yet).
+- DRF: grid-level analysis (with approximation analysis support).
+- DRF: reworked the UI of approximation analysis.
+- DRF: improved the approximation analysis to be more precise per report.
+- DRF: only check a given threadIdx.
+- DRF: only check a single array.
+- DRF: only check a single index location (equality, less-equal-than,
+  greater-equal-than).
+- DRF: made kernel calls optional (enabled by default).
+- Inference: added support for analyzing templated kernels with type-parameters.
+- Inference: added support for analyzing memory accesses in a return statement.
+- Inference: added support for static_assert.
+- Inference: added support for calling kernels with overloaded types.
+- Inference: improved the array aliasing analysis.
+- Inference: added support for calling other kernels with __device__ modifiers.
+- Inference: added support for array aliasing via the & operator.
+
+2024-01:
+- BarrierDiv: added support for checking barrier divergence (faial-sync).
+- DRF: now gives return status of 2 when there is a parsing error.
+- DRF: allowed passing include directories to the C parser with -I.
+- Inference: basic support for function `sync` of cooperative_groups
+  (ignores scopes).
+- Inference: added support for size_t.
+- Inference: added support for array aliasing with variable declarations.

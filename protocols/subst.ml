@@ -36,32 +36,22 @@ module Make (S:SUBST) = struct
         | Some v -> v
         | None -> n
       end
+    | CastInt b -> CastInt (b_subst s b)
     | Num _ -> n
-    | Proj (t, x) ->
-      begin
-        match S.find s x with
-        | Some (Var y) -> Proj (t, y)
-        | Some _ ->
-          let exp = n_to_string n in
-          let repl = S.to_string s in
-          failwith (
-            "Error: cannot replace thread-local variable " ^ Variable.name x ^
-            " by constant\n" ^
-            "substitution(expression=" ^ exp ^ ", replacement=" ^ repl ^ ")"
-          )
-        | None -> Proj (t, x)
-      end
-    | Bin (o, n1, n2) -> n_bin o (n_subst s n1) (n_subst s n2)
-    | NIf (b, n1, n2) -> n_if (b_subst s b) (n_subst s n1) (n_subst s n2)
+    | Unary (o, e) -> Unary (o, n_subst s e)
+    | Binary (o, n1, n2) -> Binary (o, n_subst s n1, n_subst s n2)
+    | NIf (b, n1, n2) -> NIf (b_subst s b, n_subst s n1, n_subst s n2)
     | NCall (x, a) -> NCall (x, n_subst s a)
+    | Other e -> Other (n_subst s e)
 
   and b_subst (s:S.t) (b:bexp) : bexp =
     match b with
+    | CastBool e -> CastBool (n_subst s e)
     | Pred (n, v) -> Pred (n, n_subst s v)
     | Bool _ -> b
-    | NRel (o, n1, n2) -> n_rel o (n_subst s n1) (n_subst s n2)
-    | BRel (o, b1, b2) -> b_rel o (b_subst s b1) (b_subst s b2)
-    | BNot b -> b_not (b_subst s b)
+    | NRel (o, n1, n2) -> NRel (o, n_subst s n1, n_subst s n2)
+    | BRel (o, b1, b2) -> BRel (o, b_subst s b1, b_subst s b2)
+    | BNot b -> BNot (b_subst s b)
 
   let a_subst (s:S.t) (a:Access.t) : Access.t =
     { a with
@@ -70,10 +60,7 @@ module Make (S:SUBST) = struct
 
   let r_subst (s:S.t) : Range.t -> Range.t =
     Range.map (n_subst s)
-(*
-  let acc_expr_subst (s:S.t) ((x,e):acc_expr) : acc_expr =
-    (x, a_subst s e)
-*)
+
 end
 
 module SubstPair =

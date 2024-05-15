@@ -22,7 +22,6 @@ dev:
 	$(DOCKER_COMPOSE) run dev
 
 push:
-	$(DOCKER_COMPOSE) up --no-start ci
 	$(DOCKER_COMPOSE) push ci
 
 .PHONY: build run test all build-ci build-dev build-base

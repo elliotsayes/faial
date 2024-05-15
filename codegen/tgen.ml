@@ -5,7 +5,7 @@ open Cgen
 module VarSet = Variable.Set
 module VarMap = Variable.Map
 
-type kernel = Proto.prog Proto.kernel
+type kernel = Proto.Code.t Proto.Kernel.t
 
 (* Kernel to TOML conversion *)
 let gv_args_to_l (g : Generator.t) (gv : Gv_parser.t)
@@ -37,7 +37,7 @@ let kernel_to_table (g : Generator.t) (gv : Gv_parser.t) (k : kernel)
   let base_arr =
     if g.use_dummy_array then ["__dummy", Otoml.TomlString "int"] else []
   in
-  let global_arr = VarMap.filter (fun _ -> Memory.is_global) k.kernel_arrays in
+  let global_arr = VarMap.filter (fun _ -> Memory.is_global) k.arrays in
   TomlTable
     (
       preamble @
@@ -45,7 +45,7 @@ let kernel_to_table (g : Generator.t) (gv : Gv_parser.t) (k : kernel)
         ("includes", TomlArray []);
         ("header", TomlString header);
         ("body", TomlString body);
-        ("scalars", TomlTable (scalars_to_l k.kernel_global_variables));
+        ("scalars", TomlTable (scalars_to_l (Params.to_set k.global_variables)));
         ("arrays", TomlTable (base_arr @ arrays_to_l global_arr));
       ]
     )

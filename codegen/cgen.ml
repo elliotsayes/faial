@@ -54,9 +54,12 @@ let is_dummy_var (v : Variable.t) : bool =
 (* Gives the dummy instruction for any array read/write *)
 let acc_expr_to_dummy (x, a : Variable.t * Access.t) : Indent.t list =
   let var = Variable.name x ^ idx_to_s n_to_string a.Access.index in
-  match a.Access.mode with
-  | Rd -> [Line (var_to_dummy x ^ " = " ^ var ^ ";")]
-  | Wr -> [Line (var ^ " = " ^ var_to_dummy x ^ "_w();")]
+  let open Access in
+  match a.mode with
+  | Read -> [Line (var_to_dummy x ^ " = " ^ var ^ ";")]
+  | Write None -> [Line (var ^ " = " ^ var_to_dummy x ^ "_w();")]
+  | Write (Some i) -> [Line (var ^ " = " ^ string_of_int i ^ ";")]
+  | Atomic _ -> failwith "acc_expr_to_dummy: Atomic not supported"
 
 (* Converts a division loop to a multiplication loop *)
 let div_to_mult (r : Range.t) : Range.t =
@@ -74,26 +77,35 @@ let inc_to_s (r : Range.t) : string =
   | Mult step, Decrease -> " /= " ^ n_to_string step
 
 (* Converts source instruction to a valid CUDA operation *)
-let rec inst_to_s (g : Generator.t) : inst -> Indent.t list = function
+let rec inst_to_s (g : Generator.t) : Code.t -> Indent.t list =
+  function
   | Acc e -> acc_expr_to_dummy e
-  | Sync -> [Line "__syncthreads();"]
-  | Cond (b, p) ->
+  | Sync _ -> [Line "__syncthreads();"]
+  | If (b, p, q) ->
     [
       Line ("if (" ^ b_to_string b ^ ") {");
-      Block (List.map (inst_to_s g) p |> List.flatten);
-      Line "}"
+      Block (inst_to_s g p);
+      Line "} else {";
+      Block (inst_to_s g q);
+      Line "}";
     ]
+  | Skip -> []
+  | Decl {var; ty; body=p} ->
+    Line (C_type.to_string ty ^ " " ^ Variable.name var ^ ";")::
+    inst_to_s g p
+  | Seq (p, q) ->
+    inst_to_s g p @ inst_to_s g q
   | Loop (r, p) ->
     let x = Variable.name r.var in
     let r = if g.div_to_mult then div_to_mult r else r in
     let lb, ub, op = match r.dir with
-      | Increase -> r.lower_bound, r.upper_bound, " < "
-      | Decrease -> n_dec r.upper_bound, n_dec r.lower_bound, " > "
+      | Increase -> r.lower_bound, r.upper_bound, " <= "
+      | Decrease -> n_dec r.upper_bound, n_dec r.lower_bound, " => "
     in
     [ 
       Line ("for (" ^ "int " ^ x ^ " = " ^ n_to_string lb ^ "; "
             ^ x ^ op ^ n_to_string ub ^ "; " ^ inc_to_s r ^ ") {");
-      Block (List.map (inst_to_s g) p |> List.flatten);
+      Block (inst_to_s g p);
       Line "}"
     ]
 
@@ -177,58 +189,71 @@ let arr_to_dummy (vm : Memory.t VarMap.t) : Indent.t list =
       Indent.Line (arr_type v ~strip_const:true ^ " " ^ var_to_dummy k ^ ";"))
 
 (* Serialization of the kernel header *)
-let header_to_s (g : Generator.t) (gv : Gv_parser.t) (k : prog kernel)
+let header_to_s (g : Generator.t) (gv : Gv_parser.t) (k : Code.t Kernel.t)
   : Indent.t =
   let comments =
     if g.gen_params && not g.toml then [Gv_parser.serialize gv] else []
   in
-  let type_decls = decl_unknown_types k.kernel_arrays in
+  let type_decls = decl_unknown_types k.arrays in
   let base_protos =
     if g.use_dummy_array then []
     else if g.expand_device then
       ["extern __attribute__((device)) int __dummy_int();"]
     else ["extern __device__ int __dummy_int();"]
   in
-  let funct_protos = base_protos @ arr_to_proto k.kernel_arrays g in
+  let funct_protos = base_protos @ arr_to_proto k.arrays g in
   Indent.Line (comments @ type_decls @ funct_protos |> Common.join "\n")
 
 (* Serialization of the kernel body *)
-let body_to_s (f : prog -> Indent.t list) (g : Generator.t) (k : prog kernel)
-  : Indent.t =
-  let shared_arr = k.kernel_arrays
-                   |> VarMap.filter (fun _ -> Memory.is_shared)
-                   |> arr_to_shared
+let body_to_s
+  (f : Code.t -> Indent.t list)
+  (g : Generator.t)
+  (k : Code.t Kernel.t)
+:
+  Indent.t
+=
+  let shared_arr =
+    k.arrays
+    |> VarMap.filter (fun _ -> Memory.is_shared)
+    |> arr_to_shared
   in
-  let local_var = local_var_to_l k.kernel_local_variables g in
-  let dummy_var = arr_to_dummy k.kernel_arrays in
-  Indent.Block (shared_arr @ local_var @ dummy_var @ (f k.kernel_code))
+  let local_var = local_var_to_l (Params.to_set k.local_variables) g in
+  let dummy_var = arr_to_dummy k.arrays in
+  Indent.Block (shared_arr @ local_var @ dummy_var @ (f k.code))
 
 (* Serialization of the kernel *)
 let kernel_to_s
-    (f : prog -> Indent.t list)
+    (f : Code.t -> Indent.t list)
     (g : Generator.t)
     (gv : Gv_parser.t)
-    (k : prog kernel)
+    (k : Code.t Kernel.t)
   : Indent.t list =
   let base_params = if g.use_dummy_array then ["int *__dummy"] else [] in
-  let global_arr = k.kernel_arrays
-                   |> VarMap.filter (fun _ -> Memory.is_global)
-                   |> global_arr_to_l
+  let global_arr =
+    k.arrays
+    |> VarMap.filter (fun _ -> Memory.is_global)
+    |> global_arr_to_l
   in
-  let global_var = global_var_to_l k.kernel_global_variables in
+  let global_var = global_var_to_l (Params.to_set k.global_variables) in
   let params = base_params @ global_arr @ global_var |> Common.join ", " in
   [
     header_to_s g gv k;
-    Line ("__global__ void " ^ k.kernel_name ^ "(" ^ params ^ ")");
+    Line ("__global__ void " ^ k.name ^ "(" ^ params ^ ")");
     Line "{";
     body_to_s f g k;
     Line "}"
   ]
 
-let prog_to_s (g : Generator.t) (p : prog) : Indent.t list =
-  List.map (inst_to_s g) p |> List.flatten
+let prog_to_s (g : Generator.t) (p : Code.t) : Indent.t list =
+  inst_to_s g p
 
-let gen_cuda (g : Generator.t) (gv : Gv_parser.t) (k : prog kernel) : string =
+let gen_cuda
+  (g : Generator.t)
+  (gv : Gv_parser.t)
+  (k : Code.t Kernel.t)
+:
+  string
+=
   kernel_to_s (prog_to_s g) g gv k |> Indent.to_string
 
 (* Serialization of RaCUDA parameters *)

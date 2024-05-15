@@ -56,12 +56,31 @@ type direction =
 
 type t = {
   var: Variable.t;
+  ty: C_type.t;
   dir: direction;
   lower_bound: nexp;
   upper_bound: nexp;
   step: Step.t;
 }
 
+let var (r:t) : Variable.t = r.var
+
+let ty (r:t) : C_type.t = r.ty
+
+let to_string (r : t) : string =
+  let x = Variable.name r.var in
+  let lb = n_to_string r.lower_bound in
+  let ub = n_to_string r.upper_bound in
+  let s = match r.step with
+  | Plus (Num 1) -> ""
+  | _ -> "; " ^ Variable.name r.var ^ " " ^ Step.to_string r.step
+  in
+  let d = match r.dir with
+  | Increase -> ""
+  | Decrease -> ";↓"
+  in
+  x ^ " ∈ " ^  C_type.to_string r.ty ^ " | " ^
+  lb ^ " ≤ " ^ x  ^  " ≤ " ^ ub ^ s ^ d
 
 (* -------------------- UTILITY CONSTRUCTORS ---------------------- *)
 
@@ -77,15 +96,13 @@ let make
   ?(lower_bound=Num 0)
   ?(step:Step.t=Plus (Num 1))
   ?(dir = Increase)
-  (x:Variable.t)
-  (ub:nexp) =
-  {
-    var = x;
-    lower_bound = lower_bound;
-    upper_bound = ub;
-    step = step;
-    dir = dir;
-  }
+  ?(ty=C_type.int)
+  (var:Variable.t)
+  (upper_bound:nexp)
+:
+  t
+=
+  {var; lower_bound; upper_bound; step; dir; ty;}
 
 let eq_nums x l : bexp =
   List.map (fun i -> n_eq x (Num i)) l
@@ -104,6 +121,12 @@ let pow ~base (n:nexp) : bexp =
 
 let to_cond (r:t) : bexp =
   let x = Var r.var in
+  let ty =
+    r.ty
+    |> C_type.to_int_dom
+    |> Option.value ~default:Int_dom.signed_int
+    |> Int_dom.to_bexp r.var
+  in
   let lb = r.lower_bound in
   let ub = r.upper_bound in
   (match r.step with
@@ -131,76 +154,220 @@ let to_cond (r:t) : bexp =
   @
   [
     (* lb <= x < ub *)
-    n_le lb x; n_lt x ub;
+    n_le lb x; n_le x ub;
+    ty;
   ]
   |> b_and_ex
 
-let dec (r:t) : nexp =
-  Step.dec r.step (Var r.var)
+(*
+  Returns the bounds of the range variable
+  as a boolean expression: lb <= x <= ub
+*)
+let bounds (r:t) : bexp =
+  b_and
+    (n_ge (Var r.var) r.lower_bound)
+    (n_le (Var r.var) r.upper_bound)
+
+let prev (r:t) : nexp =
+  match r.dir with
+  | Increase -> Step.dec r.step (Var r.var)
+  | Decrease -> Step.inc r.step (Var r.var)
 
 let has_next (r:t) : bexp =
-  n_lt r.lower_bound r.upper_bound
+  n_le r.lower_bound r.upper_bound
 
 let is_empty (r:t) : bexp =
-  n_ge r.lower_bound r.upper_bound
+  b_not (has_next r)
+
 
 let is_first (r:t) : bexp =
   n_eq (Var r.var) r.lower_bound
 
 let first (r:t) : nexp =
-  r.upper_bound
+  match r.dir with
+  | Increase -> r.lower_bound
+  | Decrease -> r.upper_bound
+
+(*
+  ub - ((ub-lb) % step)
+
+  0 ... 3 += 1 -> [0, 1, 2, 3]
+  = 3 - ((3 - 0) % 3)
+  = 3 - (3 % 3)
+  = 3
+
+  3 ... 13  += 3 -> [3, 6, 9, 12]
+  = 13 - ((13 - 3) % 3)
+  = 13 - (10 % 3)
+  = 13 - 1
+  = 12
+
+
+  4 ... 15 += 3 -> [4, 7, 10, 13]
+  = 15 - ((15 - 4) % 3)
+  = 15 - (11 % 3)
+  = 15 - 2
+  = 13
+
+ *)
 
 let last_plus ~lower_bound ~upper_bound (step:nexp) : nexp =
+  n_minus
+    upper_bound
+    (n_mod (n_minus upper_bound lower_bound) step)
+
+(*
+
+  lb + ((ub-lb) % step)
+
+  0 ... 3 -= 1 -> [3, 2, 1, 0]
+  = 0 + ((3 - 0) % 3)
+  = 0 + (3 % 3)
+  = 0
+
+  3 ... 13  -= 3 -> [13, 10, 7, 4]
+  = 3 + ((13 - 3) % 3)
+  = 3 + (10 % 3)
+  = 3 + 1
+  = 4
+
+  4 ... 15 += 3 -> [15, 12, 9, 6]
+  = 4 + ((15 - 4) % 3)
+  = 4 + (11 % 3)
+  = 4 + 2
+  = 6
+ *)
+
+let last_minus ~lower_bound ~upper_bound (step:nexp) : nexp =
   n_plus
-    (n_minus upper_bound step)
-    (n_mod (n_minus lower_bound upper_bound) step)
+    lower_bound
+    (n_mod (n_minus upper_bound lower_bound) step)
+
+let highest_power =
+  let open Common in
+  [| 0; 0;
+    pow ~base:2 29;
+    pow ~base:3 18;
+    pow ~base:4 14;
+    pow ~base:5 12;
+    pow ~base:6 11;
+    pow ~base:7 10;
+    pow ~base:8 9;
+    pow ~base:9 9;
+    pow ~base:10 9;
+    pow ~base:11 8;
+    pow ~base:12 8;
+    pow ~base:13 8;
+    pow ~base:14 7;
+    pow ~base:15 7;
+    pow ~base:16 7;
+    pow ~base:17 7;
+    pow ~base:18 7;
+    pow ~base:19 7;
+    pow ~base:20 6;
+    pow ~base:21 6;
+    pow ~base:22 6;
+    pow ~base:23 6;
+    pow ~base:24 6;
+    pow ~base:25 6;
+  |]
+
+let gen_highest_power ~base (e: nexp) : nexp =
+  let rec gen (pow:int) : nexp =
+    let p = Num pow in
+    if pow <= 1
+    then Num 1
+    else NIf (n_le p e, p, gen (pow / base))
+  in
+  gen (highest_power.(base))
 
 let highest_power ~base : nexp -> nexp =
-  let rec gen (n:int) (x:nexp) : nexp =
-    if n <= 0 then (Num 1)
-    else
-      let p = Num (Common.pow ~base n) in
-      NIf (n_gt x p, p, gen (n - 1) x)
-  in
-  let trunc_fun (n:nexp) : nexp =
-    gen base n
-  in
   function
   | Num n -> Num (Common.highest_power ~base n)
-  | e -> trunc_fun e
+  | e -> gen_highest_power ~base e
+
+(*
+
+  lb * (ub / lb)
+
+  lb * step^log_step(ub/lb)
+
+  4 ... 15 *= 3 = [4, 12]
+  = 4 * 3 ^ (log3 (15/4))
+  = 4 * 3 ^ (log3 3)
+  = 4 * 3
+  = 12
+
+  3 ... 76 *= 5 -> [3, 15, 75]
+  = 3 * 5 ^ (log5 (76 / 3))
+  = 3 * 5 ^ (log5 25)
+  = 3 * 5 ^ 2
+  = 3 * 25
+  = 75
+
+  4 ... 20 *= 2 -> [4, 8, 16]
+  = 4 * 2 ^ (log2 (20/4))
+  = 4 * 2 ^ (log2 5)
+  = 4 * 2 ^ 2
+  = 4 * 4
+  = 16
+
+  3 .. 10  *= 4 -> [3]
+  = 3 * 4 ^ log4 (10/3)
+  = 3 * 4 ^ 0
+  = 3
+ *)
 
 let last_mult ~lower_bound ~upper_bound (step:int) : nexp =
   if step >= 2 then
-    n_mult
-      lower_bound
-      (highest_power ~base:step (n_div upper_bound lower_bound))
+    Binary (
+      Mult,
+      lower_bound,
+      (highest_power ~base:step (Binary (Div, upper_bound, lower_bound)))
+    )
+  else
+    failwith ("last_mult: invalid base: " ^ string_of_int step)
+
+(*
+  ub / (ub / lb)
+
+  4 ... 15 /= 3 = [15, 5]
+  = 15 / (15 / 4)
+  = 15 / 3
+  = 5
+
+  3 ... 76 /= 5 -> [76, 15, 3]
+  = 76 / (76 / 3)
+  = 3
+
+ *)
+let last_div ~lower_bound ~upper_bound (step:int) : nexp =
+  if step >= 2 then
+    Exp.n_div
+      upper_bound
+      (highest_power ~base:step (Exp.n_div upper_bound lower_bound))
   else
     failwith ("last_mult: invalid base: " ^ string_of_int step)
 
 let last (r:t) : nexp option =
-  match r.step with
-  | Plus s ->
+  match r.dir, r.step with
+  | Increase, Plus s ->
     Some (last_plus ~lower_bound:r.lower_bound ~upper_bound:r.upper_bound s)
-  | Mult (Num s) when s >= 2 ->
+  | Decrease, Plus s ->
+    Some (last_minus ~lower_bound:r.lower_bound ~upper_bound:r.upper_bound s)
+  | Increase, Mult (Num s) when s >= 2 ->
     Some (last_mult ~lower_bound:r.lower_bound ~upper_bound:r.upper_bound s)
+  | Decrease, Mult (Num s) when s >= 2 ->
+    Some (last_div ~lower_bound:r.lower_bound ~upper_bound:r.upper_bound s)
   | _ -> None
 
 (* Returns the last element of a bound *)
 
 let lossy_last (r:t) : nexp =
-  match r.step with
-  | Plus s ->
-    last_plus
-      ~lower_bound:r.lower_bound
-      ~upper_bound:r.upper_bound
-      s
-  | Mult (Num s) when s >= 2 ->
-    last_mult
-      ~lower_bound:r.lower_bound
-      ~upper_bound:r.upper_bound
-      s
-  | s ->
-    prerr_endline ("WARNING: lossy_last: unsupported base: " ^ Step.to_string s);
+  match last r with
+  | Some e -> e
+  | None ->
+    prerr_endline ("WARNING: lossy_last: unsupported base: " ^ to_string r);
     last_plus
       ~lower_bound:r.lower_bound
       ~upper_bound:r.upper_bound
@@ -224,16 +391,21 @@ let while_cond (r:t) : bexp =
 (* An increment of a while loop *)
 let while_inc (r:t) : nexp =
   let x = Var r.var in
-  let o, e1, e2 = match r.dir, r.step with
-    | Increase, Step.Plus e -> Plus, x, e
+  let o, e1, e2 =
+    match r.dir, r.step with
+    | Increase, Step.Plus e -> N_binary.Plus, x, e
     | Decrease, Step.Plus e -> Minus, x, e
     | Increase, Step.Mult e -> Mult, x, e
     | Decrease, Step.Mult e -> Div, x, e
   in
-  Bin (o, e1, e2)
+  Binary (o, e1, e2)
 
 let next (r:t) : t =
-  { r with lower_bound = Step.inc r.step r.lower_bound }
+  match r.dir with
+  | Increase ->
+    { r with lower_bound = Step.inc r.step r.lower_bound }
+  | Decrease ->
+    { r with upper_bound = Step.dec r.step r.upper_bound }
 
 let is_valid (r:t) : bexp =
   b_and (Step.is_valid r.step) (
@@ -241,20 +413,6 @@ let is_valid (r:t) : bexp =
   | Mult _ -> n_neq r.lower_bound (Num 0)
   | Plus _ -> Bool true
   )
-
-let to_string (r : t) : string =
-  let x = Variable.name r.var in
-  let lb = n_to_string r.lower_bound in
-  let ub = n_to_string r.upper_bound in
-  let s = match r.step with
-  | Plus (Num 1) -> ""
-  | _ -> "; " ^ Variable.name r.var ^ " " ^ Step.to_string r.step
-  in
-  let d = match r.dir with
-  | Increase -> "↑"
-  | Decrease -> "↓"
-  in
-  x ^ " in " ^ lb ^ " .. " ^ ub ^ s ^ " " ^ d
 
 let eval_res (r:t) : (int list, string) Result.t =
   let ( let* ) = Result.bind in
@@ -274,3 +432,9 @@ let eval_res (r:t) : (int list, string) Result.t =
 
 let eval_opt (r:t) : int list option =
   eval_res r |> Result.to_option
+
+let eval_is_empty (r:t) : bool =
+  Exp.b_eval_res (is_empty r) = Ok true
+
+let exists (f:Variable.t -> bool) (r:t) : bool =
+  n_exists f r.lower_bound || n_exists f r.upper_bound

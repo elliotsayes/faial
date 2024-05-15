@@ -8,107 +8,52 @@ type json = Yojson.Basic.t
 type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
-type c_type = json
-
-let parse_type (j:Yojson.Basic.t) : C_type.t j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* ty = with_field "qualType" cast_string o in
-  Ok (C_type.make ty)
-
-let type_to_str (j:Yojson.Basic.t) : string =
-  match parse_type j with
-  | Ok ty -> C_type.to_string ty
-  | Error _ -> "?"
-
-module TyVariable = struct
-  type t = {name: Variable.t; ty: c_type}
-
-  let make ~name ~ty : t = {name; ty}
-
-  let name (x:t) : Variable.t = x.name
-
-  let is_tid (x:t) : bool =
-    x.name |> Variable.is_tid
-
-  let ty (x:t) : c_type = x.ty
-
-  let to_string (x:t) : string =
-    type_to_str x.ty ^ " " ^ Variable.name x.name
-
-  let has_type (pred:C_type.t -> bool) (x:t) : bool =
-    parse_type x.ty
-    |> Result.map pred
-    |> Common.unwrap_or false
-end
-
 let list_to_s (f:'a -> string) (l:'a list) : string =
   List.map f l |> Common.join ", "
 
 module Expr = struct
   type t =
-    | SizeOfExpr of c_type
-    | CXXNewExpr of {arg: t; ty: c_type}
-    | CXXDeleteExpr of {arg: t; ty: c_type}
-    | RecoveryExpr of c_type
+    | SizeOfExpr of J_type.t
+    | CXXNewExpr of {arg: t; ty: J_type.t}
+    | CXXDeleteExpr of {arg: t; ty: J_type.t}
+    | RecoveryExpr of J_type.t
     | CharacterLiteral of int
     | ArraySubscriptExpr of c_array_subscript
     | BinaryOperator of c_binary
-    | CallExpr of {func: t; args: t list; ty: c_type}
-    | ConditionalOperator of {cond: t; then_expr: t; else_expr: t; ty: c_type}
-    | CXXConstructExpr of {args: t list; ty: c_type}
+    | CallExpr of {func: t; args: t list; ty: J_type.t}
+    | ConditionalOperator of {cond: t; then_expr: t; else_expr: t; ty: J_type.t}
+    | CXXConstructExpr of {args: t list; ty: J_type.t}
     | CXXBoolLiteralExpr of bool
-    | CXXMethodDecl of TyVariable.t
-    | FunctionDecl of TyVariable.t
-    | NonTypeTemplateParmDecl of TyVariable.t
-    | ParmVarDecl of TyVariable.t
-    | VarDecl of TyVariable.t
-    | EnumConstantDecl of TyVariable.t
-    | CXXOperatorCallExpr of {func: t; args: t list; ty: c_type}
+    | Ident of Decl_expr.t
+    | CXXOperatorCallExpr of {func: t; args: t list; ty: J_type.t}
     | FloatingLiteral of float
     | IntegerLiteral of int
-    | MemberExpr of {name: string; base: t; ty: c_type}
-    | UnaryOperator of {opcode: string; child: t; ty: c_type}
-    | UnresolvedLookupExpr of {name: Variable.t; tys: c_type list}
-  and c_binary = {opcode: string; lhs: t; rhs: t; ty: c_type}
-  and c_array_subscript = {lhs: t; rhs: t; ty: c_type; location: Location.t}
+    | MemberExpr of {name: string; base: t; ty: J_type.t}
+    | UnaryOperator of {opcode: string; child: t; ty: J_type.t}
+    | UnresolvedLookupExpr of {name: Variable.t; tys: J_type.t list}
+  and c_binary = {opcode: string; lhs: t; rhs: t; ty: J_type.t}
+  and c_array_subscript = {lhs: t; rhs: t; ty: J_type.t; location: Location.t}
 
-  let rec to_type : t -> c_type =
+  let rec to_type : t -> J_type.t =
     function
-    | SizeOfExpr _ -> C_type.j_int_type
+    | SizeOfExpr _ -> J_type.int
     | CXXNewExpr c -> c.ty
     | CXXDeleteExpr c -> c.ty
     | CXXConstructExpr c -> c.ty
-    | CharacterLiteral _ -> C_type.j_char_type
+    | CharacterLiteral _ -> J_type.char
     | ArraySubscriptExpr a -> a.ty
     | BinaryOperator a -> a.ty
     | ConditionalOperator c -> to_type c.then_expr
-    | CXXBoolLiteralExpr _ -> C_type.j_bool_type
-    | CXXMethodDecl a -> a.ty
-    | FloatingLiteral _ -> C_type.j_float_type
-    | FunctionDecl a -> a.ty
-    | IntegerLiteral _ -> C_type.j_int_type
-    | NonTypeTemplateParmDecl a -> a.ty
-    | ParmVarDecl a -> a.ty
+    | CXXBoolLiteralExpr _ -> J_type.bool
+    | FloatingLiteral _ -> J_type.float
+    | Ident a -> a.ty
+    | IntegerLiteral _ -> J_type.int
     | UnaryOperator a -> a.ty
-    | VarDecl a -> a.ty
     | CallExpr c -> c.ty
     | CXXOperatorCallExpr a -> a.ty
     | MemberExpr a -> a.ty
-    | EnumConstantDecl a -> a.ty
-    | UnresolvedLookupExpr _ -> C_type.mk_j_type "?"
+    | UnresolvedLookupExpr _ -> J_type.unknown
     | RecoveryExpr ty -> ty
-
-  (* Try to convert into a variable *)
-  let to_variable : t -> Variable.t option =
-    function
-    | CXXMethodDecl {name=n; _}
-    | FunctionDecl {name=n; _}
-    | NonTypeTemplateParmDecl {name=n; _}
-    | ParmVarDecl {name=n; _}
-    | VarDecl {name=n; _}
-    | UnresolvedLookupExpr {name=n; _} -> Some n
-    | _ -> None
 
   let to_string ?(modifier:bool=false) ?(provenance:bool=false) ?(types:bool=false) : t -> string =
     let attr (s:string) : string =
@@ -116,9 +61,9 @@ module Expr = struct
       then "@" ^ s ^ " "
       else ""
     in
-    let opcode (o:string) (j:Yojson.Basic.t) : string =
+    let opcode (o:string) (j:J_type.t) : string =
       if types
-      then "(" ^ o ^ "." ^ type_to_str j ^ ")"
+      then "(" ^ o ^ "." ^ J_type.to_string j ^ ")"
       else o
     in
     let var_name : Variable.t -> string =
@@ -135,14 +80,9 @@ module Expr = struct
         | UnaryOperator _
         | CXXNewExpr _
         | CXXDeleteExpr _
-        | FunctionDecl _
-        | ParmVarDecl _
-        | EnumConstantDecl _
-        | NonTypeTemplateParmDecl _
+        | Ident _
         | UnresolvedLookupExpr _
-        | VarDecl _
         | CallExpr _
-        | CXXMethodDecl _
         | CXXOperatorCallExpr _
         | CXXConstructExpr _
         | CXXBoolLiteralExpr _
@@ -156,8 +96,8 @@ module Expr = struct
           ->  exp_to_s e
       in
       function
-      | SizeOfExpr ty -> "sizeof(" ^ type_to_str ty ^ ")"
-      | CXXNewExpr c -> "new " ^ type_to_str c.ty ^ "(" ^ exp_to_s c.arg ^ ")"
+      | SizeOfExpr ty -> "sizeof(" ^ J_type.to_string ty ^ ")"
+      | CXXNewExpr c -> "new " ^ J_type.to_string c.ty ^ "(" ^ exp_to_s c.arg ^ ")"
       | CXXDeleteExpr c -> "del " ^ par c.arg
       | RecoveryExpr _ -> "?"
       | FloatingLiteral f -> string_of_float f
@@ -170,16 +110,11 @@ module Expr = struct
       | MemberExpr m -> par m.base  ^ "." ^ m.name
       | ArraySubscriptExpr b -> par b.lhs ^ "[" ^ exp_to_s b.rhs ^ "]"
       | CXXBoolLiteralExpr b -> if b then "true" else "false";
-      | CXXConstructExpr c -> attr "ctor" ^ type_to_str c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")"
+      | CXXConstructExpr c -> attr "ctor" ^ J_type.to_string c.ty ^ "(" ^ list_to_s exp_to_s c.args ^ ")"
       | CXXOperatorCallExpr c -> exp_to_s c.func ^ "[" ^ list_to_s exp_to_s c.args  ^ "]"
-      | CXXMethodDecl v -> attr "meth" ^ var_name v.name
+      | Ident v -> Decl_expr.to_string ~modifier v
       | CallExpr c -> par c.func ^ "(" ^ list_to_s exp_to_s c.args  ^ ")"
-      | VarDecl v -> var_name v.name
       | UnresolvedLookupExpr v -> attr "unresolv" ^ var_name v.name
-      | NonTypeTemplateParmDecl v -> attr "tpl" ^ var_name v.name
-      | FunctionDecl v -> attr "func" ^ var_name v.name
-      | ParmVarDecl v -> attr "parm" ^ var_name v.name
-      | EnumConstantDecl v -> attr "enum" ^ var_name v.name
       | UnaryOperator u -> u.opcode ^ par u.child
     in
     exp_to_s
@@ -194,29 +129,24 @@ module Expr = struct
     type expr_t = t
 
     type 'a t =
-      | SizeOf of c_type
-      | CXXNew of {arg: 'a; ty: c_type}
-      | CXXDelete of {arg: 'a; ty: c_type}
-      | Recovery of c_type
+      | SizeOf of J_type.t
+      | CXXNew of {arg: 'a; ty: J_type.t}
+      | CXXDelete of {arg: 'a; ty: J_type.t}
+      | Recovery of J_type.t
       | CharacterLiteral of int
-      | ArraySubscript of {lhs: 'a; rhs: 'a; ty: c_type; location: Location.t}
-      | BinaryOperator of {opcode: string; lhs: 'a; rhs: 'a; ty: c_type}
-      | Call of {func: 'a; args: 'a list; ty: c_type}
-      | ConditionalOperator of {cond: 'a; then_expr: 'a; else_expr: 'a; ty: c_type}
-      | CXXConstruct of {args: 'a list; ty: c_type}
+      | ArraySubscript of {lhs: 'a; rhs: 'a; ty: J_type.t; location: Location.t}
+      | BinaryOperator of {opcode: string; lhs: 'a; rhs: 'a; ty: J_type.t}
+      | Call of {func: 'a; args: 'a list; ty: J_type.t}
+      | ConditionalOperator of {cond: 'a; then_expr: 'a; else_expr: 'a; ty: J_type.t}
+      | CXXConstruct of {args: 'a list; ty: J_type.t}
       | CXXBoolLiteral of bool
-      | CXXMethodDecl of TyVariable.t
-      | CXXOperatorCall of {func: 'a; args: 'a list; ty: c_type}
+      | Ident of Decl_expr.t
+      | CXXOperatorCall of {func: 'a; args: 'a list; ty: J_type.t}
       | FloatingLiteral of float
-      | FunctionDecl of TyVariable.t
       | IntegerLiteral of int
-      | NonTypeTemplateParmDecl of TyVariable.t
-      | Member of {name: string; base: 'a; ty: c_type}
-      | ParmVarDecl of TyVariable.t
-      | UnaryOperator of {opcode: string; child: 'a; ty: c_type}
-      | VarDecl of TyVariable.t
-      | EnumConstantDecl of TyVariable.t
-      | UnresolvedLookup of {name: Variable.t; tys: c_type list}
+      | Member of {name: string; base: 'a; ty: J_type.t}
+      | UnaryOperator of {opcode: string; child: 'a; ty: J_type.t}
+      | UnresolvedLookup of {name: Variable.t; tys: J_type.t list}
 
     let rec fold (f: 'a t -> 'a) : expr_t -> 'a =
       function
@@ -241,29 +171,24 @@ module Expr = struct
         })
       | CXXConstructExpr e -> f (CXXConstruct {args=List.map (fold f) e.args; ty=e.ty})
       | CXXBoolLiteralExpr e -> f (CXXBoolLiteral e)
-      | CXXMethodDecl e -> f (CXXMethodDecl e)
+      | Ident e -> f (Ident e)
       | CXXOperatorCallExpr e -> f (CXXOperatorCall {
           func=fold f e.func;
           args=List.map (fold f) e.args;
           ty=e.ty
         })
       | FloatingLiteral e -> f (FloatingLiteral e)
-      | FunctionDecl e -> f (FunctionDecl e)
       | IntegerLiteral e -> f (IntegerLiteral e)
-      | NonTypeTemplateParmDecl e -> f (NonTypeTemplateParmDecl e)
       | MemberExpr e -> f (Member {
           name=e.name;
           base=fold f e.base;
           ty=e.ty
         })
-      | ParmVarDecl e -> f (ParmVarDecl e)
       | UnaryOperator e -> f (UnaryOperator {
           opcode=e.opcode;
           child=fold f e.child;
           ty=e.ty
         })
-      | VarDecl e -> f (VarDecl e)
-      | EnumConstantDecl e -> f (EnumConstantDecl e)
       | UnresolvedLookupExpr e ->
         f (UnresolvedLookup {name=e.name; tys=e.tys})
 
@@ -272,13 +197,8 @@ module Expr = struct
       match e with
         | FloatingLiteral _
         | IntegerLiteral _
-        | ParmVarDecl _
         | CharacterLiteral _
-        | FunctionDecl _
-        | NonTypeTemplateParmDecl _
-        | CXXMethodDecl _
-        | VarDecl _
-        | EnumConstantDecl _
+        | Ident _
         | RecoveryExpr _
         | SizeOfExpr _
         | UnresolvedLookupExpr _
@@ -311,7 +231,7 @@ end
 
 module Init = struct
   type t =
-    | InitListExpr of {ty: c_type; args: Expr.t list}
+    | InitListExpr of {ty: J_type.t; args: Expr.t list}
     | IExpr of Expr.t
 
   let map_expr (f:Expr.t -> Expr.t) : t -> t =
@@ -339,15 +259,20 @@ let c_attr_global = c_attr "global"
 let c_attr_device = c_attr "device"
 
 module Decl : sig
-  type t
+  type t = {
+    var: Variable.t;
+    ty: J_type.t;
+    init: Init.t option;
+    attrs: string list
+  }
+
   (* Constructor *)
   val make :
-    ty_var:TyVariable.t ->
+    ty_var:Ty_variable.t ->
     init:Init.t option ->
     attrs:string list ->
     t
   (* Accessors *)
-  val ty_var : t -> TyVariable.t
   val attrs: t -> string list
   val init : t -> Init.t option
   (* Expression iterator *)
@@ -358,31 +283,34 @@ module Decl : sig
   val to_string : t -> string
   (* Convinience *)
   val is_shared : t -> bool
-  val is_array : t -> bool
+  val matches : (C_type.t -> bool) -> t -> bool
   val var: t -> Variable.t
+  val ty: t -> J_type.t
+  val to_s :  t -> Indent.t list
+
 end = struct
   type t = {
-    ty_var: TyVariable.t;
+    var: Variable.t;
+    ty: J_type.t;
     init: Init.t option;
     attrs: string list
   }
 
   let make ~ty_var ~init ~attrs : t =
-    {ty_var; init; attrs}
+    {ty=ty_var.ty; var=Ty_variable.name ty_var; init; attrs}
 
   let init (x:t) : Init.t option = x.init
 
   let attrs (x:t) : string list = x.attrs
 
-  let var (x:t) : Variable.t = x.ty_var.name
+  let var (x:t) : Variable.t = x.var
 
-  let ty_var (x:t) : TyVariable.t = x.ty_var
+  let ty (x:t) : J_type.t = x.ty
+
+  let matches pred x = J_type.matches pred x.ty
 
   let is_shared (x:t) : bool =
     List.mem c_attr_shared x.attrs
-
-  let is_array (x:t) : bool =
-    x.ty_var |> TyVariable.has_type C_type.is_array
 
   let to_expr_seq (x:t) : Expr.t Seq.t =
     match x.init with
@@ -401,8 +329,10 @@ end = struct
       let attrs = Common.join " " d.attrs |> String.trim in
       attrs ^ " "
     in
-    attr ^ TyVariable.to_string d.ty_var ^ i
+    attr ^ J_type.to_string d.ty ^ " " ^ Variable.name d.var ^ i
 
+  let to_s (d:t) : Indent.t list =
+    [Line (to_string d ^ ";")]
 end
 
 module ForInit = struct
@@ -422,20 +352,12 @@ module ForInit = struct
       match e with
       | BinaryOperator {lhs=l; opcode=","; rhs=r; _} ->
         exp_var l |> Common.append_rev1 (exp_var r)
-      | BinaryOperator {lhs=l; opcode="="; _} ->
-        (match Expr.to_variable l with
-        | Some x -> [x]
-        | None -> [])
+      | BinaryOperator {lhs=Ident l; opcode="="; _} ->
+        [l.name]
       | _ -> []
     in
     function
-    | Decls l ->
-      l
-      |> List.map (fun x ->
-        x
-        |> Decl.ty_var
-        |> TyVariable.name
-      )
+    | Decls l -> List.map Decl.var l
     | Expr e -> exp_var e
 
   let to_string : t -> string =
@@ -458,7 +380,7 @@ module Stmt = struct
   type t =
     | BreakStmt
     | GotoStmt
-    | ReturnStmt
+    | ReturnStmt of Expr.t option
     | ContinueStmt
     | IfStmt of t if_t
     | CompoundStmt of t list
@@ -488,7 +410,8 @@ module Stmt = struct
     let rec stmt_to_s : t -> Indent.t list =
       let block (s:t) : Indent.t list = ret (stmt_to_s s) in
       function
-      | ReturnStmt -> [Line "return"]
+      | ReturnStmt None -> [Line "return"]
+      | ReturnStmt (Some e) -> [Line ("return" ^ Expr.to_string e)]
       | GotoStmt -> [Line "goto"]
       | BreakStmt -> [Line "break"]
       | ContinueStmt -> [Line "continue"]
@@ -545,7 +468,7 @@ module Stmt = struct
     type 'a t =
       | Break
       | Goto
-      | Return
+      | Return of Expr.t option
       | Continue
       | If of 'a if_t
       | Compound of 'a list
@@ -562,7 +485,7 @@ module Stmt = struct
       function
       | BreakStmt -> f Break
       | GotoStmt -> f Goto
-      | ReturnStmt -> f Return
+      | ReturnStmt e -> f (Return e)
       | ContinueStmt -> f Continue
       | IfStmt c -> f (If {
           cond=c.cond;
@@ -598,7 +521,7 @@ module Stmt = struct
         function
         | Break -> f BreakStmt
         | Goto -> f GotoStmt
-        | Return -> f ReturnStmt
+        | Return e -> f (ReturnStmt e)
         | Continue -> f ContinueStmt
         | If c -> f (IfStmt c)
         | Compound l -> f (CompoundStmt l)
@@ -614,7 +537,8 @@ module Stmt = struct
 
     let to_expr_seq: c_stmt -> Expr.t Seq.t =
       fold (function
-        | Break | Goto | Return | Continue -> Seq.empty
+        | Break | Goto | Return None | Continue -> Seq.empty
+        | Return (Some e) -> Seq.return e
         | If {cond=c; then_stmt=s1; else_stmt=s2} ->
           Seq.return c
           |> Seq.append s1
@@ -647,7 +571,7 @@ module Stmt = struct
     match s with
     | BreakStmt
     | GotoStmt
-    | ReturnStmt
+    | ReturnStmt _
     | ContinueStmt
     | DeclStmt _
     | SExpr _ ->
@@ -683,7 +607,7 @@ module Stmt = struct
     match s with
     | BreakStmt
     | GotoStmt
-    | ReturnStmt
+    | ReturnStmt _
     | ContinueStmt
     | DeclStmt _
     | SExpr _ ->
@@ -715,34 +639,6 @@ module Stmt = struct
     find_all_map (fun x -> if f x then Some x else None)
 
 end
-
-module Param = struct
-  type t = {
-    ty_var : TyVariable.t;
-    is_used: bool;
-    is_shared: bool;
-  }
-
-  let make ~ty_var ~is_used ~is_shared : t =
-    {ty_var; is_used; is_shared}
-
-  let ty_var (x:t) : TyVariable.t = x.ty_var
-
-  let name (x:t) : Variable.t = x.ty_var.name
-
-  let has_type (type_of:C_type.t -> bool) (x:t) : bool =
-    TyVariable.has_type type_of x.ty_var
-
-  let to_string (p:t) : string =
-    let used = if p.is_used then "" else " unsed" in
-    let shared = if p.is_shared then "shared " else "" in
-    used ^ shared ^ TyVariable.to_string p.ty_var
-
-end
-
-type c_type_param =
-  | PTemplateTypeParmDecl of Variable.t
-  | PNonTypeTemplateParmDecl of {name: Variable.t; ty: c_type}
 
 module KernelAttr = struct
   type t =
@@ -777,24 +673,168 @@ end
 module Kernel = struct
   type t = {
     name: string;
+    ty: string;
     code: Stmt.t;
-    type_params: c_type_param list;
+    type_params: Ty_param.t list;
     params: Param.t list;
     attribute: KernelAttr.t;
   }
-  let make ~name ~code ~type_params ~params ~attribute =
-    {name; code; type_params; params; attribute}
+  let make ~ty ~name ~code ~type_params ~params ~attribute =
+    {name; ty; code; type_params; params; attribute}
   let name (x:t) : string = x.name
   let params (x:t) : Param.t list = x.params
-  let type_params (x:t) : c_type_param list = x.type_params
+  let type_params (x:t) : Ty_param.t list = x.type_params
   let attribute (x:t) : KernelAttr.t = x.attribute
+
+  let to_s (k:t) : Indent.t list =
+    let tps = if k.type_params <> [] then "[" ^
+        list_to_s Ty_param.to_string k.type_params ^
+      "]" else ""
+    in
+    let open Indent in
+    [
+      Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^
+        " " ^ tps ^ "(" ^ list_to_s Param.to_string k.params ^ ")");
+    ]
+    @
+    Stmt.to_string k.code
+
 end
 
-type c_def =
-  | Kernel of Kernel.t
-  | Declaration of Decl.t
+module Def = struct
+  type t =
+    | Kernel of Kernel.t
+    | Declaration of Decl.t
+    | Typedef of Typedef.t
+    | Enum of Enum.t
 
-type c_program = c_def list
+
+  let to_s (d:t) : Indent.t list =
+    match d with
+    | Declaration d -> Decl.to_s d
+    | Kernel k -> Kernel.to_s k
+    | Typedef d -> Typedef.to_s d
+    | Enum e -> Enum.to_s e
+end
+
+module Program = struct
+  type t = Def.t list
+
+  let rewrite_shared_arrays: t -> t =
+    (* Rewrites expressions: when it finds a variable that has been defined as
+      a shared variable, we replace that by an array subscript:
+      x becomes x[0] *)
+    let rw_exp (vars:Variable.Set.t) (e:Expr.t) : Expr.t =
+      if Variable.Set.is_empty vars then e else
+      e |> Expr.Visit.map (fun e ->
+        match e with
+        | Ident x ->
+          if Variable.Set.mem x.name vars
+          then ArraySubscriptExpr {
+            lhs=Ident x;
+            rhs=IntegerLiteral 0;
+            ty=x.ty;
+            location=Variable.location x.name
+          }
+          else e
+        | _ -> e)
+    in
+    (* When rewriting a variable declaration, we must return as the side-effect
+      the shadowing of the available variables when it makes sense *)
+    let rw_decl (vars:Variable.Set.t) (d:Decl.t) : Variable.Set.t * Decl.t =
+      let vars =
+        let name = d |> Decl.var in
+        if Decl.is_shared d && not (Decl.matches C_type.is_array d) then
+          Variable.Set.add name vars
+        else
+          Variable.Set.remove name vars
+      in
+      (vars, Decl.map_expr (rw_exp vars) d)
+    in
+    (* This is just a monadic map *)
+    let rec rw_list: 'a. (Variable.Set.t -> 'a -> Variable.Set.t * 'a) -> Variable.Set.t -> 'a list -> Variable.Set.t * 'a list =
+      fun f vars l ->
+          match l with
+          | [] -> (vars, [])
+          | x :: l ->
+            let (vars, x) = f vars x in
+            let (vars, l) = rw_list f vars l in
+            (vars, x::l)
+    in
+    (* We now rewrite statements *)
+    let rw_stmt (vars:Variable.Set.t) (s:Stmt.t) : Stmt.t =
+      let rec rw_s (vars:Variable.Set.t) (s: Stmt.t) : Variable.Set.t * Stmt.t =
+        let ret (s: Stmt.t) : Stmt.t = rw_s vars s |> snd in
+        let rw_e: Expr.t -> Expr.t = rw_exp vars in
+        match s with
+        | BreakStmt
+        | GotoStmt
+        | ReturnStmt None
+        | ContinueStmt ->
+          (vars, s)
+        | ReturnStmt (Some e) ->
+          (vars, ReturnStmt (Some (rw_e e)))
+        | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
+          (vars, IfStmt {cond=rw_e c; then_stmt=ret s1; else_stmt=ret s2})
+        | CompoundStmt l ->
+          (* This is one of the interesting cases, since we
+            propagate scoping through the monadic map (rw_list). *)
+          (vars, CompoundStmt (rw_list rw_s vars l |> snd))
+        | DeclStmt l ->
+          (* Variable declaration introduces a scope *)
+          let (vars, l) = rw_list rw_decl vars l in
+          (vars, DeclStmt l)
+        | WhileStmt {cond=e; body=s} ->
+          (vars, WhileStmt {cond=rw_e e; body=ret s})
+        | ForStmt {init=e1; cond=e2; inc=e3; body=s} ->
+          (* The init may create a scope *)
+          let (vars_body, e1) = match e1 with
+          | None -> (vars, None)
+          | Some (ForInit.Decls l) ->
+            let (vars, l) = rw_list rw_decl vars l in
+            (vars, Some (ForInit.Decls l))
+          | Some (ForInit.Expr e) -> (vars, Some (ForInit.Expr (rw_e e)))
+          in
+          let e2 = Option.map (rw_exp vars_body) e2 in
+          let e3 = Option.map (rw_exp vars_body) e3 in
+          (vars, ForStmt {init=e1; cond=e2; inc=e3; body=rw_s vars_body s |> snd})
+        | DoStmt {cond=e; body=s} ->
+          (vars, DoStmt {cond=rw_e e; body=ret s})
+        | SwitchStmt {cond=e; body=s} ->
+          (vars, SwitchStmt {cond=rw_e e; body=ret s})
+        | DefaultStmt s ->
+          (vars, DefaultStmt (ret s))
+        | CaseStmt  {case=e; body=s} ->
+          (vars, CaseStmt {case=rw_e e; body=ret s})
+        | SExpr e ->
+          (vars, SExpr (rw_e e))
+      in
+      rw_s vars s |> snd
+    in
+    let rec rw_p (vars:Variable.Set.t): t -> t =
+      function
+      | Declaration d :: p ->
+        let vars = if Decl.is_shared d && not (Decl.matches C_type.is_array d)
+          then Variable.Set.add (Decl.var d) vars
+          else vars
+        in
+        Declaration d :: rw_p vars p
+      | Kernel k :: p -> Kernel { k with code = rw_stmt vars k.code } :: rw_p vars p
+      | Typedef d :: p ->
+        Typedef d :: rw_p vars p
+      | Enum e :: p ->
+        Enum e :: rw_p vars p
+      | [] -> []
+    in
+    rw_p Variable.Set.empty
+
+  let to_s (p:t) : Indent.t list =
+    List.concat_map (fun k -> Def.to_s k @ [Line ""]) p
+
+  let print (p:t) : unit =
+    Indent.print (to_s p)
+
+end
 
 (* ------------------------------------------------------------------- *)
 
@@ -828,7 +868,11 @@ let parse_location (j:json) : Location.t j_result =
   let open Location in
   let* o = cast_object j in
   let* first = with_field "begin" parse_position o in
-  let last = with_field "end" (parse_position ~filename:first.filename) o |> unwrap_or first in
+  let last =
+    o
+    |> with_field "end" (parse_position ~filename:first.filename)
+    |> Result.value ~default:first
+  in
   Ok (Location.add_or_reset_lhs first last)
 
 let parse_variable (j:json) : Variable.t j_result =
@@ -847,7 +891,7 @@ let parse_variable (j:json) : Variable.t j_result =
   | None -> Ok (Variable.from_name name)
   
 
-let compound (ty:c_type) (lhs:Expr.t) (opcode:string) (rhs:Expr.t) : Expr.t =
+let compound (ty:J_type.t) (lhs:Expr.t) (opcode:string) (rhs:Expr.t) : Expr.t =
   BinaryOperator {
     ty=ty;
     opcode="=";
@@ -863,8 +907,17 @@ let compound (ty:c_type) (lhs:Expr.t) (opcode:string) (rhs:Expr.t) : Expr.t =
 let is_invalid (o: j_object) : bool =
   let open Rjson in
   with_opt_field "isInvalid" cast_bool o
-  |> unwrap_or None
-  |> Ojson.unwrap_or false
+  |> Result.value ~default:None
+  |> Option.value ~default:false
+
+
+let expect_kind (k:string) (o:j_object) : unit j_result =
+  let open Rjson in
+  let* obtained : string = get_kind o in
+  if obtained = k then
+    Ok ()
+  else
+    root_cause ("Expecting kind '"^ k ^"' but got '" ^ obtained ^ "'") (`Assoc o)
 
 let rec parse_exp (j:json) : Expr.t j_result =
   let open Rjson in
@@ -875,7 +928,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
   | _ when is_invalid o ->
     (* Unknown value *)
     let* ty = get_field "type" o in
-    Ok (RecoveryExpr ty)
+    Ok (RecoveryExpr (J_type.from_json ty))
 
   | "CXXDefaultArgExpr"
   | "ImplicitValueInitExpr"
@@ -885,7 +938,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
   | "RecoveryExpr" ->
     (* Unknown value *)
     let* ty = get_field "type" o in
-    Ok (RecoveryExpr ty)
+    Ok (RecoveryExpr (J_type.from_json ty))
 
   | "CharacterLiteral" ->
     let* i = with_field "value" cast_int o in
@@ -911,7 +964,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
       | Error e -> Error e
     ) o in
     let* ty = get_field "type" o in
-    Ok (MemberExpr {name=n; base=b; ty=ty})
+    Ok (MemberExpr {name=n; base=b; ty=J_type.from_json ty})
 
   | "DeclRefExpr" ->
     with_field "referencedDecl" (fun new_j ->
@@ -933,84 +986,96 @@ let rec parse_exp (j:json) : Expr.t j_result =
 
   | "IntegerLiteral" ->
     let* i = with_field "value" cast_string o in
-    Ok (IntegerLiteral (int_of_string i))
+    let i =
+      try
+        int_of_string i
+      with
+        Failure _ ->
+          prerr_endline ("Could not parse long: " ^ i);
+          if String.get i 0 = '-' then
+            Int.min_int
+          else
+            Int.max_int
+    in
+    Ok (IntegerLiteral i)
 
   | "MemberExpr" ->
     let* n = with_field "name" cast_string o in
     let* b = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
-    Ok (MemberExpr {name=n; base=b; ty=ty})
+    Ok (MemberExpr {name=n; base=b; ty=J_type.from_json ty})
 
   | "EnumConstantDecl" ->
-    let* v = parse_variable j in
+    let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (EnumConstantDecl {name=v; ty=ty})
+    Ok (Ident {name; ty=J_type.from_json ty; kind=EnumConstant})
 
   | "VarDecl" ->
-    let* v = parse_variable j in
+    let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (VarDecl {name=v; ty=ty})
+    Ok (Ident {name; ty=J_type.from_json ty; kind=Var})
     
   | "FunctionDecl" ->
     let* v = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (FunctionDecl {name=v; ty=ty})
+    Ok (Ident {name=v; ty=J_type.from_json ty; kind=Function})
 
   | "CXXMethodDecl" ->
-    let* v = parse_variable j in
+    let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (CXXMethodDecl {name=v; ty=ty})
+    Ok (Ident {name; ty=J_type.from_json ty; kind=CXXMethod})
 
   | "ConditionalOperator" ->
     let* (c, t, e) = with_field "inner"
       (cast_list_3 parse_exp parse_exp parse_exp) o
     in
     let* ty = get_field "type" o in
-    Ok (ConditionalOperator {cond=c; then_expr=t; else_expr=e; ty=ty})
+    Ok (ConditionalOperator
+      {cond=c; then_expr=t; else_expr=e; ty=J_type.from_json ty})
 
   | "UnaryExprOrTypeTraitExpr" ->
     let* ty = get_field "type" o in
-    Ok (SizeOfExpr ty)
+    Ok (SizeOfExpr (J_type.from_json  ty))
 
   | "ParmVarDecl" ->
-    let* v = parse_variable j in
+    let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (ParmVarDecl {name=v; ty=ty})
+    Ok (Ident {name; ty=J_type.from_json ty; kind=ParmVar})
 
   | "NonTypeTemplateParmDecl" ->
-    let* v = parse_variable j in
+    let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (NonTypeTemplateParmDecl {name=v; ty=ty})
+    Ok (Ident {name; ty=J_type.from_json ty; kind=NonTypeTemplateParm})
 
   | "UnresolvedLookupExpr" ->
     let* v = parse_variable j in
     let* tys = get_field "lookups" o >>= cast_list in
-    Ok (UnresolvedLookupExpr {name=v; tys=tys})
+    Ok (UnresolvedLookupExpr {name=v; tys=List.map J_type.from_json tys})
 
   | "CXXNewExpr" ->
     let* arg = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
-    Ok (CXXNewExpr {arg=arg; ty=ty})
+    Ok (CXXNewExpr {arg=arg; ty=J_type.from_json ty})
 
   | "CXXDeleteExpr" ->
     let* arg = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
-    Ok (CXXDeleteExpr {arg=arg; ty=ty})
+    Ok (CXXDeleteExpr {arg=arg; ty=J_type.from_json ty})
 
   | "UnaryOperator" ->
     let* op = with_field "opcode" cast_string o in
     let* c = with_field "inner" (cast_list_1 parse_exp) o in
     let* ty = get_field "type" o in
     let inc o =
-      BinaryOperator {ty=ty; opcode="="; lhs=c;
-        rhs=BinaryOperator{ty=ty; opcode=o; lhs=c; rhs=IntegerLiteral 1}}
+      BinaryOperator {ty=J_type.from_json ty; opcode="="; lhs=c;
+        rhs=BinaryOperator{ty=J_type.from_json ty; opcode=o; lhs=c; rhs=IntegerLiteral 1}}
     in
     Ok (match op with
     | "++" -> inc "+"
     | "--" -> inc "-"
     | "+" -> c
-    | "-" -> BinaryOperator {ty=ty; opcode=op; lhs=IntegerLiteral 0; rhs=c}
-    | _ -> UnaryOperator {ty=ty; opcode=op; child=c})
+    | "-" -> BinaryOperator {ty=J_type.from_json ty; opcode=op; lhs=IntegerLiteral 0; rhs=c}
+    | _ -> UnaryOperator {ty=J_type.from_json ty; opcode=op; child=c})
 
   | "CompoundAssignOperator" ->
     (* Convert: x += e into x = x + y *)
@@ -1018,11 +1083,14 @@ let rec parse_exp (j:json) : Expr.t j_result =
     let* lhs, rhs = with_field "inner" (cast_list_2 parse_exp parse_exp) o in
     let* opcode = with_field "opcode" cast_string o in
     (match Common.rsplit '=' opcode with
-      | Some (opcode, "") -> Ok (compound ty lhs opcode rhs)
+      | Some (opcode, "") -> Ok (compound (J_type.from_json ty) lhs opcode rhs)
       | _ -> root_cause "ERROR: parse_exp" j)
 
   | "BinaryOperator" ->
-    let ty = List.assoc_opt "type" o |> Ojson.unwrap_or C_type.j_int_type in
+    let ty = List.assoc_opt "type" o
+      |> Option.map J_type.from_json
+      |> Option.value ~default:J_type.int
+    in
     let* opcode = with_field "opcode" cast_string o in
     let* lhs, rhs = with_field "inner"
       (cast_list_2 parse_exp parse_exp) o
@@ -1036,7 +1104,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
     in
     let* loc = with_field "range" parse_location o in
     Ok (ArraySubscriptExpr {
-      ty=ty;
+      ty=J_type.from_json ty;
       lhs=lhs;
       rhs=rhs;
       location=Location.set_length (Location.length loc + 1) loc
@@ -1053,10 +1121,11 @@ let rec parse_exp (j:json) : Expr.t j_result =
     let* ty = get_field "type" o in
     Ok (
       match func, args with
-      | CXXMethodDecl {name=n; _}, [lhs; rhs] when Variable.name n = "operator=" ->
+      | Ident {name=n; kind=CXXMethod; _}, [lhs; rhs] when Variable.name n = "operator=" ->
         BinaryOperator {lhs=lhs; opcode="="; rhs=rhs; ty=to_type lhs}
       | (UnresolvedLookupExpr {name=n; _}, [lhs; rhs])
-      | (FunctionDecl {name=n; _}, [lhs; rhs]) ->
+      | (Ident {name=n; kind=Function; _}, [lhs; rhs]) ->
+        let ty = J_type.from_json ty in
         (match Variable.name n with
           | "operator-=" -> compound ty lhs "-" rhs  
           | "operator+=" -> compound ty lhs "+" rhs  
@@ -1070,7 +1139,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
           | "operator>>=" -> compound ty lhs ">>" rhs
           | _ -> CXXOperatorCallExpr {func=func; args=args; ty=ty}
         )
-      | _ -> CXXOperatorCallExpr {func=func; args=args; ty=ty}
+      | _ -> CXXOperatorCallExpr {func=func; args=args; ty=J_type.from_json ty}
     )
 
   | "CallExpr" ->
@@ -1081,7 +1150,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
       Ok (func, args)
     ) o in
     let* ty = get_field "type" o in
-    Ok (CallExpr {func=func; args=args; ty=ty})
+    Ok (CallExpr {func=func; args=args; ty=J_type.from_json ty})
 
   | "CXXBindTemporaryExpr"
   | "CXXFunctionalCastExpr"
@@ -1095,7 +1164,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
   | "CXXConstructExpr" ->
     let* ty = get_field "type" o in
     let* args = with_field_or "inner" (cast_map parse_exp) [] o in
-    Ok (CXXConstructExpr {args=args; ty=ty})
+    Ok (CXXConstructExpr {args=args; ty=J_type.from_json ty})
 
 
   | "CXXBoolLiteralExpr" ->
@@ -1115,7 +1184,7 @@ let parse_init (j:json) : Init.t j_result =
     let* ty = get_field "type" o in
     let* args = with_field_or "inner" (cast_map parse_exp) [] o in
     let open Init in
-    Ok (InitListExpr {ty=ty; args=args})
+    Ok (InitListExpr {ty=J_type.from_json ty; args=args})
 
   | _ ->
     let* e = parse_exp j in
@@ -1142,7 +1211,7 @@ let parse_decl (j:json) : Decl.t option j_result =
   else (
     let* name = parse_variable j in
     let* ty = get_field "type" o in
-    let inner = List.assoc_opt "inner" o |> Ojson.unwrap_or (`List []) in
+    let inner = List.assoc_opt "inner" o |> Option.value ~default:(`List []) in
     let* inner = cast_list inner in
     let inner = List.filter is_valid_j inner in
     let attrs, inits = List.partition (fun j ->
@@ -1150,10 +1219,10 @@ let parse_decl (j:json) : Decl.t option j_result =
         let* o = cast_object j in
         let* k = get_kind o in
         Ok (match k with
-          | "CUDASharedAttr" -> true
+          | "CUDASharedAttr" | "CUDADeviceAttr" -> true
           | _ -> false
         )
-      ) |> unwrap_or false
+      ) |> (Result.value ~default:false)
     ) inner in
     let* attrs = map parse_attr attrs in
     let* inits = map parse_init inits in
@@ -1168,7 +1237,7 @@ let parse_decl (j:json) : Decl.t option j_result =
       let open StackTrace in
       Error (Because (("Field 'init'", j), RootCause (msg, `List inner)))
     in
-    let ty_var = TyVariable.make ~name ~ty in
+    let ty_var = Ty_variable.make ~name ~ty:(J_type.from_json ty) in
     Ok (Some (Decl.make ~ty_var ~init ~attrs))
   )
 
@@ -1224,13 +1293,33 @@ let rec parse_stmt (j:json) : Stmt.t j_result =
         let* k = get_kind o in
         Ok (k = "TypedefDecl" || k = "EnumDecl" || k = "TypeAliasDecl")
       in
-      Rjson.unwrap_or false has_typedecl
+      Result.value ~default:false has_typedecl
     in
-    if has_typedecl then
-      Ok (CompoundStmt [])
-    else
-      let* children = with_field "inner" (cast_map parse_decl) o in
-      Ok (DeclStmt (children |> Common.flatten_opt))
+    if has_typedecl then Ok (CompoundStmt []) else
+    let static_assert : Stmt.t option =
+      o
+      |> with_field "inner" (cast_list_1 (fun j ->
+          (* Ensure the expected kind *)
+          let* o = cast_object j in
+          let* _ = expect_kind "StaticAssertDecl" o in
+          let* args = with_field "inner" (cast_map parse_exp) o in
+          let static_assert : Decl_expr.t = {
+            name = Variable.from_name "static_assert";
+            ty=J_type.void;
+            kind=Decl_expr.Kind.Function
+          } in
+          let func = Ident static_assert in
+          Ok (SExpr (CallExpr {func;args;ty=J_type.void}))
+        )
+      )
+      |> Result.to_option
+    in
+      (match static_assert with
+        | Some e -> Ok e
+        | None ->
+          let* children = with_field "inner" (cast_map parse_decl) o in
+          Ok (DeclStmt (children |> Common.flatten_opt))
+      )
   | Some "DefaultStmt" ->
     let* c = with_field "inner" (cast_list_1 parse_stmt) o in
     Ok (DefaultStmt c)
@@ -1255,7 +1344,11 @@ let rec parse_stmt (j:json) : Stmt.t j_result =
     (* TODO: do not parse LabelStmt *) 
     with_field "inner" (cast_list_1 parse_stmt) o
   | Some "ReturnStmt" ->
-    Ok ReturnStmt
+    let* e = with_field_or "inner" (
+      cast_list_1 (fun j -> parse_exp j |> Result.map Option.some)
+      ) None o
+    in
+    Ok (ReturnStmt e)
   | Some "GotoStmt" ->
     Ok GotoStmt
   | Some "BreakStmt" ->
@@ -1323,7 +1416,7 @@ let parse_param (j:json) : Param.t j_result =
   let* is_used =  with_field_or "isUsed" cast_bool false o in
   let* is_shared = with_field_or "shared" cast_bool false o in
 
-  let ty_var : TyVariable.t = TyVariable.make ~ty ~name in
+  let ty_var : Ty_variable.t = Ty_variable.make ~ty:(J_type.from_json ty) ~name in
   Ok (Param.make
     ~is_used:(is_refed || is_used)
     ~ty_var:ty_var
@@ -1337,7 +1430,7 @@ let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
     let* k = get_kind o in
     Ok (f k)
   in
-  res |> unwrap_or false
+  res |> Result.value ~default:false
 
 let wrap_error (msg:string) (j:Yojson.Basic.t): 'a j_result -> 'a j_result =
     function
@@ -1345,10 +1438,12 @@ let wrap_error (msg:string) (j:Yojson.Basic.t): 'a j_result -> 'a j_result =
     | Error e -> Rjson.because msg j e
 
 
-let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : Kernel.t j_result =
+let parse_kernel (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Kernel.t j_result =
   let open Rjson in
   (
     let* o = cast_object j in
+    let* ty = get_field "type" o |> Result.map J_type.from_json in
+    let ty = J_type.to_string ty in
     let* inner = with_field "inner" cast_list o in
     let attrs, inner =
       inner
@@ -1373,7 +1468,8 @@ let parse_kernel (type_params:c_type_param list) (j:Yojson.Basic.t) : Kernel.t j
     (* Parameters may be faulty, recover: *)
     let ps = List.map parse_param ps |> List.concat_map Result.to_list in
     Ok (Kernel.make
-      ~name:name
+      ~ty
+      ~name
       ~code:body
       ~params:ps
       ~type_params:type_params
@@ -1386,15 +1482,10 @@ let has_array_type (j:Yojson.Basic.t) : bool =
   let open Rjson in
   let is_array =
     let* o = cast_object j in
-    let is_used = match List.assoc_opt "isUsed" o with
-      | Some (`Bool true) -> true
-      | _ -> false
-    in
-    let* ty = get_field "type" o in
-    let* ty = parse_type ty in
-    Ok (is_used && C_type.is_array ty)
+    let* ty = get_field "type" o |> Result.map J_type.from_json in
+    Ok (J_type.matches C_type.is_array ty)
   in
-  is_array |> Rjson.unwrap_or false
+  is_array |> Result.value ~default:false
 
 
 let is_kernel (j:Yojson.Basic.t) : bool =
@@ -1412,7 +1503,7 @@ let is_kernel (j:Yojson.Basic.t) : bool =
       let attrs = attrs
         |> List.filter_map (fun j ->
           parse_attr j >>= (fun a -> Ok (Some a))
-          |> unwrap_or None
+          |> Result.value ~default:None
         )
       in
       let params, _ =
@@ -1428,32 +1519,60 @@ let is_kernel (j:Yojson.Basic.t) : bool =
       )
     ) else Ok false
   in
-  is_kernel |> unwrap_or false
+  is_kernel |> Result.value ~default:false
 
-let parse_type_param (j:Yojson.Basic.t) : c_type_param option j_result =
+let parse_type_param (j:Yojson.Basic.t) : Ty_param.t option j_result =
   let open Rjson in
   let* o = cast_object j in
   let* k = get_kind o in
   match k with
   | "TemplateTypeParmDecl" ->
     let* name = parse_variable j in
-    Ok (Some (PTemplateTypeParmDecl name))
+    Ok (Some (Ty_param.TemplateType name))
   | "NonTypeTemplateParmDecl" ->
     let* name = parse_variable j in
     let* ty = get_field "type" o in
-    Ok (Some (PNonTypeTemplateParmDecl {name=name; ty=ty}))
+    Ok (Some (Ty_param.NonTypeTemplate {name=name; ty=J_type.from_json ty}))
   | _ -> Ok None
 
-
-let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
+let parse_constant (j:Yojson.Basic.t) : Enum.Constant.t j_result =
   let open Rjson in
   let* o = cast_object j in
+  let* _ = expect_kind "EnumConstantDecl" o in
+  let* var = parse_variable j in
+  let* init = with_field_or "inner"
+    (cast_list_1
+      (fun j ->
+        let* e = parse_exp j in
+        match e with
+        | IntegerLiteral n -> Ok (Some n)
+        | _ -> root_cause ("Expecting an integer, but got something else") j
+      )
+    ) None o
+  in
+  let open Enum.Constant in
+  Ok {var; init}
+
+let parse_enum (j:Yojson.Basic.t) : Enum.t j_result =
+  let open Rjson in
+  let open Enum in
+  let* var = parse_variable j in
+  let* o = cast_object j in
+  let* constants = with_field_or "inner" (cast_map parse_constant) [] o in
+  Ok {var; constants}
+
+let rec parse_def (j:Yojson.Basic.t) : Def.t list j_result =
+  let open Rjson in
+  let open Def in
+  let* o = cast_object j in
   let* k = get_kind o in
-  let parse_k (type_params:c_type_param list) (j:Yojson.Basic.t) : c_def list j_result =
-    if is_kernel j then
+  let parse_k (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Def.t list j_result =
+    if is_kernel j then (
       let* k = parse_kernel type_params j in
-      Ok [Kernel k]
-    else Ok []
+      (if k.code = CompoundStmt [] then Ok []
+      else
+        Ok [Kernel k])
+    ) else Ok []
   in
   match k with
   | "FunctionTemplateDecl" ->
@@ -1464,14 +1583,15 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
        might even have some more parameters after the function
        declaration, but those are discarded, as I did not understand
        what they are for. *)
-    let rec handle (type_params:c_type_param list): Yojson.Basic.t list -> c_def list j_result =
+    let rec handle (type_params:Ty_param.t list): Yojson.Basic.t list -> Def.t list j_result =
       function
       | [] -> root_cause "Error parsing FunctionTemplateDecl: no FunctionDecl found" j
       | j :: l ->
         let* p = parse_type_param j in
         (match p with
         | Some p -> handle (p::type_params) l
-        | None -> parse_k type_params j)
+        | None ->
+          parse_k (List.rev type_params) j)
     in
     let* inner = with_field "inner" cast_list o in
     handle [] inner
@@ -1485,153 +1605,33 @@ let rec parse_def (j:Yojson.Basic.t) : c_def list j_result =
   | "NamespaceDecl" ->
     let* defs = with_field_or "inner" (cast_map parse_def) [] o in
     Ok (List.concat defs)
+  | "TypedefDecl" ->
+    let* name = with_field "name" cast_string o in
+    let* ty = get_field "type" o |> Result.map J_type.from_json in
+
+    (match J_type.to_c_type_res ty with
+    | Ok ty ->
+      if C_type.is_struct ty || C_type.is_array ty || C_type.is_function ty then
+        Ok []
+      else Ok [Typedef {name; ty;}]
+    | Error _ -> Ok [])
+  | "EnumDecl" ->
+    let* e = parse_enum j in
+    Ok [Enum e]
   | _ ->
     Ok []
 
 
 (* ------------------------------------------------- *)
 
-let rewrite_shared_arrays: c_program -> c_program =
-  (* Rewrites expressions: when it finds a variable that has been defined as
-     a shared variable, we replace that by an array subscript:
-     x becomes x[0] *)
-  let rw_exp (vars:Variable.Set.t) (e:Expr.t) : Expr.t =
-    if Variable.Set.is_empty vars then e else
-    e |> Expr.Visit.map (fun e ->
-      match e with
-      | VarDecl x ->
-        if Variable.Set.mem x.name vars
-        then ArraySubscriptExpr {
-          lhs=VarDecl x;
-          rhs=IntegerLiteral 0;
-          ty=x.ty;
-          location=Variable.location x.name
-        }
-        else e
-      | _ -> e)
-  in
-  (* When rewriting a variable declaration, we must return as the side-effect
-     the shadowing of the available variables when it makes sense *) 
-  let rw_decl (vars:Variable.Set.t) (d:Decl.t) : Variable.Set.t * Decl.t =
-    let vars =
-      let name = d |> Decl.ty_var |> TyVariable.name in
-      if Decl.is_shared d && not (Decl.ty_var d |> TyVariable.has_type C_type.is_array) then
-        Variable.Set.add name vars
-      else
-        Variable.Set.remove name vars
-    in
-    (vars, Decl.map_expr (rw_exp vars) d)
-  in
-  (* This is just a monadic map *)
-  let rec rw_list: 'a. (Variable.Set.t -> 'a -> Variable.Set.t * 'a) -> Variable.Set.t -> 'a list -> Variable.Set.t * 'a list =
-    fun f vars l ->
-        match l with
-        | [] -> (vars, [])
-        | x :: l ->
-          let (vars, x) = f vars x in
-          let (vars, l) = rw_list f vars l in
-          (vars, x::l)
-  in
-  (* We now rewrite statements *)
-  let rw_stmt (vars:Variable.Set.t) (s:Stmt.t) : Stmt.t =
-    let rec rw_s (vars:Variable.Set.t) (s: Stmt.t) : Variable.Set.t * Stmt.t =
-      let ret (s: Stmt.t) : Stmt.t = rw_s vars s |> snd in
-      let rw_e: Expr.t -> Expr.t = rw_exp vars in
-      match s with
-      | BreakStmt
-      | GotoStmt
-      | ReturnStmt
-      | ContinueStmt
-        -> (vars, s)
-      | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
-        (vars, IfStmt {cond=rw_e c; then_stmt=ret s1; else_stmt=ret s2})
-      | CompoundStmt l ->
-        (* This is one of the interesting cases, since we
-           propagate scoping through the monadic map (rw_list). *)
-        (vars, CompoundStmt (rw_list rw_s vars l |> snd))
-      | DeclStmt l ->
-        (* Variable declaration introduces a scope *)
-        let (vars, l) = rw_list rw_decl vars l in
-        (vars, DeclStmt l)
-      | WhileStmt {cond=e; body=s} ->
-        (vars, WhileStmt {cond=rw_e e; body=ret s})
-      | ForStmt {init=e1; cond=e2; inc=e3; body=s} ->
-        (* The init may create a scope *)
-        let (vars_body, e1) = match e1 with
-        | None -> (vars, None)
-        | Some (ForInit.Decls l) ->
-          let (vars, l) = rw_list rw_decl vars l in
-          (vars, Some (ForInit.Decls l))
-        | Some (ForInit.Expr e) -> (vars, Some (ForInit.Expr (rw_e e)))
-        in
-        let e2 = Option.map (rw_exp vars_body) e2 in
-        let e3 = Option.map (rw_exp vars_body) e3 in
-        (vars, ForStmt {init=e1; cond=e2; inc=e3; body=rw_s vars_body s |> snd})
-      | DoStmt {cond=e; body=s} ->
-        (vars, DoStmt {cond=rw_e e; body=ret s})
-      | SwitchStmt {cond=e; body=s} ->
-        (vars, SwitchStmt {cond=rw_e e; body=ret s})
-      | DefaultStmt s ->
-        (vars, DefaultStmt (ret s))
-      | CaseStmt  {case=e; body=s} ->
-        (vars, CaseStmt {case=rw_e e; body=ret s})
-      | SExpr e ->
-        (vars, SExpr (rw_e e))
-    in
-    rw_s vars s |> snd
-  in
-  let rec rw_p (vars:Variable.Set.t): c_program -> c_program =
-    function
-    | Declaration d :: p ->
-      let ty_var = d |> Decl.ty_var in
-      let vars = if Decl.is_shared d && not (ty_var |> TyVariable.has_type C_type.is_array)
-        then Variable.Set.add (TyVariable.name ty_var) vars
-        else vars
-      in
-      Declaration d :: rw_p vars p
-    | Kernel k :: p -> Kernel { k with code = rw_stmt vars k.code } :: rw_p vars p
-    | [] -> []
-  in
-  rw_p Variable.Set.empty
 
-let parse_program ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : c_program j_result =
+let parse_program ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : Program.t j_result =
   let open Rjson in
   let* o = cast_object j in
   let* inner = with_field "inner" (cast_map parse_def) o in
   let p = List.concat inner in
-  Ok (if rewrite_shared_variables then rewrite_shared_arrays p else p)
+  Ok (if rewrite_shared_variables then Program.rewrite_shared_arrays p else p)
 
 (* ------------------------------------------------------------------------ *)
 
-let type_param_to_s (p:c_type_param) : string =
-  let name = match p with
-  | PTemplateTypeParmDecl x -> x
-  | PNonTypeTemplateParmDecl x -> x.name
-  in
-  Variable.name name
-
-let kernel_to_s (k:Kernel.t) : Indent.t list =
-  let tps = if k.type_params <> [] then "[" ^
-      list_to_s type_param_to_s k.type_params ^
-    "]" else ""
-  in
-  let open Indent in
-  [
-    Line (KernelAttr.to_string k.attribute ^ " " ^ k.name ^
-      " " ^ tps ^ "(" ^ list_to_s Param.to_string k.params ^ ")");
-  ]
-  @
-  Stmt.to_string k.code
-
-let def_to_s (d:c_def) : Indent.t list =
-  let open Indent in
-  match d with
-  | Declaration d -> [Line (Decl.to_string d ^ ";")]
-  | Kernel k -> kernel_to_s k
-
-let program_to_s (p:c_program) : Indent.t list =
-  List.concat_map (fun k -> def_to_s k @ [Line ""]) p
-
-let print_program (p:c_program) : unit =
-  Indent.print (program_to_s p)
 

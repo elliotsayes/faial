@@ -1,9 +1,0 @@
-shared x;
-
-const local tid, global N where distinct [tid] ;
-
-foreach (i in 1 .. N) {
-    rw x[tid];
-    sync;
-    ro x[tid + i];
-}

@@ -7,8 +7,8 @@ open C_lang
 
 module VarSet = Variable.Set
 
-let parm_var_decl ?(ty=C_type.j_int_type) (name:string) : Expr.t =
-  ParmVarDecl {name=Variable.from_name name; ty=ty}
+let parm_var_decl ?(ty=J_type.int) (name:string) : Expr.t =
+  Ident {name=Variable.from_name name; ty=ty; kind=ParmVar}
 
 let tests = "tests" >::: [
 
@@ -35,19 +35,19 @@ let tests = "tests" >::: [
         opcode="+";
         lhs=parm_var_decl "x";
         rhs=IntegerLiteral 0;
-        ty=C_type.j_int_type;
+        ty=J_type.int;
     } |> assert_vars ["x"];
     BinaryOperator {
         opcode="+";
         lhs=IntegerLiteral 0;
         rhs=IntegerLiteral 0;
-        ty=C_type.j_int_type;
+        ty=J_type.int;
     } |> assert_vars [];
     BinaryOperator {
         opcode="+";
         lhs=parm_var_decl "x";
         rhs=parm_var_decl "y";
-        ty=C_type.j_int_type;
+        ty=J_type.int;
     } |> assert_vars ["x"; "y"];
   );
   "NestedLoops.make" >:: (fun _ ->
@@ -77,12 +77,12 @@ let tests = "tests" >::: [
       e_for 0 ~body:[
         e_for 1
       ] ~data:[
-        ReturnStmt;
+        ReturnStmt None;
         g_for 1 ~body:[]
       ]
     ] (
       g_for ~body:[
-        ReturnStmt;
+        ReturnStmt None;
         g_for 1 ~body:[]
       ] 0
     )
@@ -94,7 +94,7 @@ let tests = "tests" >::: [
         init=None;
         cond=None;
         inc=None;
-        data=ReturnStmt;
+        data=ReturnStmt None;
         body=[]
       }
     ]

@@ -3,7 +3,7 @@
  (public_name faial-drf)
  (name main)
  (modes exe)
- (modules main z3_solver)
+ (modules main app analysis tui jui z3_solver)
  (libraries
   ; 3rd-party
   cmdliner printbox printbox-text

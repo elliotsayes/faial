@@ -21,7 +21,7 @@ module Params = struct
   let summarize (k:Kernel.t) : json =
     let filter_params (pred:C_type.t -> bool) : json =
       k.params
-      |> List.filter (Param.has_type pred)
+      |> List.filter (Param.matches pred)
       |> List.map Param.name
       |> var_list_to_json
     in
@@ -37,7 +37,7 @@ end
 module GlobalDeclArrays = struct
   open C_lang
   let summarize (ds: Decl.t list) : json =
-    let ds = List.filter Decl.is_array ds in
+    let ds = List.filter (Decl.matches C_type.is_array) ds in
     let ds = List.filter Decl.is_shared ds in
     `Assoc [
       "shared arrays", List.map Decl.var ds |> var_list_to_json;
@@ -50,31 +50,26 @@ module Variables = struct
     let open Expr.Visit in
     e |> map (
       function
-      | MemberExpr {base=VarDecl {name=x; ty=ty}; name=f; _} ->
-        let x = Variable.update_name (fun n -> n ^ "." ^ f) x in
-        ParmVarDecl {name=x; ty=ty}
+      | MemberExpr {base=Ident x; name=f; _} ->
+        Ident (Decl_expr.update_name (fun n -> n ^ "." ^ f) x)
       | e' -> e'
     )
 
   (* Returns all variables present in an expression *)
-  let from_expr (e:Expr.t) : TyVariable.t Seq.t =
+  let from_expr (e:Expr.t) : Variable.t Seq.t =
     let open Expr.Visit in
     e |> fold (function
-      | ParmVarDecl v
-      | VarDecl v
-        -> Seq.return v
+      | Ident v when v.kind = Var || v.kind = ParmVar ->
+        Seq.return v.name
 
       | CXXBoolLiteral _
       | SizeOf _
       | Recovery _
       | CharacterLiteral _
-      | CXXMethodDecl _
       | FloatingLiteral _
-      | FunctionDecl _
       | IntegerLiteral _
-      | NonTypeTemplateParmDecl _
-      | EnumConstantDecl _
       | UnresolvedLookup _
+      | Ident _
       -> Seq.empty
 
       | UnaryOperator {child=e; _}
@@ -103,9 +98,8 @@ module Variables = struct
     )
 
   (* Given a sequence of c_var, generate a set of variables *)
-  let to_set (s:TyVariable.t Seq.t) : VarSet.t =
+  let to_set (s:Variable.t Seq.t) : VarSet.t =
     s
-    |> Seq.map (fun (x:TyVariable.t) -> x.name)
     |> List.of_seq
     |> VarSet.of_list
 
@@ -119,7 +113,7 @@ module Variables = struct
       (* Get all variables *)
       |> Seq.concat_map from_expr
       (* Keep threadIdx.x *)
-      |> Seq.filter TyVariable.is_tid
+      |> Seq.filter Variable.is_tid
       |> to_set
       |> var_set_to_json
     in
@@ -141,7 +135,7 @@ module Declarations = struct
 
       | Break
       | Goto
-      | Return
+      | Return _
       | Continue
       | SExpr _
         -> Seq.empty
@@ -163,7 +157,7 @@ module Declarations = struct
   let shared_arrays (s: Stmt.t) : VarSet.t =
     to_seq s
     |> Seq.filter Decl.is_shared
-    |> Seq.map Decl.ty_var
+    |> Seq.map Decl.var
     |> Variables.to_set
 
   let summarize (s: Stmt.t) : json =
@@ -174,14 +168,13 @@ module Declarations = struct
     in
     let int_count =
       s
-      |> Seq.map Decl.ty_var
-      |> Seq.filter (TyVariable.has_type C_type.is_int)
+      |> Seq.filter (Decl.matches C_type.is_int)
       |> Seq.length
     in
     let shared_arrays =
       s
       |> Seq.filter Decl.is_shared
-      |> Seq.map Decl.ty_var
+      |> Seq.map Decl.var
       |> Variables.to_set
       |> var_set_to_json
     in
@@ -198,20 +191,22 @@ module Calls = struct
   type t = {func: Expr.t; args: Expr.t list}
 
   let function_name (x:t) : Variable.t option =
-    Expr.to_variable x.func
+    match x.func with
+    | Ident x -> Some x.name
+    | _ -> None
 
   let expressions (x:t) : Expr.t Seq.t =
     Seq.return x.func
     |> Seq.append (List.to_seq x.args)
 
-  let variables (x:t) : TyVariable.t Seq.t =
+  let variables (x:t) : Variable.t Seq.t =
     expressions x
     |> Seq.concat_map Variables.from_expr
 
   let uses_vars (vs:VarSet.t) (x:t) : bool =
     x
     |> variables
-    |> Seq.exists (fun (x:TyVariable.t) -> VarSet.mem x.name vs)
+    |> Seq.exists (fun (x:Variable.t) -> VarSet.mem x vs)
 
   (* Returns all function calls in a statement, as
         a sequence. *)
@@ -229,14 +224,9 @@ module Calls = struct
       | SizeOfExpr _
       | RecoveryExpr _
       | CharacterLiteral _
-      | CXXMethodDecl _
+      | Ident _
       | FloatingLiteral _
-      | FunctionDecl _
       | IntegerLiteral _
-      | NonTypeTemplateParmDecl _
-      | ParmVarDecl _
-      | VarDecl _
-      | EnumConstantDecl _
       | UnresolvedLookupExpr _
       -> Seq.empty
 
@@ -270,9 +260,7 @@ module Calls = struct
       c.args
       |> List.exists (fun e ->
         Expr.to_type e
-        |> parse_type
-        |> Result.map C_type.is_array
-        |> Rjson.unwrap_or false
+        |> J_type.matches C_type.is_array
       )
     )
 
@@ -282,7 +270,7 @@ module Calls = struct
        in the position of the function *)
     |> Seq.concat_map (fun c ->
       match c.func with
-      | FunctionDecl x -> Seq.return (Variable.name x.name)
+      | Ident x when x.kind = Function -> Seq.return (Variable.name x.name)
       | _ -> Seq.empty
     )
     (* Count how many times each name is used *)
@@ -313,8 +301,8 @@ module Calls = struct
     in
     let uses_global =
       k.params
-      |> List.filter (Param.has_type C_type.is_array)
-      |> List.map Param.ty_var
+      |> List.filter (Param.matches C_type.is_array)
+      |> List.map (fun x -> Param.ty_var x |> Ty_variable.name)
       |> List.to_seq
       |> Variables.to_set
       |> VarSet.union (globals |> List.map Decl.var |> VarSet.of_list)
@@ -374,7 +362,7 @@ module NestedLoops = struct
         }]
       | BreakStmt
       | GotoStmt
-      | ReturnStmt
+      | ReturnStmt _
       | ContinueStmt
       | DeclStmt _
       | SExpr _
@@ -461,15 +449,15 @@ module NestedLoops = struct
         let loop_vars =
           f.init
           |> Option.map ForInit.loop_vars
-          |> Ojson.unwrap_or []
+          |> Option.value ~default:[]
           |> VarSet.of_list
         in
         (* Check if an expression uses a bound variable *)
         let uses_bound (e:Expr.t) : bool =
           (* Range over all variables used in e *)
           Variables.from_expr e
-          |> Seq.exists (fun (x:TyVariable.t) ->
-            VarSet.mem x.name bound
+          |> Seq.exists (fun (x:Variable.t) ->
+            VarSet.mem x bound
           )
         in
         let in_init =
@@ -524,33 +512,27 @@ module MutatedVar = struct
 
   let rec get_writes (e:Expr.t) (writes:VarSet.t) : VarSet.t =
     match e with
-    | BinaryOperator {lhs=ParmVarDecl{name=x; _}; opcode="="; rhs=s2; ty=ty}
-    | BinaryOperator {lhs=VarDecl{name=x; _}; opcode="="; rhs=s2; ty=ty}
-    ->
-      let is_int =
-        match parse_type ty with
-        | Ok ty -> C_type.is_int ty
-        | Error _ -> false
+    | BinaryOperator {lhs=Ident {name=x; kind; _}; opcode="="; rhs=s2; ty}
+      when kind=ParmVar || kind =Var ->
+      let w =
+        if J_type.matches C_type.is_int ty then
+          VarSet.add x writes
+        else
+          writes
       in
-      let w = if is_int then VarSet.add x writes else writes in
       get_writes s2 w
 
     | CallExpr {func=f; args=a; _}
     | CXXOperatorCallExpr {func=f; args=a; _}
     -> f::a |> List.fold_left (fun writes e -> get_writes e writes) writes
 
-    | ParmVarDecl _
-    | VarDecl _
+    | Ident _
     | CXXBoolLiteralExpr _
     | SizeOfExpr _
     | RecoveryExpr _
     | CharacterLiteral _
-    | CXXMethodDecl _
     | FloatingLiteral _
-    | FunctionDecl _
     | IntegerLiteral _
-    | NonTypeTemplateParmDecl _
-    | EnumConstantDecl _
     | UnresolvedLookupExpr _
     -> writes
 
@@ -606,7 +588,7 @@ module MutatedVar = struct
           let env2 =
             l
             |> List.map (fun x -> (Decl.var x, scope))
-            |> Variable.MapUtil.from_list in
+            |> Variable.Map.of_list in
           let env = VarMap.union (fun _ e1 e2 ->
             Some (max e1 e2)
           ) env2 env
@@ -618,6 +600,7 @@ module MutatedVar = struct
           let (env, vars) = typecheck (scope + 1) env s in
           (env, VarSet.union (typecheck_e e) vars)
 
+        | ReturnStmt (Some e)
         | SExpr e ->
           (env, typecheck_e e)
 
@@ -633,7 +616,7 @@ module MutatedVar = struct
 
         | BreakStmt
         | GotoStmt
-        | ReturnStmt
+        | ReturnStmt None
         | ContinueStmt
         -> (env, VarSet.empty)
 
@@ -710,12 +693,12 @@ module Loops = struct
 
   let is_do : t -> bool =
     function
-    | For _ -> true
+    | Do _ -> true
     | _ -> false
 
   let is_while : t -> bool =
     function
-    | For _ -> true
+    | While _ -> true
     | _ -> false
 
   let has_early_exit (s: t) : bool =
@@ -733,7 +716,7 @@ module Loops = struct
       function
       | BreakStmt
       | GotoStmt
-      | ReturnStmt
+      | ReturnStmt _
       | ContinueStmt ->
         true
       | _ ->
@@ -799,10 +782,11 @@ module ForEach = struct
       Seq.return (Do {body=s; cond=c})
     | WriteAccessStmt _
     | ReadAccessStmt _
+    | AtomicAccessStmt _
     | BreakStmt
     | GotoStmt
     | ContinueStmt
-    | ReturnStmt
+    | ReturnStmt _
     | DeclStmt _
     | SExpr _
       -> Seq.empty
@@ -820,12 +804,18 @@ module ForEach = struct
     to_seq s
     |> Seq.map (function
       | For r ->
-        let o = match D_to_imp.Default.infer_range r with
-        | Ok (Some r) -> Some r
-        | _ -> None
+        let o = match D_to_imp.Default.infer_for r with
+          | Ok (Some r) -> Some r
+          | _ -> None
         in
         (For r, o)
-      | l -> (l, None)
+      | Do _ as l -> (l, None)
+      | While {cond;body} as r  ->
+       let o = match D_to_imp.Default.infer_while {cond;body} with
+          |Ok (Some(r,_)) -> Some r
+          |_ -> None
+        in
+        (r, o)
     )
 
   let summarize (s:Stmt.t) : json =
@@ -852,35 +842,44 @@ module Accesses = struct
   open Imp
 
   type t = Variable.t * Access.t
-  let cond_accesses (s: stmt) : t Seq.t =
-    let rec cond_accesses (in_cond:bool) (s: stmt) : t Seq.t =
+
+  let cond_accesses (s: Stmt.t) : t Seq.t =
+    let rec cond_accesses (in_cond:bool) (s: Stmt.t) : t Seq.t =
       match s with
+      | Call _
       | Decl _
-      | Sync
+      | Assign _
+      | Sync _
       | Assert _
       | LocationAlias _ ->
         Seq.empty
-      | Acc a ->
-        if in_cond then (Seq.return a) else Seq.empty
+      | Atomic a ->
+        if in_cond then (Seq.return (Imp.Atomic_write.to_acc a)) else Seq.empty
+      | Read r ->
+        if in_cond then (Seq.return (Imp.Read.to_acc r)) else Seq.empty
+      | Write w ->
+        if in_cond then (Seq.return (Imp.Write.to_acc w)) else Seq.empty
       | Block l ->
         Seq.concat_map (cond_accesses in_cond) (List.to_seq l)
       | If (_, s1, s2) ->
         Seq.append (cond_accesses true s1) (cond_accesses true s2)
-      | For (_, s) ->
+      | Star s | For (_, s) ->
         cond_accesses in_cond s
     in
     cond_accesses false s
 
   (* Search for all loops available *)
-  let all_accesses: stmt -> t Seq.t =
-    let f (s:stmt) =
+  let all_accesses: Stmt.t -> t Seq.t =
+    let f (s:Stmt.t) =
       match s with
-      | Acc a -> Some a
+      | Read r -> Some (Imp.Read.to_acc r)
+      | Write w -> Some (Imp.Write.to_acc w)
+      | Atomic w -> Some (Imp.Atomic_write.to_acc w)
       | _ -> None
     in
-    find_all_map f
+    Stmt.find_all_map f
 
-  let summarize (s:stmt) : json =
+  let summarize (s:Stmt.t) : json =
     let elems = all_accesses s |> List.of_seq in
     let cond_elems = cond_accesses s |> List.of_seq in
     let get_vars (x, y) = List.map fst x, List.map fst y in
@@ -906,28 +905,28 @@ end
 module Divergence = struct
   open Imp
 
-  type t = stmt
+  type t = Stmt.t
 
   (* Search for all loops available *)
-  let branch_with_tids: stmt -> t Seq.t =
-    let f (s:stmt) =
+  let branch_with_tids: Stmt.t -> t Seq.t =
+    let f (s:Stmt.t) =
       match s with
       | If (c, _, _) -> Freenames.contains_tid_bexp c
       | For (r, _) -> Freenames.contains_tid_range r
       | _ -> false
     in
-    find_all f
+    Stmt.find_all f
 
-  let summarize (s:stmt) : json =
+  let summarize (s:Stmt.t) : json =
     let elems = branch_with_tids s |> List.of_seq in
     let for_count =
       elems
-      |> List.filter is_for
+      |> List.filter Stmt.is_for
       |> List.length
     in
     let if_count =
       elems
-      |> List.filter is_if
+      |> List.filter Stmt.is_if
       |> List.length
     in
     `Assoc [
@@ -938,11 +937,10 @@ end
 
 
 module Kernel = struct
-  open Imp
 
-  let summarize (k:p_kernel) : json =
+  let summarize (k:Imp.Kernel.t) : json =
     let arrays =
-      k.p_kernel_arrays
+      k.arrays
       |> Variable.Map.bindings
       |> List.map (fun ((k:Variable.t), a) ->
         let open Memory in
@@ -955,7 +953,7 @@ module Kernel = struct
       )
     in
     `Assoc [
-      "name", `String k.p_kernel_name;
+      "name", `String k.name;
       "arrays", `List arrays;
     ]
 end

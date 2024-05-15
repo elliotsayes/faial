@@ -9,26 +9,9 @@
 -->
 
 Instructions:
-1. Extract the binary distribution of [`faial.tar.bz2`](https://gitlab.com/umb-svl/faial/-/jobs/artifacts/master/raw/bundle/faial.tar.bz2?job=bundle) and ensure that `bin` is in your `PATH`
-2. Install [`libz3.so >= 4.11.2`](https://github.com/Z3Prover/z3/releases/download/z3-4.11.2/z3-4.11.2-x64-glibc-2.31.zip); Package `libz3-4` in Debian/Ubuntu; `z3-libs` in Fedora.
-3. Add the `bin` directory to your `PATH`
-```
-$ tar xvf faial.tar.bz2 
-LICENSE
-README.md
-bin/
-bin/faial-drf
-bin/c-to-json
-bin/cu-to-json
-bin/c-ast
-bin/faial-bc
-bin/faial-bc-dyn
-share/
-share/c-to-json/
-share/c-to-json/include/
-...
-```
-
+1. Create a directory to hold the binary distribution, say `/opt/faial`
+2. Extract the binary distribution archive [`faial.tar.bz2`](https://gitlab.com/umb-svl/faial/-/jobs/artifacts/master/raw/bundle/faial.tar.bz2?job=bundle)
+3. (Optional) Add `/opt/faial` to the `PATH`
 
 # [Usage and tutorial](tutorial/README.md)
 
@@ -45,7 +28,7 @@ Next, feel free to access the [`tutorial/`](tutorial/) directory!
 ## Dependencies
 
 * [opam `>= 2.0`](https://opam.ocaml.org/)
-* [ocamlc `>= 4.14.0`](https://ocaml.org/)
+* [ocamlc `>= 5.1`](https://ocaml.org/)
 
 ### 1. Setup
 
@@ -99,13 +82,13 @@ $ sudo make install # installs to /usr/local/bin
 $ cd ..
 ```
 
-Install `ocaml 4.14.0`:
+Install `ocaml 5.1.1`:
 ```
 $ # Install OCaml's package manager:
 $ sudo wget https://github.com/ocaml/opam/releases/download/2.1.4/opam-2.1.4-x86_64-linux -O /usr/bin/opam
 $ sudo chmod a+x /usr/bin/opam
-$ # Install OCaml 4.14
-$ opam init --compiler=4.14.0
+$ # Install OCaml 5.1.1
+$ opam init --compiler=5.1.1
 $ # Set environment variables
 $ eval $(opam env)
 ```

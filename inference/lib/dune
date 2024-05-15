@@ -1,4 +1,4 @@
 (library
   (name inference)
-  (libraries stage0 protocols))
+  (libraries imp stage0 protocols))
 

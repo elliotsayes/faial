@@ -5,8 +5,6 @@ variables:
 .cache: &global_cache
   before_script:
     - export PATH="$PATH:$CI_PROJECT_DIR"
-    - opam --version
-    - ocamlc --version
 
   cache:
     key: "Ubuntu-$CI_COMMIT_REF_NAME-1"
@@ -17,10 +15,11 @@ variables:
 test:
   <<: *global_cache
   script:
-    - rm -f ./target/*/faial
     - cd "$CI_PROJECT_DIR"
+    - rm -f ./target/*/faial
     - eval $(opam config env)
-    - export PATH="$PATH:$PWD"
+    - ocamlc --version
+    - export PATH="$PWD:$PATH"
     - make
     - make test
 
@@ -30,6 +29,7 @@ build-dist:
     - cd "$CI_PROJECT_DIR"
     - rm -f ./target/*/faial
     - eval $(opam config env)
+    - ocamlc --version
     - dune build --release
     - cp -Lr _build/install/default/bin/* ./
 
@@ -54,16 +54,7 @@ bundle:
     - cd $CI_PROJECT_DIR
     - mkdir bundle
     - cd bundle
-    # c-to-json:
-    - wget -nv --content-disposition "https://gitlab.com/umb-svl/c-to-json/-/jobs/artifacts/master/raw/build/c-to-json-bin.tar.bz2?job=build&inline=false" -O c-to-json-bin.tar.bz2
-    - tar xvf c-to-json-bin.tar.bz2
-    - rm c-to-json-bin.tar.bz2
-    # faial:
-    - cp ../faial-bc-dyn ../faial-bc ../c-ast ../faial-drf bin/
-    - cp ../README.md ../LICENSE  ./
-    # display tree & bundle:
-    - tree
-    - tar jcvf faial.tar.bz2 *
+    - ../scripts/ci.sh
 
   artifacts:
     paths:

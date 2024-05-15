@@ -4,10 +4,11 @@ module StringOT = struct
 end
 
 module MapUtil (M:Map.S) = struct
-  let from_list (l:(M.key * 'a) list) : 'a M.t =
-    List.fold_left (fun m (k,v) ->
-      M.add k v m
-    ) M.empty l
+  let union_left (m1: 'a M.t) (m2: 'a M.t) : 'a M.t =
+    M.union (fun _ o _ -> Some o) m1 m2
+
+  let union_right (m1: 'a M.t) (m2: 'a M.t) : 'a M.t =
+    union_left m2 m1
 end
 
 module MapSetUtil (S:Set.S) (M:Map.S with type key = S.elt) = struct
@@ -27,6 +28,9 @@ module StringSet = Set.Make(StringOT)
 module StringMap = Map.Make(StringOT)
 module StringMapUtil = MapUtil(StringMap)
 module StringMapSetUtil = MapSetUtil(StringSet)(StringMap)
+
+module IntMap = Map.Make(struct type t = int let compare = compare end)
+module IntSet = Set.Make(struct type t = int let compare = compare end)
 
 let append_tr (l1:'a list) (l2:'a list) : 'a list =
   let rec app (ret:'a list -> 'a list) (l:'a list) : 'a list =
@@ -56,15 +60,30 @@ let join (sep:string) (elems:string list) : string =
   List.fold_left on_elem "" (List.rev elems)
 
 let rsplit (c:char) (s:string) :  (string * string) option =
-  match String.rindex_opt s c with
-  | Some idx -> Some (String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1))
-  | None -> None
+  String.rindex_opt s c
+  |> Option.map (fun idx ->
+    String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1)
+  )
 
 let split (c:char) (s:string) :  (string * string) option =
-  match String.index_opt s c with
-  | Some idx -> Some (String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1))
-  | None -> None
+  String.index_opt s c
+  |> Option.map (fun idx ->
+    String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1)
+  )
 
+let last (l:'a list) : ('a list * 'a) option =
+  match l with
+  | [] -> None
+  | _ ->
+    let rec iter (l:'a list) =
+      match l with
+      | [x] -> [], x
+      | [] -> failwith "Does not support emptylist"
+      | x :: l ->
+        let (l, y) = iter l in
+        (x::l, y)
+    in
+    Some (iter l)
 
 let list_is_empty (l:'a list) : bool =
   match l with
@@ -251,11 +270,9 @@ let wrap
   | Ok bv -> Ok bv
   | Error (e:'e) -> error_handler e
 
-(* Convert an optional boolean into a boolean, where None represents false *)
-let unwrap_or (default:'a): ('a, 'e) Result.t -> 'a =
-  function
-  | Ok v -> v
-  | Error _ -> default
+let string_split_lines (x:string) : string list =
+   let eol = Str.regexp "\r?\n" in
+   Str.split eol x
 
 (* Read a range of lines: offset has base 0 *)
 let get_lines ~offset ~count (filename:string) : string list =
@@ -282,90 +299,3 @@ let get_line offset filename =
   match get_lines filename ~offset ~count:1 with
   | [l] -> l
   | _ -> failwith "Unexpected output"
-
-module type CloseProcess = sig
-  type t
-  val close_process : t -> Unix.process_status
-end
-
-module WithProcess (C:CloseProcess) = struct
-  let with_process
-    (handle:C.t -> 'a)
-    (ch:C.t)
-  :
-    (Unix.process_status * 'a)
-  =
-    let res = try handle ch with
-      | exc ->
-        let _ = C.close_process ch in
-        raise exc
-    in
-      (C.close_process ch, res)
-end
-
-module WithProcessIn = WithProcess(struct
-  type t = in_channel
-  let close_process = Unix.close_process_in
-end)
-
-let with_process_in :
-  (in_channel -> 'a) ->
-  in_channel ->
-  (Unix.process_status * 'a)
-=
-  WithProcessIn.with_process
-
-module WithProcessOut = WithProcess(struct
-  type t = out_channel
-  let close_process = Unix.close_process_out
-end)
-
-let with_process_out :
-  (out_channel -> 'a) ->
-  out_channel ->
-  (Unix.process_status * 'a)
-=
-  WithProcessOut.with_process
-
-module WithProcessInOut = WithProcess(struct
-  type t = in_channel * out_channel
-  let close_process = Unix.close_process
-end)
-
-let with_process_in_out :
-  (in_channel * out_channel -> 'a) ->
-  in_channel * out_channel ->
-  (Unix.process_status * 'a)
-=
-  WithProcessInOut.with_process
-
-let ic_to_string ?(chunk_size=1024) (ic:in_channel) : string =
-  let buffer = Buffer.create chunk_size in
-  let rec loop () =
-    try
-      Buffer.add_channel buffer ic chunk_size; loop ()
-    with End_of_file ->
-      Buffer.contents buffer
-  in
-  loop ()
-
-let process_status_to_string : Unix.process_status -> string =
-  function
-  | WEXITED n -> "Process exited with return code: " ^ string_of_int n
-  | WSIGNALED n -> "Process was killed by a signal: " ^ string_of_int n
-  | WSTOPPED n -> "Process was stopped by a signal: " ^ string_of_int n
-
-(*
-  Runs a program with a string given as an input
-  *)
-let run ?(stdin="") ~exe args : (Unix.process_status * string) =
-  let cmd = Filename.quote_command exe args in
-  Unix.open_process cmd
-  |> with_process_in_out (fun (ic, oc) ->
-    (* Send the expression to be processed *)
-    output_string oc stdin;
-    (* Close output to ensure it is processed *)
-    close_out oc;
-    (* Receive the output *)
-    ic_to_string ic
-  )

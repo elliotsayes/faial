@@ -105,6 +105,9 @@ let tests = "tests" >::: [
           |> Slice.substring given)
     )
   );
+  "highest_power" >:: (fun _ ->
+    assert_equal (highest_power ~base:2 10) 8 ~printer:string_of_int;
+  );
 ]
 
 let _ = run_test_tt_main tests

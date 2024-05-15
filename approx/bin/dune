@@ -1,0 +1,9 @@
+(executable
+ (name main)
+ (libraries
+    ; 1st-party
+    approx inference stage0 protocols
+    ; 3rd-party
+    cmdliner
+  )
+)

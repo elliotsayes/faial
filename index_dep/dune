@@ -1,6 +1,0 @@
-
-(executable
- (name data_dep)
- (modes exe)
- (modules data_dep indexflow)
- (libraries inference stage0 protocols cmdliner))

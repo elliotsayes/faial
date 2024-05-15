@@ -1,17 +1,31 @@
-open Inference
 open Protocols
 
 open OUnit2
 open Exp
 open Imp
 
+let assert_var (expected:Variable.t) (given:Variable.t)  =
+  let msg = "Expected: " ^ Variable.name expected ^ "\nGiven: " ^ Variable.name given in
+  assert_equal expected given ~msg
+
 let assert_nexp (expected:nexp) (given:nexp) =
   let msg = "Expected: " ^ Exp.n_to_string expected ^ "\nGiven: " ^ Exp.n_to_string given in
   assert_equal expected given ~msg
 
-let assert_post (expected:Post.prog) (given:Post.prog) =
-  let msg = "Expected:\n" ^ Post.prog_to_s expected ^ "\nGiven:\n" ^ Post.prog_to_s given in
+let assert_post (expected:Scoped.t) (given:Scoped.t) =
+  let msg =
+    "Expected:\n" ^ Scoped.to_string expected ^
+    "\nGiven:\n" ^ Scoped.to_string given
+  in
   assert_equal expected given ~msg
+
+let assert_ea (expected:Encode_assigns.t) (given:Encode_assigns.t) =
+  let msg =
+    "Expected:\n" ^ Encode_assigns.to_string expected ^
+    "\nGiven:\n" ^ Encode_assigns.to_string given
+  in
+  assert_equal expected given ~msg
+
 let tests = "test_predicates" >::: [
   "imp_to_post_1" >:: (fun _ ->
     (*
@@ -20,28 +34,25 @@ let tests = "test_predicates" >::: [
       *)
     let id = Variable.from_name "id" in
     let sq = Variable.from_name "s_Q" in
-    let mk_acc e = Access.{index = [Var e]; mode = Mode.Wr} in
-    let wr = Acc (sq, mk_acc id) in
-    let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
-    let p = Block [
+    let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
+    let inc (x:Variable.t) = Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))] in
+    let p = Imp.Stmt.Block [
       inc id;
       wr;
     ] in
     (* Translate: *)
-    let p : Post.prog = p |> imp_to_post in
+    let (_, p) = Scoped.from_stmt (Params.empty, p) in
     (* Test: *)
-    let open Imp.Post in
+    let open Imp.Scoped in
     (match p with
-    | [
-        Decl (_, Local, Some e1,[ (* local id = 32 + id; *)
-          Acc (_, {index=[e2]; _}) (* rw s_Q[id]; *)
-        ])
-      ]
+    | Decl ({init=Some e1; _}, (* local id = 32 + id; *)
+        Seq (Acc (_, {index=[e2]; _}), Skip) (* rw s_Q[id]; *)
+      )
       ->
       assert_nexp (n_plus (Num 32) (Var id)) e1;
       assert_nexp (Var id) e2;
       ()
-    | _ -> assert false
+    | _ -> assert_failure (Scoped.to_string p)
     );
     ()
   );
@@ -52,16 +63,16 @@ let tests = "test_predicates" >::: [
       *)
     let id = Variable.from_name "id" in
     let sq = Variable.from_name "s_Q" in
-    let p : Post.prog = [
-      let open Post in
-      Decl (id, Local, Some (n_plus (Num 32) (Var id)),[ (* local id = 32 + id; *)
-        Acc (sq, {index=[Var id]; mode = Wr}) (* rw s_Q[id]; *)
-      ])
-    ] in
-    let p : Post.prog = Post.inline_decls Variable.Set.empty p in
+    let p : Scoped.t =
+      Decl (Decl.set id (n_plus (Num 32) (Var id)), (* local id = 32 + id; *)
+        Acc (sq, {index=[Var id]; mode = Write None}) (* rw s_Q[id]; *)
+      )
+    in
+    let p =
+      Encode_assigns.from_scoped Variable.Set.empty p in
     match p with
-    | [Post.Acc (_, {index=[e]; mode = Wr}) (* rw s_Q[32 + id]; *)
-      ] ->
+    | Acc (_, {index=[e]; mode = Write None}) (* rw s_Q[32 + id]; *)
+      ->
       assert_nexp (n_plus (Num 32) (Var id)) e;
       ()
     | _ -> assert false
@@ -77,34 +88,40 @@ let tests = "test_predicates" >::: [
     let id = Variable.from_name "id" in
     let tid = Variable.from_name "threadIdx.x" in
     let sq = Variable.from_name "s_Q" in
-    let mk_acc e = Access.{index = [Var e]; mode = Wr} in
-    let wr = Acc (sq, mk_acc id) in
-    let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
-    let p = Block [
-      Decl[(tid, Local, None)];
-      Decl [(id, Local, Some (Var tid))];
+    let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
+    let inc (x:Variable.t) =
+      Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))]
+    in
+    let p = Imp.Stmt.(Block [
+      Decl [Decl.unset tid];
+      Decl [Decl.set id (Var tid)];
       wr;
       inc id;
       wr;
-    ] in
+    ]) in
     (* Translate: *)
-    let p : Post.prog = p |> imp_to_post in
+    let (_, p) = Scoped.from_stmt (Params.empty, p) in
     (* Test: *)
     (match p with
-    | [
-       Post.(
-        Decl (v1, Local, None,[ (*  local threadIdx.x; *)
-          Decl (v2, Local, Some v2_e, (* local id = threadIdx.x; *)
-            [
-              Acc (_, {index=[e1]; _}); (* rw s_Q[id]; *)
-              Decl (v3, Local, Some v3_e, [(* local id = 32 + id; *)
-                Acc (_, {index=[e2]; _}) (* rw s_Q[id]; *)
-              ])
-            ]
+    | Scoped.(
+        Decl ({var=v1; init=None; _}, (*  local threadIdx.x; *)
+          Decl ({var=v2; init=Some v2_e; _}, (* local id = threadIdx.x; *)
+            Seq (
+              Acc (_, {index=[e1]; _}), (* rw s_Q[id]; *)
+              Decl ({var=v3; init=Some v3_e; _}, (* local id = 32 + id; *)
+                Seq (
+                  Acc (_, {index=[e2]; _}), (* rw s_Q[id]; *)
+                  Skip
+                )
+              )
+            )
           )
-        ]))
-      ] when v1 = tid && v2 = id && v3 = id
+        )
+      )
       ->
+      assert_var tid v1;
+      assert_var id v2;
+      assert_var id v3;
       let inc e = n_plus (Num 32) e in
       let id = Var id in
       assert_nexp id e1;
@@ -112,7 +129,7 @@ let tests = "test_predicates" >::: [
       assert_nexp id e2;
       assert_nexp (inc id) v3_e;
       ()
-    | _ -> assert false
+    | _ -> assert_failure (Scoped.to_string p)
     );
     ()
   );
@@ -126,34 +143,36 @@ let tests = "test_predicates" >::: [
       *)
     let id = Variable.from_name "id" in
     let tid = Variable.from_name "threadIdx.x" in
-    let wr = Acc (Variable.from_name "s_Q", {index = [Var id]; mode = Wr}) in
-    let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
-    let p = Block [
-      Decl[(tid, Local, None)];
-      Decl [(id, Local, Some (Var tid))];
+    let sq = Variable.from_name "s_Q" in
+    let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
+    let inc (x:Variable.t) =
+      Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))]
+    in
+    let p = Imp.Stmt.(Block [
+      Decl [Decl.unset tid];
+      Decl [Decl.set id (Var tid)];
       wr;
       inc id;
       wr;
-    ] in
+    ]) in
     (* Translate: *)
-    let p : Proto.prog = p
-      |> imp_to_post
-      |> Post.inline_decls Variable.Set.empty
-      |> post_to_proto
+    let (_, p) = Scoped.from_stmt (Params.empty, p) in
+    let p : Proto.Code.t = p
+      |> Encode_assigns.from_scoped Variable.Set.empty
+      |> Encode_asserts.from_encode_assigns
     in
     (* Test: *)
     begin
-      let open Proto in
       match p with
-      | [
-          Acc (_, {index=[e1]; _});
-          Acc (_, {index=[e2]; _})] ->
+      | Decl {body=Seq (
+          Acc (_, {index=[e1]; _}),
+          Seq (Acc (_, {index=[e2]; _}), Skip) ); _} ->
         let inc e = n_plus (Num 32) e in
         let tid = Var tid in
         assert_nexp tid e1;
         assert_nexp (inc tid) e2;
         ()
-      | _ -> assert false
+      | _ -> assert_failure ("Pattern matching failed:\n" ^ Proto.Code.to_string p)
     end;
     ()
   );
@@ -176,44 +195,51 @@ let tests = "test_predicates" >::: [
     let m = Variable.from_name "m" in
     let k = Variable.from_name "k" in
     let id = Variable.from_name "id" in
-    let wr = Acc (Variable.from_name "s_Q", {index = [Var id]; mode = Wr}) in
-    let inc (x:Variable.t) = Decl [(x, Local, Some (n_plus (Num 32) (Var x)))] in
-    let p = Block [
-      Decl[(Variable.from_name "threadIdx.x", Local, None)];
-      Decl[(n, Local, Some (Var (Variable.from_name "threadIdx.x")))];
-      Decl[(k, Local, Some (Var (Variable.from_name "blockIdx.x")))];
-      Decl[(m, Local, Some (
+    let sq = Variable.from_name "s_Q" in
+    let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
+    let inc (x:Variable.t) =
+      Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))]
+    in
+    let p = Imp.Stmt.(Block [
+      Decl [Decl.unset (Variable.from_name "threadIdx.x")];
+      Decl [Decl.set n (Var (Variable.from_name "threadIdx.x"))];
+      Decl [Decl.set k (Var (Variable.from_name "blockIdx.x"))];
+      Decl [Decl.set m (
         n_plus (Var n) (n_mult (Num 96) (Var k))
-      ))];
-      Decl [(id, Local, Some (Var n))];
+      )];
+      Decl [Decl.set id (Var n)];
       wr;
       inc id;
       wr;
       inc id;
       wr;
       inc id;
-    ] in
+    ]) in
     (* Translate: *)
-    let p : Proto.prog = p
-      |> imp_to_post
-      |> Post.inline_decls Variable.Set.empty
-      |> post_to_proto
+    let (_, p) = Scoped.from_stmt (Params.empty, p) in
+    let p : Proto.Code.t = p
+      |> Encode_assigns.from_scoped Variable.Set.empty
+      |> Encode_asserts.from_encode_assigns
     in
     (* Test: *)
     begin
-      let open Proto in
       match p with
-      | [
-          Acc (_, {index=[e1]; _});
-          Acc (_, {index=[e2]; _});
-          Acc (_, {index=[e3]; _})] ->
+      | Decl {var=y; body=Seq (
+          Acc (_, {index=[e1]; _}),
+          Seq (
+            Acc (_, {index=[e2]; _}),
+            Seq (
+              Acc (_, {index=[e3]; _}),
+              Skip)
+            )
+        ); _} when Variable.name y = "threadIdx.x" ->
         let tid = Var (Variable.from_name "threadIdx.x") in
-        let inc e = n_plus (Num 32) e in
+        let inc e = Binary (Plus, Num 32, e) in
         assert_nexp tid e1;
         assert_nexp (inc tid) e2;
         assert_nexp (inc (inc tid)) e3;
         ()
-      | _ -> assert false
+      | _ -> assert_failure ("Pattern matching failed:\n" ^ Proto.Code.to_string p)
     end;
     ()
 
@@ -222,64 +248,83 @@ let tests = "test_predicates" >::: [
     let x = Variable.from_name "x" in
     let a = Variable.from_name "a" in
     let b = Variable.from_name "b" in
-    let p = Block [
+    let wr = Imp.Stmt.(Write {
+      array=Variable.from_name "A";
+      index=[Var a; Var b]; payload=None}
+    ) in
+    let p = Imp.Stmt.(Block [
       Decl [
-        x, Local, None;
-        a, Local, Some (Var x);
+        Decl.unset x;
+        Decl.set a (Var x);
       ];
       Decl [
-        x, Local, None;
-        b, Local, Some (Var x);
+        Decl.unset x;
+        Decl.set b (Var x);
       ];
-      Acc (Variable.from_name "A", Access.write [Var a; Var b])
-    ] in
-    let p1 =
-      let open Post in
-      [Post.Decl (x, Local, None,
-        [Decl (a, Local, Some (Var x),
-          [Decl (x, Local, None,
-            [Decl (b, Local, Some (Var x),
-              [Acc (Variable.from_name "A", Access.write [Var a; Var b])]
-            )]
-          )]
-        )]
-      )]
+      wr
+    ]) in
+    let p1 : Scoped.t =
+      let open Scoped in
+      (
+        Decl (Decl.unset x,
+          Decl (Decl.set a (Var x),
+            Decl (Decl.unset x,
+              Decl (Decl.set b (Var x),
+                Seq (Acc (Variable.from_name "A", Access.write [Var a; Var b] None), Skip)
+              )
+            )
+          )
+        )
+      )
     in
-    assert (imp_to_post p = p1);
-    let p2 =
-      let open Post in
-      [Post.Decl (x, Local, None,
-        [Decl (a, Local, Some (Var x),
-          [Decl (x, Local, None,
-            [Decl (b, Local, Some (Var x),
-              [Acc (Variable.from_name "A", Access.write [Var a; Var b])]
-            )]
-          )]
-        )]
-      )]
+    assert_post (Scoped.from_stmt (Params.empty, p) |> snd) p1;
+    let p2 : Scoped.t =
+      let open Scoped in
+      (*
+        var x;
+        var a = x;
+        var x;
+        var b = x;
+        wr [a; b]
+       *)
+      Decl (Decl.unset x,
+        Decl (Decl.set a (Var x),
+          Decl (Decl.unset x,
+            Decl (Decl.set b (Var x),
+              Acc (Variable.from_name "A", Access.write [Var a; Var b] None)
+            )
+          )
+        )
+      )
     in
     let x1 = Variable.from_name "x1" in
     let p3 = 
-      let open Post in
-      [Post.Decl (x, Local, None,
-        [Decl (x1, Local, None,
-          [Acc (Variable.from_name "A", Access.write [Var x; Var x1])]
-        )]
-      )]
+      let open Encode_assigns in
+      decl x (
+        decl x1 (
+          Acc (Variable.from_name "A", Access.write [Var x; Var x1] None)
+        )
+      )
     in
-    assert_post p3 (Post.inline_decls Variable.Set.empty p2);
+    assert_ea p3 (Encode_assigns.from_scoped Variable.Set.empty p2);
     (* Translate: *)
-    let p : Proto.prog = p
-      |> imp_to_post
-      |> Post.inline_decls Variable.Set.empty
-      |> post_to_proto
+    let (_, p) = Scoped.from_stmt (Params.empty, p) in
+    let p : Proto.Code.t = p
+      |> Encode_assigns.from_scoped Variable.Set.empty
+      |> Encode_asserts.from_encode_assigns
     in
-    let open Proto in
     match p with
-    | [Acc (_, {index=[x1; x2]; _})] ->
+    | Decl {var=y1;
+        body=Decl {
+          var=y2;
+          body=Seq (Acc (_, {index=[x1; x2]; _}), Skip) ;
+        _};
+        _
+      }
+        when Variable.name y1 = "x" && Variable.name y2 = "x1" ->
       assert_nexp (Var (Variable.from_name "x")) x1;
       assert_nexp (Var (Variable.from_name "x1")) x2;
-    | _ -> assert false
+    | _ -> assert_failure ("Pattern matching failed:\n" ^ Proto.Code.to_string p)
   )
 ]
 
