@@ -72,4 +72,20 @@ gitlab-bin:
 gitlab: gitlab-test gitlab-bin
 
 
-.PHONY: all clean faial-bc faial-bc-dyn faial-drf build-test test sys-test gitlab gitlab-bin gitlab-test c-ast data-dep faial-sync faial-gen
+.PHONY: \
+	all \
+	clean \
+	faial-bc \
+	faial-bc-dyn \
+	faial-drf \
+	build-test \
+	test \
+	sys-test \
+	gitlab \
+	gitlab-bin \
+	gitlab-test \
+	c-ast \
+	data-dep \
+	faial-sync \
+	faial-gen \
+	faial-cost

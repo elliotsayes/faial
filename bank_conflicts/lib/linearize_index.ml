@@ -64,7 +64,7 @@ module Make (L:Logger.Logger) = struct
       ) (Common.zip l dim) (Num 0)
 
   (* Given a map of memory descriptors, return a map of array sizes *)
-  let shared_memory ~bytes_per_word (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t =
+  let get_sizes ~bytes_per_word (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t =
     mem
     |> Variable.Map.filter_map (fun _ v ->
       let open Memory in
@@ -82,11 +82,11 @@ module Make (L:Logger.Logger) = struct
   :
     Variable.t -> Exp.nexp list -> Exp.nexp option
   =
-    let shared =
-      shared_memory mem ~bytes_per_word:cfg.bytes_per_word
+    let sizes =
+      get_sizes mem ~bytes_per_word:cfg.bytes_per_word
     in
     fun x l ->
-      Variable.Map.find_opt x shared
+      Variable.Map.find_opt x sizes
       |> Option.map (fun a ->
           l
           |> (

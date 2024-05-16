@@ -13,6 +13,34 @@ let abort_when (b:bool) (msg:string) : unit =
     exit (-2)
   ) else ()
 
+module Metric = struct
+  type t =
+    | BankConflicts
+    | UncoalescedAccesses
+
+  let to_string : t -> string =
+    function
+    | BankConflicts -> "bc"
+    | UncoalescedAccesses -> "ua"
+(*
+  let from_string : string -> t option =
+    fun x ->
+    match
+      x
+      |> String.trim
+      |> String.lowercase_ascii
+    with
+    | "bc" | "bank-conflicts" -> Some BankConflicts
+    | "ua" | "uncoalesced-accesses" -> Some UncoalescedAccesses
+    | _ -> None
+*)
+  let values : t list =
+    [ BankConflicts; UncoalescedAccesses ]
+
+  let choices : (string * t) list =
+    values
+    |> List.map (fun x -> (to_string x, x))
+end
 
 module Solver = struct
 
@@ -41,6 +69,7 @@ module Solver = struct
     params: (string * int) list;
     approx_ifs: bool;
     cost: Summation.Strategy.t;
+    metric: Metric.t;
   }
 
   let make
@@ -69,6 +98,7 @@ module Solver = struct
     ~params
     ~approx_ifs
     ~cost
+    ~metric
   :
     t
   =
@@ -103,6 +133,7 @@ module Solver = struct
       params;
       approx_ifs;
       cost;
+      metric;
     }
 
   let gen_transaction_count
@@ -215,6 +246,14 @@ module Solver = struct
     let ks =
       s.kernels
       |> List.map (Proto.Kernel.filter_access retain_acc)
+      |> List.map (fun k ->
+          let vs : Variable.Set.t =
+            match s.metric with
+            | BankConflicts -> Proto.Kernel.shared_arrays k
+            | UncoalescedAccesses -> Proto.Kernel.global_arrays k
+          in
+          Proto.Kernel.filter_array (fun x -> Variable.Set.mem x vs) k
+        )
       |> List.map (
           Proto.Kernel.inline_all
           ~block_dim:s.block_dim
@@ -329,6 +368,7 @@ let run
   ~params
   ~approx_ifs
   ~cost
+  ~metric
   (kernels : Proto.Code.t Proto.Kernel.t list)
 :
   unit
@@ -359,6 +399,7 @@ let run
     ~params
     ~approx_ifs
     ~cost
+    ~metric
   in
   if output_json then
     JUI.run app
@@ -393,6 +434,7 @@ let pico
   (params:(string * int) list)
   (approx_ifs:bool)
   (cost:Summation.Strategy.t)
+  (metric:Metric.t)
 =
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
   let block_dim = parsed.options.block_dim in
@@ -429,6 +471,7 @@ let pico
     ~params
     ~approx_ifs
     ~cost
+    ~metric
     kernels
 
 
@@ -561,6 +604,10 @@ let cost =
   let doc = "Generate minimum cost for approximate costs (default is maximum cost)." in
   Arg.(value & opt (enum ["min", Summation.Strategy.Min; "max", Summation.Strategy.Max]) Summation.Strategy.Max & info ["cost"] ~doc)
 
+let metric =
+  let doc = "Select the metric to measure the cost." in
+  Arg.(required & opt (some (enum Metric.choices)) None & info ["m"; "metric"] ~doc)
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -589,11 +636,12 @@ let pico_t = Term.(
   $ params
   $ approx_ifs
   $ cost
+  $ metric
 )
 
 let info =
   let doc = "Static analysis of bank-conflicts for GPU programs" in
-  Cmd.info "faial-bc" ~version:"%%VERSION%%" ~doc
+  Cmd.info "faial-cost" ~version:"%%VERSION%%" ~doc
 
 let () =
   Cmd.v info pico_t

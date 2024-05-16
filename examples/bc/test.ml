@@ -92,7 +92,7 @@ let faial_bc_path : Fpath.t = Files.from_string "../../total_cost/main.exe"
 let faial_bc ?(args=[]) (fname:Fpath.t) : Subprocess.t =
   Subprocess.make
     (Fpath.to_string faial_bc_path)
-    (args @ [fname |> Fpath.to_string])
+    (args @ ["--metric"; "bc"; fname |> Fpath.to_string])
 
 let used_files : Fpath.Set.t =
   tests @ per_request_tests
