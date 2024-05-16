@@ -300,13 +300,13 @@ module Kernel = struct
       ) k.code
     }
 
-  let filter_array (name:string) (k:Code.t t) : Code.t t =
+  let filter_array (to_keep: Variable.t -> bool) (k:Code.t t) : Code.t t =
     { k with
       (* update the set of arrays *)
-      arrays = Variable.Map.filter (fun x _ -> Variable.name x = name) k.arrays;
+      arrays = Variable.Map.filter (fun v _ -> to_keep v) k.arrays;
       code = Code.filter (
       function
-      | Acc (v, _) -> Variable.name v = name
+      | Acc (v, _) -> to_keep v
       | _ -> true
       ) k.code
     }

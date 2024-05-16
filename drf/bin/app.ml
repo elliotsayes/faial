@@ -167,7 +167,7 @@ let translate (arch:Architecture.t) (a:t) (k:Proto.Code.t Proto.Kernel.t) : Flat
   (* 0. filter arrays *)
   |> (fun k ->
     match a.only_array with
-    | Some arr -> Proto.Kernel.filter_array arr k
+    | Some arr -> Proto.Kernel.filter_array (fun x -> Variable.name x = arr) k
     | None -> k
   )
   (* 1. apply block-level/grid-level analysis constraints *)
