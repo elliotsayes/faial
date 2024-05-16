@@ -12,6 +12,19 @@ let abort_when (b:bool) (msg:string) : unit =
   ) else ()
 
 
+module Hotspot = struct
+  type t = {
+    bank: Bank.t;
+    divergence: Divergence_analysis.t;
+    index: (Transaction.t, string) Result.t;
+    sim: (Transaction.t, string) Result.t;
+  }
+
+  let hierarchy (e:t) : Mem_hierarchy.t =
+    let open Bank in
+    e.bank.hierarchy
+end
+
 module Solver = struct
 
   type t = {
@@ -61,16 +74,7 @@ module Solver = struct
       simulate;
     }
 
-  module Conflict = struct
-    type t = {
-      bank: Bank.t;
-      divergence: Divergence_analysis.t;
-      index: (Transaction.t, string) Result.t;
-      sim: (Transaction.t, string) Result.t;
-    }
-  end
-
-  let sliced_cost (a:t) (k:kernel) : Conflict.t list =
+  let sliced_cost (a:t) (k:kernel) : Hotspot.t list =
     Bank.from_proto a.config k
     |> Seq.filter_map (fun bank ->
       let index = Bank.to_warp a.config bank |> Result.map Warp.max in
@@ -90,7 +94,7 @@ module Solver = struct
       if bc <= 1 && a.skip_zero then
         None
       else
-        Some Conflict.{
+        Some Hotspot.{
           index;
           bank;
           divergence;
@@ -99,7 +103,7 @@ module Solver = struct
     )
     |> List.of_seq
 
-  let run (s:t) : (kernel * Conflict.t list) list =
+  let run (s:t) : (kernel * Hotspot.t list) list =
     let pair f k =
       (k, f k)
     in
@@ -131,17 +135,24 @@ end
 module TUI = struct
 
   let run (s:Solver.t) =
-    let print_slice ((k:kernel), (s:Solver.Conflict.t list)) : unit =
+    let print_slice ((k:kernel), (s:Hotspot.t list)) : unit =
       ANSITerminal.(print_string [Bold; Foreground Green] ("\n### Kernel '" ^ k.name ^ "' ###\n\n"));
-      Logger.Colors.info ("Shared accesses found: " ^ string_of_int (List.length s));
+      Logger.Colors.info ("Accesses found: " ^ string_of_int (List.length s));
       Stdlib.flush_all ();
       s
       |> List.iter (fun conflict ->
-        let open Solver.Conflict in
+        let open Hotspot in
+        let is_bc = conflict |> Hotspot.hierarchy |> Mem_hierarchy.is_shared in
+        let lbl =
+          if is_bc then
+            "shared transactions"
+          else
+            "global transactions"
+        in
         let bc =
           match conflict.index, conflict.sim with
           | _, Ok e ->
-            let e = (Transaction.count e  - 1)|> string_of_int in
+            let e = Transaction.count e |> string_of_int in
             let pot =
               if Divergence_analysis.is_known conflict.divergence then
                 ""
@@ -150,7 +161,7 @@ module TUI = struct
             in
             e ^ pot
           | Ok e, _ ->
-            let e = (Transaction.count e - 1) |> string_of_int in
+            let e = Transaction.count e |> string_of_int in
             let pot =
               if Divergence_analysis.is_thread_uniform conflict.divergence then
                 ""
@@ -158,13 +169,13 @@ module TUI = struct
                 " (potential)"
             in
             e ^ pot
-          | _, _ -> "31 (potential)"
+          | _, _ -> "32 (potential)"
         in
         let cost =
           let open PrintBox in
           [
             [|
-              text_with_style Style.bold "Max bank conflicts";
+              text_with_style Style.bold ("Max " ^ lbl);
               text bc
             |];
             [|
@@ -235,7 +246,8 @@ module TUI = struct
           |> frame
         in
         (* Flatten the expression *)
-        ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ Bank-conflict ~~~~\n\n"));
+        let problem = if is_bc then "Bank-conflict" else "Uncoalesced access" in
+        ANSITerminal.(print_string [Bold; Foreground Blue] ("\n~~~~ " ^ problem ^ " ~~~~\n\n"));
         conflict.bank |> Bank.location |> Tui_helper.LocationUI.print;
         print_endline "";
         PrintBox_text.output stdout cost;
@@ -258,7 +270,7 @@ module JUI = struct
         `List (
           l
           |> List.map (fun c ->
-            let open Solver.Conflict in
+            let open Hotspot in
             let loc = Bank.location c.bank in
             let loc = [
               "location",
@@ -373,10 +385,6 @@ let pico
   let block_dim = parsed.options.block_dim in
   let grid_dim = parsed.options.grid_dim in
   let config = Config.make ~block_dim ~grid_dim () in
-  let kernels : kernel list =
-    parsed.kernels
-    |> List.filter Proto.Kernel.has_shared_arrays
-  in
   run
     ~skip_zero:(not show_all)
     ~skip_distinct_vars
@@ -389,7 +397,7 @@ let pico
     ~grid_dim
     ~params
     ~simulate
-    kernels
+    parsed.kernels
 
 
 (* Command-line interface *)

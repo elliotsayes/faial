@@ -19,6 +19,14 @@ type t = {
   count: int;
 }
 
+let choose_opt (e:t) : Task.t option =
+  match e.accesses with
+  | x :: _ -> Some x
+  | [] -> None
+
+let choose (e:t) : Task.t =
+  choose_opt e |> Option.get
+
 let to_string (e:t) : string =
   let accs =
     e.accesses
@@ -54,3 +62,7 @@ let add (task:Task.t) (tsx:t) : t =
       indices;
       count = tsx.count + 1;
     }
+
+let from_list (bank:int) : Task.t list -> t =
+  List.fold_left (fun tsx tsk -> add tsk tsx) (make bank)
+

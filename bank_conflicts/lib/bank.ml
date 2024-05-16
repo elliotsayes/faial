@@ -30,14 +30,14 @@ module Code = struct
 
   let subst = S1.subst
 
-  let rec to_string : t -> string =
+  let rec to_string ?(array="") : t -> string =
     function
     | Loop (r, acc) ->
         "for (" ^ Range.to_string r ^ ")\n" ^ to_string acc
     | Cond (b, acc) ->
         "if (" ^ Exp.b_to_string b ^ ")\n" ^ to_string acc
     | Index a ->
-        "[" ^ Exp.n_to_string a ^ "]"
+        array ^ "[" ^ Exp.n_to_string a ^ "]"
     | Decl (x, p) ->
         "var " ^ Variable.name x ^ " " ^ to_string p ^ "\n"
 
@@ -132,10 +132,10 @@ module Code = struct
       else
         Cond (Exp.b_and_ex l, a)
 
-  let to_warp (params:Config.t) (a:t) : (Warp.t, string) Result.t =
+  let to_warp (h:Mem_hierarchy.t) (params:Config.t) (a:t) : (Warp.t, string) Result.t =
     let idx = index a in
     let ctx = Vectorized.from_config params in
-    Vectorized.to_warp idx ctx
+    Vectorized.to_warp h idx ctx
 
   let transaction_count (params:Config.t) : Variable.Set.t -> t -> (int, string) Result.t =
     let rec transaction_count (locals:Variable.Set.t) : t -> (int, string) Result.t =
@@ -173,6 +173,7 @@ module Code = struct
 
   let eval_res
     ?(max_count=(-1))
+    (h:Mem_hierarchy.t)
   :
     Vectorized.t -> t -> (Transaction.t, string) Result.t
   =
@@ -189,7 +190,7 @@ module Code = struct
       | Index a ->
         let* w =
           ctx
-          |> Vectorized.to_warp a
+          |> Vectorized.to_warp h a
           |> Result.map Warp.max
         in
         Ok (Transaction.max w tsx)
@@ -283,6 +284,8 @@ type t = {
   name : string;
   (* The array name *)
   array: Variable.t;
+  (* Hierarchy *)
+  hierarchy: Mem_hierarchy.t;
   (* The internal variables are used in the code of the kernel.  *)
   global_variables: Variable.Set.t;
   (* The internal variables are used in the code of the kernel.  *)
@@ -298,7 +301,7 @@ let location (k:t) : Location.t =
   Variable.location k.array
 
 let to_string (k:t) : string =
-  Code.to_string k.code
+  Code.to_string ~array:(Variable.name k.array) k.code
 
 let minimize (k:t) : t =
   { k with code = Code.minimize k.code }
@@ -312,7 +315,7 @@ let to_check (k:t) : Approx.Check.t =
   Approx.Check.from_code vars code
 
 let to_warp (params:Config.t) (k:t) : (Warp.t, string) Result.t =
-  Code.to_warp params k.code
+  Code.to_warp k.hierarchy params k.code
 
 let trim_decls (k:t) : t =
   { k with code = Code.trim_decls k.code; }
@@ -338,6 +341,7 @@ module Make (L:Logger.Logger) = struct
       let code = if k.pre = Bool true then p else Code.Cond (k.pre, p) in
       {
         name = k.name;
+        hierarchy = Variable.Map.find array k.arrays |> Memory.hierarchy;
         global_variables = Params.to_set k.global_variables;
         local_variables;
         code;
@@ -355,7 +359,7 @@ let eval_res
   (Transaction.t, string) Result.t
 =
   let ctx = Vectorized.from_config params in
-  Code.eval_res ~max_count ctx k.code
+  Code.eval_res ~max_count k.hierarchy ctx k.code
 
 module Silent = Make(Logger.Silent)
 module Default = Make(Logger.Colors)

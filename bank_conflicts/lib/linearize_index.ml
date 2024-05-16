@@ -16,7 +16,7 @@ type array_size = { byte_count: int; dim: int list}
 module Make (L:Logger.Logger) = struct
   module R = Uniform_range.Make(L)
   (* Given an n-dimensional array access apply type modifiers *)
-  let byte_count_multiplier ~bytes_per_word ~byte_count (l:Exp.nexp list) : Exp.nexp list =
+  let shared_multiplier ~bytes_per_word ~byte_count (l:Exp.nexp list) : Exp.nexp list =
     if byte_count/bytes_per_word = 1 then
       l
     else (
@@ -31,6 +31,16 @@ module Make (L:Logger.Logger) = struct
       L.info ("Applied byte-modifier : " ^ bs ^ " " ^ arr l  ^ " -> " ^ arr l');
       l'
     )
+
+  (* Given an n-dimensional array access apply type modifiers *)
+  let global_multiplier ~byte_count (l:Exp.nexp list) : Exp.nexp list =
+    let open Exp in
+    let n_s = Exp.n_to_string in
+    let bs = string_of_int byte_count in
+    let arr l = List.map n_s l |> Common.join ", " in
+    let l' = List.map (fun n -> n_mult (Num byte_count) n) l in
+    L.info ("Applied byte-modifier : " ^ bs ^ " " ^ arr l  ^ " -> " ^ arr l');
+    l'
 
   (* Convert an n-dimensional array access into a 1-d array access *)
   let flatten_multi_dim (dim:int list) (l:Exp.nexp list) : Exp.nexp =
@@ -57,13 +67,11 @@ module Make (L:Logger.Logger) = struct
   let shared_memory ~bytes_per_word (mem: Memory.t Variable.Map.t) : array_size Variable.Map.t =
     mem
     |> Variable.Map.filter_map (fun _ v ->
-      if Memory.is_shared v then
-        let ty = Common.join " " v.data_type |> C_type.make in
-        match C_type.sizeof ty with
-        | Some n -> Some {byte_count=n; dim=v.size}
-        | None -> Some {byte_count=bytes_per_word; dim=v.size}
-      else
-        None
+      let open Memory in
+      let ty = Common.join " " v.data_type |> C_type.make in
+      match C_type.sizeof ty with
+      | Some n -> Some {byte_count=n; dim=v.size}
+      | None -> Some {byte_count=bytes_per_word; dim=v.size}
     )
 
 
@@ -81,9 +89,15 @@ module Make (L:Logger.Logger) = struct
       Variable.Map.find_opt x shared
       |> Option.map (fun a ->
           l
-          |> byte_count_multiplier
-            ~bytes_per_word:cfg.bytes_per_word
-            ~byte_count:a.byte_count
+          |> (
+            if Variable.Map.find x mem |> Memory.is_shared then
+              shared_multiplier
+                ~bytes_per_word:cfg.bytes_per_word
+                ~byte_count:a.byte_count
+            else
+              global_multiplier
+                ~byte_count:a.byte_count
+            )
           |> flatten_multi_dim a.dim
           |> Constfold.n_opt
       )

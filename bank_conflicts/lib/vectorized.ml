@@ -295,6 +295,7 @@ let b_eval (e:Exp.bexp) (ctx:t) : BMap.t =
   b_eval_res e ctx |> Result.get_ok
 
 let to_warp
+  (h:Mem_hierarchy.t)
   (index:Exp.nexp)
   (ctx:t)
 :
@@ -310,7 +311,11 @@ let to_warp
   in
   if is_valid then
     let tids = tid ctx in
-    Ok (Warp.make ctx.bank_count idx enabled tids)
+    Ok (
+      match h with
+      | Mem_hierarchy.SharedMemory -> Warp.bank_conflicts ctx.bank_count idx enabled tids
+      | Mem_hierarchy.GlobalMemory -> Warp.uncoalesced idx enabled tids
+    )
   else
     Error "index out of bounds"
 

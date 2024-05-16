@@ -12,6 +12,9 @@ let is_global (x:t) : bool =
 let is_shared (x:t) : bool =
   Mem_hierarchy.is_shared x.hierarchy
 
+let hierarchy (x:t) : Mem_hierarchy.t =
+  x.hierarchy
+
 let make (h:Mem_hierarchy.t) : t = {
   hierarchy = h;
   size = [];
