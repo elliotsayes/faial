@@ -22,18 +22,7 @@ module Metric = struct
     function
     | BankConflicts -> "bc"
     | UncoalescedAccesses -> "ua"
-(*
-  let from_string : string -> t option =
-    fun x ->
-    match
-      x
-      |> String.trim
-      |> String.lowercase_ascii
-    with
-    | "bc" | "bank-conflicts" -> Some BankConflicts
-    | "ua" | "uncoalesced-accesses" -> Some UncoalescedAccesses
-    | _ -> None
-*)
+
   let values : t list =
     [ BankConflicts; UncoalescedAccesses ]
 
@@ -245,7 +234,12 @@ module Solver = struct
     in
     let ks =
       s.kernels
-      |> List.map (Proto.Kernel.filter_access retain_acc)
+      |> (
+        if s.only_reads || s.only_writes then
+          List.map (Proto.Kernel.filter_access retain_acc)
+        else
+          fun x -> x
+        )
       |> List.map (fun k ->
           let vs : Variable.Set.t =
             match s.metric with
@@ -297,7 +291,7 @@ module TUI = struct
     match Solver.run s with
     | RatioCost []
     | TotalCost [] ->
-      abort_when (not s.ignore_absent) "No kernels using __shared__ arrays found.";
+      abort_when (not s.ignore_absent) "No kernels found.";
     | TotalCost l
     | RatioCost l ->
       List.iter print_r_cost l
@@ -440,10 +434,6 @@ let pico
   let block_dim = parsed.options.block_dim in
   let grid_dim = parsed.options.grid_dim in
   let config = Config.make ~block_dim ~grid_dim () in
-  let kernels : kernel list =
-    parsed.kernels
-    |> List.filter Proto.Kernel.has_shared_arrays
-  in
   run
     ~use_maxima
     ~use_absynth
@@ -472,7 +462,7 @@ let pico
     ~approx_ifs
     ~cost
     ~metric
-    kernels
+    parsed.kernels
 
 
 (* Command-line interface *)
