@@ -1,5 +1,5 @@
 (library
-  (name cost)
+  (name analyze_cost)
   (libraries
     ; 3rd-party
     str

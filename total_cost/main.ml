@@ -3,7 +3,7 @@ open Inference
 open Bank_conflicts
 open Protocols
 open Ra
-open Cost
+open Analyze_cost
 
 type kernel = Proto.Code.t Proto.Kernel.t
 
@@ -12,24 +12,6 @@ let abort_when (b:bool) (msg:string) : unit =
     Logger.Colors.error msg;
     exit (-2)
   ) else ()
-
-module Metric = struct
-  type t =
-    | BankConflicts
-    | UncoalescedAccesses
-
-  let to_string : t -> string =
-    function
-    | BankConflicts -> "bc"
-    | UncoalescedAccesses -> "ua"
-
-  let values : t list =
-    [ BankConflicts; UncoalescedAccesses ]
-
-  let choices : (string * t) list =
-    values
-    |> List.map (fun x -> (to_string x, x))
-end
 
 module Solver = struct
 
@@ -48,7 +30,6 @@ module Solver = struct
     skip_simpl_ra: bool;
     asympt: bool;
     config: Config.t;
-    count_shared_access: bool;
     per_request: bool;
     ignore_absent: bool;
     only_reads: bool;
@@ -57,7 +38,7 @@ module Solver = struct
     grid_dim: Dim3.t;
     params: (string * int) list;
     approx_ifs: bool;
-    cost: Summation.Strategy.t;
+    strategy: Summation.Strategy.t;
     metric: Metric.t;
   }
 
@@ -77,7 +58,6 @@ module Solver = struct
     ~skip_distinct_vars
     ~asympt
     ~config
-    ~count_shared_access
     ~per_request
     ~ignore_absent
     ~only_reads
@@ -86,7 +66,7 @@ module Solver = struct
     ~grid_dim
     ~params
     ~approx_ifs
-    ~cost
+    ~strategy
     ~metric
   :
     t
@@ -112,7 +92,6 @@ module Solver = struct
       skip_simpl_ra;
       asympt;
       config;
-      count_shared_access;
       per_request;
       ignore_absent;
       only_reads;
@@ -121,42 +100,31 @@ module Solver = struct
       grid_dim;
       params;
       approx_ifs;
-      cost;
+      strategy;
       metric;
     }
 
-  let gen_transaction_count
-    (default:int)
+  let gen_cost
     (app:t)
+    (default:int)
     (s:Variable.Set.t)
     (e:Exp.nexp)
   :
     int
   =
     let e = Offset_analysis.Default.remove_offset s e in
-    match Index_analysis.transaction_count app.config s e with
-    | Ok e -> e
+    let ctx = Vectorized.from_config app.config in
+    match Vectorized.to_cost app.metric e ctx with
+    | Ok e -> e.value
     | Error e ->
       Logger.Colors.warning e;
       default
 
-  let min_transaction_count : t -> Variable.Set.t -> Exp.nexp -> int =
-    gen_transaction_count 1
+  let min_cost (app:t) : Variable.Set.t -> Exp.nexp -> int =
+    gen_cost app (Metric.min_cost app.metric |> Cost.value)
 
-  let max_transaction_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
-    gen_transaction_count app.config.warp_count app
-
-  let transaction_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
-    match app.cost with
-    | Summation.Strategy.Max -> max_transaction_count app
-    | Min -> min_transaction_count app
-
-  let bank_conflict_count (app:t) : Variable.Set.t -> Exp.nexp -> int =
-    fun locals idx ->
-      (transaction_count app locals idx) - 1
-
-  let access_count (_:t) : Variable.Set.t -> Exp.nexp -> int =
-    fun _ _ -> 1
+  let max_cost (app:t) : Variable.Set.t -> Exp.nexp -> int =
+    gen_cost app (Metric.max_cost app.config app.metric |> Cost.value)
 
   type cost = {
     amount: string;
@@ -191,18 +159,13 @@ module Solver = struct
   type r_cost = (cost, string) Result.t
 
   let total_cost (a:t) (k:kernel) : r_cost =
-    let metric =
-      if a.count_shared_access then
-        access_count a
-      else
-        bank_conflict_count a
-    in
-    let r = get_ra a k metric in
+    let r = get_ra a k (if a.strategy = Summation.Strategy.Max then max_cost a else min_cost a) in
     get_cost a r
 
   let transactions_per_request (a:t) (k:kernel) : r_cost =
-    let numerator = get_ra a k (transaction_count a) in
-    let denominator = get_ra a k (access_count a) in
+    (* TODO: fix me *)
+    let numerator = get_ra a k (max_cost a) in
+    let denominator = get_ra a k (max_cost a) in
     let start = Unix.gettimeofday () in
     Maxima.run_ratio
       ~verbose:a.show_code
@@ -241,10 +204,12 @@ module Solver = struct
           fun x -> x
         )
       |> List.map (fun k ->
+          if s.metric = CountAccesses then k else
           let vs : Variable.Set.t =
             match s.metric with
             | BankConflicts -> Proto.Kernel.shared_arrays k
             | UncoalescedAccesses -> Proto.Kernel.global_arrays k
+            | _ -> failwith "internal error"
           in
           Proto.Kernel.filter_array (fun x -> Variable.Set.mem x vs) k
         )
@@ -351,7 +316,6 @@ let run
   ~asympt
   ~only_cost
   ~config
-  ~count_shared_access
   ~output_json
   ~ignore_absent
   ~per_request
@@ -361,7 +325,7 @@ let run
   ~grid_dim
   ~params
   ~approx_ifs
-  ~cost
+  ~strategy
   ~metric
   (kernels : Proto.Code.t Proto.Kernel.t list)
 :
@@ -382,7 +346,6 @@ let run
     ~skip_simpl_ra
     ~skip_distinct_vars
     ~config
-    ~count_shared_access
     ~per_request
     ~kernels
     ~ignore_absent
@@ -392,7 +355,7 @@ let run
     ~grid_dim
     ~params
     ~approx_ifs
-    ~cost
+    ~strategy
     ~metric
   in
   if output_json then
@@ -420,14 +383,13 @@ let pico
   (only_cost:bool)
   (ignore_absent:bool)
   (asympt:bool)
-  (count_shared_access:bool)
   (output_json:bool)
   (per_request:bool)
   (only_reads:bool)
   (only_writes:bool)
   (params:(string * int) list)
   (approx_ifs:bool)
-  (cost:Summation.Strategy.t)
+  (strategy:Summation.Strategy.t)
   (metric:Metric.t)
 =
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
@@ -450,7 +412,6 @@ let pico
     ~config
     ~only_cost
     ~asympt
-    ~count_shared_access
     ~output_json
     ~per_request
     ~ignore_absent
@@ -460,7 +421,7 @@ let pico
     ~grid_dim
     ~params
     ~approx_ifs
-    ~cost
+    ~strategy
     ~metric
     parsed.kernels
 
@@ -566,10 +527,6 @@ let show_code =
   let doc = "Show the code being sent to the solver if any." in
   Arg.(value & flag & info ["show-code"] ~doc)
 
-let count_shared_accesses =
-  let doc = "Instead of counting how many bank-conflicts, count how many shared accesses occur." in
-  Arg.(value & flag & info ["count-shared"] ~doc)
-
 let output_json =
   let doc = "Output in JSON." in
   Arg.(value & flag & info ["json"] ~doc)
@@ -590,7 +547,7 @@ let approx_ifs =
   let doc = "Approximate conditionals." in
   Arg.(value & flag & info ["approx"] ~doc)
 
-let cost =
+let strategy =
   let doc = "Generate minimum cost for approximate costs (default is maximum cost)." in
   Arg.(value & opt (enum ["min", Summation.Strategy.Min; "max", Summation.Strategy.Max]) Summation.Strategy.Max & info ["cost"] ~doc)
 
@@ -618,14 +575,13 @@ let pico_t = Term.(
   $ only_cost
   $ ignore_absent
   $ asympt
-  $ count_shared_accesses
   $ output_json
   $ per_request
   $ only_reads
   $ only_writes
   $ params
   $ approx_ifs
-  $ cost
+  $ strategy
   $ metric
 )
 

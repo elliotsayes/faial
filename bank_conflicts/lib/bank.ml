@@ -132,17 +132,17 @@ module Code = struct
       else
         Cond (Exp.b_and_ex l, a)
 
-  let to_warp (h:Mem_hierarchy.t) (params:Config.t) (a:t) : (Warp.t, string) Result.t =
+  let index_cost (params:Config.t) (m:Metric.t) (a:t) : (Cost.t, string) Result.t =
     let idx = index a in
     let ctx = Vectorized.from_config params in
-    Vectorized.to_warp h idx ctx
-
-  let transaction_count (params:Config.t) : Variable.Set.t -> t -> (int, string) Result.t =
+    Vectorized.to_cost m idx ctx
+(*
+  let static_cost (params:Config.t) (m:Metric.t) : Variable.Set.t -> t -> (int, string) Result.t =
     let rec transaction_count (locals:Variable.Set.t) : t -> (int, string) Result.t =
       function
       | Index a ->
         a
-        |> Index_analysis.transaction_count params locals
+        |> Index_analysis.cost params m locals
       | Loop (r, a) ->
         let locals =
           if Range.exists (fun x -> Variable.Set.mem x locals) r then
@@ -157,7 +157,7 @@ module Code = struct
         transaction_count (Variable.Set.add x locals) a
     in
     transaction_count
-
+*)
   let to_approx (x:Variable.t) : t -> Approx.Code.t =
     let rec to_approx : t -> Approx.Code.t =
       function
@@ -172,51 +172,52 @@ module Code = struct
     Some (Vectorized.NMap.random ctx.warp_count ())
 
   let eval_res
-    ?(max_count=(-1))
-    (h:Mem_hierarchy.t)
+    ?(max_cost=(-1))
+    (cfg:Config.t)
+    (m:Metric.t)
   :
-    Vectorized.t -> t -> (Transaction.t, string) Result.t
+    Vectorized.t -> t -> (Cost.t, string) Result.t
   =
     let ( let* ) = Result.bind in
     fun ctx ->
-    let max_count = if max_count < 0 then ctx.bank_count else max_count in
+    let max_cost : Cost.t =
+      if max_cost < 0 then
+        Metric.max_cost cfg m
+      else
+        Cost.from_int max_cost
+    in
     let rec eval
-      (tsx:Transaction.t)
+      (c:Cost.t)
       (ctx:Vectorized.t)
     :
-      t -> (Transaction.t, string) Result.t
+      t -> (Cost.t, string) Result.t
     =
       function
       | Index a ->
-        let* w =
-          ctx
-          |> Vectorized.to_warp h a
-          |> Result.map Warp.max
-        in
-        Ok (Transaction.max w tsx)
+        Vectorized.to_cost m a ctx
       | Decl (_, a) ->
         (* Ignore variables so that if eval uses an unknown variable it
            gets stuck. *)
-        eval tsx ctx a
+        eval c ctx a
       | Cond (e, a) ->
         let* v = Vectorized.b_eval_res e ctx in
         if Vectorized.BMap.some_true v then
-          eval tsx (Vectorized.restrict e ctx) a
+          eval c (Vectorized.restrict e ctx) a
         else
-          Ok tsx
+          Ok c
       | Loop (r, a) ->
         let* l = Vectorized.iter_res r ctx in
         (match l with
           | Next (r, ctx') ->
-            let* tsx = eval tsx ctx' a in
-            if tsx.count >= max_count then
-              Ok tsx
+            let* c = eval c ctx' a in
+            if Cost.(c >= max_cost) then
+              Ok c
             else
-              eval tsx ctx (Loop (r, a))
-          | End -> Ok tsx
+              eval c ctx (Loop (r, a))
+          | End -> Ok c
         )
     in
-    eval Transaction.zero ctx
+    eval Cost.zero ctx
 
   module Make (L:Logger.Logger) = struct
     module O = Offset_analysis.Make(L)
@@ -293,10 +294,10 @@ type t = {
   (* The code of a kernel performs the actual memory accesses. *)
   code: Code.t;
 }
-
+(*
 let transaction_count (params:Config.t) (k:t) : (int, string) Result.t =
   Code.transaction_count params k.local_variables k.code
-
+*)
 let location (k:t) : Location.t =
   Variable.location k.array
 
@@ -314,8 +315,8 @@ let to_check (k:t) : Approx.Check.t =
   let vars = Variable.Set.union k.global_variables Variable.tid_var_set in
   Approx.Check.from_code vars code
 
-let to_warp (params:Config.t) (k:t) : (Warp.t, string) Result.t =
-  Code.to_warp k.hierarchy params k.code
+let index_cost (params:Config.t) (m:Metric.t) (k:t) : (Cost.t, string) Result.t =
+  Code.index_cost params m k.code
 
 let trim_decls (k:t) : t =
   { k with code = Code.trim_decls k.code; }
@@ -352,14 +353,15 @@ module Make (L:Logger.Logger) = struct
 end
 
 let eval_res
-  ?(max_count=(-1))
+  ?(max_cost=(-1))
   (params:Config.t)
+  (m:Metric.t)
   (k:t)
 :
-  (Transaction.t, string) Result.t
+  (Cost.t, string) Result.t
 =
   let ctx = Vectorized.from_config params in
-  Code.eval_res ~max_count k.hierarchy ctx k.code
+  Code.eval_res ~max_cost params m ctx k.code
 
 module Silent = Make(Logger.Silent)
 module Default = Make(Logger.Colors)

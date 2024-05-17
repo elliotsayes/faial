@@ -68,9 +68,8 @@ let main (fname : string) : unit =
     (try
       List.iter (fun p ->
         let ctx = create_ctx ~bank_count:32 ~env ~arrays:(shared_arrays p) in
-        let cost = Vectorized.eval p.code ctx in
-        let v = Vectorized.NMap.max cost in
-        print_endline ("Dynamic cost (bid " ^ string_of_int v.index ^ "): " ^ string_of_int v.value)
+        let v = Vectorized.eval Metric.BankConflicts p.code ctx in
+        print_endline ("Total cost: " ^ string_of_int v)
       ) proto;
       ()
     with

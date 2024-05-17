@@ -15,8 +15,9 @@ open Protocols
       does _not_ contain any variables.
   4. Otherwise, return the max number of bank conflicts.
 *)
-let transaction_count
+let cost
   (params:Config.t)
+  (m:Metric.t)
   (thread_locals : Variable.Set.t)
   (n : Exp.nexp)
 :
@@ -34,10 +35,8 @@ let transaction_count
     bc_fail "Expression uses thread-local variables"
   else
     let ctx = Vectorized.from_config params in
-    match Vectorized.max_transactions_res n ctx with
+    match Vectorized.to_cost m n ctx with
     | Ok v ->
-      let tsx : int = (v |> Vectorized.NMap.max).value in
-      assert (tsx >= 1); (* make sure there's at least one transaction being returned *)
-      Ok tsx
+      Ok v.value
     | Error x ->
       bc_fail x

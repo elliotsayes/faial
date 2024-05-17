@@ -294,13 +294,14 @@ let n_eval (e:Exp.nexp) (ctx:t) : NMap.t =
 let b_eval (e:Exp.bexp) (ctx:t) : BMap.t =
   b_eval_res e ctx |> Result.get_ok
 
-let to_warp
-  (h:Mem_hierarchy.t)
+let to_cost
+  (m:Metric.t)
   (index:Exp.nexp)
   (ctx:t)
 :
-  (Warp.t, string) Result.t
+  (Cost.t, string) Result.t
 =
+  if m = Metric.CountAccesses then Ok (Cost.from_int 1) else
   let* idx = n_eval_res index ctx in
   let* enabled = b_eval_res ctx.cond ctx in
   let idx = NMap.to_array idx in
@@ -312,59 +313,15 @@ let to_warp
   if is_valid then
     let tids = tid ctx in
     Ok (
-      match h with
-      | Mem_hierarchy.SharedMemory -> Warp.bank_conflicts ctx.bank_count idx enabled tids
-      | Mem_hierarchy.GlobalMemory -> Warp.uncoalesced idx enabled tids
+      match m with
+      | BankConflicts ->
+        Warp.bank_conflicts ctx.bank_count idx enabled tids
+      | UncoalescedAccesses ->
+        Warp.uncoalesced idx enabled tids
+      | CountAccesses -> failwith "unexpected"
     )
   else
     Error "index out of bounds"
-
-let transactions_res
-  (index:Exp.nexp)
-  (ctx:t)
-:
-  (IntSet.t array, string) Result.t
-=
-  let* idx = n_eval_res index ctx in
-  let idx_bid =
-    let idx = idx |> NMap.to_array in
-    (* We handle "gracefully" index out of bounds *)
-    let bid = Array.map (fun x -> Common.modulo x ctx.bank_count) idx in
-    Array.combine idx bid
-  in
-  (* Create a mutable array *)
-  let tsx = Array.make ctx.bank_count IntSet.empty in
-  let* b = b_eval_res ctx.cond ctx in
-  b
-  |> BMap.to_array
-  |> Array.combine idx_bid
-  |> Array.iter (fun ((idx, bid), enabled) ->
-    if enabled then
-      let elems = IntSet.add idx (Array.get tsx bid) in
-      Array.set tsx bid elems
-    else ()
-  );
-  Ok tsx
-
-let max_transactions_res ?(verbose=false) (index:Exp.nexp) (ctx:t) : (NMap.t, string) Result.t =
-  let* tsx = transactions_res index ctx in
-  let tsx = Array.map IntSet.cardinal tsx |> NMap.from_array in
-  (if verbose then (
-      let msg =
-        Exp.n_to_string index ^ " " ^
-        "if (" ^ Exp.b_to_string ctx.cond ^ ")"
-      in
-      print_endline (
-        msg ^ " " ^
-        "max: " ^ string_of_int ((NMap.max tsx).value) ^ " " ^
-        "\n\t" ^ NMap.to_string tsx
-      ))
-    else ()
-  );
-  Ok tsx
-
-let max_transactions ?(verbose=false) (index:Exp.nexp) (ctx:t) : NMap.t =
-  max_transactions_res ~verbose index ctx |> Result.get_ok
 
 let add = NMap.pointwise (+)
 
@@ -390,14 +347,15 @@ let iter_res (r:Range.t) (ctx:t) : (loop, string) Result.t =
 let iter (r:Range.t) (ctx:t) : loop =
   iter_res r ctx |> Result.get_ok
 
-let eval ?(verbose=true) : Proto.Code.t -> t -> NMap.t =
-  let rec eval (cost:NMap.t) (p:Proto.Code.t) (ctx:t) : NMap.t =
+let eval (m:Metric.t) : Proto.Code.t -> t -> int =
+  let rec eval (cost:int) (p:Proto.Code.t) (ctx:t) : int =
     match p with
     | Sync _
     | Skip -> cost
     | Acc (x, {index=[n]; _}) ->
       if ctx.use_array x then
-        add cost (max_transactions ~verbose n ctx)
+        let c = to_cost m n ctx |> Result.get_ok |> Cost.value in
+        cost + c
       else
         cost
     | Acc _ ->
@@ -421,7 +379,6 @@ let eval ?(verbose=true) : Proto.Code.t -> t -> NMap.t =
       eval cost q ctx
   in
   fun p ctx ->
-    eval (zero_cost ctx) p ctx
-
+    eval 0 p ctx
 
 

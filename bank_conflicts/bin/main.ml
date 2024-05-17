@@ -16,8 +16,9 @@ module Hotspot = struct
   type t = {
     bank: Bank.t;
     divergence: Divergence_analysis.t;
-    index: (Transaction.t, string) Result.t;
-    sim: (Transaction.t, string) Result.t;
+    max_cost: Cost.t;
+    index: (Cost.t, string) Result.t;
+    sim: (Cost.t, string) Result.t;
   }
 
   let hierarchy (e:t) : Mem_hierarchy.t =
@@ -77,25 +78,31 @@ module Solver = struct
   let sliced_cost (a:t) (k:kernel) : Hotspot.t list =
     Bank.from_proto a.config k
     |> Seq.filter_map (fun bank ->
-      let index = Bank.to_warp a.config bank |> Result.map Warp.max in
-      let bc =
-        index
-        |> Result.map Transaction.count
-        |> Result.value ~default:a.config.num_banks
+      let m =
+        let open Bank in
+        match bank.hierarchy with
+        | Mem_hierarchy.SharedMemory -> Metric.BankConflicts
+        | GlobalMemory -> UncoalescedAccesses
       in
+      let max_cost = Metric.max_cost a.config m in
+      let r_cost = Bank.index_cost a.config m bank in
+      let max_cost = Result.value ~default:max_cost r_cost in
+      let min_cost = Metric.min_cost m in
       let divergence = Divergence_analysis.from_bank bank in
+      let cost = Result.value ~default:max_cost r_cost in
       let sim =
-        if a.simulate && Divergence_analysis.is_known divergence && bc > 1 then
-          Bank.eval_res ~max_count:bc a.config bank
+        if a.simulate && Divergence_analysis.is_known divergence && Cost.(cost > min_cost) then
+          Bank.eval_res ~max_cost:max_cost.value a.config m bank
         else
           Error "Run with --simulate to output simulated cost."
       in
       (* Convert a slice into an expression *)
-      if bc <= 1 && a.skip_zero then
+      if Cost.(cost <= min_cost) && a.skip_zero then
         None
       else
         Some Hotspot.{
-          index;
+          index = r_cost;
+          max_cost;
           bank;
           divergence;
           sim;
@@ -152,7 +159,7 @@ module TUI = struct
         let bc =
           match conflict.index, conflict.sim with
           | _, Ok e ->
-            let e = Transaction.count e |> string_of_int in
+            let e = e.value |> string_of_int in
             let pot =
               if Divergence_analysis.is_known conflict.divergence then
                 ""
@@ -161,7 +168,7 @@ module TUI = struct
             in
             e ^ pot
           | Ok e, _ ->
-            let e = Transaction.count e |> string_of_int in
+            let e = e.value |> string_of_int in
             let pot =
               if Divergence_analysis.is_thread_uniform conflict.divergence then
                 ""
@@ -169,7 +176,7 @@ module TUI = struct
                 " (potential)"
             in
             e ^ pot
-          | _, _ -> "32 (potential)"
+          | _, _ -> string_of_int conflict.max_cost.value ^ " (potential)"
         in
         let cost =
           let open PrintBox in
@@ -200,10 +207,10 @@ module TUI = struct
                 conflict.index
             in
             match tsx with
-            | Ok tsx ->
-              let b = string_of_int tsx.bank in
+            | Ok Cost.{value; state=Some {accesses=accs; _}} ->
+              let b = string_of_int value in
               let accs =
-                tsx.accesses
+                accs
                 |> List.sort compare
               in
               let idx =
@@ -239,7 +246,7 @@ module TUI = struct
                   grid rows;
                 |]
               ]
-            | Error _ -> []
+            | _ -> []
           )
           |> Array.of_list
           |> grid
@@ -286,7 +293,7 @@ module JUI = struct
               [
                 "index_analysis", (
                   match c.index with
-                  | Ok e -> `Int (Transaction.count e)
+                  | Ok {value; _} -> `Int value
                   | Error _ -> `Null
                 );
                 "access", `String (
@@ -301,7 +308,7 @@ module JUI = struct
                 );
                 "sim", (
                   match c.sim with
-                  | Ok e -> `Int (Transaction.count e)
+                  | Ok {value; _} -> `Int value
                   | Error _ -> `Null
                 );
               ]
