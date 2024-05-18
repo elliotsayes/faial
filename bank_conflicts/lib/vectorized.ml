@@ -195,7 +195,7 @@ let from_config
   t
 =
   make
-  ~bank_count:params.num_banks
+  ~bank_count:params.bank_count
   ~warp_count:params.warp_count
   ~use_array:(fun _ -> true)
   |> put_tids params.block_dim
