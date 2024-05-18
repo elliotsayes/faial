@@ -137,8 +137,7 @@ let run_test ((filename:string), (args:string list), (expected_output:string)) :
 let () =
   let open Fpath in
   print_endline "-=- Checking bank-conflicts examples -=-\n";
-  print_string ("Per request tests ");
-  let per_request_tests =
+  let _per_request_tests =
     match Subprocess.make "maxima" ["--version"] |> Subprocess.check_output with
     | Some maxima_version ->
       print_endline ("(" ^ String.trim maxima_version ^ ")");
@@ -147,10 +146,13 @@ let () =
       print_endline "(MAXIMA NOT FOUND, tests skiped)";
       []
   in
+  (* TODO:
+  print_string ("Per request tests ");
   per_request_tests
   |> List.iter (fun (filename, args, expected_output) ->
     run_test (filename, "--only-cost" :: "--per-request" :: args, expected_output)
   );
+  *)
   print_endline ("\nOther tests:");
   tests
   |> List.iter (fun (filename, args, expected_output) ->

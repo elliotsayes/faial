@@ -18,8 +18,8 @@ let choices : (string * t) list =
 
 let max_cost (cfg:Config.t) (m:t) : Cost.t =
   (match m with
-  | BankConflicts -> min cfg.warp_count cfg.bank_count
-  | UncoalescedAccesses -> cfg.warp_count
+  | BankConflicts -> min cfg.threads_per_warp cfg.bank_count
+  | UncoalescedAccesses -> cfg.threads_per_warp
   | CountAccesses -> 1)
   |> Cost.from_int
 

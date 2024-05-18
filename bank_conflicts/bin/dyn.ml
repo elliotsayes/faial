@@ -33,14 +33,14 @@ let shared_arrays (k:Proto.Code.t Proto.Kernel.t) : Variable.Set.t =
 let create_ctx ~bank_count ~env:(env:(string*int) list) ~arrays : Vectorized.t =
   let use_array x = Variable.Set.mem x arrays in
   let block_dim =
-    let x = List.assoc_opt "blockDim.x" env |> Option.value ~default:32 in
+    let x = List.assoc_opt "blockDim.x" env |> Option.value ~default:bank_count in
     let y = List.assoc_opt "blockDim.y" env |> Option.value ~default:1 in
     let z = List.assoc_opt "blockDim.z" env |> Option.value ~default:1 in
     Dim3.{x; y; z}
   in
   print_endline (Dim3.to_string block_dim);
   let ctx =
-    Vectorized.make ~bank_count ~warp_count:bank_count ~use_array
+    Vectorized.make ~bank_count ~thread_count:bank_count ~use_array
     |> Vectorized.put_tids block_dim
   in
   print_endline (Vectorized.to_string ctx);

@@ -169,7 +169,7 @@ module Code = struct
     to_approx
 
   let gen_random (_:Variable.t) (ctx:Vectorized.t) : Vectorized.NMap.t Option.t =
-    Some (Vectorized.NMap.random ctx.warp_count ())
+    Some (Vectorized.NMap.random ctx.thread_count ())
 
   let eval_res
     ?(max_cost=(-1))

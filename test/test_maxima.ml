@@ -1,6 +1,6 @@
 open Stage0
 open Protocols
-open Cost
+open Analyze_cost
 open Reals
 
 let compile

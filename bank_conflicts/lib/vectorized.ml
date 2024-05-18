@@ -120,7 +120,7 @@ let n_map2 (f:int -> int -> bool) (n1:NMap.t) (n2:NMap.t) : BMap.t =
 
 type t = {
   bank_count: int;
-  warp_count: int;
+  thread_count: int;
   cond: Exp.bexp;
   env: NMap.t Variable.Map.t;
   use_array: Variable.t -> bool
@@ -135,11 +135,11 @@ let to_string (ctx:t) : string =
   in
   "env:\n" ^ env
 
-let make ~bank_count ~warp_count ~use_array : t = {
+let make ~bank_count ~thread_count ~use_array : t = {
   cond = Exp.Bool true;
   env = Variable.Map.empty;
   bank_count;
-  warp_count;
+  thread_count;
   use_array;
 }
 
@@ -157,7 +157,7 @@ let zero_cost (ctx:t) : NMap.t =
   NMap.constant ~count:ctx.bank_count ~value:0
 
 let put_tids (block_dim:Dim3.t) (ctx:t) : t =
-  let wids = NMap.make ctx.warp_count (fun x -> x) in
+  let wids = NMap.make ctx.thread_count (fun x -> x) in
   let n_tidx = NMap.map (fun id ->
     id mod block_dim.x) wids
   in
@@ -196,7 +196,7 @@ let from_config
 =
   make
   ~bank_count:params.bank_count
-  ~warp_count:params.warp_count
+  ~thread_count:params.threads_per_warp
   ~use_array:(fun _ -> true)
   |> put_tids params.block_dim
 
@@ -209,7 +209,7 @@ let rec n_eval_res (n: Exp.nexp) (ctx:t) : (NMap.t, string) Result.t =
     | Some x -> Ok x
     | None -> Error ("undefined variable: " ^ Variable.name x))
 
-  | Num n -> Ok (NMap.constant ~count:ctx.warp_count ~value:n)
+  | Num n -> Ok (NMap.constant ~count:ctx.thread_count ~value:n)
 
   | CastInt (CastBool n) ->
     n_eval_res n ctx
