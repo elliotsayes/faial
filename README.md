@@ -10,8 +10,8 @@
 
 Instructions:
 1. Create a directory to hold the binary distribution, say `/opt/faial`
-2. Extract the binary distribution archive [`faial.tar.bz2`](https://gitlab.com/umb-svl/faial/-/jobs/artifacts/main/raw/bundle/faial.tar.bz2?job=bundle)
-3. (Optional) Add `/opt/faial` to the `PATH`
+2. Extract the binary distribution archive `faial.tar.bz2`
+3. (Optional) Add `/opt/faial` to the `PATH`, or run directly `/opt/faial/faial-drf`
 
 # [Usage and tutorial](tutorial/README.md)
 
