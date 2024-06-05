@@ -5,6 +5,9 @@ let one : t = {x=1; y=1; z=1}
 
 let zero : t = {x=0; y=0; z=0}
 
+let total (e:t) : int =
+  e.x * e.y * e.z
+
 let parse ?(default=one) (s:string) : (t, string) Result.t =
   try
     match Yojson.Basic.from_string s with
