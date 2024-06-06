@@ -195,7 +195,7 @@ module StackTrace = struct
   type 'a stack_trace =
   | RootCause of 'a
   | Because of 'a * 'a stack_trace
-  type 'a t = 'a  stack_trace
+  type 'a t = 'a stack_trace
 
   let rec fold_because (accum:'a -> 'b -> 'a) (init:'a) (s:'b t) : 'a =
     match s with
@@ -210,7 +210,6 @@ module StackTrace = struct
       accum x init
     | Because (x, s) ->
       accum x (fold_root_cause accum s init)
-
 
   let iter (f:'a -> unit) : 'a t -> unit =
     fold_because (fun _ x -> f x) ()
