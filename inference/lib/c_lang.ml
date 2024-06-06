@@ -876,20 +876,22 @@ let parse_location (j:json) : Location.t j_result =
   Ok (Location.add_or_reset_lhs first last)
 
 let parse_variable (j:json) : Variable.t j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* name = with_field "name" cast_string o in
-  match List.assoc_opt "range" o with
-  | Some range ->
-    let* l = parse_location range in
-    let l =
-      if Location.length l = 0
-      then Location.set_length (String.length name) l
-      else l
-    in
-    Ok (Variable.make ~location:l ~name)
-  | None -> Ok (Variable.from_name name)
-  
+  (
+    let open Rjson in
+    let* o = cast_object j in
+    let* name = with_field "name" cast_string o in
+    match List.assoc_opt "range" o with
+    | Some range ->
+      let* l = parse_location range in
+      let l =
+        if Location.length l = 0
+        then Location.set_length (String.length name) l
+        else l
+      in
+      Ok (Variable.make ~location:l ~name)
+    | None -> Ok (Variable.from_name name)
+  )
+  |> Rjson.add_reason "parse_variable" j
 
 let compound (ty:J_type.t) (lhs:Expr.t) (opcode:string) (rhs:Expr.t) : Expr.t =
   BinaryOperator {
@@ -1556,8 +1558,25 @@ let parse_constant (j:Yojson.Basic.t) : Enum.Constant.t j_result =
 let parse_enum (j:Yojson.Basic.t) : Enum.t j_result =
   let open Rjson in
   let open Enum in
-  let* var = parse_variable j in
   let* o = cast_object j in
+  let* var =
+    match parse_variable j with
+    | Ok v -> Ok v
+    | Error _ ->
+      let* location = with_field "range" parse_location o in
+      let ty =
+        let open Yojson.Basic.Util in
+        j
+        |> member "inner"
+        |> index 0
+        |> member "type"
+        |> member "qualType"
+        |> to_string_option
+      in
+      (match ty with
+      | Some name -> Ok (Variable.make ~name ~location)
+      | None -> root_cause "Could not find enum name." j)
+  in
   let* constants = with_field_or "inner" (cast_map parse_constant) [] o in
   Ok {var; constants}
 

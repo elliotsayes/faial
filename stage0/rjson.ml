@@ -64,6 +64,11 @@ let root_cause (msg:string) (j:Yojson.Basic.t) : 'a j_result =
 let because (msg:string) (j:Yojson.Basic.t) (e:j_error) : 'a j_result =
   Result.Error (StackTrace.Because ((msg, j), e))
 
+let add_reason :
+  'a. string -> Yojson.Basic.t -> 'a j_result -> 'a j_result
+=
+  fun msg j e -> e |> Result.map_error (fun e -> StackTrace.Because ((msg, j), e))
+
 let type_mismatch ty j =
   root_cause ("type mismatch: expecting " ^ ty ^ ", but got " ^ type_name j) j
 

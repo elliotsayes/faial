@@ -60,6 +60,8 @@ let tests = [
   "racy-mutation.cu", [], 1;
   (* Support for enumerates *)
   "drf-enum.cu", [], 0;
+  (* Support for anonymous enumerates named via typedef *)
+  "drf-enum-typedef.cu", [], 0;
   (* Support for enumerates *)
   "drf-enum-constraint.cu", [], 0;
   (* Aliasing using shared memory (example 1) *)
