@@ -1,3 +1,7 @@
+2024-06:
+- Inference: added support for anonymous enums defined in
+  typedefs.
+
 2024-05:
 - Bank conflicts: reworked index analysis, which now shows the
   bank that generates the conflict, the threads accessing it,
