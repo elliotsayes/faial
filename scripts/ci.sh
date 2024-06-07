@@ -5,10 +5,16 @@ wget -nv --content-disposition "https://gitlab.com/umb-svl/c-to-json/-/jobs/arti
 tar xvf c-to-json-bin.tar.bz2 &&
 rm c-to-json-bin.tar.bz2 &&
 # faial:
-cp ../faial-bc-dyn ../faial-bc ../c-ast ../faial-drf bin/ &&
+cp \
+  ../faial-bc-dyn \
+  ../faial-bc \
+  ../c-ast \
+  ../faial-drf \
+  ../faial-cost \
+  bin/ &&
 cp ../scripts/faial-drf ../README.md ../LICENSE  ./ &&
 # download z3
-Z3_VERSION=4.12.6 &&
+Z3_VERSION=4.13.0 &&
 Z3_ARCH=x64-glibc-2.31 &&
 mkdir lib/ &&
 wget -nv --content-disposition "https://github.com/Z3Prover/z3/releases/download/z3-${Z3_VERSION}/z3-${Z3_VERSION}-${Z3_ARCH}.zip" &&
