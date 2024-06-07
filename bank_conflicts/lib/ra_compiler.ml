@@ -46,7 +46,8 @@ module Make (L:Logger.Logger) = struct
         l
         |> lin x
         |> Option.map (fun e ->
-            Ra.Stmt.Tick (idx_analysis locals e)
+            let tick = idx_analysis locals e in
+            Ra.Stmt.Tick (tick)
           )
         |> Option.value ~default:Ra.Stmt.Skip
       | Sync _ -> Skip
@@ -64,8 +65,14 @@ module Make (L:Logger.Logger) = struct
         else
           Seq (p, q)
       | Loop (r, p) ->
-        let r = R.uniform cfg.block_dim r |> Option.value ~default:r in
-        Loop (r, from_p locals p)
+        let (r, p) =
+          match R.uniform cfg.block_dim r with
+          | Some r ->
+            (* we need to invalidate the loop variable *)
+            (r, from_p (Variable.Set.add (Range.var r) locals) p)
+          | None -> (r, from_p locals p)
+        in
+        Loop (r, p)
     in
     k.code
     |> Proto.Code.subst_block_dim cfg.block_dim

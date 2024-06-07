@@ -45,12 +45,12 @@ let tests = [
   "loops-1-pow-unknown-bound.cu", [], "Σ_{i | 1 ≤ i ≤ ⌊log₂((n - 1))⌋} 1";
   "loops-1-pow-unknown-bound.cu", ["-p"; "n=1025"], "10";
   "loops-1-rsh.cu", [], "9";
-  (* tid in the upper and in the lower bounds *)
-  "loops-1-tid-var.cu", ["--blockDim=32"], "64";
   (* tid in the lower bound *)
   "loops-1-tid-lb.cu", [], "1024";
   (* tid in the upper bound *)
   "loops-1-tid-ub.cu", ["--blockDim=32"], "31";
+  (* loop range is made uniform and variable used in index *)
+  "loops-1-tid-var.cu", [], "310";
   "loops-nested-2.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | i ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-ind.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 0 ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-pow.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 1 ≤ j ≤ ⌊log₂((n - 1))⌋} 1";
