@@ -39,16 +39,16 @@ let tests = [
   "loops-1-div.cu", [], "9";
   "loops-1-bitwise.cu", [], "Σ_{i | 0 ≤ i ≤ ((n << m) - 1)} 1";
   "loops-1-minus.cu", [], "Σ_{i | 0 ≤ i ≤ n} 1";
-  "loops-1-tid.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} 1";
   "loops-1-multiple.cu", [], "11";
   "loops-1-pow.cu", ["--block-dim"; "512"], "8";
   "loops-1-pow-2.cu", [], "9";
   "loops-1-pow-unknown-bound.cu", [], "Σ_{i | 1 ≤ i ≤ ⌊log₂((n - 1))⌋} 1";
   "loops-1-pow-unknown-bound.cu", ["-p"; "n=1025"], "10";
   "loops-1-rsh.cu", [], "9";
+  (* tid in the upper and in the lower bounds *)
+  "loops-1-tid-var.cu", ["--blockDim=32"], "64";
   "loops-nested-2.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | i ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-ind.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 0 ≤ j ≤ (n - 1)} 1";
-  "loops-nested-2-tid.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | i ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-pow.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 1 ≤ j ≤ ⌊log₂((n - 1))⌋} 1";
   "loops-nested-2-ind-step.cu", [], "Σ_{i | 0 ≤ i ≤ ⌊(n - 1) / step1⌋} Σ_{j | 0 ≤ j ≤ ⌊((m - 1) - (i * step1)) / step2⌋} 1";
   "ifs-2.cu", [], "if ((n < 4)) then 1 else 3"
@@ -85,6 +85,8 @@ let unsupported : Fpath.t list =
     "2tid-racuda-1.cu";
     "2tid-racuda-2.cu";
     "2tid-racuda-3.cu";
+    "loops-1-tid.cu";
+    "loops-nested-2-tid.cu";
   ] |> List.map (fun x -> Fpath.(v "." / x))
 
 let faial_bc_path : Fpath.t = Files.from_string "../../total_cost/main.exe"

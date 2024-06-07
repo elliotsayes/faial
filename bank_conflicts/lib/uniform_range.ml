@@ -43,6 +43,7 @@ module Make (L:Logger.Logger) = struct
           https://stackoverflow.com/questions/64484347/
         *)
         b_to_expr (n_ge x (Num 0));
+        b_to_expr (n_eq x n);
         restrict Variable.tid_x block_dim.x;
         restrict Variable.tid_y block_dim.y;
         restrict Variable.tid_z block_dim.z;
