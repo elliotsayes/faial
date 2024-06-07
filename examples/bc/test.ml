@@ -47,6 +47,10 @@ let tests = [
   "loops-1-rsh.cu", [], "9";
   (* tid in the upper and in the lower bounds *)
   "loops-1-tid-var.cu", ["--blockDim=32"], "64";
+  (* tid in the lower bound *)
+  "loops-1-tid-lb.cu", [], "1024";
+  (* tid in the upper bound *)
+  "loops-1-tid-ub.cu", ["--blockDim=32"], "31";
   "loops-nested-2.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | i ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-ind.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 0 ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-pow.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 1 ≤ j ≤ ⌊log₂((n - 1))⌋} 1";
@@ -65,7 +69,6 @@ let unsupported : Fpath.t list =
     "empty.cu";
     "ifs-1.cu";
     "ifs-seq-3.cu";
-    "loops-1-tid-v2.cu";
     "loops-nested-3.cu";
     "loops-nested-4.cu";
     "loops-nested-5.cu";
@@ -85,7 +88,6 @@ let unsupported : Fpath.t list =
     "2tid-racuda-1.cu";
     "2tid-racuda-2.cu";
     "2tid-racuda-3.cu";
-    "loops-1-tid.cu";
     "loops-nested-2-tid.cu";
   ] |> List.map (fun x -> Fpath.(v "." / x))
 
