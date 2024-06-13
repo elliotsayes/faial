@@ -47,7 +47,7 @@ module Make (L:Logger.Logger) = struct
         |> lin x
         |> Option.map (fun e ->
             let tick = idx_analysis locals e in
-            Ra.Stmt.Tick (tick)
+            Ra.Stmt.Tick tick
           )
         |> Option.value ~default:Ra.Stmt.Skip
       | Sync _ -> Skip
