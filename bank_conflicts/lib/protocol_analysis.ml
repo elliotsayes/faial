@@ -51,7 +51,7 @@ module Make (L:Logger.Logger) = struct
       | Decl d -> Decl {d with body= simpl d.body}
       | Loop (r, p) ->
         let p = simpl p in
-        (match R.uniform cfg.block_dim r with
+        (match R.uniform k.global_variables cfg.block_dim r with
         | Some r' ->
           let cnd =
             let open Exp in

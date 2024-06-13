@@ -38,6 +38,7 @@ module Make (L:Logger.Logger) = struct
       | Approximate -> fun _ -> Ra.Stmt.Opt.choice
     in
     let lin = L.linearize cfg k.arrays in
+    let params = k.global_variables in
     let rec from_p (locals:Variable.Set.t) : Proto.Code.t -> Ra.Stmt.t =
       function
       | Skip -> Skip
@@ -66,7 +67,7 @@ module Make (L:Logger.Logger) = struct
           Seq (p, q)
       | Loop (r, p) ->
         let (r, p) =
-          match R.uniform cfg.block_dim r with
+          match R.uniform params cfg.block_dim r with
           | Some r ->
             (* we need to invalidate the loop variable *)
             (r, from_p (Variable.Set.add (Range.var r) locals) p)

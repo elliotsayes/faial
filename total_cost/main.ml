@@ -30,7 +30,6 @@ module Solver = struct
     skip_simpl_ra: bool;
     asympt: bool;
     config: Config.t;
-    per_request: bool;
     ignore_absent: bool;
     only_reads: bool;
     only_writes: bool;
@@ -58,7 +57,6 @@ module Solver = struct
     ~skip_distinct_vars
     ~asympt
     ~config
-    ~per_request
     ~ignore_absent
     ~only_reads
     ~only_writes
@@ -92,7 +90,6 @@ module Solver = struct
       skip_simpl_ra;
       asympt;
       config;
-      per_request;
       ignore_absent;
       only_reads;
       only_writes;
@@ -151,35 +148,35 @@ module Solver = struct
     )
     |> Result.map_error Errors.to_string
 
-  let get_ra (a:t) (k:kernel) (idx_analysis: Variable.Set.t -> Exp.nexp -> int) : Ra.Stmt.t =
-    let strategy = if a.approx_ifs then Ra_compiler.Approximate else Ra_compiler.Exact in
+  let get_ra
+    (a:t)
+    (k:kernel)
+    (idx_analysis: Variable.Set.t -> Exp.nexp -> int)
+  :
+    Ra.Stmt.t
+  =
+    let strategy =
+      if a.approx_ifs then
+        Ra_compiler.Approximate
+      else
+        Ra_compiler.Exact
+    in
     let r = Ra_compiler.Default.from_kernel ~strategy idx_analysis a.config k in
     if a.skip_simpl_ra then r else Ra.Stmt.simplify r
 
   type r_cost = (cost, string) Result.t
 
   let total_cost (a:t) (k:kernel) : r_cost =
-    let r = get_ra a k (if a.strategy = Summation.Strategy.Max then max_cost a else min_cost a) in
+    let s =
+      if a.strategy = Summation.Strategy.Max then
+        max_cost a
+      else min_cost a
+    in
+    let r = get_ra a k s in
     get_cost a r
-
-  let transactions_per_request (a:t) (k:kernel) : r_cost =
-    (* TODO: fix me *)
-    let numerator = get_ra a k (max_cost a) in
-    let denominator = get_ra a k (max_cost a) in
-    let start = Unix.gettimeofday () in
-    Maxima.run_ratio
-      ~verbose:a.show_code
-      ~exe:a.maxima_exe
-      ~numerator
-      ~denominator
-    |> Result.map (fun c ->
-      {amount=c; analysis_duration=Unix.gettimeofday () -. start}
-    )
-    |> Result.map_error Errors.to_string
 
   type summary =
     | TotalCost of (kernel * r_cost) list
-    | RatioCost of (kernel * r_cost) list
 
   let run (s:t) : summary =
     let pair f k =
@@ -221,10 +218,7 @@ module Solver = struct
         )
       |> List.map Proto.Kernel.opt
     in
-    if s.per_request then
-      RatioCost (List.map (pair (transactions_per_request s)) ks)
-    else
-      TotalCost (List.map (pair (total_cost s)) ks)
+    TotalCost (List.map (pair (total_cost s)) ks)
 
 end
 
@@ -254,11 +248,9 @@ module TUI = struct
     in
     Stdlib.flush_all ();
     match Solver.run s with
-    | RatioCost []
     | TotalCost [] ->
       abort_when (not s.ignore_absent) "No kernels found.";
-    | TotalCost l
-    | RatioCost l ->
+    | TotalCost l ->
       List.iter print_r_cost l
 end
 
@@ -284,7 +276,6 @@ module JUI = struct
     let kernels =
       match Solver.run s with
       | TotalCost l -> `List (List.map (c_to_j "total_cost") l)
-      | RatioCost l -> `List (List.map (c_to_j "per_transaction") l)
     in
     `Assoc [
       "kernels", kernels;
@@ -318,7 +309,6 @@ let run
   ~config
   ~output_json
   ~ignore_absent
-  ~per_request
   ~only_reads
   ~only_writes
   ~block_dim
@@ -346,7 +336,6 @@ let run
     ~skip_simpl_ra
     ~skip_distinct_vars
     ~config
-    ~per_request
     ~kernels
     ~ignore_absent
     ~only_reads
@@ -384,7 +373,6 @@ let pico
   (ignore_absent:bool)
   (asympt:bool)
   (output_json:bool)
-  (per_request:bool)
   (only_reads:bool)
   (only_writes:bool)
   (params:(string * int) list)
@@ -413,7 +401,6 @@ let pico
     ~only_cost
     ~asympt
     ~output_json
-    ~per_request
     ~ignore_absent
     ~only_reads
     ~only_writes
@@ -517,12 +504,6 @@ let asympt =
   let doc = "Calculate the asymptotic cost of bank conflicts." in
   Arg.(value & flag & info ["asympt"] ~doc)
 
-let per_request =
-  let doc = "Average number of shared memorytransactions performed for each " ^
-  "shared memory access."
-  in
-  Arg.(value & flag & info ["per-request"] ~doc)
-
 let show_code =
   let doc = "Show the code being sent to the solver if any." in
   Arg.(value & flag & info ["show-code"] ~doc)
@@ -576,7 +557,6 @@ let pico_t = Term.(
   $ ignore_absent
   $ asympt
   $ output_json
-  $ per_request
   $ only_reads
   $ only_writes
   $ params

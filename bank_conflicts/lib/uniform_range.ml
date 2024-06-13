@@ -8,31 +8,30 @@ module Make (L:Logger.Logger) = struct
   let maximize
     ?(timeout=100)
     (block_dim:Dim3.t)
+    (pre:Exp.bexp)
     (n:Exp.nexp)
   :
-    (Variable.t * Exp.nexp) list
+    (Variable.t * Exp.nexp) list option
   =
     let open Exp in
     let solve
       (opt:Z3.Optimize.optimize)
       (lb:Z3.Expr.expr)
-      (handler:Z3.Model.model -> (Variable.t * Exp.nexp) list)
     :
-      (Variable.t * Exp.nexp) list option
+      Z3.Model.model option
     =
       let open Z3 in
       let _ = Optimize.maximize opt lb in
       if Optimize.check opt = Solver.SATISFIABLE then
         Optimize.get_model opt
-        |> Option.map handler
       else
         None
     in
     let open Z3 in
     let ctx = mk_context ["timeout", string_of_int timeout] in
-    let b_to_expr = Gen_z3.Bv32Gen.b_to_expr ctx in
-    let n_to_expr = Gen_z3.Bv32Gen.n_to_expr ctx in
-    let parse_num = Gen_z3.Bv32Gen.parse_num in
+    let b_to_expr = Gen_z3.IntGen.b_to_expr ctx in
+    let n_to_expr = Gen_z3.IntGen.n_to_expr ctx in
+    let parse_num = Gen_z3.IntGen.parse_num in
     let x = Var (Variable.from_name "?max") in
     let restrict tid tid_count =
       let lhs = n_ge (Var tid) (Num 0) in
@@ -50,12 +49,14 @@ module Make (L:Logger.Logger) = struct
         *)
         b_to_expr (n_ge x (Num 0));
         b_to_expr (n_eq x n);
+        b_to_expr pre;
         restrict Variable.tid_x block_dim.x;
         restrict Variable.tid_y block_dim.y;
         restrict Variable.tid_z block_dim.z;
       ]
     ;
-    match solve opt (n_to_expr x) (fun m ->
+    solve opt (n_to_expr x)
+    |> Option.map (fun m ->
       (* Go through all declarations of the model *)
       Model.get_const_decls m
       |> List.map (fun d ->
@@ -88,34 +89,35 @@ module Make (L:Logger.Logger) = struct
           with
             Failure _ -> None)
       )
-    ) with
-    | Some l -> l
-    | None ->
-        (L.error ("could not maximize expression: " ^ Exp.n_to_string n);
-        [
-          Variable.tid_x, Num 0;
-          Variable.tid_y, Num 0;
-          Variable.tid_z, Num 0
-        ])
+    )
   (*
    Given a range, makes that range uniform according to tids.
    *)
-  let uniform (block_dim:Dim3.t) (r:Range.t) : Range.t option =
+  let uniform (params:Params.t) (block_dim:Dim3.t) (r:Range.t) : Range.t option =
     let open Exp in
     let fvs = Freenames.free_names_range r Variable.Set.empty in
-    if Variable.contains_tids fvs then
-      Some (
-        let r_subst (r:Range.t) : (Variable.t * Exp.nexp) list -> Range.t =
-          List.fold_left (fun r (k,v) -> Subst.ReplacePair.r_subst (k, v) r) r
-        in
-        let r' =
-          maximize block_dim (n_minus r.upper_bound r.lower_bound)
-          |> r_subst r
-        in
-        L.info ("Making range uniform: for (" ^ Range.to_string r ^ ") 🡆 for (" ^ Range.to_string r' ^ ")");
-        r'
-      )
-    else None
+    let pre =
+      params
+      |> Params.retain_all fvs
+      |> Params.to_bexp
+    in
+    if Variable.contains_tids fvs then (
+      let r_subst (r:Range.t) : (Variable.t * Exp.nexp) list -> Range.t =
+        List.fold_left (fun r (k,v) -> Subst.ReplacePair.r_subst (k, v) r) r
+      in
+      match maximize block_dim pre (n_minus r.upper_bound r.lower_bound) with
+      | None ->
+        L.error ("could not maximize expression: " ^ Range.to_string r);
+        None
+      | Some v ->
+        let r' = r_subst r v in
+        L.info (
+          "Making range uniform: " ^
+          "for (" ^ Range.to_string r ^ ") 🡆 " ^
+          "for (" ^ Range.to_string r' ^ ")"
+        );
+        Some r'
+    ) else None
 end
 
 module Silent = Make(Logger.Silent)

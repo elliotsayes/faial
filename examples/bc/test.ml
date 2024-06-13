@@ -49,6 +49,8 @@ let tests = [
   "loops-1-tid-lb.cu", [], "1024";
   (* tid in the upper bound *)
   "loops-1-tid-ub.cu", ["--blockDim=32"], "31";
+  (* tid in the upper bound *)
+  "loops-1-tid-ub-var.cu", ["--blockDim=32"], "Σ_{i | 0 ≤ i ≤ ((31 + n) - 1)} 1";
   (* loop range is made uniform and variable used in index *)
   "loops-1-tid-var.cu", [], "310";
   (* a thread-local unknown variable being multiplied by tid is 31 *)
