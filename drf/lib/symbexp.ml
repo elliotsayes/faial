@@ -250,28 +250,6 @@ module Proof = struct
     in
     add_goal idx_eq p
 
-
-  let _assign_dim3 ~x ~y ~z (idx1:Dim3.t option) (idx2:Dim3.t option) (p:t) : t =
-    let gen_dim3 (tid:Task.t) (idx:Dim3.t) : bexp =
-      b_and_ex [
-        n_eq (Var (Gen.project tid x)) (Num idx.x);
-        n_eq (Var (Gen.project tid y)) (Num idx.y);
-        n_eq (Var (Gen.project tid z)) (Num idx.z);
-      ]
-    in
-    match idx1, idx2 with
-    | Some idx1, Some idx2 ->
-      let assign (idx1:Dim3.t) (idx2:Dim3.t) : bexp =
-        b_and (gen_dim3 Task1 idx1) (gen_dim3 Task2 idx2)
-      in
-      add_goal (b_or (assign idx1 idx2) (assign idx2 idx1)) p
-    | Some idx, None | None, Some idx ->
-      let assign : bexp =
-        b_or (gen_dim3 Task1 idx) (gen_dim3 Task2 idx)
-      in
-      add_goal assign p
-    | None, None -> p
-
   let assign_dim3 t ~tid ~bid : bexp =
     let gen_dim3 (x,y,z) (idx:Dim3.t) : bexp =
       b_and_ex [
