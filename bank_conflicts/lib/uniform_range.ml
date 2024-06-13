@@ -5,7 +5,13 @@ module Make (L:Logger.Logger) = struct
   (*
     Maximizes the given expression, and replaces tids by concrete values.
     *)
-  let maximize ?(timeout=100) (block_dim:Dim3.t) (n:Exp.nexp) : (Variable.t * Exp.nexp) list =
+  let maximize
+    ?(timeout=100)
+    (block_dim:Dim3.t)
+    (n:Exp.nexp)
+  :
+    (Variable.t * Exp.nexp) list
+  =
     let open Exp in
     let solve
       (opt:Z3.Optimize.optimize)
