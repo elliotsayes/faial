@@ -57,7 +57,7 @@ module Make (L:Logger.Logger) = struct
         let fns =
           Variable.Set.inter
             (Freenames.free_names_bexp b Variable.Set.empty)
-            (Variable.Set.union locals Variable.tid_var_set)
+            locals
         in
         let p = from_p locals p in
         let q = from_p locals q in
@@ -66,19 +66,52 @@ module Make (L:Logger.Logger) = struct
         else
           Seq (p, q)
       | Loop (r, p) ->
+        let free_locals =
+          Freenames.free_names_range r Variable.Set.empty
+          |> Variable.Set.inter locals
+        in
+        let only_tid_in_locals =
+          Variable.Set.diff free_locals Variable.tid_var_set
+          |> Variable.Set.is_empty
+        in
+        if Variable.Set.is_empty free_locals then
+          (* Uniform loop *)
+          Loop (r, from_p locals p)
+        else if not only_tid_in_locals then
+          (* Unsupported loop *)
+          Loop (r, from_p (Variable.Set.add (Range.var r) locals) p)
+        else
+        (* get the first number *)
+        let f = Range.first r in
         let (r, p) =
           match R.uniform params cfg.block_dim r with
           | Some r ->
+            let locals =
+              (*
+                If the first element of the range has a tid, then
+                the loop variable should be considered a thread-local.
+                Otherwise, the loop variable can be considered
+                thread-global.
+              *)
+              if Exp.n_exists Variable.is_tid f then
+                Variable.Set.add (Range.var r) locals
+              else
+                locals
+            in
             (* we need to invalidate the loop variable *)
-            (r, from_p (Variable.Set.add (Range.var r) locals) p)
+            (r, from_p locals p)
           | None -> (r, from_p locals p)
         in
         Loop (r, p)
     in
+    let locals =
+      Params.to_set k.local_variables
+      |> Variable.Set.union Variable.tid_var_set
+    in
     k.code
     |> Proto.Code.subst_block_dim cfg.block_dim
     |> Proto.Code.subst_grid_dim cfg.grid_dim
-    |> from_p (Params.to_set k.local_variables)
+    |> from_p locals
 end
 module Default = Make(Logger.Colors)
 module Silent = Make(Logger.Silent)

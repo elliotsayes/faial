@@ -52,7 +52,8 @@ let tests = [
   (* tid in the upper bound *)
   "loops-1-tid-ub-var.cu", ["--blockDim=32"], "Σ_{i | 0 ≤ i ≤ ((31 + n) - 1)} 1";
   (* loop range is made uniform and variable used in index *)
-  "loops-1-tid-var.cu", [], "310";
+  "loops-1-tid-var-1.cu", [], "310";
+  "loops-1-tid-var-2.cu", [], "31744";
   (* a thread-local unknown variable being multiplied by tid is 31 *)
   "unkn-tid.cu", [], "31";
   "loops-nested-2.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | i ≤ j ≤ (n - 1)} 1";
