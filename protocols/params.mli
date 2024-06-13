@@ -3,7 +3,9 @@ val empty : t
 val filter : (Variable.t -> bool) -> t -> t
 val union_left : t -> t -> t
 val union_right : t -> t -> t
+(* Remove the variables that are members of the set *)
 val remove_all : Variable.Set.t -> t -> t
+(* Keep the variables that are members of the set *)
 val retain_all : Variable.Set.t -> t -> t
 val to_string : t -> string
 val from_set: C_type.t -> Variable.Set.t -> t
