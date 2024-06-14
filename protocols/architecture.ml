@@ -64,28 +64,28 @@ module Defaults = struct
   let block : t = {
     globals =
       Variable.Set.empty
-      |> Variable.Set.union Variable.bid_var_set
-      |> Variable.Set.union Variable.bdim_var_set
-      |> Variable.Set.union Variable.gdim_var_set
+      |> Variable.Set.union Variable.bid_set
+      |> Variable.Set.union Variable.bdim_set
+      |> Variable.Set.union Variable.gdim_set
       |> Params.from_set C_type.unsigned_int
     ;
-    locals = Variable.tid_var_set |> Params.from_set C_type.unsigned_int;
-    distinct : bexp = distinct Variable.tid_var_list;
+    locals = Variable.tid_set |> Params.from_set C_type.unsigned_int;
+    distinct : bexp = distinct Variable.tid_list;
   }
 
   let grid : t = {
     globals =
       Variable.Set.empty
-      |> Variable.Set.union Variable.bdim_var_set
-      |> Variable.Set.union Variable.gdim_var_set
+      |> Variable.Set.union Variable.bdim_set
+      |> Variable.Set.union Variable.gdim_set
       |> Params.from_set C_type.unsigned_int
     ;
     locals =
-      Variable.bid_var_set
-      |> Variable.Set.union Variable.tid_var_set
+      Variable.bid_set
+      |> Variable.Set.union Variable.tid_set
       |> Params.from_set C_type.unsigned_int
     ;
-    distinct : bexp = distinct Variable.bid_var_list;
+    distinct : bexp = distinct Variable.bid_list;
   }
   let to_bexp (e:t) : bexp =
     b_and e.distinct base

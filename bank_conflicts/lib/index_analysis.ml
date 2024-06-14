@@ -26,7 +26,7 @@ let cost
   let bc_fail (reason : string) : (int, string) Result.t =
     Error (reason ^ ": " ^ Exp.n_to_string n)
   in
-  let thread_locals = Variable.Set.diff thread_locals Variable.tid_var_set in
+  let thread_locals = Variable.Set.diff thread_locals Variable.tid_set in
   let fvs = Freenames.free_names_nexp n Variable.Set.empty in
   let has_thread_locals : bool =
       not (Variable.Set.inter thread_locals fvs |> Variable.Set.is_empty)

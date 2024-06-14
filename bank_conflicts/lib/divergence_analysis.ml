@@ -26,7 +26,7 @@ let rec c_is_uniform (locals:Variable.Set.t) : Bank.Code.t -> bool =
 
 let is_uniform (k:Bank.t) : bool =
   c_is_uniform
-    (Variable.Set.union k.local_variables Variable.tid_var_set)
+    (Variable.Set.union k.local_variables Variable.tid_set)
     k.code
 
 (* ============================== *)

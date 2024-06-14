@@ -2,7 +2,7 @@ open Protocols
 
 let kernel_env (k: Proto.Code.t Proto.Kernel.t) : Variable.Set.t =
   let globals = Params.to_set k.global_variables in
-  Variable.Set.union globals Variable.tid_var_set
+  Variable.Set.union globals Variable.tid_set
 
 type t = {data_independent: bool; control_independent: bool}
 

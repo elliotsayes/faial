@@ -71,7 +71,7 @@ module Make (L:Logger.Logger) = struct
           |> Variable.Set.inter locals
         in
         let only_tid_in_locals =
-          Variable.Set.diff free_locals Variable.tid_var_set
+          Variable.Set.diff free_locals Variable.tid_set
           |> Variable.Set.is_empty
         in
         if Variable.Set.is_empty free_locals then
@@ -106,7 +106,7 @@ module Make (L:Logger.Logger) = struct
     in
     let locals =
       Params.to_set k.local_variables
-      |> Variable.Set.union Variable.tid_var_set
+      |> Variable.Set.union Variable.tid_set
     in
     k.code
     |> Proto.Code.subst_block_dim cfg.block_dim

@@ -92,9 +92,9 @@ module Kernel = struct
   let from_loc_split (arch:Architecture.t) (k:Locsplit.Kernel.t) : t =
     let ids =
       (match arch with
-      | Grid -> Variable.bid_var_set
+      | Grid -> Variable.bid_set
       | Block -> Variable.Set.empty)
-      |> Variable.Set.union Variable.tid_var_set
+      |> Variable.Set.union Variable.tid_set
     in
     let approx_local_variables =
       Variable.Set.diff (Params.to_set k.local_variables) ids

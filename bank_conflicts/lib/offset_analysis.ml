@@ -35,7 +35,7 @@ let index_and (f:Exp.nexp -> Exp.nexp -> Exp.nexp) (e1: t) (e2: t) : t =
   | Offset e1, Offset e2 -> Offset (f e1 e2)
 
 let from_nexp (locals:Variable.Set.t) : Exp.nexp -> t =
-  let locals = Variable.Set.union locals Variable.tid_var_set in
+  let locals = Variable.Set.union locals Variable.tid_set in
   let rec from_nexp : Exp.nexp -> t =
     function
     | Num n -> Offset (Num n)

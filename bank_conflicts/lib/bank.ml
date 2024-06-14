@@ -312,7 +312,7 @@ let map_index (f:Exp.nexp -> Exp.nexp) (k:t) : t =
 
 let to_check (k:t) : Approx.Check.t =
   let code = Code.to_approx k.array k.code in
-  let vars = Variable.Set.union k.global_variables Variable.tid_var_set in
+  let vars = Variable.Set.union k.global_variables Variable.tid_set in
   Approx.Check.from_code vars code
 
 let index_cost (params:Config.t) (m:Metric.t) (k:t) : (Cost.t, string) Result.t =

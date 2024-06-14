@@ -123,17 +123,17 @@ let fresh (xs:Set.t) (x:t) : t =
 let is_tid (x:t) : bool =
   equal x tid_x || equal x tid_y || equal x tid_z
 
-let tid_var_list : t list = [tid_x; tid_y; tid_z]
-let tid_var_set : Set.t = Set.of_list tid_var_list
+let tid_list : t list = [tid_x; tid_y; tid_z]
+let tid_set : Set.t = Set.of_list tid_list
 
-let bid_var_list : t list = [bid_x; bid_y; bid_z]
-let bid_var_set : Set.t = Set.of_list bid_var_list
+let bid_list : t list = [bid_x; bid_y; bid_z]
+let bid_set : Set.t = Set.of_list bid_list
 
-let bdim_var_list : t list = [bdim_x; bdim_y; bdim_z]
-let bdim_var_set : Set.t = Set.of_list bdim_var_list
+let bdim_list : t list = [bdim_x; bdim_y; bdim_z]
+let bdim_set : Set.t = Set.of_list bdim_list
 
-let gdim_var_list : t list = [gdim_x; gdim_y; gdim_z]
-let gdim_var_set : Set.t = Set.of_list gdim_var_list
+let gdim_list : t list = [gdim_x; gdim_y; gdim_z]
+let gdim_set : Set.t = Set.of_list gdim_list
 
 let contains_tids (vs:Set.t) : bool =
   Set.mem tid_x vs ||
