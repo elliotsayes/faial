@@ -14,8 +14,9 @@ let tests = [
   "racy-saxpy.cu", ["--logic"; "QF_AUFBV"], 1;
   (* This is the simplest data-race free example. *)
   "drf-saxpy.cu", [], 0;
-  (* The kernel contains constraints that makes it DRF: blockDim.{y,z}=1. *)
-  "drf-saxpy.cu", ["--all-dims"], 0;
+  (* The kernel contains constraints that makes it DRF: blockDim.{y,z}=1
+     and gridDim.{y,z}=1. *)
+  "drf-saxpy.cu", ["--all-dims"; "--all-levels"], 0;
   (* This example is only racy at the grid-level *)
   "racy-grid-level.cu", [], 0;
   "racy-grid-level.cu", ["--grid-level"], 1;
