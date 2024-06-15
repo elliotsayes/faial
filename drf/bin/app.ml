@@ -234,7 +234,7 @@ let check_unreachable (a:t) : unit =
       |> Symbexp.sanity_check Architecture.Block
       |> show a.show_symbexp Symbexp.print_kernels
       |> Streamutil.map (fun b ->
-        (b, Z3_solver.solve ~timeout:a.timeout ~logic:a.logic b)
+        (b, Solve_drf.solve ~timeout:a.timeout ~logic:a.logic b)
       )
       |> Streamutil.to_list
     in
@@ -262,7 +262,7 @@ let run (a:t) : Analysis.t list =
       |> Symbexp.add ~tid:a.thread_idx_1 ~bid:a.block_idx_1
       |> Symbexp.add ~tid:a.thread_idx_2 ~bid:a.block_idx_2
       |> show a.show_symbexp Symbexp.print_kernels
-      |> Z3_solver.Solution.solve
+      |> Solve_drf.Solution.solve
           ~timeout:a.timeout
           ~_show_proofs:a.show_proofs
           ~logic:a.logic

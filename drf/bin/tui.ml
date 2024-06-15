@@ -1,4 +1,4 @@
-open Z3_solver
+open Solve_drf
 open Protocols
 open Stage0
 
@@ -238,7 +238,7 @@ let render (output: Analysis.t list) : unit =
     let errors =
       solution.report
       |> List.filter_map (fun s ->
-        let open Z3_solver.Solution in
+        let open Solution in
         match s.outcome with
         | Drf -> None
         | Unknown -> Some (Either.Left s.proof)

@@ -1,5 +1,5 @@
 open Stage0
-open Z3_solver
+open Solve_drf
 open Protocols
 open Drf
 
@@ -13,7 +13,7 @@ let render (output: Analysis.t list) : unit =
       let unknowns, errors =
         solutions
         |> List.filter_map (fun s ->
-          let open Z3_solver.Solution in
+          let open Solution in
           match s.outcome with
           | Drf -> None
           | Unknown -> Some (Either.Left s.proof)
@@ -24,7 +24,7 @@ let render (output: Analysis.t list) : unit =
       let logics : Yojson.Basic.t list =
         solutions
         |> List.map (fun s ->
-          let open Z3_solver.Solution in
+          let open Solution in
           Option.value ~default:"DEFAULT" s.logic
         )
         |> Common.StringSet.of_list
