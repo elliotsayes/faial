@@ -26,21 +26,23 @@ type t = {
   block_idx_1: Dim3.t option;
   block_idx_2: Dim3.t option;
   archs: Architecture.t list;
-  block_dim: Dim3.t;
-  grid_dim: Dim3.t;
+  block_dim: Dim3.t option;
+  grid_dim: Dim3.t option;
   params: (string * int) list;
   macros: string list;
 }
 
 let to_string (app:t) : string =
-  let opt (o: string option) : string =
+  let opt_s (o: string option) : string =
     Option.value ~default:"null" o
   in
-  let opt_int (o:int option) : string =
+  let opt : 'a. ('a -> string) -> 'a option -> string =
+    fun f o ->
     o
-    |> Option.map string_of_int
-    |> opt
+    |> Option.map f
+    |> opt_s
   in
+  let int = string_of_int in
   let bool (b:bool) : string =
     if b then "true" else "false"
   in
@@ -66,11 +68,11 @@ let to_string (app:t) : string =
     let kernels = List.length kernels |> string_of_int in
     "filename: " ^ filename ^
     "\nonly_kernel: " ^ only_kernel ^
-    "\nblock_dim: " ^ dim3 block_dim ^
-    "\ngrid_dim: " ^ dim3 grid_dim ^
+    "\nblock_dim: " ^ opt dim3 block_dim ^
+    "\ngrid_dim: " ^ opt dim3 grid_dim ^
     "\nkernels: " ^ kernels ^
-    "\ntimeout: " ^ opt_int timeout ^
-    "\nlogic: " ^ opt logic ^
+    "\ntimeout: " ^ opt int timeout ^
+    "\nlogic: " ^ opt_s logic ^
     "\narchs: " ^ list_arch archs ^
     "\nshow_proofs: " ^ bool show_proofs ^
     "\nshow_proto: " ^ bool show_proto ^
@@ -113,6 +115,7 @@ let parse
   ~only_kernel
   ~macros
   ~cu_to_json
+  ~all_dims
 :
   t
 =
@@ -127,8 +130,18 @@ let parse
     filename
   in
   let kernels = parsed.kernels in
-  let block_dim = parsed.options.block_dim in
-  let grid_dim = parsed.options.grid_dim in
+  let block_dim =
+    if all_dims then
+      None
+    else
+      Some parsed.options.block_dim
+  in
+  let grid_dim =
+    if all_dims then
+      None
+    else
+      Some parsed.options.grid_dim
+  in
   {
     filename;
     timeout;

@@ -212,8 +212,8 @@ module Solver = struct
         )
       |> List.map (
           Proto.Kernel.inline_all
-          ~block_dim:s.block_dim
-          ~grid_dim:s.grid_dim
+          ~block_dim:(Some s.block_dim)
+          ~grid_dim:(Some s.grid_dim)
           ~globals:s.params
         )
       |> List.map Proto.Kernel.opt

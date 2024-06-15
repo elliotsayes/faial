@@ -421,12 +421,17 @@ module Kernel = struct
     assign_globals key_vals k
 
   let inline_all ~globals ~block_dim ~grid_dim (k:Code.t t) : Code.t t =
+    let to_dim k d =
+      d
+      |> Option.map (fun x -> [(k, x)])
+      |> Option.value ~default:[]
+    in
     k
     |> assign_globals globals
-    |> inline_dims [
-      "blockDim", block_dim;
-      "gridDim", grid_dim;
-    ]
+    |> inline_dims (
+        to_dim "blockDim" block_dim @
+        to_dim "gridDim" grid_dim
+      )
     |> inline_inferred
 
   let to_s (f:'a -> Indent.t list) (k:'a t) : Indent.t list =

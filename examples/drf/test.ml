@@ -14,6 +14,10 @@ let tests = [
   "racy-saxpy.cu", ["--logic"; "QF_AUFBV"], 1;
   (* This is the simplest data-race free example. *)
   "drf-saxpy.cu", [], 0;
+  (* This example only works when the y and z blockDim is 1, otherwise it's racy. *)
+  "drf-saxpy.cu", ["-p"; "blockDim.y=1"; "-p"; "blockDim.z=1"; "--all-dims"], 0;
+  (* This example only works when the y and z blockDim is 1, otherwise it's racy. *)
+  "drf-saxpy.cu", ["--all-dims"], 1;
   (* This example is only racy at the grid-level *)
   "racy-grid-level.cu", [], 0;
   "racy-grid-level.cu", ["--grid-level"], 1;

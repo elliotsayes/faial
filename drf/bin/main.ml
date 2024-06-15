@@ -34,9 +34,14 @@ let main
   (params:(string * int) list)
   (macros:string list)
   (cu_to_json:string)
+  (all_dims:bool)
 :
   unit
 =
+  if all_dims && (Option.is_some block_dim || Option.is_some grid_dim) then (
+    Logger.Default.error "Cannot run with options: --all-dims and --grid-dim/--block-dim.\nUse --all-dims and -p instead.";
+    exit 3
+  );
   let archs =
     if all_levels then
       [Architecture.Grid; Architecture.Block]
@@ -75,6 +80,7 @@ let main
     ~only_kernel
     ~macros
     ~cu_to_json
+    ~all_dims
   in
   let ui = if output_json then Jui.render else Tui.render in
   if unreachable then
@@ -167,6 +173,10 @@ let grid_dim =
   let d = Gv_parser.default_grid_dim |> Dim3.to_string in
   let doc = "Sets the number of blocks per grid." ^ dim_help ^ " Default: " ^ d in
   Arg.(value & opt (some (conv_dim3 Dim3.one)) None & info ["g"; "grid-dim"; "gridDim"] ~docv:"DIM3" ~doc)
+
+let all_dims =
+  let doc = "Do not set gridDim and blockDim; Verifier ranges over all possible dimensions." in
+  Arg.(value & flag & info ["all-dims"] ~doc)
 
 let thread_idx_1 =
   let doc = "Sets the thread index for one thread." ^ dim_help ^ " Default: (none)" in
@@ -287,6 +297,7 @@ let main_t = Term.(
   $ params
   $ macros
   $ cu_to_json
+  $ all_dims
 )
 
 let info =
