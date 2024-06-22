@@ -112,6 +112,7 @@ let unsupported : Fpath.t list =
   [
     "drf-warp.cu";
     "racy-warp.cu";
+    "racy-device-ref.cu";
   ] |> List.map (fun x -> Fpath.(v "." / x))
 
 (* ---- Testing-specific code ----- *)
