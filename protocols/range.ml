@@ -385,7 +385,7 @@ let while_init (r:t) : nexp =
 (* The condition in a while loop *)
 let while_cond (r:t) : bexp =
   match r.dir with
-  | Increase -> n_lt (Var r.var) r.upper_bound
+  | Increase -> n_le (Var r.var) r.upper_bound
   | Decrease -> n_ge (Var r.var) r.lower_bound
 
 (* An increment of a while loop *)
