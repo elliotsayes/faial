@@ -89,7 +89,9 @@ module Kernel = struct
         Line "}"
     ]
 
-  let from_loc_split (arch:Architecture.t) (k:Locsplit.Kernel.t) : t =
+  let from_loc_split (arch:Architecture.t) (k:Locsplit.Kernel.t) : t option =
+    let code = Code.from_unsync k.code in
+    if code = [] then None else
     let ids =
       (match arch with
       | Grid -> Variable.bid_set
@@ -108,10 +110,10 @@ module Kernel = struct
     let pre =
       b_and_ex (List.map Range.to_cond k.ranges)
     in
-    {
+    Some {
       name = k.name;
       array_name = k.array_name;
-      code = Code.from_unsync k.code;
+      code;
       exact_local_variables;
       approx_local_variables;
       pre;
@@ -129,7 +131,7 @@ end
 
 let translate (arch:Architecture.t) (stream:Locsplit.Kernel.t Streamutil.stream) : Kernel.t Streamutil.stream =
   let open Streamutil in
-  map (Kernel.from_loc_split arch) stream
+  filter_map (Kernel.from_loc_split arch) stream
 
 (* ------------------- SERIALIZE ---------------------- *)
 
