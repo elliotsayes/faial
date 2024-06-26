@@ -11,6 +11,19 @@ type t =
   | Loop of Range.t * t
   | Seq of t * t
 
+module Opt = struct
+  let cond (b:bexp) (u:t) : t =
+    if u = Skip then Skip else
+    Cond (b, u)
+  let seq (u1:t) (u2:t) : t =
+    if u1 = Skip then u2 else
+    if u2 = Skip then u1 else
+    Seq (u1, u2)
+  let loop (r:Range.t) (u:t) : t =
+    if u = Skip then Skip else
+    Loop (r, u)
+end
+
 let rec to_s : t -> Indent.t list =
   function
   | Skip -> [Line "skip;"]

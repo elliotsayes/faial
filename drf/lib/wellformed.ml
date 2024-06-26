@@ -3,6 +3,8 @@ open Protocols
 open Exp
 open Proto
 
+module Opt = Unsync.Opt
+
 type t =
   | SInst of Sync.t
   | UInst of Unsync.t
@@ -11,7 +13,7 @@ type t =
 let add_u (u:Unsync.t) : t -> t =
   function
   | SInst s -> SInst (Sync.add u s)
-  | UInst u2 -> UInst (Seq (u, u2))
+  | UInst u2 -> UInst (Opt.seq u u2)
   | Both (p, u2) -> Both (Sync.add u p, u2)
 
 let add_s (s:Sync.t) : t -> t =
@@ -49,10 +51,10 @@ let make_well_formed : Proto.Code.t -> Sync.t Streamutil.stream =
           | Both (p, c) ->
             [
               UInst (Assert (b_not b));
-              Both (Sync.inline_cond b p, Seq (Assert b, c));
+              Both (Sync.inline_cond b p, Opt.seq (Assert b) c);
             ] |> from_list
           | UInst c ->
-            UInst (Cond (b, c)) |> one
+            UInst (Opt.cond b c) |> one
         )
       in
       branch b p
@@ -65,7 +67,7 @@ let make_well_formed : Proto.Code.t -> Sync.t Streamutil.stream =
         function
         | Both (p, c) -> SInst (Loop (Skip, r, p, c))
         | SInst p -> SInst (Loop (Skip, r, p, Skip))
-        | UInst c -> UInst (Loop (r, c))
+        | UInst c -> UInst (Opt.loop r c)
       )
     | Seq (p, q) ->
       infer p
