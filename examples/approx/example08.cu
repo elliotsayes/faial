@@ -1,10 +1,14 @@
 //saxpy,ind,ind
-//j
+//
 /*
 Example 8: index loaded from an array and used in a loop, but loop
 has no accesses.
 
-The only approximate variable is `x[i]`:
+- `j` is approximate because it is loaded from `x[i]`
+- `k` is approximate because it depends on `j`
+- `w` is approximate because it depends on `k`
+
+The loop has no accesses, so it is elided, hence no approximate variables.
 
 */
 __global__ void saxpy(int n, float a, float *x, float *y) {

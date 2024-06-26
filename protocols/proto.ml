@@ -466,8 +466,16 @@ module Kernel = struct
       )
     |> inline_inferred
 
-  let free_names (k:Code.t t) : Variable.Set.t =
+  let binders (k:Code.t t) : Variable.Set.t =
     Code.free_names k.code Variable.Set.empty
+    |> Exp.b_free_names k.pre
+
+  let trim_binders (k:Code.t t) : Code.t t =
+    let fns = binders k in
+    { k with
+      global_variables = Params.retain_all fns k.global_variables;
+      local_variables = Params.retain_all fns k.local_variables;
+    }
 
   let to_s (f:'a -> Indent.t list) (k:'a t) : Indent.t list =
     [

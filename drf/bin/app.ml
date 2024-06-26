@@ -204,6 +204,7 @@ let translate (arch:Architecture.t) (a:t) (k:Proto.Code.t Proto.Kernel.t) : Flat
   |> Proto.Kernel.opt
   (* 4. convert to well-formed protocol *)
   |> Wellformed.translate
+  |> Streamutil.map Wellformed.trim_binders
   |> show a.show_wf Wellformed.print_kernels
   (* 5. align protocol *)
   |> Aligned.translate

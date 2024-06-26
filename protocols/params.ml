@@ -22,16 +22,11 @@ let add x ty =
 let add_enum x e =
   Variable.Map.add x (Enum.to_bexp x e, Enum.to_c_type e)
 
-let remove_all (s:Variable.Set.t) (m:t) : t =
-  Variable.Set.fold Variable.Map.remove s m
+let remove_all (s:Variable.Set.t) : t -> t =
+  Variable.Set.fold Variable.Map.remove s
 
-let retain_all (s:Variable.Set.t) (m:t) : t =
-  Variable.Map.fold (fun x (b,ty) m ->
-    if Variable.Set.mem x s then
-      Variable.Map.add x (b, ty) m
-    else
-      m
-  ) m empty
+let retain_all (s:Variable.Set.t) : t -> t =
+  Variable.Map.filter (fun x _ -> Variable.Set.mem x s)
 
 let from_set (ty:C_type.t) (s:Variable.Set.t) : t =
   s

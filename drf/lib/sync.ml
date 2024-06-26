@@ -70,3 +70,16 @@ let rec map_first (f: Unsync.t -> Unsync.t) : t -> t =
 
 let add (u:Unsync.t) : t -> t =
   map_first (fun u2 -> Seq (u, u2))
+
+let rec free_names (i:t) (fns:Variable.Set.t) : Variable.Set.t =
+  match i with
+  | Sync c -> Unsync.free_names c fns
+  | Loop (c1, r, p, c2) ->
+    Unsync.free_names c2 fns
+    |> free_names p
+    |> Variable.Set.remove (Range.var r)
+    |> Range.free_names r
+    |> Unsync.free_names c1
+  | Seq (p, q) ->
+    free_names p fns
+    |> free_names q

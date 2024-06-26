@@ -1,10 +1,9 @@
 //saxpy,ind,ctrl
-//@AccessState1, j, k
+//j, k
 /*
 Example 4: data flows from array to upper bound of loop
 
-Approximate variables are `x[i]`, then `y[i]` and `k` (because
-it depends on `x[i]`.
+Approximate variables are `x[i]` (which is `j`), then `k` depends on `x[i]`.
 
  */
 __global__ void saxpy(int n, float a, float *x, float *y) {
