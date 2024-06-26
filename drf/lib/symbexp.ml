@@ -297,7 +297,7 @@ module Proof = struct
     fun ~kernel_name ~array_name ~id ~accesses ~goal ->
     let goal = Constfold.b_opt goal (* Optimize the output expression *) in
     let fns =
-      Freenames.free_names_bexp goal Variable.Set.empty
+      Exp.b_free_names goal Variable.Set.empty
       |> Variable.Set.elements
     in
     let decls = List.map Variable.name fns in
@@ -392,11 +392,11 @@ module Proof = struct
       from_code ~assign_index arch locals k.runtime k.code
       |> b_and k.pre
     in
-    let pre_fns = Freenames.free_names_bexp k.pre Variable.Set.empty in
+    let pre_fns = Exp.b_free_names k.pre Variable.Set.empty in
     let accesses = List.map (fun (a:CondAccess.t) ->
       let open AccessSummary in
-      let cond_fns = Freenames.free_names_bexp a.cond Variable.Set.empty in
-      let data_fns = Freenames.free_names_access a.access Variable.Set.empty in
+      let cond_fns = Exp.b_free_names a.cond Variable.Set.empty in
+      let data_fns = Access.free_names a.access Variable.Set.empty in
       let ctrl_fns = Variable.Set.union pre_fns cond_fns in
       let all_fns = Variable.Set.union data_fns ctrl_fns in
       {

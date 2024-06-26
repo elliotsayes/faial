@@ -23,11 +23,11 @@ module Code = struct
     | Loop (r, s) -> from_proto s |> Seq.map (fun s -> Loop (r, s))
 
   let b_is_uniform (thread_locals:Variable.Set.t) (e:Exp.bexp) : bool =
-    let fns = Freenames.free_names_bexp e Variable.Set.empty in
+    let fns = Exp.b_free_names e Variable.Set.empty in
     Variable.Set.inter fns thread_locals |> Variable.Set.is_empty
 
   let r_is_uniform (thread_locals:Variable.Set.t) (e:Range.t) : bool =
-    let fns = Freenames.free_names_range e Variable.Set.empty in
+    let fns = Range.free_names e Variable.Set.empty in
     Variable.Set.inter fns thread_locals |> Variable.Set.is_empty
 
   let rec is_uniform (thread_locals:Variable.Set.t) : t -> bool =

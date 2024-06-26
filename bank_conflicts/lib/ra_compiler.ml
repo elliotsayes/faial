@@ -56,7 +56,7 @@ module Make (L:Logger.Logger) = struct
       | If (b, p, q) ->
         let fns =
           Variable.Set.inter
-            (Freenames.free_names_bexp b Variable.Set.empty)
+            (Exp.b_free_names b Variable.Set.empty)
             locals
         in
         let p = from_p locals p in
@@ -67,7 +67,7 @@ module Make (L:Logger.Logger) = struct
           Seq (p, q)
       | Loop (r, p) ->
         let free_locals =
-          Freenames.free_names_range r Variable.Set.empty
+          Range.free_names r Variable.Set.empty
           |> Variable.Set.inter locals
         in
         let only_tid_in_locals =

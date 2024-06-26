@@ -911,8 +911,8 @@ module Divergence = struct
   let branch_with_tids: Stmt.t -> t Seq.t =
     let f (s:Stmt.t) =
       match s with
-      | If (c, _, _) -> Freenames.contains_tid_bexp c
-      | For (r, _) -> Freenames.contains_tid_range r
+      | If (c, _, _) -> Exp.b_intersects Variable.tid_set c
+      | For (r, _) -> Range.intersects Variable.tid_set r
       | _ -> false
     in
     Stmt.find_all f

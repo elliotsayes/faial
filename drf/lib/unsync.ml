@@ -92,10 +92,13 @@ let rec write_locations (p:t) (known:Variable.Set.t) =
 let rec free_names (p:t) (fns: Variable.Set.t) : Variable.Set.t =
   match p with
   | Skip -> fns
-  | Assert b -> Freenames.free_names_bexp b fns
-  | Acc (_,e) -> Freenames.free_names_access e fns
-  | Loop (r, l) -> Freenames.free_names_range r fns |> free_names l
-  | Cond (b, l) -> Freenames.free_names_bexp b fns |> free_names l
+  | Assert b -> Exp.b_free_names b fns
+  | Acc (_,e) -> Access.free_names e fns
+  | Loop (r, l) ->
+    free_names l fns
+    |> Variable.Set.remove (Range.var r)
+    |> Range.free_names r
+  | Cond (b, l) -> Exp.b_free_names b fns |> free_names l
   | Seq (p, q) -> free_names p fns |> free_names q
 
 let rec unsafe_binders (i:t) (vars:Variable.Set.t) : Variable.Set.t =
@@ -104,7 +107,7 @@ let rec unsafe_binders (i:t) (vars:Variable.Set.t) : Variable.Set.t =
   | Cond (_, p) -> unsafe_binders p vars
   | Loop (r, p) ->
     let vars =
-      let r_vars = Freenames.free_names_range r Variable.Set.empty in
+      let r_vars = Range.free_names r Variable.Set.empty in
       if Variable.Set.is_empty (Variable.Set.inter r_vars vars) then
         vars
       else

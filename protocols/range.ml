@@ -438,3 +438,9 @@ let eval_is_empty (r:t) : bool =
 
 let exists (f:Variable.t -> bool) (r:t) : bool =
   n_exists f r.lower_bound || n_exists f r.upper_bound
+
+let free_names (r:t) (fns:Variable.Set.t) : Variable.Set.t =
+  n_free_names r.lower_bound fns |> n_free_names r.upper_bound
+
+let intersects (s:Variable.Set.t) (r:t) : bool =
+  n_intersects s r.lower_bound || n_intersects s r.upper_bound

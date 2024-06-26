@@ -95,7 +95,7 @@ module Make (L:Logger.Logger) = struct
    *)
   let uniform (params:Params.t) (block_dim:Dim3.t) (r:Range.t) : Range.t option =
     let open Exp in
-    let fvs = Freenames.free_names_range r Variable.Set.empty in
+    let fvs = Range.free_names r Variable.Set.empty in
     let pre =
       params
       |> Params.retain_all fvs

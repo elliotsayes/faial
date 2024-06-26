@@ -78,3 +78,6 @@ let atomic (name:Variable.t) (index:Exp.nexp list) : t option =
 
 let can_conflict (a1:t) (a2:t) =
   Mode.can_conflict a1.mode a2.mode
+
+let free_names (a:t) (fns:Variable.Set.t) : Variable.Set.t =
+  List.fold_right Exp.n_free_names a.index fns

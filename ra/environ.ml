@@ -27,7 +27,7 @@ module Fvs = struct
       Variable.Map.add x next_idx env
 
   let add_n (e:Exp.nexp) (env:t) : t =
-    let fvs = Freenames.free_names_nexp e Variable.Set.empty in
+    let fvs = Exp.n_free_names e Variable.Set.empty in
     Variable.Set.fold add_var fvs env
 
   let add_b (e:Exp.bexp) : t -> t =
@@ -66,14 +66,14 @@ let get (x:Variable.t) (env:t) : string =
   Fvs.get x env.ctx |> var
 
 let n_normalize (e:Exp.nexp) (env:t) : Exp.nexp =
-  let fvs = Freenames.free_names_nexp e Variable.Set.empty in
+  let fvs = Exp.n_free_names e Variable.Set.empty in
   Variable.Set.fold (fun x e ->
     let new_x = Exp.Var (Variable.from_name (get x env)) in
     Subst.ReplacePair.n_subst (x, new_x) e
   ) fvs e
 
 let b_normalize (e:Exp.bexp) (env:t) : Exp.bexp =
-  let fvs = Freenames.free_names_bexp e Variable.Set.empty in
+  let fvs = Exp.b_free_names e Variable.Set.empty in
   Variable.Set.fold (fun x e ->
     let new_x = Exp.Var (Variable.from_name (get x env)) in
     Subst.ReplacePair.b_subst (x, new_x) e

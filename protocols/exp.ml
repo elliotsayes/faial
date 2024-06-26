@@ -293,6 +293,29 @@ let rec b_or_split : bexp -> bexp list =
     b_or_split b1 @ b_or_split b2
   | b -> [b]
 
+let rec n_fold f e a =
+  match e with
+  | CastInt e -> b_fold f e a
+  | Num _ -> a
+  | Var x -> f x a
+  | Unary (_, e) -> n_fold f e a
+  | Binary (_, e1, e2) -> n_fold f e1 a |> n_fold f e2
+  | NIf (b, e1, e2) -> b_fold f b a |> n_fold f e1 |> n_fold f e2
+  | NCall (_, e) | Other e -> n_fold f e a
+
+and b_fold f e a =
+  match e with
+  | CastBool n | Pred (_, n) -> n_fold f n a
+  | Bool _ -> a
+  | NRel (_, n1, n2) -> n_fold f n1 a |> n_fold f n2
+  | BRel (_, b1, b2) -> b_fold f b1 a |> b_fold f b2
+  | BNot b -> b_fold f b a
+
+let n_free_names : nexp -> Variable.Set.t -> Variable.Set.t =
+  n_fold Variable.Set.add
+
+let b_free_names : bexp -> Variable.Set.t -> Variable.Set.t =
+  b_fold Variable.Set.add
 
 (* Checks if variable [x] is in the given expression *)
 let rec n_exists (f:Variable.t -> bool) : nexp -> bool =
@@ -320,6 +343,12 @@ let n_mem (x:Variable.t) : nexp -> bool =
 
 let b_mem (x:Variable.t) : bexp -> bool =
   b_exists (Variable.equal x)
+
+let n_intersects (s:Variable.Set.t) : nexp -> bool =
+  n_exists (fun x -> Variable.Set.mem x s)
+
+let b_intersects (s:Variable.Set.t) : bexp -> bool =
+  b_exists (fun x -> Variable.Set.mem x s)
 
 let rec n_par (n:nexp) : string =
   match n with

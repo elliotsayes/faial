@@ -62,14 +62,14 @@ module Code = struct
     let rec opt : t -> Variable.Set.t * t =
       function
       | Index e ->
-        Freenames.free_names_nexp e Variable.Set.empty,
+        Exp.n_free_names e Variable.Set.empty,
         Index e
       | Loop (r, a) ->
         let fns, a = opt a in
-        Freenames.free_names_range r fns, Loop (r, a)
+        Range.free_names r fns, Loop (r, a)
       | Cond (e, a) ->
         let fns, a = opt a in
-        Freenames.free_names_bexp e fns, Cond (e, a)
+        Exp.b_free_names e fns, Cond (e, a)
       | Decl (x, a) ->
         let fns, a = opt a in
         let a =
@@ -88,12 +88,12 @@ module Code = struct
       function
       | Index e ->
         [],
-        Freenames.free_names_nexp e Variable.Set.empty,
+        Exp.n_free_names e Variable.Set.empty,
         Index e
       | Loop (r, a) ->
         let l, fns, a = min a in
         if Variable.Set.mem r.var fns then
-          let r_fns = Freenames.free_names_range r Variable.Set.empty in
+          let r_fns = Range.free_names r Variable.Set.empty in
           let loop_l, l = List.partition (Exp.b_mem r.var) l in
           if Variable.Set.inter r_fns fns |> Variable.Set.is_empty then
             l, fns, a
@@ -114,7 +114,7 @@ module Code = struct
           (* only keep variables that mention variables from the body *)
           |> List.filter (Exp.b_exists (fun x -> Variable.Set.mem x fns))
         in
-        Common.append_rev1 e_l l, Freenames.free_names_bexp e fns, a
+        Common.append_rev1 e_l l, Exp.b_free_names e fns, a
       | Decl (x, a) ->
         let l, fns, a = min a in
         let a =
@@ -252,7 +252,7 @@ module Code = struct
             (on_p locals q |> Seq.map (fun (x,q) -> x, Cond (Exp.b_not b, q)))
         | Loop (r, p) ->
           let locals =
-            let r_locals = Freenames.free_names_range r Variable.Set.empty in
+            let r_locals = Range.free_names r Variable.Set.empty in
             if Variable.Set.inter locals r_locals |> Variable.Set.is_empty then
               locals
             else

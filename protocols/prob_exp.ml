@@ -254,7 +254,7 @@ let cond_prob
 =
   let fns =
     (* free names of both expressions *)
-    Freenames.free_names_bexp (Exp.b_and goal pre) Variable.Set.empty
+    Exp.b_free_names (Exp.b_and goal pre) Variable.Set.empty
     |> Variable.Set.elements
   in
   (* Calculate range of each variable *)

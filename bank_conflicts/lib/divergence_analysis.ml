@@ -2,7 +2,7 @@ open Protocols
 
 let n_is_uniform (locals:Variable.Set.t) (e:Exp.nexp) : bool =
   locals
-  |> Variable.Set.inter (Freenames.free_names_nexp e Variable.Set.empty)
+  |> Variable.Set.inter (Exp.n_free_names e Variable.Set.empty)
   |> Variable.Set.is_empty
 
 let r_is_uniform (locals:Variable.Set.t) (r:Range.t) : bool =
@@ -11,7 +11,7 @@ let r_is_uniform (locals:Variable.Set.t) (r:Range.t) : bool =
 
 let b_is_uniform (locals:Variable.Set.t) (e:Exp.bexp) : bool =
   locals
-  |> Variable.Set.inter (Freenames.free_names_bexp e Variable.Set.empty)
+  |> Variable.Set.inter (Exp.b_free_names e Variable.Set.empty)
   |> Variable.Set.is_empty
 
 let rec c_is_uniform (locals:Variable.Set.t) : Bank.Code.t -> bool =

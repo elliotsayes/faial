@@ -23,7 +23,7 @@ module Kernel = struct
   let free_names (k:t) : Variable.Set.t =
     Variable.Set.empty
     |> Unsync.free_names k.code
-    |> Freenames.free_names_list Freenames.free_names_range k.ranges
+    |> List.fold_right Range.free_names k.ranges
 
   let to_s (k:t) : Indent.t list =
     let open Indent in

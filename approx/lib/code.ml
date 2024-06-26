@@ -3,22 +3,22 @@ open Stage0
 
 let typecheck_n (env:Variable.Set.t) (n:Exp.nexp) : bool =
   Variable.Set.subset
-    (Freenames.free_names_nexp n Variable.Set.empty)
+    (Exp.n_free_names n Variable.Set.empty)
     env
 
 let typecheck_b (env:Variable.Set.t) (b:Exp.bexp) : bool =
   Variable.Set.subset
-    (Freenames.free_names_bexp b Variable.Set.empty)
+    (Exp.b_free_names b Variable.Set.empty)
     env
 
 let typecheck_a (env:Variable.Set.t) (a:Access.t) : bool =
   Variable.Set.subset
-    (Freenames.free_names_access a Variable.Set.empty)
+    (Access.free_names a Variable.Set.empty)
     env
 
 let typecheck_r (env:Variable.Set.t) (r:Range.t) : bool =
   Variable.Set.subset
-    (Freenames.free_names_range r Variable.Set.empty)
+    (Range.free_names r Variable.Set.empty)
     env
 
 type t =

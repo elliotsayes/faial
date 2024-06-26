@@ -176,6 +176,35 @@ module Code = struct
     in
     fun p known -> uniq p known |> fst
 
+  let rec free_names (i:t) (fns:Variable.Set.t) : Variable.Set.t =
+    match i with
+    | Skip | Sync _ -> fns
+    | Acc (_, a) -> Access.free_names a fns
+    | If (b, p, q) ->
+      b_free_names b fns
+      |> free_names p
+      |> free_names q
+    | Decl {var=x; body=p; _} ->
+      free_names p fns
+      |> Variable.Set.remove x
+    | Loop (r, p) ->
+      free_names p fns
+      |> Variable.Set.remove r.var
+      |> Range.free_names r
+    | Seq (p, q) ->
+      free_names p fns
+      |> free_names q
+
+  let rec used_arrays (i:t) (fns:Variable.Set.t) : Variable.Set.t =
+    match i with
+    | Skip | Sync _ -> fns
+    | Acc (x, _) -> Variable.Set.add x fns
+    | Decl {body=p; _} | Loop (_, p) ->
+      used_arrays p fns
+    | If (_, p, q) | Seq (p, q) ->
+      used_arrays p fns
+      |> used_arrays q
+
   let rec to_s : t -> Indent.t list =
     function
     | Skip -> [Line "skip;"]
@@ -272,6 +301,9 @@ module Kernel = struct
     k.arrays
     |> Variable.Map.filter (fun _ v -> Memory.is_global v)
     |> Variable.MapSetUtil.map_to_set
+
+  let used_arrays (k: Code.t t) : Variable.Set.t =
+    Code.used_arrays k.code Variable.Set.empty
 
   let constants (k:Code.t t) =
     let rec constants (b: bexp) (kvs:(string*int) list) : (string*int) list =
@@ -433,6 +465,9 @@ module Kernel = struct
         to_dim "gridDim" grid_dim
       )
     |> inline_inferred
+
+  let free_names (k:Code.t t) : Variable.Set.t =
+    Code.free_names k.code Variable.Set.empty
 
   let to_s (f:'a -> Indent.t list) (k:'a t) : Indent.t list =
     [
