@@ -556,8 +556,8 @@ module Context = struct
   let resolve (ty:C_type.t) (b:t) : C_type.t =
     TypeAlias.resolve ty b.typedefs
 
-  let lookup_sig (e: D_lang.Expr.t) (db:t) : D_lang.SignatureDB.Signature.t option =
-    D_lang.SignatureDB.lookup e db.sigs
+  let lookup_sig (e: D_lang.Expr.t) (arg_count:int) (db:t) : D_lang.SignatureDB.Signature.t option =
+    D_lang.SignatureDB.lookup e arg_count db.sigs
 
   let is_enum (ty:C_type.t) (ctx:t) : bool =
     let name = C_type.to_string ty |> Variable.from_name in
@@ -820,25 +820,27 @@ let rec parse_stmt
     when Variable.Set.mem n asserts ->
     ret_assert b
 
-  | SExpr (CallExpr {func = f; args;_ }) ->
-    (match Context.lookup_sig f ctx with
+  | SExpr (CallExpr {func = f; args; _ }) as e ->
+    let arg_count = List.length args in
+    (match Context.lookup_sig f arg_count ctx with
     | Some s ->
-      if List.length s.params = List.length args then (
+      if List.length s.params = arg_count then (
         let* args = with_msg "call.args" (cast_map Arg.parse) args in
         args |> ret_args (fun args ->
           let args = List.map2 (fun x y -> (x, y)) s.params args in
           Imp.Stmt.Call {kernel=s.kernel; ty=s.ty; args}
         )
       ) else
-        root_cause "Args mismatch!"
+        root_cause ("parse_stmt: CallExpr args mismatch: " ^ D_lang.Stmt.summarize e)
     | None ->
       Ok []
     )
 
-  | DeclStmt ([{init=Some (IExpr (CallExpr {func = f; args;_ }) ); _}] as l) ->
-    (match Context.lookup_sig f ctx with
+  | DeclStmt ([{init=Some (IExpr (CallExpr {func = f; args; _ }) ); _}] as l) as d ->
+    let arg_count = List.length args in
+    (match Context.lookup_sig f arg_count ctx with
     | Some s ->
-      if List.length s.params = List.length args then (
+      if List.length s.params = arg_count then (
         let* args = with_msg "call.args" (cast_map Arg.parse) args in
         let r =
           args
@@ -852,8 +854,16 @@ let rec parse_stmt
         |> Result.map (fun s ->
           Imp.Stmt.Decl l :: s
         )
-      ) else
-        root_cause "Args mismatch!"
+      ) else (
+        let expecting = List.length s.params |> string_of_int in
+        let given = List.length args |> string_of_int in
+        root_cause (
+          "parse_stmt: function call argument mismatch: " ^
+          "signature has " ^ expecting ^ " parameters " ^
+          D_lang.SignatureDB.Signature.to_string s ^ " " ^
+          "but got " ^ given ^ " arguments: " ^ D_lang.Stmt.summarize d
+        )
+      )
     | None ->
       let* l = cast_map parse_decl l |> Result.map List.concat in
       ret (Decl l)

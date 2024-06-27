@@ -564,18 +564,26 @@ module SignatureDB = struct
     in
     "[" ^ curr ^ "]"
 
-  let get ~kernel ~ty (db:t) : Kernel.t option =
+  let get ~kernel ~ty ~arg_count (db:t) : Kernel.t option =
     db
     |> StringMap.find_opt kernel
     |> Option.map (fun sigs ->
       match StringMap.find_opt ty sigs with
       | Some e -> Some e
       | None ->
-        StringMap.choose_opt sigs |> Option.map snd
+        (* iterate over all kernels and try finding one with
+           the same number of parameters *)
+        sigs
+        |> StringMap.bindings
+        |> List.map snd
+        |> List.find_opt (fun k ->
+            let open Kernel in
+            List.length k.params = arg_count
+          )
       )
     |> Option.join
 
-  let lookup (e: Expr.t) (db:t) : Signature.t option =
+  let lookup (e: Expr.t) (arg_count:int) (db:t) : Signature.t option =
     let (let*) = Option.bind in
     let* (kernel, ty) =
       match e with
@@ -585,7 +593,7 @@ module SignatureDB = struct
         Some (Variable.name n, J_type.to_string ty)
       | _ -> None
     in
-    get ~kernel ~ty db
+    get ~kernel ~ty ~arg_count db
     |> Option.map Signature.from_kernel
 
   (* Returns a map from kernel name to name of parameters *)
