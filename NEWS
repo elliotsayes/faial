@@ -1,6 +1,7 @@
 2024-06:
 - Inference: added support for anonymous enums defined in
   typedefs.
+- Inference: improved handling of templated function calls.
 - DRF: added support for analyzing all possible grid/block dimensions.
 
 2024-05:
