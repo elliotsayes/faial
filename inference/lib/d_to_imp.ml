@@ -280,6 +280,9 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
     let* n = parse_e "arg" e in
     ret_b (IExp.or_ (BExp (Pred ("pow2", n))) (BExp (IExp.n_eq n (NExp (Num 0)))))
 
+  | BinaryOperator {opcode=","; lhs=_; rhs=n; _} ->
+    parse_e "comma-operator" n
+
   | BinaryOperator {opcode=o; lhs=n1; rhs=n2; _} ->
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in

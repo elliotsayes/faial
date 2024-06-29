@@ -104,6 +104,10 @@ let tests = [
   "racy-loop1.cu", ["-p"; "n=0"; "--index=[0]"], 1;
   (* (int j = n; j >= 0; j--) *)
   "racy-loop2.cu", ["-p"; "n=1"; "--index=[1]"], 1;
+  (* the comma operator *)
+  "racy-comma.cu", [], 1;
+  (* the comma operator *)
+  "drf-comma.cu", [], 0;
 ]
 
 (* These are kernels that are being documented, but are
