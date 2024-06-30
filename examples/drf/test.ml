@@ -99,7 +99,6 @@ let tests = [
   "drf-loop5.cu", [], 0;
   (* (int i = 4; i - k; i++) *)
   "drf-loop4.cu", [], 0;
-
   (* (int j = 0; j <= n; j++) *)
   "racy-loop1.cu", ["-p"; "n=0"; "--index=[0]"], 1;
   (* (int j = n; j >= 0; j--) *)
@@ -117,6 +116,9 @@ let unsupported : Fpath.t list =
     "drf-warp.cu";
     "racy-warp.cu";
     "racy-device-ref.cu";
+    (* example where assignment is used as an expression, rather
+     than a statement *)
+    "drf-assign-exp.cu";
   ] |> List.map (fun x -> Fpath.(v "." / x))
 
 (* ---- Testing-specific code ----- *)
