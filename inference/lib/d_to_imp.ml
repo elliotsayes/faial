@@ -778,10 +778,10 @@ let ret (s:Imp.Stmt.t) : Imp.Stmt.t list d_result = Ok [s]
 
 let ret_skip : Imp.Stmt.t list d_result = Ok []
 
-let ret_assert (b:D_lang.Expr.t) : Imp.Stmt.t list d_result =
+let ret_assert (b:D_lang.Expr.t) (v:Imp.Assert.Visibility.t) : Imp.Stmt.t list d_result =
   let* b = with_msg "cond" parse_exp b in
   match Unknown.try_to_bexp b with
-  | Some b -> ret (Assert b)
+  | Some b -> ret (Assert (Imp.Assert.make b v))
   | None -> ret_skip
 
 let asserts : Variable.Set.t =
@@ -821,7 +821,7 @@ let rec parse_stmt
     (* Static assert may have a message as second argument *)
   | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = b :: _; _})
     when Variable.Set.mem n asserts ->
-    ret_assert b
+    ret_assert b Global
 
   | SExpr (CallExpr {func = f; args; _ }) as e ->
     let arg_count = List.length args in
@@ -906,12 +906,12 @@ let rec parse_stmt
   | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt None];else_stmt=CompoundStmt[]}
   | IfStmt {cond=b;then_stmt=ReturnStmt None;else_stmt=CompoundStmt[]} ->
     let ty = D_lang.Expr.to_type b in
-    ret_assert (UnaryOperator {opcode="!"; child=b; ty})
+    ret_assert (UnaryOperator {opcode="!"; child=b; ty}) Local
 
   | IfStmt {cond=b;then_stmt=CompoundStmt[BreakStmt];else_stmt=CompoundStmt[]}
   | IfStmt {cond=b;then_stmt=BreakStmt;else_stmt=CompoundStmt[]} ->
     let ty = D_lang.Expr.to_type b in
-    ret_assert (UnaryOperator {opcode="!"; child=b; ty})
+    ret_assert (UnaryOperator {opcode="!"; child=b; ty}) Local
 
   | IfStmt c ->
     let* b = with_msg "if.cond" parse_exp c.cond in

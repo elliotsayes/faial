@@ -3,7 +3,7 @@ open Stage0
 
 type t =
   | Acc of Variable.t * Access.t
-  | Assert of Exp.bexp
+  | Assert of Assert.t
   | Sync of Location.t option
   | If of Exp.bexp * t * t
   | For of Range.t * t
@@ -21,7 +21,7 @@ let to_string: t -> string =
     | Sync _ -> [Line "sync;"]
     | Assert b ->
       [
-        Line ("assert (" ^ Exp.b_to_string b ^ ");");
+        Line (Assert.to_string b ^ ";");
       ]
     | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
     | Decl d ->
@@ -63,7 +63,7 @@ module SubstMake(S:Subst.SUBST) = struct
     | Sync l -> Sync l
     | Skip -> Skip
     | Acc (x, a) -> Acc (x, M.a_subst st a)
-    | Assert b -> Assert (M.b_subst st b)
+    | Assert b -> Assert (Assert.map (M.b_subst st) b)
     | Decl d ->
       Decl {d with body = M.add st d.var (function
         | Some st' -> subst st' d.body
@@ -120,7 +120,7 @@ let from_scoped (known:Variable.Set.t) : Scoped.t -> t =
     in
     match i with
     | Sync l -> Sync l
-    | Assert b -> Assert (b_subst st b)
+    | Assert b -> Assert (Assert.map (b_subst st) b)
     | Acc (x,e) -> Acc (x, a_subst st e)
     | Skip -> Skip
     | If (b, p1, p2) ->

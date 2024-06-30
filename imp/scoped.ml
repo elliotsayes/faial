@@ -4,7 +4,7 @@ open Protocols
 type t =
   | Skip
   | Sync of Location.t option
-  | Assert of Exp.bexp
+  | Assert of Assert.t
   | Acc of (Variable.t * Access.t)
   | If of (Exp.bexp * t * t)
   | For of (Range.t * t)
@@ -19,7 +19,7 @@ let to_string: t -> string =
     | Sync _ -> [Line "sync;"]
     | Assert b ->
       [
-        Line ("assert (" ^ Exp.b_to_string b ^ ");");
+        Line (Assert.to_string b ^ ";");
       ]
     | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
     | Assign a -> [
@@ -98,7 +98,7 @@ module SubstMake(S:Subst.SUBST) = struct
     | Sync l -> Sync l
     | Skip -> Skip
     | Acc (x, a) -> Acc (x, M.a_subst st a)
-    | Assert b -> Assert (M.b_subst st b)
+    | Assert b -> Assert (Assert.map (M.b_subst st) b)
     | Decl (d, p) ->
       let d = Decl.map (M.n_subst st) d in
       Decl (d, M.add st d.var (function

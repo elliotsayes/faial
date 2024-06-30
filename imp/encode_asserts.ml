@@ -106,11 +106,16 @@ let from_encode_assigns : Encode_assigns.t -> Proto.Code.t =
     function
     | Skip -> Skip, AssertionTree.true_
     | Acc (x, e) -> Acc (x, e), AssertionTree.true_
+    | Seq (Assert {cond=e; visibility=Local}, p) ->
+      let p, a = from p in
+      let a = AssertionTree.implies e a in
+      If (e, p, Skip), a
     | Seq (p, q) ->
       let p, a1 = from p in
       let q, a2 = from q in
       (Seq (p, q), AssertionTree.append a1 a2)
-    | Assert e -> Skip, AssertionTree.from_bexp e
+    | Assert {cond=e;visibility=Global} -> Skip, AssertionTree.from_bexp e
+    | Assert {visibility=Local; _} -> Skip, AssertionTree.true_
     | If (b, then_s, else_s) ->
       let then_s, a1 = from then_s in
       let else_s, a2 = from else_s in

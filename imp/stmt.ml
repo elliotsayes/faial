@@ -7,7 +7,7 @@ module StringSet = Common.StringSet
 
 type t =
   | Sync of Location.t option
-  | Assert of Exp.bexp
+  | Assert of Assert.t
   | Read of Read.t
   | Atomic of Atomic_write.t
   | Write of Write.t
@@ -126,7 +126,7 @@ let to_s: t -> Indent.t list =
     function
     | Call c -> [Line (Call.to_string c)]
     | Sync _ -> [Line "sync;"]
-    | Assert b -> [Line ("assert (" ^ Exp.b_to_string b ^ ");")]
+    | Assert b -> [Line (Assert.to_string b ^ ";")]
     | Atomic r -> [Line (C_type.to_string r.ty ^ " " ^ Variable.name r.target ^ " = atomic " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
     | Read r ->
       let ty = C_type.to_string r.ty in
