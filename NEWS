@@ -1,4 +1,5 @@
 2024-06:
+- Inference: improved support for assertion inference
 - Inference: added support for anonymous enums defined in
   typedefs.
 - Inference: improved handling of templated function calls.
