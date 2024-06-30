@@ -24,6 +24,7 @@ let main
   (eq_index:int list)
   (only_array:string option)
   (only_kernel:string option)
+  (only_true_data_races:bool)
   (thread_idx_1:Dim3.t option)
   (thread_idx_2:Dim3.t option)
   (block_idx_1:Dim3.t option)
@@ -78,6 +79,7 @@ let main
     ~grid_dim
     ~params
     ~only_kernel
+    ~only_true_data_races
     ~macros
     ~cu_to_json
     ~all_dims
@@ -259,6 +261,10 @@ let only_kernel =
   let doc = "Only check a specific kernel." in
   Arg.(value & opt (some string) None & info ["kernel"] ~doc)
 
+let only_true_data_races =
+  let doc = "Only analyze accesses that yield true-data races. WARNING: SHOULD ONLY BE USED TO DETECT DATA-RACES. CANNOT GUARANTEE DRF!" in
+  Arg.(value & flag & info ["find-true-dr"] ~doc)
+
 let cu_to_json =
   let doc = "Set path to cu-to-json." in
   Arg.(value & opt string "cu-to-json" & info ["cu-to-json"] ~docv:"PATH" ~doc)
@@ -287,6 +293,7 @@ let main_t = Term.(
   $ eq_index
   $ only_array
   $ only_kernel
+  $ only_true_data_races
   $ thread_idx_1
   $ thread_idx_2
   $ block_idx_1

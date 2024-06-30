@@ -21,6 +21,7 @@ type t = {
   eq_index:int list;
   only_kernel: string option;
   only_array:string option;
+  only_true_data_races:bool;
   thread_idx_1: Dim3.t option;
   thread_idx_2: Dim3.t option;
   block_idx_1: Dim3.t option;
@@ -63,7 +64,7 @@ let to_string (app:t) : string =
      show_symbexp; logic; le_index = _; ge_index = _; eq_index = _;
      only_array = _; thread_idx_1 = _; block_idx_1 = _; thread_idx_2 = _;
      block_idx_2 = _; archs; block_dim; grid_dim; params = _;
-     only_kernel; macros; } ->
+     only_kernel; macros; only_true_data_races; } ->
     let only_kernel = Option.value ~default:"(null)" only_kernel in
     let kernels = List.length kernels |> string_of_int in
     "filename: " ^ filename ^
@@ -83,6 +84,7 @@ let to_string (app:t) : string =
     "\nshow_flat_acc: " ^ bool show_flat_acc ^
     "\nshow_symbexp: " ^ bool show_symbexp ^
     "\nmacros = " ^ list_string macros ^
+    "\nonly_true_data_races = ^ " ^ bool only_true_data_races ^
     "\n"
 
 let parse
@@ -101,6 +103,8 @@ let parse
   ~le_index
   ~eq_index
   ~only_array
+  ~only_kernel
+  ~only_true_data_races
   ~thread_idx_1
   ~thread_idx_2
   ~block_idx_1
@@ -112,7 +116,6 @@ let parse
   ~archs
   ~ignore_parsing_errors
   ~params
-  ~only_kernel
   ~macros
   ~cu_to_json
   ~all_dims
@@ -168,6 +171,7 @@ let parse
     block_dim;
     params;
     only_kernel;
+    only_true_data_races;
     macros;
   }
 
@@ -199,11 +203,13 @@ let translate (arch:Architecture.t) (a:t) (k:Proto.Code.t Proto.Kernel.t) : Flat
     | _, _ ->
       k
   )
+  |> (if a.only_true_data_races then Proto.Kernel.to_ci_di else Fun.id)
   |> show a.show_proto (Proto.Kernel.print Proto.Code.to_s)
   (* 3. constant folding optimization *)
   |> Proto.Kernel.opt
   (* 4. convert to well-formed protocol *)
   |> Wellformed.translate
+  (* 4.1. remove unnecessary binders *)
   |> Streamutil.map Wellformed.trim_binders
   |> show a.show_wf Wellformed.print_kernels
   (* 5. align protocol *)

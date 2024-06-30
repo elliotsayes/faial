@@ -195,6 +195,31 @@ module Code = struct
       free_names p fns
       |> free_names q
 
+  (* Only retain CI-DI accesses *)
+  let rec to_ci_di (approx:Variable.Set.t) : t -> t =
+    function
+    | If (b, p, q) ->
+      if Exp.b_intersects approx b then
+        Skip
+      else
+        If (b, to_ci_di approx p, to_ci_di approx q)
+    | Loop (r, p) ->
+      if Range.intersects approx r then Skip else
+      (* the loop variable is CIDI, hence remove any existing CIDI *)
+      let approx = Variable.Set.remove (Range.var r) approx in
+      Loop (r, to_ci_di approx p)
+    | Acc (x, a) ->
+      if Access.intersects approx a then
+        Skip
+      else
+        Acc (x, a)
+    | Decl {var=x; body=p; _} ->
+      (* In this scope x is approximate *)
+      to_ci_di (Variable.Set.add x approx) p
+    | Seq (p, q) -> Seq (to_ci_di approx p, to_ci_di approx q)
+    | Skip -> Skip
+    | Sync a -> Sync a
+
   let rec used_arrays (i:t) (fns:Variable.Set.t) : Variable.Set.t =
     match i with
     | Skip | Sync _ -> fns
@@ -476,6 +501,15 @@ module Kernel = struct
       global_variables = Params.retain_all fns k.global_variables;
       local_variables = Params.retain_all fns k.local_variables;
     }
+
+  let to_ci_di (k:Code.t t) : Code.t t =
+    let approx =
+      k.local_variables
+      |> Params.to_set
+    in
+    let approx = Variable.Set.diff approx Variable.tid_set in
+    { k with
+      code = Code.to_ci_di approx k.code }
 
   let to_s (f:'a -> Indent.t list) (k:'a t) : Indent.t list =
     [

@@ -76,6 +76,9 @@ let atomic (name:Variable.t) (index:Exp.nexp list) : t option =
     { index; mode = Atomic a }
   )
 
+let intersects (s:Variable.Set.t) (a:t) : bool =
+  List.exists (Exp.n_intersects s) a.index
+
 let can_conflict (a1:t) (a2:t) =
   Mode.can_conflict a1.mode a2.mode
 
