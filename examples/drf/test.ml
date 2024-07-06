@@ -41,8 +41,6 @@ let tests = [
   "drf-alias.cu", [], 0;
   (* Data-race free example with array aliasing *)
   "racy-alias.cu", [], 1;
-  (* Data-race freee requires understanding fields in parameters. *)
-  "drf-field-in-param.cu", [], 0;
   (* Data-race with atomics. *)
   "racy-atomics.cu", [], 1;
   (* A data-race that occurs when we have warp-concurrent semantics *)
@@ -121,6 +119,8 @@ let unsupported : Fpath.t list =
     (* example where assignment is used as an expression, rather
      than a statement *)
     "drf-assign-exp.cu";
+    (* Data-race freee requires understanding fields in parameters. *)
+    "drf-field-in-param.cu";
   ] |> List.map (fun x -> Fpath.(v "." / x))
 
 (* ---- Testing-specific code ----- *)

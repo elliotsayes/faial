@@ -203,6 +203,7 @@ let translate (arch:Architecture.t) (a:t) (k:Proto.Code.t Proto.Kernel.t) : Flat
     | _, _ ->
       k
   )
+  |> Proto.Kernel.add_missing_binders
   |> (if a.only_true_data_races then Proto.Kernel.to_ci_di else Fun.id)
   |> show a.show_proto (Proto.Kernel.print Proto.Code.to_s)
   (* 3. constant folding optimization *)

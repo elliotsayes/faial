@@ -491,15 +491,30 @@ module Kernel = struct
       )
     |> inline_inferred
 
-  let binders (k:Code.t t) : Variable.Set.t =
+  let used_variables (k:Code.t t) : Variable.Set.t =
     Code.free_names k.code Variable.Set.empty
     |> Exp.b_free_names k.pre
 
   let trim_binders (k:Code.t t) : Code.t t =
-    let fns = binders k in
+    let fns = used_variables k in
     { k with
       global_variables = Params.retain_all fns k.global_variables;
       local_variables = Params.retain_all fns k.local_variables;
+    }
+
+  let free_names (k: Code.t t) : Variable.Set.t =
+    let fns = used_variables k in
+    let fns = Variable.Set.diff fns (Params.to_set k.local_variables) in
+    let fns = Variable.Set.diff fns (Params.to_set k.global_variables) in
+    fns
+
+  (*
+  Given a protocol with free names, add those as thread-locals.
+   *)
+  let add_missing_binders (k:Code.t t) : Code.t t =
+    let locals = Params.from_set C_type.int (free_names k) in
+    { k with
+      local_variables = Params.union_left k.local_variables locals;
     }
 
   let to_ci_di (k:Code.t t) : Code.t t =
