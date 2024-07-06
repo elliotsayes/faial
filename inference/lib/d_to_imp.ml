@@ -619,13 +619,18 @@ let parse_decl
   Imp.Decl.t list d_result
 =
   let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
-  let* ty =
-    match J_type.to_c_type_res d.ty |> Result.map (fun x -> Context.resolve x ctx) with
-    | Ok ty -> Ok ty
-    | Error _ -> root_cause ("parse_decl: error parsing type: " ^ J_type.to_string d.ty)
-  in
   let x = d.var in
-  if C_type.is_int ty then (
+  let ty =
+    D_lang.Decl.types d
+    |> List.map (fun ty ->
+        Context.resolve (J_type.to_c_type ty) ctx
+      )
+    |> List.find_opt (fun ty ->
+        Context.is_int ty ctx
+      )
+  in
+  match ty with
+  | Some ty ->
     let* ((vars, init):(Variable.Set.t * (nexp option))) =
       match d.init with
       | Some (IExpr n) ->
@@ -640,10 +645,14 @@ let parse_decl
       | None -> Imp.Decl.unset ~ty x
     in
     Ok (Unknown.as_decls vars @ [d])
-  ) else (
-    L.warning ("parse_decl: skipping non-int local variable '" ^ Variable.name x ^ "' type: " ^ C_type.to_string ty);
+  | None ->
+    let x = Variable.name x in
+    let ty = J_type.to_string d.ty in
+    L.warning (
+      "parse_decl: skipping non-int local variable '" ^ x ^ "' "^
+      "type: " ^ ty
+    );
     Ok []
-  )
 
 let rec parse_load_expr (target:D_lang.Expr.t) (exp:D_lang.Expr.t)
   : (d_location_alias, D_lang.Expr.t) Either.t =

@@ -1,3 +1,6 @@
+2024-07:
+- Inference: added support for using indices of a templated type.
+
 2024-06:
 - Inference: improved support for assertion inference
 - Inference: added support for anonymous enums defined in

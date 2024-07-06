@@ -107,6 +107,8 @@ let tests = [
   "racy-comma.cu", [], 1;
   (* the comma operator *)
   "drf-comma.cu", [], 0;
+  (* index of a templated type *)
+  "drf-template-index.cu", [], 0;
 ]
 
 (* These are kernels that are being documented, but are

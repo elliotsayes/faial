@@ -166,7 +166,11 @@ module Init = struct
     | InitListExpr i -> i.args
     | IExpr e -> [e]
 
-
+  let to_type : t -> J_type.t =
+    function
+    | CXXConstructExpr {ty; _}
+    | InitListExpr {ty; _} -> ty
+    | IExpr e -> Expr.to_type e
 
   let to_string : t -> string =
     function
@@ -183,6 +187,9 @@ module Decl = struct
     init: Init.t option;
     attrs: string list
   }
+
+  let types (d:t) : J_type.t list =
+    d.ty :: Option.to_list (Option.map Init.to_type d.init)
 
   let make ~ty ~var ~init ~attrs : t =
     {ty; var; init; attrs}
