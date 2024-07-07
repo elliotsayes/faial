@@ -215,15 +215,10 @@ let fix_assigns : t -> t =
       let defined = Params.add d.var d.ty defined in
       let (assigns, p) = fix_assigns defined p in
       (assigns, Decl (d, p))
-    | Seq (If _ as p, q)
-    | Seq (For _ as p, q) ->
-      let (assigns_1, p) = fix_assigns defined p in
-      let (assigns_2, q) = fix_assigns defined q in
-      (assigns_2, Seq (p, decl assigns_1 q))
     | Seq (p, q) ->
       let (assigns_1, p) = fix_assigns defined p in
       let (assigns_2, q) = fix_assigns defined q in
-      (Params.union_left assigns_1 assigns_2, Seq (p, q))
+      (Params.union_left assigns_1 assigns_2, Seq (p, decl assigns_1 q))
 
     | For (r, p) ->
       let (assigns, p) = fix_assigns Params.empty p in

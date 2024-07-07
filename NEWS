@@ -1,5 +1,6 @@
 2024-07:
 - Inference: added support for using indices of a templated type.
+- Inference: improved support for detecting mutation in loops/conditionals.
 
 2024-06:
 - Inference: improved support for assertion inference
