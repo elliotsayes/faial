@@ -71,6 +71,9 @@ let to_s (k:t) : Indent.t list =
 let print (k: t) : unit =
   Indent.print (to_s k)
 
+let remove_global_asserts (k:t) : t =
+  { k with code = Stmt.filter_asserts Assert.is_local k.code }
+
 let compile (k:t) : Proto.Code.t Proto.Kernel.t =
   let globals = k.params in
   let (globals, p) = Scoped.from_stmt (globals, k.code) in

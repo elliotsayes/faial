@@ -18,6 +18,7 @@ module Make (L:Logger.Logger) = struct
     ?(macros=[])
     ?(exit_status=2)
     ?(cu_to_json="cu-to-json")
+    ?(ignore_asserts=false)
     (fname:string)
   :
     imp_kernel t
@@ -53,6 +54,12 @@ module Make (L:Logger.Logger) = struct
       let k2 = D_lang.rewrite_program k1 in
         (match D.parse_program k2 with
         | Ok kernels ->
+          let kernels =
+            if ignore_asserts then
+              List.map Imp.Kernel.remove_global_asserts kernels
+            else
+              kernels
+          in
           Stdlib.flush_all ();
           {options; kernels}
         | Error e ->
@@ -78,6 +85,7 @@ module Make (L:Logger.Logger) = struct
     ?(only_globals=true)
     ?(macros=[])
     ?(cu_to_json="cu-to-json")
+    ?(ignore_asserts=false)
     (fname:string)
   :
     proto_kernel t
@@ -91,6 +99,7 @@ module Make (L:Logger.Logger) = struct
       ~includes
       ~exit_status
       ~macros
+      ~ignore_asserts
       fname
     in
     { parsed with

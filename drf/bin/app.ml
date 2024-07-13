@@ -31,6 +31,7 @@ type t = {
   grid_dim: Dim3.t option;
   params: (string * int) list;
   macros: string list;
+  ignore_asserts: bool;
 }
 
 let to_string (app:t) : string =
@@ -64,7 +65,7 @@ let to_string (app:t) : string =
      show_symbexp; logic; le_index = _; ge_index = _; eq_index = _;
      only_array = _; thread_idx_1 = _; block_idx_1 = _; thread_idx_2 = _;
      block_idx_2 = _; archs; block_dim; grid_dim; params = _;
-     only_kernel; macros; only_true_data_races; } ->
+     only_kernel; macros; only_true_data_races; ignore_asserts } ->
     let only_kernel = Option.value ~default:"(null)" only_kernel in
     let kernels = List.length kernels |> string_of_int in
     "filename: " ^ filename ^
@@ -85,6 +86,7 @@ let to_string (app:t) : string =
     "\nshow_symbexp: " ^ bool show_symbexp ^
     "\nmacros = " ^ list_string macros ^
     "\nonly_true_data_races = ^ " ^ bool only_true_data_races ^
+    "\nignore_asserts = " ^ bool ignore_asserts ^
     "\n"
 
 let parse
@@ -119,6 +121,7 @@ let parse
   ~macros
   ~cu_to_json
   ~all_dims
+  ~ignore_asserts
 :
   t
 =
@@ -130,6 +133,7 @@ let parse
     ~inline_calls
     ~macros
     ~cu_to_json
+    ~ignore_asserts
     filename
   in
   let kernels = parsed.kernels in
@@ -173,6 +177,7 @@ let parse
     only_kernel;
     only_true_data_races;
     macros;
+    ignore_asserts;
   }
 
 let show (b:bool) (call:'a -> unit) (x:'a) : 'a =

@@ -20,6 +20,26 @@ type t =
   | Star of t
   | Call of Call.t
 
+let filter (f:t -> bool) : t -> t =
+  let rec filter (s:t) : t =
+    if not (f s) then Block [] else
+    match s with
+    | Block l -> Block (List.map filter l)
+    | If (b, p, q) -> If (b, filter p, filter q)
+    | For (r, p) -> For (r, filter p)
+    | Star p -> Star (filter p)
+    | Sync _ | Read _ | Atomic _ | Write _  | LocationAlias _
+    | Decl _ | Assign _ | Call _ | Assert _ -> s
+  in
+  filter
+
+let filter_asserts (f:Assert.t -> bool) : t -> t =
+  filter (
+    function
+    | Assert a -> f a
+    | _ -> true
+  )
+
 let is_for : t -> bool =
   function
   | For _ -> true

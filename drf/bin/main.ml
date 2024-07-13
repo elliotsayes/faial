@@ -36,6 +36,7 @@ let main
   (macros:string list)
   (cu_to_json:string)
   (all_dims:bool)
+  (ignore_asserts:bool)
 :
   unit
 =
@@ -83,6 +84,7 @@ let main
     ~macros
     ~cu_to_json
     ~all_dims
+    ~ignore_asserts
   in
   let ui = if output_json then Jui.render else Tui.render in
   if unreachable then
@@ -265,6 +267,10 @@ let only_true_data_races =
   let doc = "Only analyze accesses that yield true-data races. WARNING: SHOULD ONLY BE USED TO DETECT DATA-RACES. CANNOT GUARANTEE DRF!" in
   Arg.(value & flag & info ["find-true-dr"] ~doc)
 
+let ignore_asserts =
+  let doc = "Ignore asserts." in
+  Arg.(value & flag & info ["ignore-asserts"] ~doc)
+
 let cu_to_json =
   let doc = "Set path to cu-to-json." in
   Arg.(value & opt string "cu-to-json" & info ["cu-to-json"] ~docv:"PATH" ~doc)
@@ -305,6 +311,7 @@ let main_t = Term.(
   $ macros
   $ cu_to_json
   $ all_dims
+  $ ignore_asserts
 )
 
 let info =

@@ -15,6 +15,9 @@ type t = {
   cond: Exp.bexp;
 }
 
+let is_local (a:t) : bool =
+  a.visibility = Local
+
 let make (cond:Exp.bexp) (visibility:Visibility.t) : t =
   { cond; visibility }
 
