@@ -119,6 +119,9 @@ module Expr = struct
     in
     exp_to_s
 
+  let unknown : t =
+    RecoveryExpr J_type.unknown
+
   let opt_to_string : t option -> string =
     function
     | Some o -> to_string o

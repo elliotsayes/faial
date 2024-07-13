@@ -783,7 +783,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
       rhs=src;
       opcode="="; _
     } ->
-    rewrite_write {lhs=lhs; rhs=IntegerLiteral 0; ty;location=Variable.location x} src
+    rewrite_write {lhs=lhs; rhs=C_lang.Expr.unknown; ty;location=Variable.location x} src
 
   (*   *w = *)
   | BinaryOperator {
@@ -812,7 +812,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
       rhs=src;
       opcode="="; _
     } when Variable.name v = "operator*" ->
-    rewrite_write {lhs=lhs; rhs=IntegerLiteral 0; ty;location=Variable.location x} src
+    rewrite_write {lhs=lhs; rhs=C_lang.Expr.unknown; ty;location=Variable.location x} src
 
   | CXXOperatorCallExpr {
       func=Ident {name=v; _};
@@ -831,7 +831,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
       UnaryOperator {child=ArraySubscriptExpr a; opcode="&"; _};
     ]; _}
     when Variable.name n = "curand_init" ->
-    rewrite_write a (IntegerLiteral 0)
+    rewrite_write a C_lang.Expr.unknown
 
   | CallExpr {func = Ident {name=n; kind=Function; _}; args=
       UnaryOperator {child=ArraySubscriptExpr a; opcode="&"; _}
