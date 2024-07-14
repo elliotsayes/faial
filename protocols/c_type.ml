@@ -9,6 +9,7 @@ let split_array_type (x:string) : (string * string) option =
     match Common.rsplit ' ' x with
     | Some (_, "*") as o -> o
     | Some (e, "*__restrict") -> Some (e, "*")
+    | Some (e, "*const") -> Some (e, "*")
     | _ -> None
   )
 
