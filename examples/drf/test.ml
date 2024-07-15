@@ -119,8 +119,10 @@ let unsupported : Fpath.t list =
     (* example where assignment is used as an expression, rather
      than a statement *)
     "drf-assign-exp.cu";
-    (* Data-race freee requires understanding fields in parameters. *)
+    (* Data-race free requires understanding fields in parameters. *)
     "drf-field-in-param.cu";
+    (* A racy example that uses structs *)
+    "racy-struct.cu";
   ] |> List.map (fun x -> Fpath.(v "." / x))
 
 (* ---- Testing-specific code ----- *)
