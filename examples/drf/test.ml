@@ -123,6 +123,8 @@ let unsupported : Fpath.t list =
     "drf-field-in-param.cu";
     (* A racy example that uses structs *)
     "racy-struct.cu";
+    (* A racy example that calls a device function without array as args *)
+    "racy-device-no-args.cu";
   ] |> List.map (fun x -> Fpath.(v "." / x))
 
 (* ---- Testing-specific code ----- *)
