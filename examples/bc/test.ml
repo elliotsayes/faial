@@ -30,6 +30,7 @@ let tests = [
   "28tid.cu", ["--blockDim=1024"; "--gridDim=1"], "3";
   "30tid.cu", ["--blockDim=1024"; "--gridDim=1"], "1";
   "32tid.cu", ["--blockDim=1024"; "--gridDim=1"], "31";
+  "assume.cu", [], "1";
   "tidx-tidy.cu", ["--blockDim=[16,16]"], "1";
   "tidx-tidy.cu", ["--blockDim=[32,32]"], "0";
   "loops-1.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} 1";
