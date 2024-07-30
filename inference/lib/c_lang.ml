@@ -1058,7 +1058,7 @@ let rec parse_exp (j:json) : Expr.t j_result =
     Ok (UnresolvedLookupExpr {name=v; tys=List.map J_type.from_json tys})
 
   | "CXXNewExpr" ->
-    let* arg = with_field "inner" (cast_list_1 parse_exp) o in
+    let* arg = with_field "inner" (cast_first parse_exp) o in
     let* ty = get_field "type" o in
     Ok (CXXNewExpr {arg=arg; ty=J_type.from_json ty})
 

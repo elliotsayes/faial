@@ -5,6 +5,7 @@
 - Inference: in some obscure cases, writes were being incorrectly replaced by a
   write to 0.
 - Inference: analyze arrays with a const modifier.
+- Inference: added support for array allocation with `new`
 
 2024-06:
 - Inference: improved support for assertion inference

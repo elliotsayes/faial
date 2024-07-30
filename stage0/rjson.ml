@@ -160,6 +160,24 @@ let cast_list_1
       ("Expecting a list of length 1, but got a list of length " ^ g)
       (`List l)
 
+let cast_first
+  (handler:Yojson.Basic.t -> 'a j_result)
+  (j:Yojson.Basic.t)
+  : 'a j_result
+=
+  let* l = cast_list j in
+  match l with
+  | x :: _ ->
+    (match handler x with
+    | Ok x -> Ok x
+    | Error e ->
+      because "Error in index #1" x e
+    )
+  | _ ->
+    let g = string_of_int (List.length l) in
+    root_cause
+      ("Expecting a list of length 1, but got a list of length " ^ g)
+      (`List l)
 
 let cast_list_2
   (handle_fst:Yojson.Basic.t -> 'a j_result)
