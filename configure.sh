@@ -7,7 +7,7 @@ if which opam > /dev/null; then
         ANSITerminal=0.8.5 \
         toml=7.1.0 \
         otoml=1.0.5 \
-        yojson=2.1.2 \
+        yojson=2.2.2 \
         z3=4.13.0 \
         printbox-text=0.11 \
         fpath=0.7.3
