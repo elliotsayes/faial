@@ -125,6 +125,8 @@ let unsupported : Fpath.t list =
     "racy-struct.cu";
     (* A racy example that calls a device function without array as args *)
     "racy-device-no-args.cu";
+    (* A racy example that calls a device function using a 2d index on a global memory *)
+    "drf-2d.cu";
   ] |> List.map (fun x -> Fpath.(v "." / x))
 
 (* ---- Testing-specific code ----- *)
