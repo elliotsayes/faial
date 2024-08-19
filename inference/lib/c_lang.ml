@@ -413,8 +413,8 @@ module Stmt = struct
     let rec stmt_to_s : t -> Indent.t list =
       let block (s:t) : Indent.t list = ret (stmt_to_s s) in
       function
-      | ReturnStmt None -> [Line "return"]
-      | ReturnStmt (Some e) -> [Line ("return" ^ Expr.to_string e)]
+      | ReturnStmt None -> [Line "return;"]
+      | ReturnStmt (Some e) -> [Line ("return " ^ Expr.to_string e^ ";")]
       | GotoStmt -> [Line "goto"]
       | BreakStmt -> [Line "break"]
       | ContinueStmt -> [Line "continue"]
