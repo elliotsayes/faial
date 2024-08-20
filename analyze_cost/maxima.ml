@@ -130,8 +130,8 @@ let parse_maxima (x:string) : string option =
     |> Common.join "\n"
   )
 
-let compile (code:string) : string =
-  "load(\"bitwise\")$\n" ^ code ^ ",logcontract,simpsum,ratsimp;"
+let compile ?(compact=false) (code:string) : string =
+  "load(\"bitwise\")$\n" ^  (if compact then "pfeformat: true$\n" else "") ^ code ^ ",logcontract,simpsum,ratsimp;"
 
 let run_exe
   ?(verbose=false)
@@ -147,6 +147,7 @@ let run_exe
 let run_ratio
   ~verbose
   ~exe
+  ~compact
   ~numerator
   ~denominator
 :
@@ -156,17 +157,18 @@ let run_ratio
   "(" ^
     from_stmt numerator ^ ") / (" ^
     from_stmt denominator ^ ")"
-  |> compile
+  |> compile ~compact
   |> run_exe ~verbose ~exe
 
 let run
   ?(verbose=false)
   ?(exe="maxima")
+  ?(compact=false)
   (x:Ra.Stmt.t)
 :
   (string, Errors.t) Result.t
 =
   x
   |> from_stmt
-  |> compile
+  |> compile ~compact
   |> run_exe ~verbose ~exe

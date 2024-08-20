@@ -39,6 +39,7 @@ module Solver = struct
     approx_ifs: bool;
     strategy: Summation.Strategy.t;
     metric: Metric.t;
+    compact: bool;
   }
 
   let make
@@ -66,6 +67,7 @@ module Solver = struct
     ~approx_ifs
     ~strategy
     ~metric
+    ~compact
   :
     t
   =
@@ -99,6 +101,7 @@ module Solver = struct
       approx_ifs;
       strategy;
       metric;
+      compact;
     }
 
   let gen_cost
@@ -139,7 +142,7 @@ module Solver = struct
       r |> Koat.run ~verbose:app.show_code ~exe:app.koat_exe ~asympt:app.asympt
     else if app.use_maxima then (
       abort_when app.asympt "The Maxima backend does not support asympotic cost.";
-      r |> Maxima.run ~verbose:app.show_code ~exe:app.maxima_exe
+      r |> Maxima.run ~verbose:app.show_code ~exe:app.maxima_exe ~compact:app.compact
     ) else
       Ok (r |> Summation.run ~show_code:app.show_code)
     )
@@ -317,6 +320,7 @@ let run
   ~approx_ifs
   ~strategy
   ~metric
+  ~compact
   (kernels : Proto.Code.t Proto.Kernel.t list)
 :
   unit
@@ -346,6 +350,7 @@ let run
     ~approx_ifs
     ~strategy
     ~metric
+    ~compact
   in
   if output_json then
     JUI.run app
@@ -379,6 +384,7 @@ let pico
   (approx_ifs:bool)
   (strategy:Summation.Strategy.t)
   (metric:Metric.t)
+  (compact:bool)
 =
   let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
   let block_dim = parsed.options.block_dim in
@@ -410,6 +416,7 @@ let pico
     ~approx_ifs
     ~strategy
     ~metric
+    ~compact
     parsed.kernels
 
 
@@ -536,6 +543,10 @@ let metric =
   let doc = "Select the metric to measure the cost." in
   Arg.(required & opt (some (enum Metric.choices)) None & info ["m"; "metric"] ~doc)
 
+let compact =
+  let doc = "Render Maxima formulas on a single line." in
+  Arg.(value & flag & info ["compact"] ~doc)
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -563,6 +574,7 @@ let pico_t = Term.(
   $ approx_ifs
   $ strategy
   $ metric
+  $ compact
 )
 
 let info =
