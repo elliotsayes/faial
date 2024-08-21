@@ -385,8 +385,13 @@ let pico
   (strategy:Summation.Strategy.t)
   (metric:Metric.t)
   (compact:bool)
+  (ignore_parsing_errors:bool)
 =
-  let parsed = Protocol_parser.Silent.to_proto ~block_dim ~grid_dim fname in
+  let parsed = Protocol_parser.Silent.to_proto
+    ~abort_on_parsing_failure:(not ignore_parsing_errors)
+    ~block_dim
+    ~grid_dim
+    fname in
   let block_dim = parsed.options.block_dim in
   let grid_dim = parsed.options.grid_dim in
   let config = Config.make ~block_dim ~grid_dim () in
@@ -547,6 +552,12 @@ let compact =
   let doc = "Render Maxima formulas on a single line." in
   Arg.(value & flag & info ["compact"] ~doc)
 
+let ignore_parsing_errors =
+  let doc = "Parsing errors do not abort analysis" in
+  Arg.(value & flag & info ["ignore-parsing-errors"] ~doc)
+
+
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -575,6 +586,7 @@ let pico_t = Term.(
   $ strategy
   $ metric
   $ compact
+  $ ignore_parsing_errors
 )
 
 let info =
