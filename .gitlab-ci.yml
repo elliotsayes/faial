@@ -25,7 +25,7 @@ test:
     - make test
 
 build-mac:
-  stage: build
+  stage: deploy
   image: macos-14-xcode-15
   variables:
     OCAML_VERSION: 5.2.0
@@ -37,8 +37,10 @@ build-mac:
     - opam switch create main ${OCAML_VERSION}
   script:
     - cd "$CI_PROJECT_DIR"
+    - '[ ! -d _opam ] || (rm -rf $HOME/.opam/$OCAML_VERSION && mv _opam $HOME/.opam/$OCAML_VERSION)'
     - eval $(opam config env)
     - ./configure.sh -y --confirm-level=unsafe-yes
+    - mv $HOME/.opam/$OCAML_VERSION _opam
     - ocamlc --version
     - opam list
     - dune build --release
@@ -48,7 +50,7 @@ build-mac:
     key: $OCAML_VERSION
     paths:
     - _build/
-    - $HOME/.opam/$OCAML_VERSION
+    - _opam
 
 build-dist:
   stage: build
