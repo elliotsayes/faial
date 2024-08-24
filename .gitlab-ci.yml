@@ -32,7 +32,7 @@ build-mac:
   tags:
     - saas-macos-medium-m1
   before_script:
-    - brew install opam
+    - brew install opam python@3.12
     - opam init --bare --disable-sandboxing
     - opam switch create main ${OCAML_VERSION}
   script:
