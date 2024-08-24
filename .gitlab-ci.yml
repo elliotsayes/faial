@@ -74,6 +74,8 @@ bundle-mac:
   image: macos-14-xcode-15
   variables:
     OCAML_VERSION: 5.2.0
+    HOMEBREW_NO_INSTALL_CLEANUP: 1
+    HOMEBREW_NO_AUTO_UPDATE: 1
   tags:
     - saas-macos-medium-m1
   script:
@@ -83,7 +85,6 @@ bundle-mac:
     - cd "$CI_PROJECT_DIR"
     - eval $(opam config env)
     - ./configure.sh -y --confirm-level=unsafe-yes
-    - mv $HOME/.opam/$OCAML_VERSION _opam
     - ocamlc --version
     - opam list
     - dune build --release
