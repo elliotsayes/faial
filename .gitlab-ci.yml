@@ -1,4 +1,9 @@
 ---
+stages:
+- build
+- test
+- deploy
+
 image: registry.gitlab.com/umb-svl/faial/faial:ci
 variables:
 
@@ -24,34 +29,6 @@ test:
     - make
     - make test
 
-build-mac:
-  stage: deploy
-  image: macos-14-xcode-15
-  variables:
-    OCAML_VERSION: 5.2.0
-  tags:
-    - saas-macos-medium-m1
-  before_script:
-    - brew install opam
-    - opam init --bare --disable-sandboxing
-    - opam switch create main ${OCAML_VERSION}
-  script:
-    - cd "$CI_PROJECT_DIR"
-    - '[ ! -d _opam ] || (rm -rf $HOME/.opam/$OCAML_VERSION && mv _opam $HOME/.opam/$OCAML_VERSION)'
-    - eval $(opam config env)
-    - ./configure.sh -y --confirm-level=unsafe-yes
-    - mv $HOME/.opam/$OCAML_VERSION _opam
-    - ocamlc --version
-    - opam list
-    - dune build --release
-    - cp -Lr _build/install/default/bin/* ./
-
-  cache:
-    key: $OCAML_VERSION
-    paths:
-    - _build/
-    - _opam
-
 build-dist:
   stage: build
   <<: *global_cache
@@ -73,8 +50,10 @@ build-dist:
       - README.md
       - LICENSE
 
-.bundle: &global_bundle
+bundle-lin:
   stage: deploy
+  dependencies:
+    - build-dist
   only:
     # Only add branches that also exist in c-to-json and faial-infer!
     # Otherwise, this will fail as wget will not find their job artifacts.
@@ -89,13 +68,29 @@ build-dist:
     paths:
       - bundle/faial.tar.bz2
 
-bundle-lin:
-  <<: *global_bundle
-  dependencies:
-    - build-dist
 
 bundle-mac:
-  <<: *global_bundle
-  dependencies:
-    - build-mac
-
+  stage: deploy
+  image: macos-14-xcode-15
+  variables:
+    OCAML_VERSION: 5.2.0
+  tags:
+    - saas-macos-medium-m1
+  script:
+    - brew install opam
+    - opam init --bare --disable-sandboxing
+    - opam switch create main ${OCAML_VERSION}
+    - cd "$CI_PROJECT_DIR"
+    - eval $(opam config env)
+    - ./configure.sh -y --confirm-level=unsafe-yes
+    - mv $HOME/.opam/$OCAML_VERSION _opam
+    - ocamlc --version
+    - opam list
+    - dune build --release
+    - cp -Lr _build/install/default/bin/* ./
+    - mkdir bundle
+    - cd bundle
+    - ../scripts/ci.sh
+  artifacts:
+    paths:
+      - bundle/faial.tar.bz2
