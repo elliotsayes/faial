@@ -23,6 +23,22 @@ test:
     - make
     - make test
 
+build-mac:
+  stage: build
+  image: macos-14-xcode-15
+  tags:
+    - saas-macos-medium-m1
+  before_script:
+    - brew install opam
+    - opam init --compiler=5.2
+  script:
+    - cd "$CI_PROJECT_DIR"
+    - eval $(opam config env)
+    - ./configure.sh
+    - ocamlc --version
+    - opam list
+    - dune build --release
+
 build-dist:
   <<: *global_cache
   script:
