@@ -27,19 +27,27 @@ test:
 build-mac:
   stage: build
   image: macos-14-xcode-15
+  variables:
+    OCAML_VERSION: 5.2.0
   tags:
     - saas-macos-medium-m1
   before_script:
     - brew install opam
     - opam init --bare --disable-sandboxing
-    - opam switch create main 5.2.0
+    - opam switch create main ${OCAML_VERSION}
   script:
     - cd "$CI_PROJECT_DIR"
     - eval $(opam config env)
-    - ./configure.sh
+    - ./configure.sh -y
     - ocamlc --version
     - opam list
     - dune build --release
+
+  cache:
+    key: $OCAML_VERSION
+    paths:
+    - _build/
+    - $HOME/.opam/$OCAML_VERSION
 
 build-dist:
   stage: build
