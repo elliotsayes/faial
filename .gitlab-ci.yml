@@ -32,13 +32,13 @@ build-mac:
   tags:
     - saas-macos-medium-m1
   before_script:
-    - brew install opam python@3.12
+    - brew install opam
     - opam init --bare --disable-sandboxing
     - opam switch create main ${OCAML_VERSION}
   script:
     - cd "$CI_PROJECT_DIR"
     - eval $(opam config env)
-    - ./configure.sh -y
+    - ./configure.sh -y --confirm-level=unsafe-yes
     - ocamlc --version
     - opam list
     - dune build --release
