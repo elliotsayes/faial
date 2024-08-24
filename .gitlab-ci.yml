@@ -13,6 +13,7 @@ variables:
 
 
 test:
+  stage: test
   <<: *global_cache
   script:
     - cd "$CI_PROJECT_DIR"
@@ -30,7 +31,8 @@ build-mac:
     - saas-macos-medium-m1
   before_script:
     - brew install opam
-    - opam init --compiler=5.2
+    - opam init --bare --disable-sandboxing
+    - opam switch create main 5.2.0
   script:
     - cd "$CI_PROJECT_DIR"
     - eval $(opam config env)
@@ -40,6 +42,7 @@ build-mac:
     - dune build --release
 
 build-dist:
+  stage: build
   <<: *global_cache
   script:
     - cd "$CI_PROJECT_DIR"
