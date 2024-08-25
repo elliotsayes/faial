@@ -95,12 +95,13 @@ bundle-mac:
         echo "Initializing OPAM"
         opam init --bare --disable-sandboxing &&
         opam switch create main ${OCAML_VERSION} &&
-        eval $(opam config env) &&
+        eval $(opam env --switch=main) &&
         ./configure.sh -y --confirm-level=unsafe-yes &&
         cp -a ~/.opam _opam
       fi
     - ocamlc --version
-    - eval $(opam config env) && make
+    - eval $(opam env --switch=main)
+    - make
     - mkdir bundle
     - cd bundle
     - ../scripts/ci.sh
