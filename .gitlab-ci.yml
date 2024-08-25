@@ -100,8 +100,7 @@ bundle-mac:
         cp -a ~/.opam _opam
       fi
     - ocamlc --version
-    - eval $(opam config env)
-    - make
+    - eval $(opam config env) && make
     - mkdir bundle
     - cd bundle
     - ../scripts/ci.sh
