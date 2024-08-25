@@ -90,9 +90,7 @@ bundle-mac:
     - >
       if [ -d x_opam ]; then
         echo "Loading OPAM from cache..." &&
-        cp -a _opam ~/.opam &&
-        eval $(opam config env) &&
-        echo ${OPAM_SWITCH_PREFIX}
+        cp -a _opam ~/.opam
       else
         echo "Initializing OPAM"
         opam init --bare --disable-sandboxing &&
@@ -102,6 +100,7 @@ bundle-mac:
         cp -a ~/.opam _opam
       fi
     - ocamlc --version
+    - eval $(opam config env)
     - make
     - mkdir bundle
     - cd bundle
