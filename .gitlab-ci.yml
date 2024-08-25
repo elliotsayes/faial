@@ -76,19 +76,32 @@ bundle-mac:
     OCAML_VERSION: 5.2.0
     HOMEBREW_NO_INSTALL_CLEANUP: 1
     HOMEBREW_NO_AUTO_UPDATE: 1
+  cache:
+    key:
+      files:
+        - configure.sh
+    paths:
+      - _opam
   tags:
     - saas-macos-medium-m1
   script:
-    - brew install opam
-    - opam init --bare --disable-sandboxing
-    - opam switch create main ${OCAML_VERSION}
     - cd "$CI_PROJECT_DIR"
-    - eval $(opam config env)
-    - ./configure.sh -y --confirm-level=unsafe-yes
+    - brew install opam
+    - >
+      if [ -d _opam ]; then
+        echo "Loading OPAM from cache..." &&
+        cp -r ~/.opam/${OCAML_VERSION} _opam &&
+        eval $(opam config env)
+      else
+        echo "Initializing OPAM"
+        opam init --bare --disable-sandboxing &&
+        opam switch create main ${OCAML_VERSION} &&
+        eval $(opam config env) &&
+        ./configure.sh -y --confirm-level=unsafe-yes &&
+        cp -a ~/.opam/${OCAML_VERSION} _opam
+      fi
     - ocamlc --version
-    - opam list
-    - dune build --release
-    - cp -Lr _build/install/default/bin/* ./
+    - make
     - mkdir bundle
     - cd bundle
     - ../scripts/ci.sh
