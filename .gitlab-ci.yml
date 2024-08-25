@@ -90,7 +90,7 @@ bundle-mac:
     - >
       if [ -d _opam ]; then
         echo "Loading OPAM from cache..." &&
-        mkdir -p ~/.opam/
+        opam init --bare --disable-sandboxing &&
         cp -a _opam ~/.opam/${OCAML_VERSION} &&
         eval $(opam config env) &&
         echo ${OPAM_SWITCH_PREFIX}
