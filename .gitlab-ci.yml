@@ -86,7 +86,7 @@ bundle-mac:
     - saas-macos-medium-m1
   script:
     - cd "$CI_PROJECT_DIR"
-    - brew install opam
+    - brew install opam python@3.9
     - >
       if [ -d _opam ]; then
         echo "Loading OPAM from cache..." &&
@@ -98,7 +98,7 @@ bundle-mac:
         opam switch create main ${OCAML_VERSION} &&
         eval $(opam config env) &&
         ./configure.sh -y --confirm-level=unsafe-yes &&
-        cp -a ~/.opam/${OCAML_VERSION} _opam
+        cp -a ${OPAM_SWITCH_PREFIX} _opam
       fi
     - ocamlc --version
     - make
