@@ -88,10 +88,9 @@ bundle-mac:
     - cd "$CI_PROJECT_DIR"
     - brew install opam python@3.9
     - >
-      if [ -d _opam ]; then
+      if [ -d x_opam ]; then
         echo "Loading OPAM from cache..." &&
-        opam init --bare --disable-sandboxing &&
-        cp -a _opam ~/.opam/${OCAML_VERSION} &&
+        cp -a _opam ~/.opam &&
         eval $(opam config env) &&
         echo ${OPAM_SWITCH_PREFIX}
       else
@@ -100,7 +99,7 @@ bundle-mac:
         opam switch create main ${OCAML_VERSION} &&
         eval $(opam config env) &&
         ./configure.sh -y --confirm-level=unsafe-yes &&
-        cp -a ${OPAM_SWITCH_PREFIX} _opam
+        cp -a ~/.opam _opam
       fi
     - ocamlc --version
     - make
