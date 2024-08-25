@@ -88,7 +88,7 @@ bundle-mac:
     - cd "$CI_PROJECT_DIR"
     - brew install opam python@3.9
     - >
-      if [ -d x_opam ]; then
+      if [ -d _opam ]; then
         echo "Loading OPAM from cache..." &&
         cp -a _opam ~/.opam
       else
