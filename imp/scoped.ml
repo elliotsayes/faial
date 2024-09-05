@@ -56,19 +56,23 @@ let loc_subst (alias:Alias.t) : t -> t =
   let rec loc_subst : t -> t =
     function
     | Acc (x, a) as i ->
-      if Variable.equal x alias.target
-      then (
-        match a.index with
-        | [n] ->
-          (* use the inlined variable but with the location of the alias,
-            so that the error message appears in the right place. *)
-          let new_x = { alias.source with location = x.location } in
-          Acc (new_x, { a with index = [Exp.n_plus alias.offset n] })
-        | _ ->
-          let idx = List.length a.index |> string_of_int in
-          failwith ("Expecting an index with dimension 1, but got " ^ idx)
-      )
-      else i
+      if Variable.equal x alias.target then (
+        let new_x = { alias.source with location = x.location } in
+        let new_a =
+          if alias.offset = Num 0 then
+            (* No offset, so same index *)
+            a
+          else
+            match a.index with
+            | n :: l ->
+              (* use the inlined variable but with the location of the alias,
+                so that the error message appears in the right place. *)
+              { a with index = (Exp.n_plus alias.offset n) :: l }
+            | [] ->
+              failwith ("Impossible to have 0 elements.")
+        in
+        Acc (new_x, new_a)
+      ) else i
     | Assert _ as i -> i
     | Decl (d, l) -> Decl (d, loc_subst l)
     | Assign a -> Assign {a with body = loc_subst a.body}
