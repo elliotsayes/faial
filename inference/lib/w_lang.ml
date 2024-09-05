@@ -327,6 +327,29 @@ module Function = struct
   }
 end
 
+module ShaderStage = struct
+  type t =
+    | Vertex
+    | Fragment
+    | Compute
+
+  let to_string : t -> string =
+    function
+    | Vertex -> "vertex"
+    | Fragment -> "fragment"
+    | Compute -> "compute"
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* name = cast_string j in
+    match name with
+    | "Vertex" -> Ok Vertex
+    | "Fragment" -> Ok Fragment
+    | "Compute" -> Ok Compute
+    | _ -> root_cause ("ShaderStage.parse: unknown name: " ^ name) j
+
+end
+
 module EntryPoint = struct
   type t = {
     name: string;
@@ -334,21 +357,23 @@ module EntryPoint = struct
     (*
     TODO: workgroup_size: Dim3.t;
     TODO: early_depth_test: EarlyDepthTest.t option;
-    TODO: stage: ShaderStage.t;
     *)
+    stage: ShaderStage.t;
   }
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
     let* name = with_field "name" cast_string o in
-    Ok {name}
+    let* stage = with_field "stage" ShaderStage.parse o in
+    Ok {name; stage}
 
   let to_string (e:t) : string =
     e.name
 
   let to_s (d:t) : Indent.t list =
     [
-    Line d.name
+    Line ("@" ^ ShaderStage.to_string d.stage ^ " fn " ^ d.name)
     ]
 end
 
