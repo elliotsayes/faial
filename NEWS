@@ -1,3 +1,7 @@
+2024-08:
+- faial-cost: added option to show output in single line for Maxima.
+- faial-cost: added option to ignore parsing errors
+
 2024-07:
 - Inference: added support for using indices of a templated type.
 - Inference: improved support for detecting mutation in loops/conditionals.
