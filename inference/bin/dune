@@ -5,3 +5,9 @@
  (modules c_ast)
  (libraries inference stage0 cmdliner))
 
+(executable
+ (public_name w-ast)
+ (name w_ast)
+ (modes exe)
+ (modules w_ast)
+ (libraries inference stage0 cmdliner))

@@ -91,6 +91,11 @@ let cast_object (j:Yojson.Basic.t) : j_object j_result =
   | `Assoc l -> Ok l
   | _ -> type_mismatch "object" j 
 
+let cast_option (f:Yojson.Basic.t -> 'a j_result) : Yojson.Basic.t -> 'a option j_result =
+  function
+  | `Null -> Ok None
+  | j -> f j |> Result.map Option.some
+
 let cast_string (j:Yojson.Basic.t) : string j_result =
   match j with
   | `String v -> Ok v

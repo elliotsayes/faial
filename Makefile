@@ -12,11 +12,16 @@ all: c-ast \
 	faial-bc-dyn \
 	faial-sync \
 	faial-gen \
-	faial-cost
+	faial-cost \
+	wgsl-ast
 
 clean:
 	$(DUNE) clean
 	rm -f faial-bin gen_kernels pico faial-gen
+
+wgsl-ast:
+	$(DUNE) build inference/bin/w_ast.exe
+	cp -f $(BUILD)/inference/bin/w_ast.exe wgsl-ast
 
 c-ast:
 	$(DUNE) build inference/bin/c_ast.exe
@@ -88,4 +93,5 @@ gitlab: gitlab-test gitlab-bin
 	data-dep \
 	faial-sync \
 	faial-gen \
-	faial-cost
+	faial-cost \
+	wgsl-ast
