@@ -1,4 +1,5 @@
 open Stage0
+open Protocols
 
 module StackTrace = Common.StackTrace
 type json = Yojson.Basic.t
@@ -70,9 +71,22 @@ module VectorSize = struct
     | Tri -> 3
     | Quad -> 4
 
+  let from_int (n:int) : t option =
+    match n with
+    | 2 -> Some Bi
+    | 3 -> Some Tri
+    | 4 -> Some Quad
+    | _ -> None
+
   let to_string (s: t) : string =
     to_int s |> string_of_int
 
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* n = cast_int j in
+    match from_int n with
+    | Some n -> Ok n
+    | None -> root_cause "VectorSize.parse: invalid JSON" j
 end
 
 module StorageAccess = struct
@@ -173,7 +187,74 @@ module Sampling = struct
 end
 
 module BuiltIn = struct
-  type t = string
+  type t =
+    | PositionInvariant
+    | PositionVariant
+    | ViewIndex
+    | InstanceIndex
+    | VertexIndex
+    | FragDepth
+    | FrontFacing
+    | PrimitiveIndex
+    | SampleIndex
+    | SampleMask
+    | GlobalInvocationId
+    | LocalInvocationId
+    | LocalInvocationIndex
+    | WorkGroupId
+    | NumWorkGroups
+    | NumSubgroups
+    | SubgroupId
+    | SubgroupSize
+    | SubgroupInvocationId
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* name = cast_string j in
+    match name with
+    | "PositionInvariant" -> Ok PositionInvariant
+    | "PositionVariant" -> Ok PositionVariant
+    | "ViewIndex" -> Ok ViewIndex
+    | "InstanceIndex" -> Ok InstanceIndex
+    | "VertexIndex" -> Ok VertexIndex
+    | "FragDepth" -> Ok FragDepth
+    | "FrontFacing" -> Ok FrontFacing
+    | "PrimitiveIndex" -> Ok PrimitiveIndex
+    | "SampleIndex" -> Ok SampleIndex
+    | "SampleMask" -> Ok SampleMask
+    | "GlobalInvocationId" -> Ok GlobalInvocationId
+    | "LocalInvocationId" -> Ok LocalInvocationId
+    | "LocalInvocationIndex" -> Ok LocalInvocationIndex
+    | "WorkGroupId" -> Ok WorkGroupId
+    | "NumWorkGroups" -> Ok NumWorkGroups
+    | "NumSubgroups" -> Ok NumSubgroups
+    | "SubgroupId" -> Ok SubgroupId
+    | "SubgroupSize" -> Ok SubgroupSize
+    | "SubgroupInvocationId" -> Ok SubgroupInvocationId
+    | _ -> root_cause ("Unknown kind: " ^ name) j
+
+
+  let to_string : t -> string =
+    function
+    | VertexIndex -> "vertex_index"
+    | InstanceIndex -> "instance_index"
+    | PositionVariant -> "position"
+    | PositionInvariant -> "position_invariant"
+    | FrontFacing -> "front_facing"
+    | FragDepth -> "frag_depth"
+    | LocalInvocationId -> "local_invocation_id"
+    | LocalInvocationIndex -> "local_invocation_index"
+    | GlobalInvocationId -> "global_invocation_id"
+    | WorkGroupId -> "workgroup_id"
+    | NumWorkGroups -> "num_workgroups"
+    | SampleIndex -> "sample_index"
+    | SampleMask -> "sample_mask"
+    | PrimitiveIndex -> "primitive_index"
+    | ViewIndex -> "view_index"
+    | NumSubgroups -> "num_subgroups"
+    | SubgroupId -> "subgroup_id"
+    | SubgroupSize -> "subgroup_size"
+    | SubgroupInvocationId -> "subgroup_invocation_id"
 end
 
 module Binding = struct
@@ -185,6 +266,24 @@ module Binding = struct
           interpolation: Interpolation.t option;
           sampling: Sampling.t option;
       }
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "BuiltIn" ->
+      let* b = with_field "value" BuiltIn.parse o in
+      Ok (BuiltIn b)
+    | "Location" ->
+      failwith "Binding.parse: location"
+    | _ ->
+      root_cause ("Unsupported kind: " ^ kind) j
+
+  let to_string : t -> string =
+    function
+    | BuiltIn b -> "builtin(" ^ BuiltIn.to_string b ^ ")"
+    | Location _ -> failwith "Binding.to_string: Location"
 end
 
 module Type = struct
@@ -299,15 +398,13 @@ module Type = struct
     | "Scalar" ->
       let* s = with_field "value" Scalar.parse o in
       Ok (Scalar s)
-    | _ -> failwith ("inner_parse: unsupported kind: " ^ kind)
+    | "Vector" ->
+      let* size = with_field "size" VectorSize.parse o in
+      let* scalar = with_field "scalar" Scalar.parse o in
+      Ok (Vector {size; scalar})
 
-end
+    | _ -> root_cause ("inner_parse: unsupported kind: " ^ kind) j
 
-module FunctionResult = struct
-  type t = {
-    ty: Type.t;
-    binding: Binding.t;
-  }
 end
 
 module FunctionArgument = struct
@@ -316,15 +413,55 @@ module FunctionArgument = struct
     ty: Type.t;
     binding: Binding.t option
   }
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* name = with_field "name" cast_string o in
+    let* ty = with_field "ty" Type.parse o in
+    let* binding = with_field "binding" (cast_option Binding.parse) o in
+    Ok {ty; binding; name}
+
+  let to_string (e:t) : string =
+    let binding =
+      e.binding
+      |> Option.map (fun b -> "@" ^ Binding.to_string b ^ " ")
+      |> Option.value ~default:""
+    in
+    binding ^  e.name ^ ": " ^ Type.to_string e.ty
+
+end
+
+module FunctionResult = struct
+  type t = {
+    ty: Type.t;
+    binding: Binding.t option;
+  }
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* ty = with_field "ty" Type.parse o in
+    let* binding = with_field "binding" (cast_option Binding.parse) o in
+    Ok {ty; binding}
+
 end
 
 module Function = struct
   type t = {
-    name: string option;
+    name: string;
     arguments: FunctionArgument.t list;
     result: FunctionResult.t option;
     (* TODO:    body *)
   }
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* name = with_field "name" cast_string o in (* XXX: in Naga this is an optional string *)
+    let* result = with_field "result" (cast_option FunctionResult.parse) o in
+    let* arguments = with_field "arguments" (cast_map FunctionArgument.parse) o in
+    Ok {name; result; arguments}
 end
 
 module ShaderStage = struct
@@ -353,9 +490,9 @@ end
 module EntryPoint = struct
   type t = {
     name: string;
-(* TODO: function_: Function.t; *)
+    function_: Function.t;
+    workgroup_size: Dim3.t;
     (*
-    TODO: workgroup_size: Dim3.t;
     TODO: early_depth_test: EarlyDepthTest.t option;
     *)
     stage: ShaderStage.t;
@@ -366,14 +503,29 @@ module EntryPoint = struct
     let* o = cast_object j in
     let* name = with_field "name" cast_string o in
     let* stage = with_field "stage" ShaderStage.parse o in
-    Ok {name; stage}
+    let* workgroup_size =
+      with_field "workgroup_size" (fun j ->
+        match Dim3.from_json j with
+        | Ok d -> Ok d
+        | Error e -> root_cause e j
+      ) o
+    in
+    let* function_ = with_field "function" Function.parse o in
+    Ok {name; workgroup_size; stage; function_}
 
   let to_string (e:t) : string =
     e.name
 
   let to_s (d:t) : Indent.t list =
+    let args =
+      d.function_.arguments
+      |> List.map FunctionArgument.to_string
+      |> Common.join ", "
+    in
     [
-    Line ("@" ^ ShaderStage.to_string d.stage ^ " fn " ^ d.name)
+    Line ("@" ^ ShaderStage.to_string d.stage ^
+      " @workgroup_size(" ^ Dim3.to_string d.workgroup_size ^ ")" ^
+      " fn " ^ d.name ^ "(" ^ args ^ ")")
     ]
 end
 

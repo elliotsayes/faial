@@ -8,14 +8,17 @@ let zero : t = {x=0; y=0; z=0}
 let total (e:t) : int =
   e.x * e.y * e.z
 
-let parse ?(default=one) (s:string) : (t, string) Result.t =
-  try
-    match Yojson.Basic.from_string s with
+let from_json ?(default=one) (j:Yojson.Basic.t) : (t, string) Result.t =
+    match j with
     | `List [`Int x; `Int y; `Int z] -> Ok ({x; y; z})
     | `List [`Int x; `Int y] -> Ok {default with x; y;}
     | `List [`Int x] | `Int x -> Ok {default with x}
     | `List [] -> Ok default
     | _ -> Error ("Expecting a number of a list of up to 3 numbers (eg, [x,y,z])")
+
+let parse ?(default=one) (s:string) : (t, string) Result.t =
+  try
+    Yojson.Basic.from_string s |> from_json ~default
   with
     _ -> Error "Error parsing dim3"
 
