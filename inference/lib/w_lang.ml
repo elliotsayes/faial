@@ -76,7 +76,27 @@ module VectorSize = struct
 end
 
 module StorageAccess = struct
-  type t = {load: bool; store: bool}
+  type t =
+    | ReadWrite
+    | ReadOnly
+    | WriteOnly
+
+  let to_string : t -> string =
+    function
+    | ReadWrite -> "read_write"
+    | ReadOnly -> "read"
+    | WriteOnly -> "write"
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* load = with_field "load" cast_bool o in
+    let* store = with_field "store" cast_bool o in
+    match load, store with
+    | true, true -> Ok ReadWrite
+    | true, false -> Ok ReadOnly
+    | false, true -> Ok WriteOnly
+    | false, false -> root_cause ("StorageAccess.parse: false, false") j
 end
 
 module AddressSpace = struct
@@ -88,6 +108,33 @@ module AddressSpace = struct
     | Storage of StorageAccess.t
     | Handle
     | PushConstant
+
+  let to_string : t -> string =
+    function
+    | Function -> "function"
+    | Private -> "private"
+    | WorkGroup -> "workgroup"
+    | Uniform -> "uniform"
+    | Storage a -> "storage, " ^ StorageAccess.to_string a
+    | Handle -> ""
+    | PushConstant -> "push_constant"
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "Function" -> Ok Function
+    | "Private" -> Ok Private
+    | "WorkGroup" -> Ok WorkGroup
+    | "Uniform" -> Ok Uniform
+    | "Storage" ->
+      let* a = with_field "access" StorageAccess.parse o in
+      Ok (Storage a)
+    | "Handle" -> Ok Handle
+    | "PushConstant" -> Ok PushConstant
+    | _ -> root_cause ("Unknown kind:" ^ kind) j
+
 end
 
 module ImageDimension = struct
@@ -305,26 +352,48 @@ module EntryPoint = struct
     ]
 end
 
+module ResourceBinding = struct
+  type t = {
+    group: int;
+    binding: int;
+  }
+
+  let to_string (r:t) : string =
+    "@group(" ^ string_of_int r.group ^
+    ") @binding(" ^ string_of_int r.binding ^ ")"
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* group = with_field "group" cast_int o in
+    let* binding = with_field "binding" cast_int o in
+    Ok {group; binding}
+
+end
+
 module Decl = struct
   type t = {
     name: string;
+    space: AddressSpace.t;
+    binding: ResourceBinding.t;
     ty: Type.t;
-(* TODO:    init: Init.t option; *)
-(* TODO:    attrs: string list *)
+    (* TODO: init *)
   }
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
     let* name = with_field "name" cast_string o in
     let* ty = with_field "ty" Type.parse o in
-    Ok {ty; name}
+    let* space = with_field "space" AddressSpace.parse o in
+    let* binding = with_field "binding" ResourceBinding.parse o in
+    Ok {ty; space; name; binding}
 
   let to_string (d:t) : string =
     d.name
 
   let to_s (d:t) : Indent.t list =
     [
-    Line ("var " ^ d.name ^": " ^ Type.to_string d.ty ^";")
+    Line (ResourceBinding.to_string d.binding ^ " var<" ^ AddressSpace.to_string d.space ^ "> " ^ d.name ^": " ^ Type.to_string d.ty ^";")
     ]
 end
 
