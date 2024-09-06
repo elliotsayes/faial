@@ -447,12 +447,215 @@ module FunctionResult = struct
 
 end
 
+module Statement = struct
+  type t =
+(*     | Emit(Range<Expression>), *)
+    | Block of t list
+    | If of {
+(* TODO:         condition: Expression; *)
+        accept: t list;
+        reject: t list;
+      }
+    | Switch (*of {
+        selector: Expression;
+        cases: SwitchCase;
+      }*)
+    | Loop of {
+        body: t list;
+        continuing: t list;
+(*         break_if: Option<Handle<Expression>>, *)
+      }
+    | Break
+    | Continue
+    | Return (*of {
+         value: Option<Handle<Expression>>
+      }*)
+    | Kill
+    | Barrier (*Barrier*)
+    | Store (*of {
+        pointer: Handle<Expression>,
+        value: Handle<Expression>,
+      }*)
+    | ImageStore (* {
+        image: Handle<Expression>,
+        coordinate: Handle<Expression>,
+        array_index: Option<Handle<Expression>>,
+        value: Handle<Expression>,
+      } *)
+    | Atomic (* {
+        pointer: Handle<Expression>,
+        fun: AtomicFunction,
+        value: Handle<Expression>,
+        result: Option<Handle<Expression>>,
+      } *)
+    | WorkGroupUniformLoad (*{
+        pointer: Handle<Expression>,
+        result: Handle<Expression>,
+      }*)
+    | Call (* {
+        function: Handle<Function>,
+        arguments: Vec<Handle<Expression>>,
+        result: Option<Handle<Expression>>,
+      }*)
+    | SubgroupBallot (* {
+        result: Handle<Expression>,
+        predicate: Option<Handle<Expression>>,
+      }*)
+    | SubgroupGather (*{
+        mode: GatherMode,
+        argument: Handle<Expression>,
+        result: Handle<Expression>,
+      }*)
+    | SubgroupCollectiveOperation (*{
+        op: SubgroupOperation,
+        collective_op: CollectiveOperation,
+        argument: Handle<Expression>,
+        result: Handle<Expression>,
+      }*)
+
+  let rec parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+      | "Block" ->
+        let* l = with_field "block" (cast_map parse) o in
+        Ok (Block l)
+      | "If" ->
+        let* accept = with_field "accept" (cast_map parse) o in
+        let* reject = with_field "reject" (cast_map parse) o in
+        Ok (If {accept; reject})
+      | "Switch" -> Ok Switch
+      | "Loop" ->
+        let* body = with_field "body" (cast_map parse) o in
+        let* continuing = with_field "continuing" (cast_map parse) o in
+        Ok (Loop {body; continuing})
+      | "Break" -> Ok Break
+      | "Continue" -> Ok Continue
+      | "Return" -> Ok Return
+      | "Kill" -> Ok Kill
+      | "Barrier" -> Ok Barrier
+      | "Store" -> Ok Store
+      | "ImageStore" -> Ok ImageStore
+      | "Atomic" -> Ok Atomic
+      | "WorkGroupUniformLoad" -> Ok WorkGroupUniformLoad
+      | "Call" -> Ok Call
+      | "SubgroupBallot" -> Ok SubgroupBallot
+      | "SubgroupGather" -> Ok SubgroupGather
+      | "SubgroupCollectiveOperation" -> Ok SubgroupCollectiveOperation
+      | _ -> failwith kind
+
+  let rec to_s : t -> Indent.t list =
+    function
+    | Block l ->
+      [
+        Line "{";
+        Block (block_to_s l);
+        Line "}"
+      ]
+    | If {accept; reject; } ->
+      let open Indent in
+      [
+(* TODO:         condition: Expression; *)
+        Line "if (TODO) {";
+        Block (block_to_s accept);
+      ]
+      @
+      (if reject = [] then
+        []
+      else
+        [
+          Line "} else {";
+          Block (block_to_s reject);
+        ]
+      )
+      @
+      [ Line "}" ]
+
+    | Switch (*of {
+        selector: Expression;
+        cases: SwitchCase;
+      }*) ->
+      [Line "switch (TODO) {TODO}"]
+    | Loop {body; continuing;} ->
+(*         break_if: Option<Handle<Expression>>, *)
+      [
+        Line "loop {";
+        Block (block_to_s body);
+        Line "} continuing {";
+        Block (block_to_s continuing);
+        Line "}"
+      ]
+    | Break -> [Line "break;"]
+    | Continue -> [Line "continue;"]
+    | Return (*of {
+         value: Option<Handle<Expression>>
+      }*) ->
+      [Line "return TODO;"]
+    | Kill -> [Line "kill;"]
+    | Barrier ->
+      [Line "barrier;"]
+    | Store ->
+      [Line "TODO = TODO;"]
+
+    | ImageStore (* {
+        image: Handle<Expression>,
+        coordinate: Handle<Expression>,
+        array_index: Option<Handle<Expression>>,
+        value: Handle<Expression>,
+      } *)
+      ->
+      [Line "textureStore(TODO);"]
+    | Atomic (* {
+        pointer: Handle<Expression>,
+        fun: AtomicFunction,
+        value: Handle<Expression>,
+        result: Option<Handle<Expression>>,
+      } *)
+      ->
+      [Line "atomic(TODO);"]
+    | WorkGroupUniformLoad (*{
+        pointer: Handle<Expression>,
+        result: Handle<Expression>,
+      }*)
+      ->
+      [Line "workgroupUniformLoad(TODO);"]
+    | Call (* {
+        function: Handle<Function>,
+        arguments: Vec<Handle<Expression>>,
+        result: Option<Handle<Expression>>,
+      }*)
+      ->
+      [Line "call(TODO);"]
+    | SubgroupBallot (* {
+        result: Handle<Expression>,
+        predicate: Option<Handle<Expression>>,
+      }*) ->
+      [Line "subgroupBallot(TODO)"]
+    | SubgroupGather (*{
+        mode: GatherMode,
+        argument: Handle<Expression>,
+        result: Handle<Expression>,
+      }*) ->
+      [Line "subgroupGather(TODO);"]
+    | SubgroupCollectiveOperation (*{
+        op: SubgroupOperation,
+        collective_op: CollectiveOperation,
+        argument: Handle<Expression>,
+        result: Handle<Expression>,
+      }*)
+      ->
+      [Line "subgroupCollective(TODO);"]
+  and block_to_s l = List.concat_map to_s l
+
+end
+
 module Function = struct
   type t = {
     name: string;
     arguments: FunctionArgument.t list;
     result: FunctionResult.t option;
-    (* TODO:    body *)
+    body: Statement.t list;
   }
 
   let parse (j:json) : t j_result =
@@ -461,7 +664,8 @@ module Function = struct
     let* name = with_field "name" cast_string o in (* XXX: in Naga this is an optional string *)
     let* result = with_field "result" (cast_option FunctionResult.parse) o in
     let* arguments = with_field "arguments" (cast_map FunctionArgument.parse) o in
-    Ok {name; result; arguments}
+    let* body = with_field "body" (cast_map Statement.parse) o in
+    Ok {name; result; arguments; body}
 end
 
 module ShaderStage = struct
@@ -523,9 +727,13 @@ module EntryPoint = struct
       |> Common.join ", "
     in
     [
-    Line ("@" ^ ShaderStage.to_string d.stage ^
-      " @workgroup_size(" ^ Dim3.to_string d.workgroup_size ^ ")" ^
-      " fn " ^ d.name ^ "(" ^ args ^ ")")
+      Line (
+        "@" ^ ShaderStage.to_string d.stage ^
+        " @workgroup_size(" ^ Dim3.to_string d.workgroup_size ^ ")" ^
+        " fn " ^ d.name ^ "(" ^ args ^ ") {"
+      );
+      Block (Statement.block_to_s d.function_.body);
+      Line "}"
     ]
 end
 
