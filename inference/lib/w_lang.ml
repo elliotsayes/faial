@@ -447,6 +447,73 @@ module FunctionResult = struct
 
 end
 
+module BinaryOperator = struct
+  type t =
+    | Add
+    | Subtract
+    | Multiply
+    | Divide
+    | Modulo
+    | Equal
+    | NotEqual
+    | Less
+    | LessEqual
+    | Greater
+    | GreaterEqual
+    | And
+    | ExclusiveOr
+    | InclusiveOr
+    | LogicalAnd
+    | LogicalOr
+    | ShiftLeft
+    | ShiftRight
+
+  let to_string : t -> string =
+    function
+    | Add -> "+"
+    | Subtract -> "-"
+    | Multiply -> "*"
+    | Divide -> "/"
+    | Modulo -> "%"
+    | Equal -> "=="
+    | NotEqual -> "!="
+    | Less -> "<"
+    | LessEqual -> "<="
+    | Greater -> ">"
+    | GreaterEqual -> ">="
+    | And -> "&"
+    | ExclusiveOr -> "^"
+    | InclusiveOr -> "|"
+    | LogicalAnd -> "&&"
+    | LogicalOr -> "||"
+    | ShiftLeft -> "<<"
+    | ShiftRight -> ">>"
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* name = cast_string j in
+    match name with
+    | "Add" -> Ok Add
+    | "Subtract" -> Ok Subtract
+    | "Multiply" -> Ok Multiply
+    | "Divide" -> Ok Divide
+    | "Modulo" -> Ok Modulo
+    | "Equal" -> Ok Equal
+    | "NotEqual" -> Ok NotEqual
+    | "Less" -> Ok Less
+    | "LessEqual" -> Ok LessEqual
+    | "Greater" -> Ok Greater
+    | "GreaterEqual" -> Ok GreaterEqual
+    | "And" -> Ok And
+    | "ExclusiveOr" -> Ok ExclusiveOr
+    | "InclusiveOr" -> Ok InclusiveOr
+    | "LogicalAnd" -> Ok LogicalAnd
+    | "LogicalOr" -> Ok LogicalOr
+    | "ShiftLeft" -> Ok ShiftLeft
+    | "ShiftRight" -> Ok ShiftRight
+    | _ -> failwith name
+end
+
 module Expression = struct
   type t =
     | Literal (*Literal*)
@@ -504,7 +571,7 @@ module Expression = struct
         expr: t;
       }
     | Binary of {
-(*         op: BinaryOperator, *)
+        op: BinaryOperator.t;
         left: t;
         right: t;
       }
@@ -576,7 +643,12 @@ module Expression = struct
     | ImageLoad _ -> (*TODO*) "ImageLoad"
     | ImageQuery _ -> (*TODO*) "ImageQuery"
     | Unary _ -> (* TODO *) "Unary"
-    | Binary _ -> (*TODO*) "Binary"
+    | Binary b ->
+      Printf.sprintf
+        "(%s) %s (%s)"
+        (to_string b.left)
+        (BinaryOperator.to_string b.op)
+        (to_string b.right)
     | Select _ -> (*TODO*) "Select"
     | Derivative _ -> (*TODO*) "Derivative"
     | Relational _ -> (*TODO*) "Relational"
@@ -679,7 +751,9 @@ module Expression = struct
     | "Binary" ->
       let* left = with_field "left" parse o in
       let* right = with_field "right" parse o in
+      let* op = with_field "op" BinaryOperator.parse o in
       Ok (Binary {
+        op;
         left;
         right;
       })
