@@ -474,9 +474,9 @@ module Expression = struct
         vector: t;
 (*         pattern: [SwizzleComponent; 4], *)
       }
-    | FunctionArgument of int
-    | GlobalVariable (*Handle<GlobalVariable>*)
-    | LocalVariable (*Handle<LocalVariable>*)
+    | FunctionArgument of {ty: Type.t; name: string}
+    | GlobalVariable of {ty: Type.t; name: string}
+    | LocalVariable of {ty: Type.t; name: string; init: t option}
     | Load of t
     | ImageSample of {
         image: t;
@@ -546,6 +546,51 @@ module Expression = struct
     | SubgroupBallotResult
     | SubgroupOperationResult of Type.t
 
+  let rec to_string : t -> string =
+    function
+    | Literal -> (*TODO*) "Literal(TODO)"
+    | Constant -> (*TODO*) "Constant(TODO)"
+    | Override -> (*TODO*) "Override(TODO)"
+    | ZeroValue ty -> Type.to_string ty ^ "()"
+    | Compose {ty; components} ->
+      let components =
+        components
+        |> List.map to_string
+        |> Common.join ", "
+      in
+      Type.to_string ty ^ "(" ^ components ^ ")"
+    | Access {base; index} ->
+      to_string base ^ "[" ^ to_string index ^ "]"
+    | AccessIndex {base; index} ->
+      to_string base ^ "." ^ string_of_int index
+    | Splat _ -> (*TODO*)
+      "Splat(TODO)"
+    | Swizzle _ -> (*TODO*)
+      "Swizzle(TODO)"
+    | FunctionArgument l -> l.name
+    | GlobalVariable g -> g.name
+    | LocalVariable l -> l.name
+    | Load e ->
+      "&" ^ to_string e
+    | ImageSample _ -> (*TODO*) "ImageSample"
+    | ImageLoad _ -> (*TODO*) "ImageLoad"
+    | ImageQuery _ -> (*TODO*) "ImageQuery"
+    | Unary _ -> (* TODO *) "Unary"
+    | Binary _ -> (*TODO*) "Binary"
+    | Select _ -> (*TODO*) "Select"
+    | Derivative _ -> (*TODO*) "Derivative"
+    | Relational _ -> (*TODO*) "Relational"
+    | Math _ -> (*TODO*) "Math"
+    | As _ -> (*TODO*) "As"
+    | CallResult _ -> (*TODO*) "CallResult"
+    | AtomicResult _ -> (*TODO*) "AtomicResult"
+    | WorkGroupUniformLoadResult _ -> "WorkGroupUniformLoadResult"
+    | ArrayLength _ -> "ArrayLength"
+    | RayQueryProceedResult -> "RayQueryProceedResult"
+    | RayQueryGetIntersection _ -> "RayQueryGetIntersection"
+    | SubgroupBallotResult -> "SubgroupBallotResult"
+    | SubgroupOperationResult _ -> "SubgroupOperationResult"
+
   let rec parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -578,12 +623,20 @@ module Expression = struct
       let* vector = with_field "vector" parse o in
       Ok (Swizzle {size; vector;})
     | "FunctionArgument" ->
-      let* idx = with_field "value" cast_int o in
-      Ok (FunctionArgument idx)
-    | "GlobalVariable" -> Ok GlobalVariable
-    | "LocalVariable" -> Ok LocalVariable
+      let* ty = with_field "ty" Type.parse o in
+      let* name = with_field "name" cast_string o in
+      Ok (FunctionArgument {ty; name;})
+    | "GlobalVariable" ->
+      let* ty = with_field "ty" Type.parse o in
+      let* name = with_field "name" cast_string o in
+      Ok (GlobalVariable {ty; name})
+    | "LocalVariable" ->
+      let* ty = with_field "ty" Type.parse o in
+      let* name = with_field "name" cast_string o in
+      let* init = with_field "init" (cast_option parse) o in
+      Ok (LocalVariable {ty; name; init})
     | "Load" ->
-      let* value = with_field "value" parse o in
+      let* value = with_field "pointer" parse o in
       Ok (Load value)
     | "ImageSample" ->
       let* image = with_field "image" parse o in
@@ -716,10 +769,10 @@ module Statement = struct
     | Return of Expression.t option
     | Kill
     | Barrier (*Barrier*)
-    | Store (*of {
-        pointer: Handle<Expression>,
-        value: Handle<Expression>,
-      }*)
+    | Store of {
+        pointer: Expression.t;
+        value: Expression.t;
+      }
     | ImageStore (* {
         image: Handle<Expression>,
         coordinate: Handle<Expression>,
@@ -781,7 +834,10 @@ module Statement = struct
         Ok (Return e)
       | "Kill" -> Ok Kill
       | "Barrier" -> Ok Barrier
-      | "Store" -> Ok Store
+      | "Store" ->
+        let* pointer = with_field "pointer" Expression.parse o in
+        let* value = with_field "value" Expression.parse o in
+        Ok (Store {pointer; value;})
       | "ImageStore" -> Ok ImageStore
       | "Atomic" -> Ok Atomic
       | "WorkGroupUniformLoad" -> Ok WorkGroupUniformLoad
@@ -841,8 +897,13 @@ module Statement = struct
     | Kill -> [Line "kill;"]
     | Barrier ->
       [Line "barrier;"]
-    | Store ->
-      [Line "TODO = TODO;"]
+    | Store {pointer; value}->
+      let line =
+        Printf.sprintf "%s = %s;"
+          (Expression.to_string pointer)
+          (Expression.to_string value)
+      in
+      [Line line]
 
     | ImageStore (* {
         image: Handle<Expression>,
