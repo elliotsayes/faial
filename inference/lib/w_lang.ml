@@ -447,6 +447,252 @@ module FunctionResult = struct
 
 end
 
+module Expression = struct
+  type t =
+    | Literal (*Literal*)
+    | Constant (*Handle<Constant>*)
+    | Override (*Handle<Override>*)
+    | ZeroValue of Type.t
+    | Compose of {
+        ty: Type.t;
+        components: t list;
+      }
+    | Access of {
+        base: t;
+        index: t;
+      }
+    | AccessIndex of {
+        base: t;
+        index: int;
+      }
+    | Splat of {
+        size: VectorSize.t;
+        value: t;
+      }
+    | Swizzle of {
+        size: VectorSize.t;
+        vector: t;
+(*         pattern: [SwizzleComponent; 4], *)
+      }
+    | FunctionArgument of int
+    | GlobalVariable (*Handle<GlobalVariable>*)
+    | LocalVariable (*Handle<LocalVariable>*)
+    | Load of t
+    | ImageSample of {
+        image: t;
+        sampler: t;
+(*         gather: Option<SwizzleComponent>, *)
+        coordinate: t;
+        array_index: t option;
+        offset: t option;
+(*         level: SampleLevel, *)
+        depth_ref: t option;
+      }
+    | ImageLoad of {
+        image: t;
+        coordinate: t;
+        array_index: t option;
+        sample: t option;
+        level: t option;
+      }
+    | ImageQuery of {
+        image: t;
+(*         query: ImageQuery, *)
+      }
+    | Unary of {
+(*         op: UnaryOperator, *)
+        expr: t;
+      }
+    | Binary of {
+(*         op: BinaryOperator, *)
+        left: t;
+        right: t;
+      }
+    | Select of {
+        condition: t;
+        accept: t;
+        reject: t;
+      }
+    | Derivative of {
+(*         axis: DerivativeAxis, *)
+(*         ctrl: DerivativeControl, *)
+        expr: t;
+      }
+    | Relational of {
+(*         fun: RelationalFunction, *)
+        argument: t;
+      }
+    | Math of {
+(*         fun_: MathFunction, *)
+        args: t list;
+      }
+    | As of {
+        expr: t;
+        kind: ScalarKind.t;
+(*         convert: Option<Bytes>, *)
+      }
+    | CallResult of string
+    | AtomicResult of {
+        ty: Type.t;
+        comparison: bool;
+      }
+    | WorkGroupUniformLoadResult of Type.t
+    | ArrayLength of t
+    | RayQueryProceedResult
+    | RayQueryGetIntersection of {
+        query: t;
+        committed: bool;
+      }
+    | SubgroupBallotResult
+    | SubgroupOperationResult of Type.t
+
+  let rec parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "Literal" -> Ok Literal
+    | "Constant" -> Ok Constant
+    | "Override" -> Ok Override
+    | "ZeroValue" ->
+      let* ty = with_field "ty" Type.parse o in
+      Ok (ZeroValue ty)
+    | "Compose" ->
+      let* ty = with_field "ty" Type.parse o in
+      let* components = with_field "components" (cast_map parse) o in
+      Ok (Compose {ty; components;})
+    | "Access" ->
+      let* base = with_field "base" parse o in
+      let* index = with_field "index" parse o in
+      Ok (Access {base; index;})
+    | "AccessIndex" ->
+      let* base = with_field "base" parse o in
+      let* index = with_field "index" cast_int o in
+      Ok (AccessIndex {base; index;})
+    | "Splat" ->
+      let* value = with_field "value" parse o in
+      let* size = with_field "size" VectorSize.parse o in
+      Ok (Splat {value; size})
+    | "Swizzle" ->
+      let* size = with_field "size" VectorSize.parse o in
+      let* vector = with_field "vector" parse o in
+      Ok (Swizzle {size; vector;})
+    | "FunctionArgument" ->
+      let* idx = with_field "value" cast_int o in
+      Ok (FunctionArgument idx)
+    | "GlobalVariable" -> Ok GlobalVariable
+    | "LocalVariable" -> Ok LocalVariable
+    | "Load" ->
+      let* value = with_field "value" parse o in
+      Ok (Load value)
+    | "ImageSample" ->
+      let* image = with_field "image" parse o in
+      let* sampler = with_field "sampler" parse o in
+      let* coordinate = with_field "coordinate" parse o in
+      let* array_index = with_field "array_index" (cast_option parse) o in
+      let* offset = with_field "offset" (cast_option parse) o in
+      let* depth_ref = with_field "depth_ref" (cast_option parse) o in
+      Ok (ImageSample {
+        image;
+        sampler;
+        coordinate;
+        array_index;
+        offset;
+        depth_ref;
+      })
+    | "ImageLoad" ->
+      let* image = with_field "image" parse o in
+      let* coordinate = with_field "coordinate" parse o in
+      let* array_index = with_field "array_index" (cast_option parse) o in
+      let* sample = with_field "sample" (cast_option parse) o in
+      let* level = with_field "level" (cast_option parse) o in
+      Ok (ImageLoad {
+        image;
+        coordinate;
+        array_index;
+        sample;
+        level;
+      })
+    | "ImageQuery" ->
+      let* image = with_field "image" parse o in
+      Ok (ImageQuery {
+        image;
+      })
+    | "Unary" ->
+      let* expr = with_field "expr" parse o in
+      Ok (Unary {
+        expr;
+      })
+    | "Binary" ->
+      let* left = with_field "left" parse o in
+      let* right = with_field "right" parse o in
+      Ok (Binary {
+        left;
+        right;
+      })
+    | "Select" ->
+      let* condition = with_field "condition" parse o in
+      let* accept = with_field "accept" parse o in
+      let* reject = with_field "reject" parse o in
+      Ok (Select {
+        condition;
+        accept;
+        reject;
+      })
+    | "Derivative" ->
+      let* expr = with_field "expr" parse o in
+      Ok (Derivative {
+        expr;
+      })
+    | "Relational" ->
+      let* argument = with_field "argument" parse o in
+      Ok (Relational {
+        argument;
+      })
+    | "Math" ->
+      let* args = with_field "args" (cast_map parse) o in
+      Ok (Math {
+        args;
+      })
+    | "As" ->
+      let* expr = with_field "expr" parse o in
+      let* kind = with_field "kind" ScalarKind.parse o in
+      Ok (As {
+        expr;
+        kind;
+      })
+    | "CallResult" ->
+      let* result = with_field "value" cast_string o in
+      Ok (CallResult result)
+    | "AtomicResult" ->
+      let* ty = with_field "ty" Type.parse o in
+      let* comparison = with_field "comparison" cast_bool o in
+      Ok (AtomicResult {
+        ty;
+        comparison;
+      })
+    | "WorkGroupUniformLoadResult" ->
+      let* ty = with_field "ty" Type.parse o in
+      Ok (WorkGroupUniformLoadResult ty)
+    | "ArrayLength" ->
+      let* e = with_field "value" parse o in
+      Ok (ArrayLength e)
+    | "RayQueryProceedResult" -> Ok RayQueryProceedResult
+    | "RayQueryGetIntersection" ->
+      let* query = with_field "query" parse o in
+      let* committed = with_field "committed" cast_bool o in
+      Ok (RayQueryGetIntersection {
+        query;
+        committed;
+      })
+    | "SubgroupBallotResult" -> Ok SubgroupBallotResult
+    | "SubgroupOperationResult" ->
+      let* ty = with_field "ty" Type.parse o in
+      Ok (SubgroupOperationResult ty)
+      | _ -> failwith kind
+
+end
+
 module Statement = struct
   type t =
 (*     | Emit(Range<Expression>), *)
@@ -467,9 +713,7 @@ module Statement = struct
       }
     | Break
     | Continue
-    | Return (*of {
-         value: Option<Handle<Expression>>
-      }*)
+    | Return of Expression.t option
     | Kill
     | Barrier (*Barrier*)
     | Store (*of {
@@ -532,7 +776,9 @@ module Statement = struct
         Ok (Loop {body; continuing})
       | "Break" -> Ok Break
       | "Continue" -> Ok Continue
-      | "Return" -> Ok Return
+      | "Return" ->
+        let* e = with_field "value" (cast_option Expression.parse) o in
+        Ok (Return e)
       | "Kill" -> Ok Kill
       | "Barrier" -> Ok Barrier
       | "Store" -> Ok Store
@@ -588,9 +834,9 @@ module Statement = struct
       ]
     | Break -> [Line "break;"]
     | Continue -> [Line "continue;"]
-    | Return (*of {
-         value: Option<Handle<Expression>>
-      }*) ->
+    | Return None ->
+      [Line "return;"]
+    | Return (Some _) ->
       [Line "return TODO;"]
     | Kill -> [Line "kill;"]
     | Barrier ->
