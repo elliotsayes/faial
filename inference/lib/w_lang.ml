@@ -514,9 +514,70 @@ module BinaryOperator = struct
     | _ -> failwith name
 end
 
+module Literal = struct
+  type t =
+    | F64 of float
+    | F32 of float
+    | U32 of int
+    | I32 of int
+    | U64 of int
+    | I64 of int
+    | Bool of bool
+    | AbstractInt of int
+    | AbstractFloat of float
+
+  let to_string : t -> string =
+    function
+    | F64 v -> Float.to_string v
+    | F32 v -> Float.to_string v
+    | U32 v -> Int.to_string v
+    | I32 v -> Int.to_string v
+    | U64 v -> Int.to_string v
+    | I64 v -> Int.to_string v
+    | Bool v -> Bool.to_string v
+    | AbstractInt v -> Int.to_string v
+    | AbstractFloat v -> Float.to_string v
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "f64" ->
+      let* v = with_field "value" cast_float o in
+      Ok (F64 v)
+    | "f32" ->
+      let* v = with_field "value" cast_float o in
+      Ok (F32 v)
+    | "u32" ->
+      let* v = with_field "value" cast_int o in
+      Ok (U32 v)
+    | "i32" ->
+      let* v = with_field "value" cast_int o in
+      Ok (I32 v)
+    | "u64" ->
+      let* v = with_field "value" cast_int o in
+      Ok (U64 v)
+    | "i64" ->
+      let* v = with_field "value" cast_int o in
+      Ok (I64 v)
+    | "bool" ->
+      let* v = with_field "value" cast_bool o in
+      Ok (Bool v)
+    | "int" ->
+      let* v = with_field "value" cast_int o in
+      Ok (AbstractInt v)
+    | "float" ->
+      let* v = with_field "value" cast_float o in
+      Ok (AbstractFloat v)
+    | _ ->
+      failwith kind
+
+end
+
 module Expression = struct
   type t =
-    | Literal (*Literal*)
+    | Literal of Literal.t
     | Constant (*Handle<Constant>*)
     | Override (*Handle<Override>*)
     | ZeroValue of Type.t
@@ -615,7 +676,7 @@ module Expression = struct
 
   let rec to_string : t -> string =
     function
-    | Literal -> (*TODO*) "Literal(TODO)"
+    | Literal l -> Literal.to_string l
     | Constant -> (*TODO*) "Constant(TODO)"
     | Override -> (*TODO*) "Override(TODO)"
     | ZeroValue ty -> Type.to_string ty ^ "()"
@@ -668,7 +729,9 @@ module Expression = struct
     let* o = cast_object j in
     let* kind = get_kind o in
     match kind with
-    | "Literal" -> Ok Literal
+    | "Literal" ->
+      let* value = with_field "value" Literal.parse o in
+      Ok (Literal value)
     | "Constant" -> Ok Constant
     | "Override" -> Ok Override
     | "ZeroValue" ->
