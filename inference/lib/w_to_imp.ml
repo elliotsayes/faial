@@ -130,10 +130,10 @@ module Statements = struct
       let ( let* ) = Option.bind in
       (
         let* array = Variables.tr base in
-        let* (_, index) = Expressions.n_tr index in
+        let* (smts1, index) = Expressions.n_tr index in
 (*         let* (stmts2, payload) = Expressions.n_tr value in *)
-        Some (Write {array; index=[index]; payload=None})
-      ) |> Option.to_list
+        Some (smts1 @ [Write {array; index=[index]; payload=None}])
+      ) |> Option.value ~default:[]
     | _ ->
       []
   and tr_block (l:W_lang.Statement.t list) : Imp.Stmt.t =
