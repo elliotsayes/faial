@@ -48,6 +48,8 @@ end
 module Scalar = struct
   type t = {kind: ScalarKind.t; width: int}
 
+  let u32 : t = {kind=ScalarKind.Uint; width=4}
+
   let to_string (s:t) : string =
     ScalarKind.to_string s.kind ^ string_of_int (8 * s.width)
 
@@ -267,6 +269,8 @@ module Binding = struct
           sampling: Sampling.t option;
       }
 
+  let global_invocation_id : t = BuiltIn BuiltIn.GlobalInvocationId
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -356,6 +360,12 @@ module Type = struct
       | RayQuery -> "RayQuery"
       | BindingArray _ -> "BindingArray"
 
+    let u32 : inner = Scalar Scalar.u32
+    let vec3_u32 : inner = Vector {size=VectorSize.Tri; scalar=Scalar.u32}
+
+    let is_tid (ty:t) : bool =
+      ty.inner = vec3_u32
+
     let rec inner_to_string : inner -> string =
       function
       | Scalar s ->
@@ -413,6 +423,9 @@ module FunctionArgument = struct
     ty: Type.t;
     binding: Binding.t option
   }
+
+  let is_tid (a:t) : bool =
+    a.binding = Some Binding.global_invocation_id && Type.is_tid a.ty
 
   let parse (j:json) : t j_result =
     let open Rjson in
@@ -526,6 +539,46 @@ module Literal = struct
     | AbstractInt of int
     | AbstractFloat of float
 
+  let to_bool : t -> bool option =
+    function
+    | F64 _
+    | F32 _
+    | U32 _
+    | I32 _
+    | U64 _
+    | I64 _
+    | AbstractInt _
+    | AbstractFloat _ -> None
+    | Bool b -> Some b
+
+  let to_int : t -> int option =
+    function
+    | U32 v
+    | I32 v
+    | U64 v
+    | I64 v
+    | AbstractInt v ->
+      Some v
+    | F64 _
+    | F32 _
+    | AbstractFloat _
+    | Bool _ ->
+      None
+
+  let to_float : t -> float option =
+    function
+    | Bool _
+    | U32 _
+    | I32 _
+    | U64 _
+    | I64 _
+    | AbstractInt _ ->
+      None
+    | F64 v
+    | F32 v
+    | AbstractFloat v ->
+      Some v
+
   let to_string : t -> string =
     function
     | F64 v -> Float.to_string v
@@ -602,7 +655,7 @@ module Expression = struct
         vector: t;
 (*         pattern: [SwizzleComponent; 4], *)
       }
-    | FunctionArgument of {ty: Type.t; name: string}
+    | FunctionArgument of FunctionArgument.t
     | GlobalVariable of {ty: Type.t; name: string}
     | LocalVariable of {ty: Type.t; name: string; init: t option}
     | Load of t
@@ -758,9 +811,8 @@ module Expression = struct
       let* vector = with_field "vector" parse o in
       Ok (Swizzle {size; vector;})
     | "FunctionArgument" ->
-      let* ty = with_field "ty" Type.parse o in
-      let* name = with_field "name" cast_string o in
-      Ok (FunctionArgument {ty; name;})
+      let* f = FunctionArgument.parse j in
+      Ok (FunctionArgument f)
     | "GlobalVariable" ->
       let* ty = with_field "ty" Type.parse o in
       let* name = with_field "name" cast_string o in
@@ -1092,6 +1144,8 @@ module Statement = struct
       [Line "subgroupCollective(TODO);"]
   and block_to_s l = List.concat_map to_s l
 
+  let to_string (s:t) : string =
+    Indent.to_string (to_s s)
 end
 
 module Function = struct

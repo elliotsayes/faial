@@ -34,37 +34,32 @@ let globals_to_arrays
   |> List.filter_map tr_decl
   |> Variable.Map.of_list
 
-let rec tr_stmt : W_lang.Statement.t -> Imp.Stmt.t option =
-  function
-  | Block l -> Some (tr_block l)
-  | Return None -> None
-  | _ -> None
-and tr_block (l: W_lang.Statement.t list) : Imp.Stmt.t =
-  Block (List.filter_map tr_stmt l)
+module Literal = struct
+  let n_tr (l:W_lang.Literal.t) : Exp.nexp option =
+    W_lang.Literal.to_int l |> Option.map (fun x -> Exp.Num x)
 
-let entry_to_kernel
-  (globals:W_lang.Decl.t list)
-  (e: W_lang.EntryPoint.t)
-:
-  Imp.Kernel.t
-=
-  {
-    name = e.name;
-    ty = "?";
-    arrays = globals_to_arrays globals;
-    params = Params.empty;
-    code = tr_block e.function_.body;
-    visibility = Global;
-  }
+  let b_tr (l:W_lang.Literal.t) : Exp.bexp option =
+    W_lang.Literal.to_bool l |> Option.map (fun x -> Exp.Bool x)
+end
 
-module Expression = struct
-  module AccessState = struct
+module Variables = struct
+  let tr : W_lang.Expression.t -> Variable.t option =
+    let open W_lang.Expression in
+    function
+    | GlobalVariable {name;_}
+    | FunctionArgument {name;_}
+    | LocalVariable {name;_} -> Some (Variable.from_name name)
+    | _ -> None
+end
+
+module Expressions = struct
+  module Context = struct
     open Imp
     type t = Stmt.t list
 
     let counter = ref 1
 
-    let make : t = []
+    let empty : t = []
 
     let add_var ?(label="") (f:Variable.t -> Stmt.t list) (st:t) : (t * Variable.t) =
       let count = !counter in
@@ -74,32 +69,92 @@ module Expression = struct
       let x = {Variable.name=name; Variable.label=label;Variable.location=None} in
       (f x @ st, x)
 
-(*     let add_stmt (s: Stmt.t) (st:t) : t = s :: st *)
-
     let add_read (ty:C_type.t) (array:Variable.t) (index:Exp.nexp list) (st:t) : (t * Variable.t) =
       add_var (fun target ->
         let open Read in
         [Stmt.Read {target;ty; array; index}]
       ) st
 
+    let pure (st:t) (x:'a) : t * 'a =
+      (st, x)
+
+    let opt_pure (st:t) (x:'a option) : (t * 'a) option =
+      x |> Option.map (pure st)
+
   end
 
-  let todo : Exp.nexp = Var (Variable.from_name "TODO")
+  let n_todo : Exp.nexp = Var (Variable.from_name "TODO")
 
-  let n_tr
-    ((ctx,e) : AccessState.t * W_lang.Expression.t )
+  let b_todo : Exp.bexp = CastBool n_todo
+
+  let n_tr_ex
+    ((ctx,e) : Context.t * W_lang.Expression.t )
   :
-    (AccessState.t * Exp.nexp) option
+    (Context.t * Exp.nexp) option
+  =
+    let ( let* ) = Option.bind in
+    match e with
+    | AccessIndex {base=FunctionArgument f; index}
+      when W_lang.FunctionArgument.is_tid f ->
+      let tid = List.nth Variable.tid_list index in
+      Some (ctx, Exp.Var tid)
+    | Literal l -> Literal.n_tr l |> Context.opt_pure ctx
+    | GlobalVariable _
+    | LocalVariable _
+    | FunctionArgument _ ->
+      let* v = Variables.tr e in
+      Some (ctx, Exp.Var v)
+    | _ -> Some (ctx, n_todo)
+  and b_tr_ex
+    ((ctx,e) : Context.t * W_lang.Expression.t )
+  :
+    (Context.t * Exp.bexp) option
   =
     match e with
-    | _ -> Some (ctx, todo)
-  and b_tr
-    ((ctx,e) : AccessState.t * W_lang.Expression.t )
+    | Literal l -> Literal.b_tr l |> Context.opt_pure ctx
+    | _ -> Some (ctx, b_todo)
+
+  let n_tr (e:W_lang.Expression.t) : (Imp.Stmt.t list * Exp.nexp) option =
+    n_tr_ex (Context.empty, e)
+
+  let b_tr (e:W_lang.Expression.t) : (Imp.Stmt.t list * Exp.bexp) option =
+    b_tr_ex (Context.empty, e)
+
+end
+
+module Statements = struct
+  let rec tr : W_lang.Statement.t -> Imp.Stmt.t list =
+    let open Imp.Stmt in
+    function
+    | Store {pointer=Access {base; index}; value=_} ->
+      let ( let* ) = Option.bind in
+      (
+        let* array = Variables.tr base in
+        let* (_, index) = Expressions.n_tr index in
+(*         let* (stmts2, payload) = Expressions.n_tr value in *)
+        Some (Write {array; index=[index]; payload=None})
+      ) |> Option.to_list
+    | _ ->
+      []
+  and tr_block (l:W_lang.Statement.t list) : Imp.Stmt.t =
+    Imp.Stmt.Block (List.concat_map tr l)
+end
+
+module EntryPoints = struct
+  let tr
+    (globals:W_lang.Decl.t list)
+    (e: W_lang.EntryPoint.t)
   :
-    (AccessState.t * Exp.bexp) option
+    Imp.Kernel.t
   =
-    match e with
-    | _ -> Some (ctx, CastBool todo)
+    {
+      name = e.name;
+      ty = "?";
+      arrays = globals_to_arrays globals;
+      params = Params.empty;
+      code = Statements.tr_block e.function_.body;
+      visibility = Global;
+    }
 end
 
 let translate (p: W_lang.Program.t) : Imp.Kernel.t list =
@@ -118,4 +173,4 @@ let translate (p: W_lang.Program.t) : Imp.Kernel.t list =
     | EntryPoint e -> Some e
     | Declaration _ -> None
   )
-  |> List.map (entry_to_kernel globals)
+  |> List.map (EntryPoints.tr globals)
