@@ -57,6 +57,51 @@ let entry_to_kernel
     visibility = Global;
   }
 
+module Expression = struct
+  module AccessState = struct
+    open Imp
+    type t = Stmt.t list
+
+    let counter = ref 1
+
+    let make : t = []
+
+    let add_var ?(label="") (f:Variable.t -> Stmt.t list) (st:t) : (t * Variable.t) =
+      let count = !counter in
+      counter := count + 1;
+      let name : string = "@AccessState" ^ string_of_int count in
+      let label = if label = "" then None else Some label in
+      let x = {Variable.name=name; Variable.label=label;Variable.location=None} in
+      (f x @ st, x)
+
+(*     let add_stmt (s: Stmt.t) (st:t) : t = s :: st *)
+
+    let add_read (ty:C_type.t) (array:Variable.t) (index:Exp.nexp list) (st:t) : (t * Variable.t) =
+      add_var (fun target ->
+        let open Read in
+        [Stmt.Read {target;ty; array; index}]
+      ) st
+
+  end
+
+  let todo : Exp.nexp = Var (Variable.from_name "TODO")
+
+  let n_tr
+    ((ctx,e) : AccessState.t * W_lang.Expression.t )
+  :
+    (AccessState.t * Exp.nexp) option
+  =
+    match e with
+    | _ -> Some (ctx, todo)
+  and b_tr
+    ((ctx,e) : AccessState.t * W_lang.Expression.t )
+  :
+    (AccessState.t * Exp.bexp) option
+  =
+    match e with
+    | _ -> Some (ctx, CastBool todo)
+end
+
 let translate (p: W_lang.Program.t) : Imp.Kernel.t list =
   let globals : W_lang.Decl.t list =
     List.filter_map (
