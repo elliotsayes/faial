@@ -14,6 +14,12 @@ let main
   let j = Wgsl_to_json.wgsl_to_json fname in
   let p = parse j in
   print_string (W_lang.Program.to_string p);
+  print_endline ("\n-------------------------------------- IMP --------------------------------------\n");
+  (
+  p
+  |> W_to_imp.translate
+  |> List.iter Imp.Kernel.print
+  );
   ()
 
 open Cmdliner
