@@ -49,6 +49,15 @@ module Scalar = struct
   type t = {kind: ScalarKind.t; width: int}
 
   let u32 : t = {kind=ScalarKind.Uint; width=4}
+  let u64 : t = {kind=ScalarKind.Uint; width=8}
+  let i32 : t = {kind=ScalarKind.Sint; width=4}
+  let i64 : t = {kind=ScalarKind.Sint; width=8}
+  let f32 : t = {kind=ScalarKind.Float; width=4}
+  let f64 : t = {kind=ScalarKind.Float; width=8}
+
+  let bool : t = {kind=ScalarKind.Bool; width=1}
+  let int : t = {kind=ScalarKind.AbstractInt; width=8}
+  let float : t = {kind=ScalarKind.AbstractFloat; width=8}
 
   let to_string (s:t) : string =
     ScalarKind.to_string s.kind ^ string_of_int (8 * s.width)
@@ -360,12 +369,23 @@ module Type = struct
       | RayQuery -> "RayQuery"
       | BindingArray _ -> "BindingArray"
 
-    let u32 : inner = Scalar Scalar.u32
-    let vec3_u32 : inner = Vector {size=VectorSize.Tri; scalar=Scalar.u32}
+    let i_vec3_u32 : inner = Vector {size=VectorSize.Tri; scalar=Scalar.u32}
 
     let is_tid (ty:t) : bool =
-      ty.inner = vec3_u32
+      ty.inner = i_vec3_u32
 
+    let make (inner:inner) : t = {name=None; inner}
+(*
+    let i32 : t = Scalar Scalar.i32 |> make
+    let i64 : t = Scalar Scalar.i64 |> make
+    let u32 : t = Scalar Scalar.u32 |> make
+    let u64 : t = Scalar Scalar.u64 |> make
+    let f32 : t = Scalar Scalar.f32 |> make
+    let f64 : t = Scalar Scalar.f64 |> make
+    let int : t = Scalar Scalar.int |> make
+    let float : t = Scalar Scalar.float |> make
+    let bool : t = Scalar Scalar.bool |> make
+*)
     let rec inner_to_string : inner -> string =
       function
       | Scalar s ->
@@ -529,15 +549,15 @@ end
 
 module Literal = struct
   type t =
-    | F64 of float
     | F32 of float
+    | F64 of float
     | U32 of int
-    | I32 of int
     | U64 of int
+    | I32 of int
     | I64 of int
-    | Bool of bool
     | AbstractInt of int
     | AbstractFloat of float
+    | Bool of bool
 
   let to_bool : t -> bool option =
     function
@@ -581,8 +601,8 @@ module Literal = struct
 
   let to_string : t -> string =
     function
-    | F64 v -> Float.to_string v
     | F32 v -> Float.to_string v
+    | F64 v -> Float.to_string v
     | U32 v -> Int.to_string v
     | I32 v -> Int.to_string v
     | U64 v -> Int.to_string v
