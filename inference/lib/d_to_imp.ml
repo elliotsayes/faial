@@ -1,6 +1,7 @@
 open Stage0
 open Protocols
 open Logger
+open Imp
 
 module StackTrace = Common.StackTrace
 module KernelAttr = C_lang.KernelAttr
@@ -72,84 +73,9 @@ module TypeAlias = struct
 
 end
 
-module IExp = struct
-  type n =
-    | Var of Variable.t
-    | Num of int
-    | Unary of N_unary.t * t
-    | Binary of N_binary.t * t * t
-    | NCall of string * t
-    | NIf of t * t * t
-    | Other of t
-
-  and b =
-    | Bool of bool
-    | NRel of N_rel.t * t * t
-    | BRel of B_rel.t * t * t
-    | BNot of t
-    | Pred of string * t
-
-  and t =
-    | NExp of n
-    | BExp of b
-    | Unknown of string
-
-  let rec to_string : t -> string =
-    function
-    | NExp e -> to_n_string e
-    | BExp e -> to_b_string e
-    | Unknown x -> x
-
-  and to_n_string : n -> string =
-    function
-    | Var x -> Variable.name x
-    | Num x -> string_of_int x
-    | Unary (o, e) -> N_unary.to_string o ^ " (" ^ to_string e ^ ")"
-    | Binary (o, l, r) ->
-      "(" ^ to_string l ^ ") " ^ N_binary.to_string o ^ " (" ^ to_string r ^ ")"
-    | NCall (o, e) -> o ^ "(" ^ to_string e ^ ")"
-    | NIf (e1, e2, e3) ->
-      let e1 = to_string e1 in
-      let e2 = to_string e2 in
-      let e3 = to_string e3 in
-      "(" ^ e1 ^ ") ? (" ^ e2 ^ ") : (" ^ e3 ^ ")"
-    | Other e -> "$other(" ^ to_string e ^ ")"
-
-  and to_b_string : b -> string =
-    function
-    | Bool b -> if b then "true" else "false"
-    | NRel (o, e1, e2) ->
-      let o = N_rel.to_string o in
-      let e1 = to_string e1 in
-      let e2 = to_string e2 in
-      "(" ^ e1 ^ ") " ^ o ^ " (" ^ e2 ^ ")"
-    | BRel (o, e1, e2) ->
-      let o = B_rel.to_string o in
-      let e1 = to_string e1 in
-      let e2 = to_string e2 in
-      "(" ^ e1 ^ ") " ^ o ^ " (" ^ e2 ^ ")"
-    | BNot e ->
-      "!(" ^ to_string e ^ ")"
-    | Pred (o, e) ->
-      o ^ "(" ^ to_string e ^ ")"
-
-  let or_ (e1:t) (e2:t) : b =
-    BRel (BOr, e1, e2)
-
-  let n_eq (e1:t) (e2:t) : b =
-    NRel (Eq, e1, e2)
-
-  let thread_equal (e:t) : b =
-    n_eq e (NExp (Other e))
-
-  let thread_distinct (e:t) : b =
-    NRel (Neq, e, NExp (Other e))
-
-end
-
 module Make (L: Logger) = struct
 
-let parse_bin (op:string) (l:IExp.t) (r:IExp.t) : IExp.t =
+let parse_bin (op:string) (l:Imp.Infer_exp.t) (r:Infer_exp.t) : Infer_exp.t =
   match op with
   (* bool -> bool -> bool *)
   | "||" -> BExp (BRel (BOr, l, r))
@@ -175,14 +101,14 @@ let parse_bin (op:string) (l:IExp.t) (r:IExp.t) : IExp.t =
   | _ ->
     L.warning ("parse_bin: rewriting to unknown binary operator: " ^ op);
     let lbl =
-    "(" ^ IExp.to_string l ^ ") " ^ op ^ " " ^
-    "(" ^ IExp.to_string r ^ ")" in
+    "(" ^ Infer_exp.to_string l ^ ") " ^ op ^ " " ^
+    "(" ^ Infer_exp.to_string r ^ ")" in
     Unknown lbl
 
-let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
+let rec parse_exp (e: D_lang.Expr.t) : Infer_exp.t d_result =
   let parse_e m e = with_exp m e parse_exp e in
-  let ret_n (n:IExp.n) : IExp.t d_result = Ok (NExp n) in
-  let ret_b (b:IExp.b) : IExp.t d_result = Ok (BExp b) in
+  let ret_n (n:Infer_exp.n) : Infer_exp.t d_result = Ok (NExp n) in
+  let ret_b (b:Infer_exp.b) : Infer_exp.t d_result = Ok (BExp b) in
 
 
   match e with
@@ -229,8 +155,8 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
     let* n1 = parse_e "lhs" n1 in
     let* n2 = parse_e "rhs" n2 in
     (*  (n1 + n2 - 1)/n2 *)
-    let n2_minus_1 : IExp.n = Binary (Minus, n2, NExp (Num 1)) in
-    let n1_plus_n2_minus_1 : IExp.n = Binary (Plus, n1, NExp n2_minus_1) in
+    let n2_minus_1 : Infer_exp.n = Binary (Minus, n2, NExp (Num 1)) in
+    let n1_plus_n2_minus_1 : Infer_exp.n = Binary (Plus, n1, NExp n2_minus_1) in
     ret_n (Binary (Div, NExp n1_plus_n2_minus_1, n2))
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__other_int" ->
@@ -239,11 +165,11 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__uniform_int" ->
     let* n = parse_e "arg" n in
-    ret_b (IExp.thread_equal n)
+    ret_b (Infer_exp.thread_equal n)
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__distinct_int" ->
     let* n = parse_e "arg" n in
-    ret_b (IExp.thread_distinct n)
+    ret_b (Infer_exp.thread_distinct n)
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__is_pow2" ->
     let* n = parse_e "arg" n in
@@ -278,7 +204,7 @@ let rec parse_exp (e: D_lang.Expr.t) : IExp.t d_result =
       _
     } when Decl_expr.equal n1 n2 ->
     let* n = parse_e "arg" e in
-    ret_b (IExp.or_ (BExp (Pred ("pow2", n))) (BExp (IExp.n_eq n (NExp (Num 0)))))
+    ret_b (Infer_exp.or_ (BExp (Pred ("pow2", n))) (BExp (Infer_exp.n_eq n (NExp (Num 0)))))
 
   | BinaryOperator {opcode=","; lhs=_; rhs=n; _} ->
     parse_e "comma-operator" n
@@ -316,10 +242,10 @@ let parse_type (e:J_type.t) : C_type.t d_result =
   )
 
 module Arg = struct
-  type i_array = {address: Variable.t; offset: IExp.t}
+  type i_array = {address: Variable.t; offset: Infer_exp.t}
 
   type t =
-  | Scalar of IExp.t
+  | Scalar of Infer_exp.t
   | Array of i_array
   | Unsupported
 
@@ -355,177 +281,45 @@ module Arg = struct
       Ok (Scalar e)
     ) else Ok Unsupported
 end
-(* -------------------------------------------------------------- *)
 
-
-(* 
-   Parsing expressions requires a global state
-   which is a set of unknowns. Whenever we parse a
-   statement we may create certain unknowns. Such variables
-   are defined within the scope of that statement alone.
-   The state UnknownSt is global to parsing numerical
-   and boolean expressions.
- *)
-module Unknown = struct
-  type t = Variable.Set.t
-
-  let make : t = Variable.Set.empty
-
-  let is_empty : t -> bool =
-    Variable.Set.is_empty
-
-  let create (label:string) (st:t) : t * Variable.t =
-    let count = Variable.Set.cardinal st in
-    let v =
-      ("@Unknown" ^ string_of_int count)
-      |> Variable.from_name
-      |> Variable.set_label label
-    in
-    Variable.Set.add v st, v
-
-  let get (st:t) : Variable.Set.t =
-    st
-
-  let rec handle_n (u:t) (e:IExp.t) : (t * nexp) =
-    match e with
-    | NExp n ->
-      (match n with
-      | Var x -> (u, Exp.Var x)
-      | Num x -> (u, Exp.Num x)
-      | Binary (o, n1, n2) ->
-        let (u, n1) = handle_n u n1 in
-        let (u, n2) = handle_n u n2 in
-        (u, Exp.Binary (o, n1, n2))
-      | Other n ->
-        let (u, n) = handle_n u n in
-        (u, Exp.Other n)
-      | Unary (o, n) ->
-        let (u, n) = handle_n u n in
-        (u, Exp.Unary (o, n))
-      | NCall (x, n) ->
-        let (u, n) = handle_n u n in
-        (u, Exp.NCall (x, n))
-      | NIf (b, n1, n2) ->
-        let (u, b) = handle_b u b in
-        let (u, n1) = handle_n u n1 in
-        let (u, n2) = handle_n u n2 in
-        (u, Exp.NIf (b, n1, n2)))
-    | BExp _ ->
-      let (u, b) = handle_b u e in
-      (u, Exp.cast_int b)
-    | Unknown lbl ->
-      let (u, x) = create lbl u in
-      (u, Exp.Var x)
-
-  and handle_b (u:t) (e:IExp.t) : (t * bexp) =
-    match e with
-    | BExp b ->
-      (match b with
-      | Bool x -> (u, Exp.Bool x)
-      | NRel (o, n1, n2) ->
-        let (u, n1) = handle_n u n1 in
-        let (u, n2) = handle_n u n2 in
-        (u, NRel (o, n1, n2))
-      | BRel (o, b1, b2) ->
-        let (u, b1) = handle_b u b1 in
-        let (u, b2) = handle_b u b2 in
-        (u, BRel (o, b1, b2))
-      | BNot b ->
-        let (u, b) = handle_b u b in
-        (u, BNot b)
-      | Pred (x, n) ->
-        let (u, n) = handle_n u n in
-        (u, Pred (x, n)))
-    | NExp _ ->
-      let (u, n) = handle_n u e in
-      (u, Exp.cast_bool n)
-    | Unknown lbl ->
-      let (u, x) = create lbl u in
-      (u, Exp.cast_bool (Var x))
-
-  let convert (handler:t -> 'a -> t * 'b) (n:'a) : Variable.Set.t * 'b =
-    let (u, n) = handler make n in
-    (get u, n)
-
-  (* Convert a d_nexp into an nexp and get the set of unknowns *)
-  let to_nexp: IExp.t -> Variable.Set.t * nexp = convert handle_n
-
-  let handle_arg (u:t) : Arg.t -> (t * Imp.Arg.t) =
+module InferExp = struct
+  let handle_arg (u:Infer_exp.Context.t) : Arg.t -> (Infer_exp.Context.t * Imp.Arg.t) =
     function
     | Scalar e ->
-      let (u, e) = handle_n u e in
+      let (u, e) = Infer_exp.handle_n u e in
       (u, Scalar e)
     | Array {offset; address} ->
-      let (u, offset) = handle_n u offset in
+      let (u, offset) = Infer_exp.handle_n u offset in
       (u, Array {address; offset})
     | Unsupported ->
       (u, Unsupported)
 
   let to_arg : Arg.t -> Variable.Set.t * Imp.Arg.t =
-    convert handle_arg
-
-  (* Convert a d_bexp into an bexp and get the set of unknowns *)
-  let to_bexp: IExp.t -> Variable.Set.t * bexp = convert handle_b
-
-  let rec mmap (f:t -> 'a -> t * 'b) (st:t) : 'a list -> (t * 'b list) =
-    function
-    | [] -> (st, [])
-    | x :: l ->
-      let (st, x) = f st x in
-      let (st, l) = mmap f st l in
-      (st, x :: l) 
-
-  let to_nexp_list: IExp.t list -> Variable.Set.t * nexp list =
-    convert (mmap handle_n)
+    Infer_exp.Context.convert handle_arg
 
   let to_arg_list : Arg.t list -> Variable.Set.t * Imp.Arg.t list =
-    convert (mmap handle_arg)
-
-  (* Convert a d_nexp into an nexp only if there are no unknowns *)
-  let try_to_nexp (n:IExp.t) : nexp option =
-    let (u, n) = handle_n make n in
-    if is_empty u
-    then Some n
-    else None
-
-  (* Convert a d_bexp into an bexp only if there are no unknowns *)
-  let try_to_bexp (b:IExp.t) : bexp option =
-    let (u, b) = handle_b make b in
-    if is_empty u
-    then Some b
-    else None
-
-  let as_decls (xs:Variable.Set.t) : Imp.Decl.t list =
-    Variable.Set.elements xs |> List.map Imp.Decl.unset
-
-  let decl_unknown (vars:Variable.Set.t) : Imp.Stmt.t list =
-    if Variable.Set.is_empty vars then []
-    else
-      [Decl (as_decls vars)]
+    Infer_exp.Context.convert (Infer_exp.Context.mmap handle_arg)
 
   let ret_u (vars:Variable.Set.t) (s:Imp.Stmt.t) : Imp.Stmt.t list d_result =
-    Ok (decl_unknown vars @ [s])
+    Ok (Infer_exp.decl_unknown vars @ [s])
 
   let ret_f ?(extra_vars=Variable.Set.empty) (f:'a -> Variable.Set.t * 'b) (handler:'b -> Imp.Stmt.t) (n:'a) : Imp.Stmt.t list d_result =
     let vars, n = f n in
     let vars = Variable.Set.union extra_vars vars in
     ret_u vars (handler n)
 
-  let ret_n ?(extra_vars=Variable.Set.empty): (nexp -> Imp.Stmt.t) -> IExp.t -> Imp.Stmt.t list d_result =
-    ret_f ~extra_vars to_nexp
+  let ret_n ?(extra_vars=Variable.Set.empty): (nexp -> Imp.Stmt.t) -> Infer_exp.t -> Imp.Stmt.t list d_result =
+    ret_f ~extra_vars Infer_exp.to_nexp
 
-  let ret_ns ?(extra_vars=Variable.Set.empty): (nexp list -> Imp.Stmt.t) -> IExp.t list -> Imp.Stmt.t list d_result =
-    ret_f ~extra_vars to_nexp_list
+  let ret_ns ?(extra_vars=Variable.Set.empty): (nexp list -> Imp.Stmt.t) -> Infer_exp.t list -> Imp.Stmt.t list d_result =
+    ret_f ~extra_vars Infer_exp.to_nexp_list
 
   let ret_args ?(extra_vars=Variable.Set.empty): (Imp.Arg.t list -> Imp.Stmt.t) -> Arg.t list -> Imp.Stmt.t list d_result =
     ret_f ~extra_vars to_arg_list
 
-  let ret_b ?(extra_vars=Variable.Set.empty): (bexp -> Imp.Stmt.t) -> IExp.t -> Imp.Stmt.t list d_result =
-    ret_f ~extra_vars to_bexp
-
-
+  let ret_b ?(extra_vars=Variable.Set.empty): (bexp -> Imp.Stmt.t) -> Infer_exp.t -> Imp.Stmt.t list d_result =
+    ret_f ~extra_vars Infer_exp.to_bexp
 end
-
 
 (* -------------------------------------------------------------- *)
 
@@ -635,7 +429,7 @@ let parse_decl
       match d.init with
       | Some (IExpr n) ->
         let* n = parse_e "init" n in
-        let (vars, n) = Unknown.to_nexp n in
+        let (vars, n) = Infer_exp.to_nexp n in
         Ok (vars, Some n)
       | _ -> Ok (Variable.Set.empty, None)
     in
@@ -644,7 +438,7 @@ let parse_decl
       | Some n -> Imp.Decl.set ~ty x n
       | None -> Imp.Decl.unset ~ty x
     in
-    Ok (Unknown.as_decls vars @ [d])
+    Ok (Infer_exp.as_decls vars @ [d])
   | None ->
     let x = Variable.name x in
     let ty = J_type.to_string d.ty in
@@ -690,7 +484,7 @@ let parse_location_alias (s:d_location_alias) : Imp.Stmt.t list d_result =
   let* source = with_msg "location_alias.source" parse_var s.source in
   let* target = with_msg "location_alias.target" parse_var s.target in
   let* offset = with_msg "location_alias.offset" parse_exp s.offset in
-  offset |> Unknown.ret_n (fun offset ->
+  offset |> InferExp.ret_n (fun offset ->
     LocationAlias { target; source; offset; }
   )
 
@@ -751,7 +545,7 @@ module ForRange = struct
 
   let parse_unop (u:'a Loop_infer.unop) : 'a unop option d_result =
     let* arg = parse_exp u.arg in
-    Ok (match Unknown.try_to_nexp arg with
+    Ok (match Infer_exp.try_to_nexp arg with
       | Some arg -> Some {op=u.op; arg=arg}
       | None -> None)
 
@@ -759,7 +553,7 @@ module ForRange = struct
     let* init = parse_exp r.init in
     let* cond = parse_unop r.cond in
     let* inc = parse_unop r.inc in
-    Ok (match Unknown.try_to_nexp init, cond, inc with
+    Ok (match Infer_exp.try_to_nexp init, cond, inc with
     | Some init, Some cond, Some inc ->
       Some {name = r.name; init=init; cond=cond; inc=inc}
     | _, _, _ -> None)
@@ -789,7 +583,7 @@ let ret_skip : Imp.Stmt.t list d_result = Ok []
 
 let ret_assert (b:D_lang.Expr.t) (v:Imp.Assert.Visibility.t) : Imp.Stmt.t list d_result =
   let* b = with_msg "cond" parse_exp b in
-  match Unknown.try_to_bexp b with
+  match Infer_exp.try_to_bexp b with
   | Some b -> ret (Assert (Imp.Assert.make b v))
   | None -> ret_skip
 
@@ -811,10 +605,10 @@ let rec parse_stmt
   let parse_stmt = parse_stmt ctx in
   let parse_decl = parse_decl ctx in
   let with_msg (m:string) f b = with_msg_ex (fun _ -> "parse_stmt: " ^ m ^ ": " ^ D_lang.Stmt.summarize c) f b in
-  let ret_n = Unknown.ret_n in
-  let ret_b = Unknown.ret_b in
-  let ret_ns = Unknown.ret_ns in
-  let ret_args = Unknown.ret_args in
+  let ret_n = InferExp.ret_n in
+  let ret_b = InferExp.ret_b in
+  let ret_ns = InferExp.ret_ns in
+  let ret_args = InferExp.ret_args in
   let resolve ty = Context.resolve ty ctx in
 
   match c with
@@ -1170,7 +964,7 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
             let g = match v.init with
             | Some (IExpr n) ->
               (match parse_exp n with
-              | Ok n -> Unknown.try_to_nexp n
+              | Ok n -> Infer_exp.try_to_nexp n
               | Error _ -> None)
             | _ -> None
             in
