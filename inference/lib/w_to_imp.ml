@@ -147,12 +147,13 @@ module Literal = struct
 end
 
 module Variables = struct
-  let tr : W_lang.Expression.t -> Variable.t option =
+  let tr : W_lang.Expression.t -> (C_type.t * Variable.t) option =
     let open W_lang.Expression in
     function
-    | GlobalVariable {name;_}
-    | FunctionArgument {name;_}
-    | LocalVariable {name;_} -> Some (Variable.from_name name)
+    | GlobalVariable {name; ty; _}
+    | FunctionArgument {name; ty; _}
+    | LocalVariable {name; ty;_} ->
+      Some (C_type.make (W_lang.Type.to_string ty), Variable.from_name name)
     | _ -> None
 end
 
@@ -191,12 +192,13 @@ module Expressions = struct
 
   let b_todo : Exp.bexp = CastBool n_todo
 
+  let ( let* ) = Option.bind
+
   let n_tr_ex
     ((ctx,e) : Context.t * W_lang.Expression.t )
   :
     (Context.t * Exp.nexp) option
   =
-    let ( let* ) = Option.bind in
     match e with
     | AccessIndex {base=FunctionArgument f; index}
       when W_lang.FunctionArgument.is_tid f ->
@@ -206,7 +208,7 @@ module Expressions = struct
     | GlobalVariable _
     | LocalVariable _
     | FunctionArgument _ ->
-      let* v = Variables.tr e in
+      let* (_, v) = Variables.tr e in
       Some (ctx, Exp.Var v)
     | _ -> Some (ctx, n_todo)
   and b_tr_ex
@@ -218,46 +220,103 @@ module Expressions = struct
     | Literal l -> Literal.b_tr l |> Context.opt_pure ctx
     | _ -> Some (ctx, b_todo)
 
-  let tr (e:W_lang.Expression.t) : (Imp.Stmt.t list * (Exp.nexp, Exp.bexp) Either.t) option =
-    let ( let* ) = Option.bind in
+  let rec any_tr
+    (e : W_lang.Expression.t )
+    (ctx : Context.t)
+  :
+    Context.t
+  =
+    match e with
+    | FunctionArgument _
+    | GlobalVariable _
+    | LocalVariable _
+    | Literal _
+    | Constant
+    | Override
+    | ZeroValue _
+    | ImageSample _
+    | ImageLoad _
+    | CallResult _
+    | AtomicResult _
+    | WorkGroupUniformLoadResult _
+    | RayQueryProceedResult
+    | SubgroupBallotResult
+    | SubgroupOperationResult _
+    | ImageQuery _ ->
+      ctx
+    | Math _
+    | Compose _ -> (* TODO *)
+      ctx
+    | Access {base; index} ->
+      (* try to add a read, otherwise no changes to ctx*)
+      (
+        let* (ty, array) = Variables.tr base in
+        let* (ctx, index) = n_tr_ex (ctx, index) in
+        let (ctx, _) = Context.add_read ty array [index] ctx in
+        Some ctx
+      )
+      |> Option.value ~default:ctx
+    | AccessIndex {base=e; _}
+    | RayQueryGetIntersection {query=e; _}
+    | Splat {value=e; _}
+    | Swizzle {vector=e; _}
+    | Load e
+    | Derivative {expr=e; _}
+    | ArrayLength e
+    | As {expr=e; _}
+    | Relational {argument=e; _}
+    | Unary {expr=e; _} ->
+      any_tr e ctx
+    | Binary {left=e1; right=e2; _} ->
+      ctx |> any_tr e1 |> any_tr e2
+    | Select {condition=e1; accept=e2; reject=e3;} ->
+      ctx |> any_tr e1 |> any_tr e2 |> any_tr e3
+
+
+  type inference =
+    | FoundInt of Exp.nexp
+    | FoundBool of Exp.bexp
+    | Unsupported
+
+  let tr (e:W_lang.Expression.t) : (Imp.Stmt.t list * inference) option =
     match BaseType.expression e with
     | Some Bool ->
       let* (ctx, b) = b_tr_ex ([], e) in
-      Some (ctx, Either.Right b)
+      Some (ctx, FoundBool b)
     | Some Int ->
       let* (ctx, n) = n_tr_ex ([], e) in
-      Some (ctx, Either.Left n)
+      Some (ctx, FoundInt n)
     | _ ->
-      (* TODO *)
-      None
+      Some (any_tr e [], Unsupported)
 
   let n_tr (e:W_lang.Expression.t) : (Imp.Stmt.t list * Exp.nexp) option =
-    let ( let* ) = Option.bind in
     let* (ctx, e) = tr e in
-    Some (match e with
-    | Left e -> (ctx, e)
-    | Right e -> (ctx, Exp.CastInt e))
+    match e with
+    | FoundInt e -> Some (ctx, e)
+    | FoundBool e -> Some (ctx, Exp.CastInt e)
+    | _ -> None
 
+(*
   let b_tr (e:W_lang.Expression.t) : (Imp.Stmt.t list * Exp.bexp) option =
-    let ( let* ) = Option.bind in
     let* (ctx, e) = tr e in
-    Some (match e with
-    | Left e -> (ctx, Exp.CastBool e)
-    | Right e -> (ctx, e))
-
+    match e with
+    | FoundInt e -> Some (ctx, Exp.CastBool e)
+    | FoundBool e -> Some (ctx, e)
+    | Unsupported -> None
+*)
 end
 
 module Statements = struct
   let rec tr : W_lang.Statement.t -> Imp.Stmt.t list =
     let open Imp.Stmt in
     function
-    | Store {pointer=Access {base; index}; value=_} ->
+    | Store {pointer=Access {base; index}; value} ->
       let ( let* ) = Option.bind in
       (
-        let* array = Variables.tr base in
-        let* (smts1, index) = Expressions.n_tr index in
-(*         let* (stmts2, payload) = Expressions.n_tr value in *)
-        Some (smts1 @ [Write {array; index=[index]; payload=None}])
+        let* (_, array) = Variables.tr base in
+        let* (stmts1, index) = Expressions.n_tr index in
+        let stmts2 = Expressions.any_tr value [] in
+        Some (stmts1 @ stmts2 @ [Write {array; index=[index]; payload=None}])
       ) |> Option.value ~default:[]
     | _ ->
       []
