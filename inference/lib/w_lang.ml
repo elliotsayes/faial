@@ -23,16 +23,14 @@ module ScalarKind = struct
   let parse (j:json) : t j_result =
     let open Rjson in
     let* n = cast_string j in
-    Ok (
-      match n with
-      | "Sint" -> Sint
-      | "Uint" -> Uint
-      | "Float" -> Float
-      | "Bool" -> Bool
-      | "AbstractInt" -> AbstractInt
-      | "AbstractFloat" -> AbstractFloat
-      | _ -> failwith ("ScalarKind.parse: " ^ n)
-    )
+    match n with
+    | "Sint" -> Ok Sint
+    | "Uint" -> Ok Uint
+    | "Float" -> Ok Float
+    | "Bool" -> Ok Bool
+    | "AbstractInt" -> Ok AbstractInt
+    | "AbstractFloat" -> Ok AbstractFloat
+    | _ -> root_cause ("ScalarKind.parse: unknown kind: " ^ n) j
 
   let to_string : t -> string =
     function
@@ -168,6 +166,20 @@ module ImageDimension = struct
     | D2
     | D3
     | Cube
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* data = cast_string j in
+    match data with
+    | "D1" -> Ok D1
+    | "D2" -> Ok D2
+    | "D3" -> Ok D3
+    | "Cube" -> Ok Cube
+    | _ -> failwith ("ImageDimension.parse: unknown: " ^ data)
+
+  let to_string : t -> string =
+    function
+    | _ -> "ImageDimension"
 end
 
 module ImageClass = struct
@@ -181,6 +193,25 @@ module ImageClass = struct
         format: string;
         access: StorageAccess.t;
     }
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "Sampled" ->
+      let* kind = with_field "scalar_kind" ScalarKind.parse o in
+      let* multi = with_field "multi" cast_bool o in
+      Ok (Sampled {kind; multi;})
+    | "Depth" ->
+      let* multi = with_field "multi" cast_bool o in
+      Ok (Depth {multi})
+    | "Storage" ->
+      let* format = with_field "format" cast_string o in
+      let* access = with_field "access" StorageAccess.parse o in
+      Ok (Storage {format; access;})
+    | _ ->
+      root_cause "Unsupported kind" j
 end
 
 module ArraySize = struct
@@ -242,7 +273,7 @@ module BuiltIn = struct
     | "SubgroupId" -> Ok SubgroupId
     | "SubgroupSize" -> Ok SubgroupSize
     | "SubgroupInvocationId" -> Ok SubgroupInvocationId
-    | _ -> root_cause ("Unknown kind: " ^ name) j
+    | _ -> root_cause ("BuiltIn.parse: Unknown kind: " ^ name) j
 
 
   let to_string : t -> string =
@@ -437,7 +468,11 @@ module Type = struct
       let* size = with_field "size" VectorSize.parse o in
       let* scalar = with_field "scalar" Scalar.parse o in
       Ok (Vector {size; scalar})
-
+    | "Image" ->
+      let* dim = with_field "dim" ImageDimension.parse o in
+      let* arrayed = with_field "arrayed" cast_bool o in
+      let* image_class = with_field "class" ImageClass.parse o in
+      Ok (Image {dim; arrayed; image_class;})
     | _ -> root_cause ("inner_parse: unsupported kind: " ^ kind) j
 
 end
@@ -942,7 +977,7 @@ module Expression = struct
       let* ty = with_field "ty" Type.parse o in
       Ok (WorkGroupUniformLoadResult ty)
     | "ArrayLength" ->
-      let* e = with_field "value" parse o in
+      let* e = with_field "array" parse o in
       Ok (ArrayLength e)
     | "RayQueryProceedResult" -> Ok RayQueryProceedResult
     | "RayQueryGetIntersection" ->
@@ -1323,7 +1358,7 @@ module Def = struct
       Ok (EntryPoint e)
 
     | _ ->
-      root_cause ("Unknown kind: " ^ kind) j
+      root_cause ("Def.parse: unknown kind: " ^ kind) j
 
   let to_string : t -> string =
     function
