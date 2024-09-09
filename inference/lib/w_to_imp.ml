@@ -110,7 +110,7 @@ module Expressions = struct
     | As of {
         expr: t;
         kind: ScalarKind.t;
-  (*         convert: Option<Bytes>, *)
+        convert: int option;
       }
     | CallResult of string
     | AtomicResult of {
@@ -236,9 +236,9 @@ module Expressions = struct
       | Math {args;} ->
         let (ctx, args) = l_rewrite ctx args in
         (ctx, Math {args;})
-      | As {expr; kind;} ->
+      | As {expr; kind; convert;} ->
         let (ctx, expr) = rewrite ctx expr in
-        (ctx, As {expr; kind;})
+        (ctx, As {expr; kind; convert;})
       | CallResult r ->
         pure (CallResult r)
       | AtomicResult {ty; comparison} ->

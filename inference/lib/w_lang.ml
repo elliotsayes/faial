@@ -770,7 +770,7 @@ module Expression = struct
     | As of {
         expr: t;
         kind: ScalarKind.t;
-(*         convert: Option<Bytes>, *)
+        convert: int option;
       }
     | CallResult of string
     | AtomicResult of {
@@ -958,11 +958,9 @@ module Expression = struct
       })
     | "As" ->
       let* expr = with_field "expr" parse o in
-      let* kind = with_field "kind" ScalarKind.parse o in
-      Ok (As {
-        expr;
-        kind;
-      })
+      let* kind = with_field "scalar_kind" ScalarKind.parse o in
+      let* convert = with_field "convert" (cast_option cast_int) o in
+      Ok (As {expr; kind; convert;})
     | "CallResult" ->
       let* result = with_field "value" cast_string o in
       Ok (CallResult result)
