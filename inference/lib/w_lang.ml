@@ -772,7 +772,7 @@ module Expression = struct
     | GlobalVariable g -> g.name
     | LocalVariable l -> l.name
     | Load e ->
-      to_string e
+      "load(" ^ to_string e ^")"
     | ImageSample _ -> (*TODO*) "ImageSample"
     | ImageLoad _ -> (*TODO*) "ImageLoad"
     | ImageQuery _ -> (*TODO*) "ImageQuery"

@@ -34,116 +34,22 @@ let globals_to_arrays
   |> List.filter_map tr_decl
   |> Variable.Map.of_list
 
-module BaseType = struct
-  type t =
-    | Int
-    | Bool
-    | Container of t
+module Literals = struct
+  open Imp
 
-  let deref (ty:t option) : t option =
-    match ty with
-    | Some (Container b) -> Some b
-    | _ -> None
-
-  let container (ty: t option) : t option =
-    Option.map (fun s -> Container s) ty
-
-  let join (ty1:t option) (ty2:t option) : t option =
-    if ty1 = ty2 then ty1
-    else
-    match ty1, ty2 with
-    | Some Int, Some Bool
-    | Some Bool, Some Int
-    | Some Int, Some Int -> Some Int
-    | Some Bool, Some Bool -> Some Bool
-    | _, _ -> None
-
-  let literal : W_lang.Literal.t -> t option =
-    function
-    | F32 _
-    | F64 _
-    | AbstractFloat _ -> None
-    | U32 _
-    | U64 _
-    | I32 _
-    | I64 _
-    | AbstractInt _ -> Some Int
-    | Bool _ -> Some Bool
-
-  let scalar_kind : W_lang.ScalarKind.t -> t option =
-    let open W_lang.ScalarKind in
-    function
-    | Sint
-    | Uint
-    | AbstractInt -> Some Int
-    | Bool -> Some Bool
-    | _ -> None
-
-  let scalar (s:W_lang.Scalar.t) : t option =
-    scalar_kind s.kind
-
-  let rec type_ (ty:W_lang.Type.t) : t option =
-    let open W_lang.Type in
-    match ty.inner with
-    | Scalar s
-    | Atomic s ->
-      scalar s
-    | Pointer {base=ty; _}
-    | Array {base=ty; _} ->
-      type_ ty |> container
-    | Vector {scalar=s; _} ->
-      scalar s |> container
-    | _ -> None
-
-  let rec expression : W_lang.Expression.t -> t option =
-    function
-    | ArrayLength _ ->
-      Some Int
-    | As {kind=s; _} ->
-      scalar_kind s
-    | Literal l ->
-      literal l
-    | LocalVariable {ty; _}
-    | GlobalVariable {ty; _}
-    | FunctionArgument {ty; _}
-    | WorkGroupUniformLoadResult ty
-    | SubgroupOperationResult ty
-    | AtomicResult {ty; _}
-    | ZeroValue ty
-    | Compose {ty; _} ->
-      type_ ty
-    | Unary {expr=e}
-    | Load e ->
-      expression e
-    | Select {accept=left; reject=right; _ }
-    | Binary {left; right; _} ->
-      join (expression left) (expression right)
-    | Access {base; _}
-    | AccessIndex {base; _} ->
-      expression base |> deref
-    | CallResult _
-    | Derivative _
-    | Relational _
-    | Math _
-    | RayQueryProceedResult
-    | RayQueryGetIntersection _
-    | SubgroupBallotResult
-    | ImageQuery _
-    | Override
-    | Splat _
-    | Swizzle _
-    | ImageSample _
-    | Constant (* TODO *)
-    | ImageLoad _ ->
-      None
-end
-
-module Literal = struct
   let n_tr (l:W_lang.Literal.t) : Exp.nexp option =
     W_lang.Literal.to_int l |> Option.map (fun x -> Exp.Num x)
 
   let b_tr (l:W_lang.Literal.t) : Exp.bexp option =
     W_lang.Literal.to_bool l |> Option.map (fun x -> Exp.Bool x)
+
+  let tr (l:W_lang.Literal.t) : Infer_exp.t =
+    match W_lang.Literal.to_int l with
+    | Some n -> Infer_exp.num n
+    | None ->
+      (match W_lang.Literal.to_bool l with
+        | Some b -> Infer_exp.bool b
+        | None -> Infer_exp.unknown (W_lang.Literal.to_string l))
 end
 
 module Variables = struct
@@ -158,27 +64,91 @@ module Variables = struct
 end
 
 module Expressions = struct
+  open W_lang
+  type t =
+    | Unsupported
+    | Literal of Literal.t
+    | Constant
+    | ZeroValue of Type.t
+    | Compose of {
+        ty: Type.t;
+        components: t list;
+      }
+    | AccessIndex of {
+        base: t;
+        index: int;
+      }
+    | Splat of {
+        size: VectorSize.t;
+        value: t;
+      }
+    | FunctionArgument of FunctionArgument.t
+    | GlobalVariable of {ty: Type.t; name: string}
+    | LocalVariable of {ty: Type.t; name: string}
+    | Unary of {
+  (*         op: UnaryOperator, *)
+        expr: t;
+      }
+    | Binary of {
+        op: BinaryOperator.t;
+        left: t;
+        right: t;
+      }
+    | Select of {
+        condition: t;
+        accept: t;
+        reject: t;
+      }
+    | Relational of {
+  (*         fun: RelationalFunction, *)
+        argument: t;
+      }
+    | Math of {
+  (*         fun_: MathFunction, *)
+        args: t list;
+      }
+    | As of {
+        expr: t;
+        kind: ScalarKind.t;
+  (*         convert: Option<Bytes>, *)
+      }
+    | CallResult of string
+    | AtomicResult of {
+        ty: Type.t;
+        comparison: bool;
+      }
+    | WorkGroupUniformLoadResult of Type.t
+    | ArrayLength of t
+    | SubgroupBallotResult
+    | SubgroupOperationResult of Type.t
+
   module Context = struct
-    open Imp
-    type t = Stmt.t list
+
+    type expr = t
+
+    type read = {
+      target: string;
+      array: string;
+      ty: Type.t;
+      index: expr;
+    }
+
+    type t = read list
 
     let counter = ref 1
 
     let empty : t = []
 
-    let add_var ?(label="") (f:Variable.t -> Stmt.t list) (st:t) : (t * Variable.t) =
+    let add_var (f:string -> read list) (st:t) : (t * string) =
       let count = !counter in
       counter := count + 1;
       let name : string = "@AccessState" ^ string_of_int count in
-      let label = if label = "" then None else Some label in
-      let x = {Variable.name=name; Variable.label=label;Variable.location=None} in
-      (f x @ st, x)
+      (f name @ st, name)
 
-    let add_read (ty:C_type.t) (array:Variable.t) (index:Exp.nexp list) (st:t) : (t * Variable.t) =
-      add_var (fun target ->
-        let open Read in
-        [Stmt.Read {target;ty; array; index}]
-      ) st
+    let add_read (ty:Type.t) (array:string) (index:expr) (st:t) : (t * expr) =
+      let (ctx, name) = add_var (fun target -> [{target; array; ty; index}]) st
+      in
+      (ctx, LocalVariable {name; ty})
 
     let pure (st:t) (x:'a) : t * 'a =
       (st, x)
@@ -186,124 +156,172 @@ module Expressions = struct
     let opt_pure (st:t) (x:'a option) : (t * 'a) option =
       x |> Option.map (pure st)
 
+    let rec rewrite (ctx:t) (e: W_lang.Expression.t) : t * expr =
+      let pure (e:expr) : t * expr = (ctx, e) in
+      let unsupported = (ctx, Unsupported) in
+      match e with
+      | Literal l -> pure (Literal l)
+      | Constant -> pure Constant
+      | Override -> unsupported
+      | ZeroValue ty -> pure (ZeroValue ty)
+      | Compose {ty; components} ->
+        let (ctx, components) = l_rewrite ctx components in
+        (ctx, Compose {ty; components})
+      | Access {base=GlobalVariable {ty; name}; index;} ->
+        let (ctx, index) = rewrite ctx index in
+        add_read ty name index ctx
+      | Access _ -> unsupported
+      | AccessIndex {base; index} ->
+        let (ctx, base) = rewrite ctx base in
+        (ctx, AccessIndex {base; index})
+      | Splat {size; value} ->
+        let (ctx, value) = rewrite ctx value in
+        (ctx, Splat {size; value})
+      | Swizzle {vector; _} ->
+        (add ctx vector, Unsupported)
+      | FunctionArgument {name; ty; binding} ->
+        pure (FunctionArgument {name; ty; binding})
+      | GlobalVariable {name; ty;} ->
+        pure (GlobalVariable {name; ty;})
+      | LocalVariable {name; ty; _} ->
+        pure (LocalVariable {name; ty})
+      | Load e ->
+        let (ctx, e) = rewrite ctx e in
+        (ctx, e)
+      | ImageSample {
+          image;
+          sampler;
+          coordinate;
+          array_index;
+          offset;
+          depth_ref
+        } ->
+        let ctx = add ctx image in
+        let ctx = add ctx sampler in
+        let ctx = add ctx coordinate in
+        let ctx = o_add ctx array_index in
+        let ctx = o_add ctx offset in
+        let ctx = o_add ctx depth_ref in
+        (ctx, Unsupported)
+      | ImageLoad {image; coordinate; array_index; sample; level} ->
+        let ctx = add ctx image in
+        let ctx = add ctx coordinate in
+        let ctx = o_add ctx array_index in
+        let ctx = o_add ctx sample in
+        let ctx = o_add ctx level in
+        (ctx, Unsupported)
+      | ImageQuery {image} ->
+        let ctx = add ctx image in
+        (ctx, Unsupported)
+      | Unary {expr} ->
+        let (ctx, expr) = rewrite ctx expr in
+        (ctx, Unary {expr})
+      | Binary {op; left; right} ->
+        let (ctx, left) = rewrite ctx left in
+        let (ctx, right) = rewrite ctx right in
+        (ctx, Binary {op; left; right})
+      | Select {condition; accept; reject;} ->
+        let (ctx, condition) = rewrite ctx condition in
+        let (ctx, accept) = rewrite ctx accept in
+        let (ctx, reject) = rewrite ctx reject in
+        (ctx, Select {condition; accept; reject;})
+      | Derivative {expr;} ->
+        let ctx = add ctx expr in
+        (ctx, Unsupported)
+      | Relational {argument;} ->
+        let (ctx, argument) = rewrite ctx argument in
+        (ctx, Relational {argument;})
+      | Math {args;} ->
+        let (ctx, args) = l_rewrite ctx args in
+        (ctx, Math {args;})
+      | As {expr; kind;} ->
+        let (ctx, expr) = rewrite ctx expr in
+        (ctx, As {expr; kind;})
+      | CallResult r ->
+        pure (CallResult r)
+      | AtomicResult {ty; comparison} ->
+        pure (AtomicResult {ty; comparison})
+      | WorkGroupUniformLoadResult ty ->
+        pure (WorkGroupUniformLoadResult ty)
+      | ArrayLength expr ->
+        let ctx = add ctx expr in
+        (ctx, Unsupported)
+      | RayQueryProceedResult -> unsupported
+      | RayQueryGetIntersection {query; _} ->
+        let ctx = add ctx query in
+        (ctx, Unsupported)
+      | SubgroupBallotResult -> pure SubgroupBallotResult
+      | SubgroupOperationResult ty -> pure (SubgroupOperationResult ty)
+    and add (ctx:t) (e: W_lang.Expression.t) : t =
+      rewrite ctx e |> fst
+    and o_add (ctx:t) (e: W_lang.Expression.t option) : t =
+      match e with
+      | Some e -> add ctx e
+      | None -> ctx
+    and l_rewrite (ctx:t) (l: W_lang.Expression.t list) : t * expr list =
+      List.fold_left_map rewrite ctx l
+
+    let rec to_i_exp : expr -> Imp.Infer_exp.t =
+      function
+      | Literal l -> Literals.tr l
+      | AccessIndex {base=FunctionArgument f; index}
+        when W_lang.FunctionArgument.is_tid f ->
+        let tid = List.nth Variable.tid_list index in
+        NExp (Var tid)
+      | GlobalVariable {name; _}
+      | FunctionArgument {name; _}
+      | LocalVariable {name; _} ->
+        NExp (Var (Variable.from_name name))
+      | Binary {op; left; right} ->
+        let left = to_i_exp left in
+        let right = to_i_exp right in
+        let open N_binary in
+        let open N_rel in
+        let open B_rel in
+        (match op with
+        | Add -> NExp (Binary (Plus, left, right))
+        | Subtract -> NExp (Binary (Minus, left, right))
+        | Multiply -> NExp (Binary (Mult, left, right))
+        | Divide -> NExp (Binary (Div, left, right))
+        | Modulo -> NExp (Binary (Mod, left, right))
+        | Equal -> BExp (NRel (Eq, left, right))
+        | NotEqual -> BExp (NRel (Neq, left, right))
+        | Less -> BExp (NRel (Lt, left, right))
+        | LessEqual -> BExp (NRel (Le, left, right))
+        | Greater -> BExp (NRel (Gt, left, right))
+        | GreaterEqual -> BExp (NRel (Ge, left, right))
+        | And -> NExp (Binary (BitAnd, left, right))
+        | ExclusiveOr -> NExp (Binary (BitXOr, left, right))
+        | InclusiveOr -> NExp (Binary (BitOr, left, right))
+        | LogicalAnd -> BExp (BRel (BAnd, left, right))
+        | LogicalOr -> BExp (BRel (BOr, left, right))
+        | ShiftLeft -> NExp (Binary (LeftShift, left, right))
+        | ShiftRight -> NExp (Binary (RightShift, left, right))
+        )
+      | Select {condition; accept; reject;} ->
+        NExp (NIf (to_i_exp condition, to_i_exp accept, to_i_exp reject))
+      | As {expr; _} ->
+        to_i_exp expr
+      | Unary _ -> Unknown "Unary"
+      | Splat _ -> Unknown "Splat"
+      | ZeroValue _ -> Unknown "ZeroValue"
+      | Compose _ -> Unknown "Compose"
+      | _ -> Unknown "?"
   end
 
   let n_todo : Exp.nexp = Var (Variable.from_name "TODO")
 
   let b_todo : Exp.bexp = CastBool n_todo
 
+  let n_tr (e: W_lang.Expression.t) : (Imp.Stmt.t list * Exp.nexp) =
+    let (_, e) = Context.rewrite [] e in
+    let e = Context.to_i_exp e in
+    let (decls, e) = Imp.Infer_exp.to_nexp e in
+    let decls = Imp.Infer_exp.decl_unknown decls in
+    (decls, e)
+
   let ( let* ) = Option.bind
 
-  let n_tr_ex
-    ((ctx,e) : Context.t * W_lang.Expression.t )
-  :
-    (Context.t * Exp.nexp) option
-  =
-    match e with
-    | AccessIndex {base=FunctionArgument f; index}
-      when W_lang.FunctionArgument.is_tid f ->
-      let tid = List.nth Variable.tid_list index in
-      Some (ctx, Exp.Var tid)
-    | Literal l -> Literal.n_tr l |> Context.opt_pure ctx
-    | GlobalVariable _
-    | LocalVariable _
-    | FunctionArgument _ ->
-      let* (_, v) = Variables.tr e in
-      Some (ctx, Exp.Var v)
-    | _ -> Some (ctx, n_todo)
-  and b_tr_ex
-    ((ctx,e) : Context.t * W_lang.Expression.t )
-  :
-    (Context.t * Exp.bexp) option
-  =
-    match e with
-    | Literal l -> Literal.b_tr l |> Context.opt_pure ctx
-    | _ -> Some (ctx, b_todo)
-
-  let rec any_tr
-    (e : W_lang.Expression.t )
-    (ctx : Context.t)
-  :
-    Context.t
-  =
-    match e with
-    | FunctionArgument _
-    | GlobalVariable _
-    | LocalVariable _
-    | Literal _
-    | Constant
-    | Override
-    | ZeroValue _
-    | ImageSample _
-    | ImageLoad _
-    | CallResult _
-    | AtomicResult _
-    | WorkGroupUniformLoadResult _
-    | RayQueryProceedResult
-    | SubgroupBallotResult
-    | SubgroupOperationResult _
-    | ImageQuery _ ->
-      ctx
-    | Math _
-    | Compose _ -> (* TODO *)
-      ctx
-    | Access {base; index} ->
-      (* try to add a read, otherwise no changes to ctx*)
-      (
-        let* (ty, array) = Variables.tr base in
-        let* (ctx, index) = n_tr_ex (ctx, index) in
-        let (ctx, _) = Context.add_read ty array [index] ctx in
-        Some ctx
-      )
-      |> Option.value ~default:ctx
-    | AccessIndex {base=e; _}
-    | RayQueryGetIntersection {query=e; _}
-    | Splat {value=e; _}
-    | Swizzle {vector=e; _}
-    | Load e
-    | Derivative {expr=e; _}
-    | ArrayLength e
-    | As {expr=e; _}
-    | Relational {argument=e; _}
-    | Unary {expr=e; _} ->
-      any_tr e ctx
-    | Binary {left=e1; right=e2; _} ->
-      ctx |> any_tr e1 |> any_tr e2
-    | Select {condition=e1; accept=e2; reject=e3;} ->
-      ctx |> any_tr e1 |> any_tr e2 |> any_tr e3
-
-
-  type inference =
-    | FoundInt of Exp.nexp
-    | FoundBool of Exp.bexp
-    | Unsupported
-
-  let tr (e:W_lang.Expression.t) : (Imp.Stmt.t list * inference) option =
-    match BaseType.expression e with
-    | Some Bool ->
-      let* (ctx, b) = b_tr_ex ([], e) in
-      Some (ctx, FoundBool b)
-    | Some Int ->
-      let* (ctx, n) = n_tr_ex ([], e) in
-      Some (ctx, FoundInt n)
-    | _ ->
-      Some (any_tr e [], Unsupported)
-
-  let n_tr (e:W_lang.Expression.t) : (Imp.Stmt.t list * Exp.nexp) option =
-    let* (ctx, e) = tr e in
-    match e with
-    | FoundInt e -> Some (ctx, e)
-    | FoundBool e -> Some (ctx, Exp.CastInt e)
-    | _ -> None
-
-(*
-  let b_tr (e:W_lang.Expression.t) : (Imp.Stmt.t list * Exp.bexp) option =
-    let* (ctx, e) = tr e in
-    match e with
-    | FoundInt e -> Some (ctx, Exp.CastBool e)
-    | FoundBool e -> Some (ctx, e)
-    | Unsupported -> None
-*)
 end
 
 module Statements = struct
@@ -314,9 +332,14 @@ module Statements = struct
       let ( let* ) = Option.bind in
       (
         let* (_, array) = Variables.tr base in
-        let* (stmts1, index) = Expressions.n_tr index in
-        let stmts2 = Expressions.any_tr value [] in
-        Some (stmts1 @ stmts2 @ [Write {array; index=[index]; payload=None}])
+        let (stmts1, index) = Expressions.n_tr index in
+        let (stmts2, value) = Expressions.n_tr value in
+        let payload =
+          match value with
+          | Num n -> Some n
+          | _ -> None
+        in
+        Some (stmts1 @ stmts2 @ [Write {array; index=[index]; payload}])
       ) |> Option.value ~default:[]
     | _ ->
       []
