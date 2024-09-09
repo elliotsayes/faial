@@ -213,3 +213,8 @@ let decl_unknown (vars:Variable.Set.t) : Stmt.t list =
   if Variable.Set.is_empty vars then []
   else
     [Decl (as_decls vars)]
+
+let infer_nexp (e:t) : (Stmt.t list * Exp.nexp) =
+  let (decls, e) = to_nexp e in
+  let decls = decl_unknown decls in
+  (decls, e)

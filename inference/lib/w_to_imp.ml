@@ -126,20 +126,22 @@ module Expressions = struct
 
     type expr = t
 
-    type read = {
-      target: string;
-      array: string;
-      ty: Type.t;
-      index: expr;
-    }
+    module Read = struct
+      type t = {
+        target: string;
+        array: string;
+        ty: Type.t;
+        index: expr;
+      }
+    end
 
-    type t = read list
+    type t = Read.t list
 
     let counter = ref 1
 
     let empty : t = []
 
-    let add_var (f:string -> read list) (st:t) : (t * string) =
+    let add_var (f:string -> Read.t list) (st:t) : (t * string) =
       let count = !counter in
       counter := count + 1;
       let name : string = "@AccessState" ^ string_of_int count in
@@ -313,12 +315,41 @@ module Expressions = struct
 
   let b_todo : Exp.bexp = CastBool n_todo
 
-  let n_tr (e: W_lang.Expression.t) : (Imp.Stmt.t list * Exp.nexp) =
-    let (_, e) = Context.rewrite [] e in
-    let e = Context.to_i_exp e in
-    let (decls, e) = Imp.Infer_exp.to_nexp e in
-    let decls = Imp.Infer_exp.decl_unknown decls in
-    (decls, e)
+
+  let rec n_tr (e: W_lang.Expression.t) : (Imp.Stmt.t list * Exp.nexp) =
+    let (reads, e) = Context.rewrite [] e in
+    let reads = List.concat_map r_tr reads in
+    let (decls, e) =
+      e
+      |> Context.to_i_exp
+      |> Imp.Infer_exp.infer_nexp
+    in
+    (reads @ decls, e)
+
+
+  and r_tr (r: Context.Read.t) : Imp.Stmt.t list =
+    (* get base type *)
+    let ty =
+      Type.deref r.ty
+      |> Option.get
+      |> Type.to_string
+      |> C_type.make
+    in
+    let target = Variable.from_name r.target in
+    let array = Variable.from_name r.array in
+    let (decls, index) =
+      r.index
+      |> Context.to_i_exp
+      |> Imp.Infer_exp.infer_nexp
+    in
+    decls
+    @
+    [
+      Imp.Stmt.Read {
+        index=[index]; array; target; ty;
+      }
+    ]
+
 
   let ( let* ) = Option.bind
 

@@ -374,6 +374,11 @@ module Type = struct
     let is_tid (ty:t) : bool =
       ty.inner = i_vec3_u32
 
+    let deref (ty:t) : t option =
+      match ty.inner with
+      | Array {base; _} -> Some base
+      | _ -> None
+
     let make (inner:inner) : t = {name=None; inner}
 (*
     let i32 : t = Scalar Scalar.i32 |> make
