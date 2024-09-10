@@ -839,7 +839,13 @@ module Expression = struct
     | Derivative _ -> (*TODO*) "Derivative"
     | Relational _ -> (*TODO*) "Relational"
     | Math _ -> (*TODO*) "Math"
-    | As _ -> (*TODO*) "As"
+    | As {expr; kind; convert} ->
+      let ty =
+        match convert with
+        | Some n -> Scalar.{kind=kind; width=n} |> Scalar.to_string
+        | None -> ScalarKind.to_string kind
+      in
+      "(" ^ ty ^ ") " ^ to_string expr
     | CallResult _ -> (*TODO*) "CallResult"
     | AtomicResult _ -> (*TODO*) "AtomicResult"
     | WorkGroupUniformLoadResult _ -> "WorkGroupUniformLoadResult"
