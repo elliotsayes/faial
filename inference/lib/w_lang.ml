@@ -1087,11 +1087,11 @@ module Statement = struct
         pointer: Handle<Expression>,
         result: Handle<Expression>,
       }*)
-    | Call (* {
-        function: Handle<Function>,
-        arguments: Vec<Handle<Expression>>,
-        result: Option<Handle<Expression>>,
-      }*)
+    | Call of {
+        function_: string;
+        arguments: Expression.t list;
+        result: Expression.t option;
+      }
     | SubgroupBallot (* {
         result: Handle<Expression>,
         predicate: Option<Handle<Expression>>,
@@ -1140,7 +1140,11 @@ module Statement = struct
       | "ImageStore" -> Ok ImageStore
       | "Atomic" -> Ok Atomic
       | "WorkGroupUniformLoad" -> Ok WorkGroupUniformLoad
-      | "Call" -> Ok Call
+      | "Call" ->
+        let* function_ = with_field "function" cast_string o in
+        let* arguments = with_field "arguments" (cast_map Expression.parse) o in
+        let* result = with_field "result" (cast_option Expression.parse) o in
+        Ok (Call{function_; arguments; result})
       | "SubgroupBallot" -> Ok SubgroupBallot
       | "SubgroupGather" -> Ok SubgroupGather
       | "SubgroupCollectiveOperation" -> Ok SubgroupCollectiveOperation
@@ -1225,13 +1229,19 @@ module Statement = struct
       }*)
       ->
       [Line "workgroupUniformLoad(TODO);"]
-    | Call (* {
-        function: Handle<Function>,
-        arguments: Vec<Handle<Expression>>,
-        result: Option<Handle<Expression>>,
-      }*)
+    | Call {function_; arguments; result}
       ->
-      [Line "call(TODO);"]
+      let result =
+        result
+        |> Option.map (fun e -> "let " ^ Expression.to_string e ^ " = ")
+        |> Option.value ~default:""
+      in
+      let arguments =
+        arguments
+        |> List.map Expression.to_string
+        |> Common.join ", "
+      in
+      [Line (result ^ function_ ^"(" ^ arguments ^ ");")]
     | SubgroupBallot (* {
         result: Handle<Expression>,
         predicate: Option<Handle<Expression>>,
