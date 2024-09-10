@@ -849,7 +849,7 @@ module Expression = struct
     | CallResult _ -> (*TODO*) "CallResult"
     | AtomicResult _ -> (*TODO*) "AtomicResult"
     | WorkGroupUniformLoadResult _ -> "WorkGroupUniformLoadResult"
-    | ArrayLength _ -> "ArrayLength"
+    | ArrayLength e -> "arrayLength(" ^ to_string e ^ ")"
     | RayQueryProceedResult -> "RayQueryProceedResult"
     | RayQueryGetIntersection _ -> "RayQueryGetIntersection"
     | SubgroupBallotResult -> "SubgroupBallotResult"
