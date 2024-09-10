@@ -175,11 +175,14 @@ module ImageDimension = struct
     | "D2" -> Ok D2
     | "D3" -> Ok D3
     | "Cube" -> Ok Cube
-    | _ -> failwith ("ImageDimension.parse: unknown: " ^ data)
+    | _ -> root_cause ("ImageDimension.parse: unknown: " ^ data) j
 
   let to_string : t -> string =
     function
-    | _ -> "ImageDimension"
+    | D1 -> "1d"
+    | D2 -> "2d"
+    | D3 -> "3d"
+    | Cube -> "cube"
 end
 
 module ImageClass = struct
@@ -212,6 +215,10 @@ module ImageClass = struct
       Ok (Storage {format; access;})
     | _ ->
       root_cause "Unsupported kind" j
+
+  let to_string : t -> string =
+    function
+    | _ -> "ImageClass"
 end
 
 module ArraySize = struct
@@ -435,6 +442,11 @@ module Type = struct
         "array<" ^ to_string a.base ^ size ^ ">"
       | Vector v ->
         "vec" ^ VectorSize.to_string v.size ^ "<" ^ Scalar.to_string v.scalar ^ ">"
+      | Image {dim; arrayed; image_class} ->
+        let dim = ImageDimension.to_string dim in
+        let arrayed = if arrayed then "_array" else "" in
+        let image_class = ImageClass.to_string image_class in
+        "texture_" ^ image_class ^ dim ^ arrayed
       | k -> failwith ("inner_to_string: unsupported kind:" ^ kind k)
 
   and to_string (e:t) : string =
@@ -998,7 +1010,7 @@ module Statement = struct
 (*     | Emit(Range<Expression>), *)
     | Block of t list
     | If of {
-(* TODO:         condition: Expression; *)
+        condition: Expression.t;
         accept: t list;
         reject: t list;
       }
@@ -1063,12 +1075,13 @@ module Statement = struct
     let* kind = get_kind o in
     match kind with
       | "Block" ->
-        let* l = with_field "block" (cast_map parse) o in
+        let* l = with_field "body" (cast_map parse) o in
         Ok (Block l)
       | "If" ->
+        let* condition = with_field "condition" Expression.parse o in
         let* accept = with_field "accept" (cast_map parse) o in
         let* reject = with_field "reject" (cast_map parse) o in
-        Ok (If {accept; reject})
+        Ok (If {accept; reject; condition;})
       | "Switch" -> Ok Switch
       | "Loop" ->
         let* body = with_field "body" (cast_map parse) o in
@@ -1102,11 +1115,10 @@ module Statement = struct
         Block (block_to_s l);
         Line "}"
       ]
-    | If {accept; reject; } ->
+    | If {accept; reject; condition; } ->
       let open Indent in
       [
-(* TODO:         condition: Expression; *)
-        Line "if (TODO) {";
+        Line ("if (" ^ Expression.to_string condition ^ ") {");
         Block (block_to_s accept);
       ]
       @
