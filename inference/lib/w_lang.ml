@@ -750,7 +750,7 @@ module Expression = struct
       }
     | ImageQuery of {
         image: t;
-(*         query: ImageQuery, *)
+        query: image_query;
       }
     | Unary of {
 (*         op: UnaryOperator, *)
@@ -799,6 +799,12 @@ module Expression = struct
     | SubgroupBallotResult
     | SubgroupOperationResult of Type.t
 
+  and image_query =
+    | Size of t option
+    | NumLevels
+    | NumLayers
+    | NumSamples
+
   let rec to_string : t -> string =
     function
     | Literal l -> Literal.to_string l
@@ -827,7 +833,20 @@ module Expression = struct
       "load(" ^ to_string e ^")"
     | ImageSample _ -> (*TODO*) "ImageSample"
     | ImageLoad _ -> (*TODO*) "ImageLoad"
-    | ImageQuery _ -> (*TODO*) "ImageQuery"
+    | ImageQuery {image; query} ->
+      let func =
+        match query with
+        | Size _ -> "textureDimensions"
+        | NumLevels -> "textureNumLevels"
+        | NumLayers -> "textureNumLayers"
+        | NumSamples -> "textureNumSamples"
+      in
+      let arg =
+        match query with
+        | Size (Some e) -> ", " ^ to_string e
+        | _ -> ""
+      in
+      func ^ "(" ^ to_string image ^ arg ^ ")"
     | Unary _ -> (* TODO *) "Unary"
     | Binary b ->
       Printf.sprintf
@@ -933,7 +952,9 @@ module Expression = struct
       })
     | "ImageQuery" ->
       let* image = with_field "image" parse o in
+      let* query = with_field "query" parse_image_query o in
       Ok (ImageQuery {
+        query;
         image;
       })
     | "Unary" ->
@@ -1008,6 +1029,18 @@ module Expression = struct
       let* ty = with_field "ty" Type.parse o in
       Ok (SubgroupOperationResult ty)
       | _ -> failwith kind
+  and parse_image_query (j:json) : image_query j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "Size" ->
+      let* e = with_field "level" (cast_option parse) o in
+      Ok (Size e)
+    | "NumLevels" -> Ok NumLevels
+    | "NumLayers" -> Ok NumLayers
+    | "NumSamples" -> Ok NumSamples
+    | _ -> root_cause "parse_image_query" j
 
 end
 

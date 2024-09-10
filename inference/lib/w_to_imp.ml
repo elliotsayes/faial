@@ -212,8 +212,13 @@ module Expressions = struct
         let ctx = o_add ctx sample in
         let ctx = o_add ctx level in
         (ctx, Unsupported)
-      | ImageQuery {image} ->
+      | ImageQuery {image; query} ->
         let ctx = add ctx image in
+        let ctx =
+          match query with
+          | Size (Some e) -> add ctx e
+          | _ -> ctx
+        in
         (ctx, Unsupported)
       | Unary {expr} ->
         let (ctx, expr) = rewrite ctx expr in
