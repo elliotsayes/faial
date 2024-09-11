@@ -700,6 +700,170 @@ module Literal = struct
 
 end
 
+module MathFunction = struct
+  type t =
+    | Abs
+    | Min
+    | Max
+    | Clamp
+    | Saturate
+    | Cos
+    | Cosh
+    | Sin
+    | Sinh
+    | Tan
+    | Tanh
+    | Acos
+    | Asin
+    | Atan
+    | Atan2
+    | Asinh
+    | Acosh
+    | Atanh
+    | Radians
+    | Degrees
+    | Ceil
+    | Floor
+    | Round
+    | Fract
+    | Trunc
+    | Modf
+    | Frexp
+    | Ldexp
+    | Exp
+    | Exp2
+    | Log
+    | Log2
+    | Pow
+    | Dot
+    | Outer
+    | Cross
+    | Distance
+    | Length
+    | Normalize
+    | FaceForward
+    | Reflect
+    | Refract
+    | Sign
+    | Fma
+    | Mix
+    | Step
+    | SmoothStep
+    | Sqrt
+    | InverseSqrt
+    | Inverse
+    | Transpose
+    | Determinant
+    | CountTrailingZeros
+    | CountLeadingZeros
+    | CountOneBits
+    | ReverseBits
+    | ExtractBits
+    | InsertBits
+    | FindLsb
+    | FindMsb
+    | Pack4x8snorm
+    | Pack4x8unorm
+    | Pack2x16snorm
+    | Pack2x16unorm
+    | Pack2x16float
+    | Pack4xI8
+    | Pack4xU8
+    | Unpack4x8snorm
+    | Unpack4x8unorm
+    | Unpack2x16snorm
+    | Unpack2x16unorm
+    | Unpack2x16float
+    | Unpack4xI8
+    | Unpack4xU8
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* kind = cast_string j in
+    match kind with
+    | "Abs" -> Ok Abs
+    | "Min" -> Ok Min
+    | "Max" -> Ok Max
+    | "Clamp" -> Ok Clamp
+    | "Saturate" -> Ok Saturate
+    | "Cos" -> Ok Cos
+    | "Cosh" -> Ok Cosh
+    | "Sin" -> Ok Sin
+    | "Sinh" -> Ok Sinh
+    | "Tan" -> Ok Tan
+    | "Tanh" -> Ok Tanh
+    | "Acos" -> Ok Acos
+    | "Asin" -> Ok Asin
+    | "Atan" -> Ok Atan
+    | "Atan2" -> Ok Atan2
+    | "Asinh" -> Ok Asinh
+    | "Acosh" -> Ok Acosh
+    | "Atanh" -> Ok Atanh
+    | "Radians" -> Ok Radians
+    | "Degrees" -> Ok Degrees
+    | "Ceil" -> Ok Ceil
+    | "Floor" -> Ok Floor
+    | "Round" -> Ok Round
+    | "Fract" -> Ok Fract
+    | "Trunc" -> Ok Trunc
+    | "Modf" -> Ok Modf
+    | "Frexp" -> Ok Frexp
+    | "Ldexp" -> Ok Ldexp
+    | "Exp" -> Ok Exp
+    | "Exp2" -> Ok Exp2
+    | "Log" -> Ok Log
+    | "Log2" -> Ok Log2
+    | "Pow" -> Ok Pow
+    | "Dot" -> Ok Dot
+    | "Outer" -> Ok Outer
+    | "Cross" -> Ok Cross
+    | "Distance" -> Ok Distance
+    | "Length" -> Ok Length
+    | "Normalize" -> Ok Normalize
+    | "FaceForward" -> Ok FaceForward
+    | "Reflect" -> Ok Reflect
+    | "Refract" -> Ok Refract
+    | "Sign" -> Ok Sign
+    | "Fma" -> Ok Fma
+    | "Mix" -> Ok Mix
+    | "Step" -> Ok Step
+    | "SmoothStep" -> Ok SmoothStep
+    | "Sqrt" -> Ok Sqrt
+    | "InverseSqrt" -> Ok InverseSqrt
+    | "Inverse" -> Ok Inverse
+    | "Transpose" -> Ok Transpose
+    | "Determinant" -> Ok Determinant
+    | "CountTrailingZeros" -> Ok CountTrailingZeros
+    | "CountLeadingZeros" -> Ok CountLeadingZeros
+    | "CountOneBits" -> Ok CountOneBits
+    | "ReverseBits" -> Ok ReverseBits
+    | "ExtractBits" -> Ok ExtractBits
+    | "InsertBits" -> Ok InsertBits
+    | "FindLsb" -> Ok FindLsb
+    | "FindMsb" -> Ok FindMsb
+    | "Pack4x8snorm" -> Ok Pack4x8snorm
+    | "Pack4x8unorm" -> Ok Pack4x8unorm
+    | "Pack2x16snorm" -> Ok Pack2x16snorm
+    | "Pack2x16unorm" -> Ok Pack2x16unorm
+    | "Pack2x16float" -> Ok Pack2x16float
+    | "Pack4xI8" -> Ok Pack4xI8
+    | "Pack4xU8" -> Ok Pack4xU8
+    | "Unpack4x8snorm" -> Ok Unpack4x8snorm
+    | "Unpack4x8unorm" -> Ok Unpack4x8unorm
+    | "Unpack2x16snorm" -> Ok Unpack2x16snorm
+    | "Unpack2x16unorm" -> Ok Unpack2x16unorm
+    | "Unpack2x16float" -> Ok Unpack2x16float
+    | "Unpack4xI8" -> Ok Unpack4xI8
+    | "Unpack4xU8" -> Ok Unpack4xU8
+    | _ -> root_cause "MathFunction" j
+
+  let to_string : t -> string =
+    function
+    | Min -> "min"
+    | Max -> "max"
+    | _ -> "MathFunction(TODO)"
+end
+
 module Expression = struct
   type t =
     | Literal of Literal.t
@@ -776,7 +940,7 @@ module Expression = struct
         argument: t;
       }
     | Math of {
-(*         fun_: MathFunction, *)
+        fun_: MathFunction.t;
         args: t list;
       }
     | As of {
@@ -877,7 +1041,9 @@ module Expression = struct
     | Select _ -> (*TODO*) "Select"
     | Derivative _ -> (*TODO*) "Derivative"
     | Relational _ -> (*TODO*) "Relational"
-    | Math _ -> (*TODO*) "Math"
+    | Math {fun_; args} ->
+      let args = args |> List.map to_string |> Common.join ", " in
+      MathFunction.to_string fun_ ^ "(" ^ args ^ ")"
     | As {expr; kind; convert} ->
       let ty =
         match convert with
@@ -1012,10 +1178,9 @@ module Expression = struct
         argument;
       })
     | "Math" ->
+      let* fun_ = with_field "fun" MathFunction.parse o in
       let* args = with_field "args" (cast_map parse) o in
-      Ok (Math {
-        args;
-      })
+      Ok (Math {fun_; args;})
     | "As" ->
       let* expr = with_field "expr" parse o in
       let* kind = with_field "scalar_kind" ScalarKind.parse o in

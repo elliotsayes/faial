@@ -104,7 +104,7 @@ module Expressions = struct
         argument: t;
       }
     | Math of {
-  (*         fun_: MathFunction, *)
+        fun_: MathFunction.t;
         args: t list;
       }
     | As of {
@@ -238,9 +238,9 @@ module Expressions = struct
       | Relational {argument;} ->
         let (ctx, argument) = rewrite ctx argument in
         (ctx, Relational {argument;})
-      | Math {args;} ->
+      | Math {fun_; args;} ->
         let (ctx, args) = l_rewrite ctx args in
-        (ctx, Math {args;})
+        (ctx, Math {fun_; args;})
       | As {expr; kind; convert;} ->
         let (ctx, expr) = rewrite ctx expr in
         (ctx, As {expr; kind; convert;})
