@@ -56,9 +56,7 @@ module Variables = struct
   let tr : W_lang.Expression.t -> (C_type.t * Variable.t) option =
     let open W_lang.Expression in
     function
-    | GlobalVariable {name; ty; _}
-    | FunctionArgument {name; ty; _}
-    | LocalVariable {name; ty;_} ->
+    | Ident {name; ty; _} ->
       Some (C_type.make (W_lang.Type.to_string ty), Variable.from_name name)
     | _ -> None
 end
@@ -82,9 +80,7 @@ module Expressions = struct
         size: VectorSize.t;
         value: t;
       }
-    | FunctionArgument of FunctionArgument.t
-    | GlobalVariable of {ty: Type.t; name: string}
-    | LocalVariable of {ty: Type.t; name: string}
+    | Ident of Ident.t
     | Unary of {
   (*         op: UnaryOperator, *)
         expr: t;
@@ -150,7 +146,7 @@ module Expressions = struct
     let add_read (ty:Type.t) (array:string) (index:expr) (st:t) : (t * expr) =
       let (ctx, name) = add_var (fun target -> [{target; array; ty; index}]) st
       in
-      (ctx, LocalVariable {name; ty})
+      (ctx, Ident {name; ty; kind=LocalVariable})
 
     let pure (st:t) (x:'a) : t * 'a =
       (st, x)
@@ -169,7 +165,7 @@ module Expressions = struct
       | Compose {ty; components} ->
         let (ctx, components) = l_rewrite ctx components in
         (ctx, Compose {ty; components})
-      | Access {base=GlobalVariable {ty; name}; index;} ->
+      | Access {base=Ident {ty; name; _}; index;} ->
         let (ctx, index) = rewrite ctx index in
         add_read ty name index ctx
       | Access _ -> unsupported
@@ -181,12 +177,8 @@ module Expressions = struct
         (ctx, Splat {size; value})
       | Swizzle {vector; _} ->
         (add ctx vector, Unsupported)
-      | FunctionArgument {name; ty; binding} ->
-        pure (FunctionArgument {name; ty; binding})
-      | GlobalVariable {name; ty;} ->
-        pure (GlobalVariable {name; ty;})
-      | LocalVariable {name; ty; _} ->
-        pure (LocalVariable {name; ty})
+      | Ident i ->
+        pure (Ident i)
       | Load e ->
         let (ctx, e) = rewrite ctx e in
         (ctx, e)
@@ -271,13 +263,11 @@ module Expressions = struct
     let rec to_i_exp : expr -> Imp.Infer_exp.t =
       function
       | Literal l -> Literals.tr l
-      | AccessIndex {base=FunctionArgument f; index}
-        when W_lang.FunctionArgument.is_tid f ->
+      | AccessIndex {base=Ident f; index}
+        when W_lang.Ident.is_tid f ->
         let tid = List.nth Variable.tid_list index in
         NExp (Var tid)
-      | GlobalVariable {name; _}
-      | FunctionArgument {name; _}
-      | LocalVariable {name; _} ->
+      | Ident {name; _} ->
         NExp (Var (Variable.from_name name))
       | Binary {op; left; right} ->
         let left = to_i_exp left in

@@ -489,15 +489,57 @@ module Type = struct
 
 end
 
+module IdentKind = struct
+  type t =
+    | FunctionArgument of Binding.t option
+    | GlobalVariable
+    | LocalVariable
+end
+
+module Ident = struct
+  type t = {
+    name: string;
+    ty: Type.t;
+    kind: IdentKind.t;
+  }
+
+  let is_tid (a:t) : bool =
+    a.kind = FunctionArgument (Some Binding.global_invocation_id)
+    && Type.is_tid a.ty
+
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* name = with_field "name" cast_string o in
+    let* ty = with_field "ty" Type.parse o in
+    let* kind = get_kind o in
+    let* kind : IdentKind.t =
+      let open IdentKind in
+      match kind with
+      | "FunctionArgument" ->
+        let* binding = with_field "binding" (cast_option Binding.parse) o in
+        Ok (FunctionArgument binding)
+      | "GlobalVariable" ->
+        Ok GlobalVariable
+      | "LocalVariable" ->
+        Ok LocalVariable
+      | _ ->
+        root_cause ("Indent.parse: unknown kind: " ^ kind) j
+    in
+    Ok {ty; name; kind}
+
+  let to_string (x:t) : string =
+    x.name
+
+end
+
 module FunctionArgument = struct
   type t = {
     name: string;
     ty: Type.t;
     binding: Binding.t option
   }
-
-  let is_tid (a:t) : bool =
-    a.binding = Some Binding.global_invocation_id && Type.is_tid a.ty
 
   let parse (j:json) : t j_result =
     let open Rjson in
@@ -891,9 +933,7 @@ module Expression = struct
         vector: t;
         pattern: string list;
       }
-    | FunctionArgument of FunctionArgument.t
-    | GlobalVariable of {ty: Type.t; name: string}
-    | LocalVariable of {ty: Type.t; name: string; init: t option}
+    | Ident of Ident.t
     | Load of t
     | ImageSample of {
         image: t;
@@ -994,9 +1034,7 @@ module Expression = struct
         |> Slice.sublist pattern
       in
       to_string vector ^ "." ^ (pattern |> Common.join "")
-    | FunctionArgument l -> l.name
-    | GlobalVariable g -> g.name
-    | LocalVariable l -> l.name
+    | Ident i -> Ident.to_string i
     | Load e ->
       "load(" ^ to_string e ^")"
     | ImageSample _ -> (*TODO*) "ImageSample"
@@ -1094,18 +1132,11 @@ module Expression = struct
       let* vector = with_field "vector" parse o in
       let* pattern = with_field "pattern" (cast_map cast_string) o in
       Ok (Swizzle {size; vector; pattern;})
-    | "FunctionArgument" ->
-      let* f = FunctionArgument.parse j in
-      Ok (FunctionArgument f)
-    | "GlobalVariable" ->
-      let* ty = with_field "ty" Type.parse o in
-      let* name = with_field "name" cast_string o in
-      Ok (GlobalVariable {ty; name})
+    | "FunctionArgument"
+    | "GlobalVariable"
     | "LocalVariable" ->
-      let* ty = with_field "ty" Type.parse o in
-      let* name = with_field "name" cast_string o in
-      let* init = with_field "init" (cast_option parse) o in
-      Ok (LocalVariable {ty; name; init})
+      let* i = Ident.parse j in
+      Ok (Ident i)
     | "Load" ->
       let* value = with_field "pointer" parse o in
       Ok (Load value)
