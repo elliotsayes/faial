@@ -836,7 +836,23 @@ module Expression = struct
     | Load e ->
       "load(" ^ to_string e ^")"
     | ImageSample _ -> (*TODO*) "ImageSample"
-    | ImageLoad _ -> (*TODO*) "ImageLoad"
+    | ImageLoad {image; coordinate; array_index; sample; level;} ->
+      let args =
+        let index =
+          let index =
+            Option.to_list sample
+            @ Option.to_list level
+          in
+          Slice.from_start 1
+          |> Slice.sublist index
+        in
+        [image; coordinate]
+        @ Option.to_list array_index
+        @ index
+        |> List.map to_string
+        |> Common.join ", "
+      in
+      "textureLoad(" ^ args ^")"
     | ImageQuery {image; query} ->
       let func =
         match query with
