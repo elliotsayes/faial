@@ -54,6 +54,13 @@ let substring ?(max_len=None) (data:string) (x:t) : string =
   in
   to_interval max_len x |> Interval.substring data
 
+let subarray (data:'a array) (x:t) : 'a array =
+  to_interval (Array.length data) x |> Interval.subarray data
+
+let sublist (data:'a list) (x:t) : 'a list =
+  let data = Array.of_list data in
+  subarray data x |> Array.to_list
+
 let split (line:string) (x:t) : string * string * string =
   let max_len = String.length line in
   let i = to_interval max_len x in

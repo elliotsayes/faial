@@ -38,4 +38,14 @@ let union (lhs:t) (rhs:t) : t =
 
 (* Return a substring using an interval *)
 let substring (x:string) (s:t) : string =
-  String.sub x (Index.to_base0 s.start) s.length
+  let length = min s.length (String.length x) in
+  String.sub x (Index.to_base0 s.start) length
+
+let subarray (x:'a array) (s:t) : 'a array =
+  let length = min s.length (Array.length x) in
+  Array.sub x (Index.to_base0 s.start) length
+
+let sublist (x:'a list) (s:t) : 'a list =
+  s
+  |> subarray (Array.of_list x)
+  |> Array.to_list

@@ -824,8 +824,12 @@ module Expression = struct
       to_string base ^ "." ^ string_of_int index
     | Splat _ -> (*TODO*)
       "Splat(TODO)"
-    | Swizzle _ -> (*TODO*)
-      "Swizzle(TODO)"
+    | Swizzle {vector; pattern; size} ->
+      let pattern =
+        Slice.from_finish (VectorSize.to_int size)
+        |> Slice.sublist pattern
+      in
+      to_string vector ^ "." ^ (pattern |> Common.join "")
     | FunctionArgument l -> l.name
     | GlobalVariable g -> g.name
     | LocalVariable l -> l.name
@@ -865,7 +869,7 @@ module Expression = struct
         | None -> ScalarKind.to_string kind
       in
        ty ^ "(" ^ to_string expr ^ ")"
-    | CallResult _ -> (*TODO*) "CallResult"
+    | CallResult s -> "callResult(" ^ s ^ ")"
     | AtomicResult _ -> (*TODO*) "AtomicResult"
     | WorkGroupUniformLoadResult _ -> "WorkGroupUniformLoadResult"
     | ArrayLength e -> "arrayLength(" ^ to_string e ^ ")"
