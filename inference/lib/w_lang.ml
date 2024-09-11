@@ -725,7 +725,7 @@ module Expression = struct
     | Swizzle of {
         size: VectorSize.t;
         vector: t;
-(*         pattern: [SwizzleComponent; 4], *)
+        pattern: string list;
       }
     | FunctionArgument of FunctionArgument.t
     | GlobalVariable of {ty: Type.t; name: string}
@@ -906,7 +906,8 @@ module Expression = struct
     | "Swizzle" ->
       let* size = with_field "size" VectorSize.parse o in
       let* vector = with_field "vector" parse o in
-      Ok (Swizzle {size; vector;})
+      let* pattern = with_field "pattern" (cast_map cast_string) o in
+      Ok (Swizzle {size; vector; pattern;})
     | "FunctionArgument" ->
       let* f = FunctionArgument.parse j in
       Ok (FunctionArgument f)
