@@ -57,7 +57,7 @@ let parse_cond (c:D_lang.Expr.t option) : (Variable.t * comparator unop) option 
     | _ -> None)
   | _ -> None
 
-  let rec parse_inc (i:D_lang.Expr.t option) : (Variable.t * increment unop) option =
+let rec parse_inc (i:D_lang.Expr.t option) : (Variable.t * increment unop) option =
   match i with
   | Some (BinaryOperator {opcode=","; lhs=l; _}) ->
     parse_inc (Some l)
