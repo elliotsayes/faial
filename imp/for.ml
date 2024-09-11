@@ -1,5 +1,7 @@
 open Protocols
 
+let ( let* ) = Option.bind
+
 type t = {
   init: Stmt.t option;
   cond: Exp.bexp option;
@@ -43,7 +45,7 @@ module Comparator = struct
     | _ -> None
 end
 
-module Inferred = struct
+module Infer = struct
 
   type 'a unop = {op: 'a; arg: Exp.nexp}
 
@@ -85,7 +87,6 @@ module Inferred = struct
     | _ -> None
 
   let parse (loop: for_) : t option =
-    let ( let* ) = Option.bind in
     let* (x1, inc) = parse_inc loop.inc in
     let* init : Exp.nexp =
       match parse_init loop.init with
@@ -100,4 +101,53 @@ module Inferred = struct
       inc = inc;
     }
 
+  let infer_bounds : t -> Exp.nexp * Exp.nexp * Range.direction =
+    function
+    (* (int i = 0; i < 4; i++) *)
+    | {init=lb; cond={op=Lt; arg=ub; _}; _} ->
+      (lb, Binary (Minus, ub, Num 1), Range.Increase)
+    (* (int i = 0; i <= 4; i++) *)
+    | {init=lb; cond={op=Le; arg=ub; _}; _} ->
+      (lb, ub, Increase)
+    (* TODO: (int i = 4; i - k; i++)
+    | {init=lb; cond={op=RelMinus; arg=ub; _}; _} ->
+      (lb, ub, Range.Increase)
+      *)
+    (* (int i = 4; i >= 0; i--) *)
+    | {init=ub; cond={op=Ge; arg=lb; _}; _} ->
+      (lb, ub, Decrease)
+    (* (int i = 4; i > 0; i--) *)
+    | {init=ub; cond={op=Gt; arg=lb; _}; _} ->
+      (Binary (Plus, Num 1, lb), ub, Decrease)
+
+
+  let infer_step (r:t) : Range.Step.t option =
+    match r.inc with
+    | {op=Plus; arg=a}
+    | {op=Minus; arg=a} -> Some (Range.Step.Plus a)
+    | {op=Mult; arg=a}
+    | {op=Div; arg=a} ->
+      Some (Range.Step.Mult a)
+    | {op=LeftShift; arg=Num a}
+    | {op=RightShift; arg=Num a} ->
+      Some (Range.Step.Mult (Num (Stage0.Common.pow ~base:2 a)))
+    | _ -> None
+
+
+  let to_range (r:t) : Range.t option =
+    let (lb, ub, d) = infer_bounds r in
+    let* step = infer_step r in
+    Some Range.{
+      var=r.name;
+      lower_bound=lb;
+      upper_bound=ub;
+      step=step;
+      dir=d;
+      ty=C_type.int;
+    }
 end
+
+(* Given a for-loop range, output a protocol Range *)
+let to_range (loop:t) : Range.t option =
+  let* inf = Infer.parse loop in
+  Infer.to_range inf
