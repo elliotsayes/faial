@@ -305,6 +305,10 @@ module Expressions = struct
       | Splat _ -> Unknown "Splat"
       | ZeroValue _ -> Unknown "ZeroValue"
       | Compose _ -> Unknown "Compose"
+      | Math {fun_=Min; args=[arg1; arg2]} ->
+        NExp (Imp.Infer_exp.min (to_i_exp arg1) (to_i_exp arg2))
+      | Math {fun_=Max; args=[arg1; arg2]} ->
+        NExp (Imp.Infer_exp.max (to_i_exp arg1) (to_i_exp arg2))
       | _ -> Unknown "?"
   end
 

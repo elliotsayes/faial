@@ -60,6 +60,18 @@ and to_b_string : b -> string =
   | Pred (o, e) ->
     o ^ "(" ^ to_string e ^ ")"
 
+let lt (e1:t) (e2:t) : b =
+  NRel (Lt, e1, e2)
+
+let gt (e1:t) (e2:t) : b =
+  NRel (Gt, e1, e2)
+
+let min (e1:t) (e2:t) : n =
+  NIf (BExp (lt e1 e2), e1, e2)
+
+let max (e1:t) (e2:t) : n =
+  NIf (BExp (gt e1 e2), e1, e2)
+
 let or_ (e1:t) (e2:t) : b =
   BRel (BOr, e1, e2)
 

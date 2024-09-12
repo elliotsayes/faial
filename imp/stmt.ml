@@ -169,7 +169,7 @@ let to_s: t -> Indent.t list =
       [Line ("alias " ^ Alias.to_string l)]
     | Decl [] -> []
     | Decl l ->
-      let entries = Common.join "," (List.map Decl.to_string l) in
+      let entries = Common.join ", " (List.map Decl.to_string l) in
       [Line ("decl " ^ entries ^ ";")]
 
     | If (b, s1, Block []) -> [
