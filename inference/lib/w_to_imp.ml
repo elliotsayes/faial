@@ -110,7 +110,6 @@ module Expressions = struct
         kind: ScalarKind.t;
         convert: int option;
       }
-    | CallResult of string
     | AtomicResult of {
         ty: Type.t;
         comparison: bool;
@@ -238,8 +237,6 @@ module Expressions = struct
       | As {expr; kind; convert;} ->
         let (ctx, expr) = rewrite ctx expr in
         (ctx, As {expr; kind; convert;})
-      | CallResult r ->
-        pure (CallResult r)
       | AtomicResult {ty; comparison} ->
         pure (AtomicResult {ty; comparison})
       | WorkGroupUniformLoadResult ty ->

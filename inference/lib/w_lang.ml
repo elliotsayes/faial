@@ -533,6 +533,7 @@ module IdentKind = struct
     | FunctionArgument of Binding.t option
     | GlobalVariable
     | LocalVariable
+    | CallResult
 end
 
 module Ident = struct
@@ -562,6 +563,8 @@ module Ident = struct
         Ok GlobalVariable
       | "LocalVariable" ->
         Ok LocalVariable
+      | "CallResult" ->
+        Ok CallResult
       | _ ->
         root_cause ("Indent.parse: unknown kind: " ^ kind) j
     in
@@ -1026,7 +1029,6 @@ module Expression = struct
         kind: ScalarKind.t;
         convert: int option;
       }
-    | CallResult of string
     | AtomicResult of {
         ty: Type.t;
         comparison: bool;
@@ -1127,7 +1129,6 @@ module Expression = struct
         | None -> ScalarKind.to_string kind
       in
        ty ^ "(" ^ to_string expr ^ ")"
-    | CallResult s -> "callResult(" ^ s ^ ")"
     | AtomicResult _ -> (*TODO*) "AtomicResult"
     | WorkGroupUniformLoadResult _ -> "WorkGroupUniformLoadResult"
     | ArrayLength e -> "arrayLength(" ^ to_string e ^ ")"
@@ -1170,6 +1171,7 @@ module Expression = struct
       let* vector = with_field "vector" parse o in
       let* pattern = with_field "pattern" (cast_map cast_string) o in
       Ok (Swizzle {size; vector; pattern;})
+    | "CallResult"
     | "FunctionArgument"
     | "GlobalVariable"
     | "LocalVariable" ->
@@ -1255,9 +1257,6 @@ module Expression = struct
       let* kind = with_field "scalar_kind" ScalarKind.parse o in
       let* convert = with_field "convert" (cast_option cast_int) o in
       Ok (As {expr; kind; convert;})
-    | "CallResult" ->
-      let* result = with_field "value" cast_string o in
-      Ok (CallResult result)
     | "AtomicResult" ->
       let* ty = with_field "ty" Type.parse o in
       let* comparison = with_field "comparison" cast_bool o in
