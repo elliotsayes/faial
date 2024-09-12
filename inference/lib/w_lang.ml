@@ -20,6 +20,15 @@ module ScalarKind = struct
     | AbstractInt
     | AbstractFloat
 
+  let is_int : t -> bool =
+    function
+    | Sint
+    | Uint
+    | AbstractInt -> true
+    | Float
+    | Bool
+    | AbstractFloat -> false
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* n = cast_string j in
@@ -56,6 +65,9 @@ module Scalar = struct
   let bool : t = {kind=ScalarKind.Bool; width=1}
   let int : t = {kind=ScalarKind.AbstractInt; width=8}
   let float : t = {kind=ScalarKind.AbstractFloat; width=8}
+
+  let is_int (s:t) : bool =
+    ScalarKind.is_int s.kind
 
   let to_string (s:t) : string =
     ScalarKind.to_string s.kind ^ string_of_int (8 * s.width)
@@ -409,6 +421,17 @@ module Type = struct
 
     let i_vec3_u32 : inner = Vector {size=VectorSize.Tri; scalar=Scalar.u32}
 
+    let to_scalar (ty:t) : Scalar.t option =
+      match ty.inner with
+      | Scalar s -> Some s
+      | _ -> None
+
+    let is_int (ty:t) : bool =
+      ty
+      |> to_scalar
+      |> Option.map Scalar.is_int
+      |> Option.value ~default:false
+
     let is_tid (ty:t) : bool =
       ty.inner = i_vec3_u32
 
@@ -418,17 +441,7 @@ module Type = struct
       | _ -> None
 
     let make (inner:inner) : t = {name=None; inner}
-(*
-    let i32 : t = Scalar Scalar.i32 |> make
-    let i64 : t = Scalar Scalar.i64 |> make
-    let u32 : t = Scalar Scalar.u32 |> make
-    let u64 : t = Scalar Scalar.u64 |> make
-    let f32 : t = Scalar Scalar.f32 |> make
-    let f64 : t = Scalar Scalar.f64 |> make
-    let int : t = Scalar Scalar.int |> make
-    let float : t = Scalar Scalar.float |> make
-    let bool : t = Scalar Scalar.bool |> make
-*)
+
     let rec inner_to_string : inner -> string =
       function
       | Scalar s ->
@@ -502,7 +515,6 @@ module Ident = struct
     ty: Type.t;
     kind: IdentKind.t;
   }
-
   let is_tid (a:t) : bool =
     a.kind = FunctionArgument (Some Binding.global_invocation_id)
     && Type.is_tid a.ty

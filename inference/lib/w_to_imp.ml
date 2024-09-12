@@ -1,5 +1,7 @@
 open Protocols
 
+let ( let* ) = Option.bind
+
 let tr_address_space : W_lang.AddressSpace.t-> Mem_hierarchy.t option =
   function
   | WorkGroup -> Some Mem_hierarchy.SharedMemory
@@ -321,7 +323,6 @@ module Expressions = struct
     in
     (reads @ decls, e)
 
-
   and r_tr (r: Context.Read.t) : Imp.Stmt.t list =
     (* get base type *)
     let ty =
@@ -345,6 +346,15 @@ module Expressions = struct
       }
     ]
 
+  let b_tr (e: W_lang.Expression.t) : (Imp.Stmt.t list * Exp.bexp) =
+    let (reads, e) = Context.rewrite [] e in
+    let reads = List.concat_map r_tr reads in
+    let (decls, e) =
+      e
+      |> Context.to_i_exp
+      |> Imp.Infer_exp.infer_bexp
+    in
+    (reads @ decls, e)
 
   let ( let* ) = Option.bind
 
@@ -353,10 +363,10 @@ end
 module Statements = struct
   let rec tr : W_lang.Statement.t -> Imp.Stmt.t list =
     let open Imp.Stmt in
+    let ret = Option.value ~default:[] in
     function
     | Store {pointer=Access {base; index}; value} ->
-      let ( let* ) = Option.bind in
-      (
+      ret (
         let* (_, array) = Variables.tr base in
         let (stmts1, index) = Expressions.n_tr index in
         let (stmts2, value) = Expressions.n_tr value in
@@ -366,9 +376,38 @@ module Statements = struct
           | _ -> None
         in
         Some (stmts1 @ stmts2 @ [Write {array; index=[index]; payload}])
-      ) |> Option.value ~default:[]
+      )
+    | Store {pointer=Ident ({ty; _}) as i; value} when W_lang.Type.is_int ty ->
+      ret (
+        let* (ty, var) = Variables.tr i in
+        let (stmts, data) = Expressions.n_tr value in
+        Some (stmts @ [ Assign {var; data; ty} ])
+      )
+    | Block l ->
+      [tr_block l]
+    | Loop {body=(If {condition; accept=[];reject=[Break]})::body; continuing=[Store _] as c} ->
+      ret (
+        let (stmts, cond) = Expressions.b_tr condition in
+        let inc = tr_block c in
+        let body = tr_block body in
+        let f : Imp.For.t = {
+          init = None;
+          cond = Some cond;
+          inc = Some inc;
+        } in
+        let* r =
+          match Imp.For.to_range f with
+          | Some r -> Some r
+          | None -> print_endline ("Missed range: " ^ Imp.For.to_string f);
+            None
+        in
+        Some (
+          stmts @ [For (r, body)]
+        )
+      )
     | _ ->
       []
+
   and tr_block (l:W_lang.Statement.t list) : Imp.Stmt.t =
     Imp.Stmt.Block (List.concat_map tr l)
 end

@@ -8,6 +8,26 @@ type t = {
   inc: Stmt.t option;
 }
 
+let to_string : t -> string =
+  function
+  | {init; cond; inc} ->
+    let init =
+      init
+      |> Option.map Stmt.to_string
+      |> Option.value ~default:""
+    in
+    let cond =
+      cond
+      |> Option.map Exp.b_to_string
+      |> Option.value ~default:""
+    in
+    let inc =
+      inc
+      |> Option.map Stmt.to_string
+      |> Option.value ~default:""
+    in
+    "(" ^ init ^ "; " ^ cond ^ "; " ^ inc ^ ")"
+
 module Increment = struct
   type t =
     | Plus
@@ -73,8 +93,9 @@ module Infer = struct
       | _ -> None)
     | _ -> None
 
-  let parse_inc : Stmt.t option -> (Variable.t * Increment.t unop) option =
+  let rec parse_inc : Stmt.t option -> (Variable.t * Increment.t unop) option =
     function
+    | Some (Block [i]) -> parse_inc (Some i)
     | Some (Assign {var=l; data=Binary (o, Var l', r); _}) ->
       begin
         match
