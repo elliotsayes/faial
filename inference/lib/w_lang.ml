@@ -209,6 +209,13 @@ module ImageClass = struct
         access: StorageAccess.t;
     }
 
+
+  let multisampled : t -> bool =
+    function
+    | Sampled {multi; _}
+    | Depth {multi;} -> multi
+    | Storage _ -> false
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -458,8 +465,27 @@ module Type = struct
       | Image {dim; arrayed; image_class} ->
         let dim = ImageDimension.to_string dim in
         let arrayed = if arrayed then "_array" else "" in
-        let image_class = ImageClass.to_string image_class in
-        "texture_" ^ image_class ^ dim ^ arrayed
+        let (klass, format, storage) =
+          match image_class with
+          | Sampled {kind; _;} ->
+            let scalar =
+              {kind; width=4}
+              |> Scalar.to_string
+            in
+            ("", scalar, "")
+          | Depth _ ->
+            ("depth_", "", "")
+          | Storage {format; access;} ->
+            ("storage_", format, StorageAccess.to_string access)
+        in
+        let multi = if ImageClass.multisampled image_class then "multisampled_" else "" in
+        let addendum =
+          if format <> "" then
+            "<" ^ format ^ storage ^ ">"
+          else
+            ""
+        in
+        "texture_" ^ klass ^ multi ^ dim ^ arrayed ^ addendum
       | k -> failwith ("inner_to_string: unsupported kind:" ^ kind k)
 
   and to_string (e:t) : string =
@@ -1623,8 +1649,13 @@ module Decl = struct
     d.name
 
   let to_s (d:t) : Indent.t list =
+    let space =
+      let space = AddressSpace.to_string d.space in
+      if space <> "" then "<" ^ space ^ ">"
+      else ""
+    in
     [
-    Line (ResourceBinding.to_string d.binding ^ " var<" ^ AddressSpace.to_string d.space ^ "> " ^ d.name ^": " ^ Type.to_string d.ty ^";")
+    Line (ResourceBinding.to_string d.binding ^ " var" ^ space ^ " " ^ d.name ^": " ^ Type.to_string d.ty ^";")
     ]
 end
 
