@@ -58,8 +58,8 @@ module Variables = struct
   let tr : W_lang.Expression.t -> (C_type.t * Variable.t) option =
     let open W_lang.Expression in
     function
-    | Ident {name; ty; _} ->
-      Some (C_type.make (W_lang.Type.to_string ty), Variable.from_name name)
+    | Ident {var; ty; _} ->
+      Some (C_type.make (W_lang.Type.to_string ty), var)
     | _ -> None
 end
 
@@ -125,8 +125,8 @@ module Expressions = struct
 
     module Read = struct
       type t = {
-        target: string;
-        array: string;
+        target: Variable.t;
+        array: Variable.t;
         ty: Type.t;
         index: expr;
       }
@@ -138,16 +138,16 @@ module Expressions = struct
 
     let empty : t = []
 
-    let add_var (f:string -> Read.t list) (st:t) : (t * string) =
+    let add_var (f:Variable.t -> Read.t list) (st:t) : (t * Variable.t) =
       let count = !counter in
       counter := count + 1;
-      let name : string = "@AccessState" ^ string_of_int count in
-      (f name @ st, name)
+      let var = "@AccessState" ^ string_of_int count |> Variable.from_name in
+      (f var @ st, var)
 
-    let add_read (ty:Type.t) (array:string) (index:expr) (st:t) : (t * expr) =
-      let (ctx, name) = add_var (fun target -> [{target; array; ty; index}]) st
+    let add_read (ty:Type.t) (array:Variable.t) (index:expr) (st:t) : (t * expr) =
+      let (ctx, var) = add_var (fun target -> [{target; array; ty; index}]) st
       in
-      (ctx, Ident {name; ty; kind=LocalVariable})
+      (ctx, Ident {var; ty; kind=LocalVariable})
 
     let pure (st:t) (x:'a) : t * 'a =
       (st, x)
@@ -166,9 +166,9 @@ module Expressions = struct
       | Compose {ty; components} ->
         let (ctx, components) = l_rewrite ctx components in
         (ctx, Compose {ty; components})
-      | Access {base=Ident {ty; name; _}; index;} ->
+      | Access {base=Ident {ty; var; _}; index;} ->
         let (ctx, index) = rewrite ctx index in
-        add_read ty name index ctx
+        add_read ty var index ctx
       | Access _ -> unsupported
       | AccessIndex {base; index} ->
         let (ctx, base) = rewrite ctx base in
@@ -266,8 +266,8 @@ module Expressions = struct
         when W_lang.Ident.is_tid f ->
         let tid = List.nth Variable.tid_list index in
         NExp (Var tid)
-      | Ident {name; _} ->
-        NExp (Var (Variable.from_name name))
+      | Ident {var; _} ->
+        NExp (Var var)
       | Binary {op; left; right} ->
         let left = to_i_exp left in
         let right = to_i_exp right in
@@ -332,8 +332,8 @@ module Expressions = struct
       |> Type.to_string
       |> C_type.make
     in
-    let target = Variable.from_name r.target in
-    let array = Variable.from_name r.array in
+    let target = r.target in
+    let array = r.array in
     let (decls, index) =
       r.index
       |> Context.to_i_exp

@@ -538,7 +538,7 @@ end
 
 module Ident = struct
   type t = {
-    name: string;
+    var: Variable.t;
     ty: Type.t;
     kind: IdentKind.t;
   }
@@ -546,6 +546,20 @@ module Ident = struct
     a.kind = FunctionArgument (Some Binding.global_invocation_id)
     && Type.is_tid a.ty
 
+  let parse_location (j:json) : Location.t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* line_number = with_field "line_number" cast_int o in
+    let* line_position = with_field "line_position" cast_int o in
+    let* length = with_field "length" cast_int o in
+    Ok {
+      Location.filename = ""; (* TODO *)
+      line = Index.from_base1 line_number;
+      interval =
+        Interval.from_range
+          ~start:(Index.from_base1 line_position)
+          ~length;
+    }
 
   let parse (j:json) : t j_result =
     let open Rjson in
@@ -568,10 +582,12 @@ module Ident = struct
       | _ ->
         root_cause ("Indent.parse: unknown kind: " ^ kind) j
     in
-    Ok {ty; name; kind}
+    let* location = with_field "location" parse_location o in
+    let var = Variable.make ~name ~location in
+    Ok {ty; var; kind}
 
   let to_string (x:t) : string =
-    x.name
+    x.var |> Variable.name
 
 end
 
