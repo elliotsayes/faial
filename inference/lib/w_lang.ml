@@ -404,7 +404,7 @@ module Type = struct
         size: ArraySize.t;
       }
     and struct_member = {
-        name: string option;
+        name: string;
         ty: t;
         binding: Binding.t option;
         offset: int;
@@ -449,7 +449,7 @@ module Type = struct
 
     let make (inner:inner) : t = {name=None; inner}
 
-    let rec inner_to_string : inner -> string =
+    let rec inner_to_string (name:string option) : inner -> string =
       function
       | Scalar s ->
         Scalar.to_string s
@@ -486,15 +486,27 @@ module Type = struct
             ""
         in
         "texture_" ^ klass ^ multi ^ dim ^ arrayed ^ addendum
+      | Struct {members=m; _} ->
+        let name =
+          match name with
+          | Some name -> name ^ " "
+          | None -> ""
+        in
+        "struct " ^ name ^ "{" ^ (List.map struct_to_string m |> Common.join ", ") ^ "};"
       | k -> failwith ("inner_to_string: unsupported kind:" ^ kind k)
 
   and to_string (e:t) : string =
-    let name =
-      match e.name with
-      | Some n -> n ^ "#"
+    match e.name with
+    | Some n -> n
+    | None -> inner_to_string None e.inner
+
+  and struct_to_string (s:struct_member) : string =
+    let binding =
+      match s.binding with
+      | Some b -> Binding.to_string b ^ " "
       | None -> ""
     in
-    name ^ inner_to_string e.inner
+    binding ^ s.name ^ " : " ^ to_string s.ty
 
   let rec parse (j:json) : t j_result =
     let open Rjson in
@@ -524,8 +536,20 @@ module Type = struct
       let* arrayed = with_field "arrayed" cast_bool o in
       let* image_class = with_field "class" ImageClass.parse o in
       Ok (Image {dim; arrayed; image_class;})
+    | "Struct" ->
+      let* span = with_field "span" cast_int o in
+      let* members = with_field "members" (cast_map struct_parse) o in
+      Ok (Struct {span; members;})
     | _ -> root_cause ("inner_parse: unsupported kind: " ^ kind) j
 
+  and struct_parse (j:json) : struct_member j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* name = with_field "name" cast_string o in
+    let* ty = with_field "ty" parse o in
+    let* binding = with_field "binding" (cast_option Binding.parse) o in
+    let* offset = with_field "offset" cast_int o in
+    Ok {name; ty; binding; offset}
 end
 
 module IdentKind = struct
