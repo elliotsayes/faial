@@ -561,10 +561,15 @@ module Ident = struct
           ~length;
     }
 
+  let parse_var (o:Rjson.j_object) : Variable.t j_result =
+    let open Rjson in
+    let* name = with_field "name" cast_string o in
+    let* location = with_field "location" parse_location o in
+    Ok (Variable.make ~name ~location)
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
-    let* name = with_field "name" cast_string o in
     let* ty = with_field "ty" Type.parse o in
     let* kind = get_kind o in
     let* kind : IdentKind.t =
@@ -582,8 +587,7 @@ module Ident = struct
       | _ ->
         root_cause ("Indent.parse: unknown kind: " ^ kind) j
     in
-    let* location = with_field "location" parse_location o in
-    let var = Variable.make ~name ~location in
+    let* var = parse_var o in
     Ok {ty; var; kind}
 
   let to_string (x:t) : string =
@@ -1314,9 +1318,32 @@ module Expression = struct
 
 end
 
+module LocalDeclaration = struct
+  type t = {
+    var: Variable.t;
+    init: Expression.t option;
+    ty: Type.t;
+  }
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* var = Ident.parse_var o in
+    let* init = with_field "init" (cast_option Expression.parse) o in
+    let* ty = with_field "ty" Type.parse o in
+    Ok {var; init; ty}
+
+  let to_string (d:t) : string =
+    let init =
+      match d.init with
+      | Some init -> " = " ^ Expression.to_string init
+      | None -> ""
+    in
+    Variable.name d.var ^ " : " ^ Type.to_string d.ty ^ init
+end
+
 module Statement = struct
   type t =
-(*     | Emit(Range<Expression>), *)
     | Block of t list
     | If of {
         condition: Expression.t;
@@ -1418,7 +1445,7 @@ module Statement = struct
       | "SubgroupBallot" -> Ok SubgroupBallot
       | "SubgroupGather" -> Ok SubgroupGather
       | "SubgroupCollectiveOperation" -> Ok SubgroupCollectiveOperation
-      | _ -> failwith kind
+      | _ -> root_cause ("Statement.parse: unknown kind: " ^ kind) j
 
   let rec to_s : t -> Indent.t list =
     function
@@ -1542,6 +1569,7 @@ module Function = struct
     name: string;
     arguments: FunctionArgument.t list;
     result: FunctionResult.t option;
+    locals: LocalDeclaration.t list;
     body: Statement.t list;
   }
 
@@ -1551,8 +1579,9 @@ module Function = struct
     let* name = with_field "name" cast_string o in (* XXX: in Naga this is an optional string *)
     let* result = with_field "result" (cast_option FunctionResult.parse) o in
     let* arguments = with_field "arguments" (cast_map FunctionArgument.parse) o in
+    let* locals = with_field "locals" (cast_map LocalDeclaration.parse) o in
     let* body = with_field "body" (cast_map Statement.parse) o in
-    Ok {name; result; arguments; body}
+    Ok {name; result; arguments; locals; body}
 end
 
 module ShaderStage = struct
@@ -1613,13 +1642,25 @@ module EntryPoint = struct
       |> List.map FunctionArgument.to_string
       |> Common.join ", "
     in
+    let locals : string =
+      d.function_.locals
+      |> List.map LocalDeclaration.to_string
+      |> Common.join ", "
+    in
     [
       Line (
         "@" ^ ShaderStage.to_string d.stage ^
         " @workgroup_size(" ^ Dim3.to_string d.workgroup_size ^ ")" ^
         " fn " ^ d.name ^ "(" ^ args ^ ") {"
       );
-      Block (Statement.block_to_s d.function_.body);
+      Block (
+        (if locals = "" then [] else
+          [
+            Indent.Line ("var " ^ locals ^ ";");
+          ]
+        )
+        @ Statement.block_to_s d.function_.body
+      );
       Line "}"
     ]
 end

@@ -54,12 +54,20 @@ module Literals = struct
         | None -> Infer_exp.unknown (W_lang.Literal.to_string l))
 end
 
+module Types = struct
+  open W_lang
+  let tr (ty:Type.t) : C_type.t =
+    ty
+    |> Type.to_string
+    |> C_type.make
+end
+
 module Variables = struct
   let tr : W_lang.Expression.t -> (C_type.t * Variable.t) option =
     let open W_lang.Expression in
     function
     | Ident {var; ty; _} ->
-      Some (C_type.make (W_lang.Type.to_string ty), var)
+      Some (Types.tr ty, var)
     | _ -> None
 end
 
@@ -329,8 +337,7 @@ module Expressions = struct
     let ty =
       Type.deref r.ty
       |> Option.get
-      |> Type.to_string
-      |> C_type.make
+      |> Types.tr
     in
     let target = r.target in
     let array = r.array in
@@ -409,8 +416,37 @@ module Statements = struct
     | _ ->
       []
 
+  and tr_list (l:W_lang.Statement.t list) : Imp.Stmt.t list =
+    List.concat_map tr l
+
   and tr_block (l:W_lang.Statement.t list) : Imp.Stmt.t =
-    Imp.Stmt.Block (List.concat_map tr l)
+    Imp.Stmt.Block (tr_list l)
+end
+
+module LocalDeclarations = struct
+  let tr_local
+    (l:W_lang.LocalDeclaration.t)
+  :
+    Imp.Stmt.t list
+  =
+    let stmts, init =
+      match l.init with
+      | Some init ->
+        let (stmts, init) = Expressions.n_tr init in
+        (stmts, Some init)
+      | None -> ([], None)
+    in
+    stmts
+    @ [
+      Imp.Stmt.Decl [{
+        var=l.var;
+        ty=Types.tr l.ty;
+        init;
+      }]
+    ]
+
+  let tr : W_lang.LocalDeclaration.t list -> Imp.Stmt.t list =
+    List.concat_map tr_local
 end
 
 module EntryPoints = struct
@@ -425,7 +461,10 @@ module EntryPoints = struct
       ty = "?";
       arrays = globals_to_arrays globals;
       params = Params.empty;
-      code = Statements.tr_block e.function_.body;
+      code =
+        Block (
+        LocalDeclarations.tr e.function_.locals
+        @ Statements.tr_list e.function_.body);
       visibility = Global;
     }
 end
