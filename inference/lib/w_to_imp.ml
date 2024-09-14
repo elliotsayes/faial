@@ -194,7 +194,8 @@ module Expressions = struct
       | Access {base=Ident {ty; var; _}; index;} ->
         let (ctx, index) = rewrite ctx index in
         add_read ty var index ctx
-      | Access _ -> unsupported
+      | Access {base; _} ->
+        (add ctx base, Unsupported)
       | AccessIndex {base; index} ->
         let (ctx, base) = rewrite ctx base in
         (ctx, AccessIndex {base; index})
@@ -410,26 +411,35 @@ module Statements = struct
       )
     | Block l ->
       [tr_block l]
+    | If {condition; accept=[Return None]; reject=[]}
+    | If {condition; accept=[Continue]; reject=[]} ->
+      let (stmts, c) = Expressions.b_tr condition in
+      stmts @ [Assert (Imp.Assert.make c Local)]
+    | If {condition; accept; reject} ->
+      let (stmts, c) = Expressions.b_tr condition in
+      stmts @ [
+        If (c, tr_block accept, tr_block reject)
+      ]
     | Loop {body=(If {condition; accept=[];reject=[Break]})::body; continuing=[Store _] as c} ->
-      ret (
-        let (stmts, cond) = Expressions.b_tr condition in
-        let inc = tr_block c in
-        let body = tr_block body in
-        let f : Imp.For.t = {
-          init = None;
-          cond = Some cond;
-          inc = Some inc;
-        } in
-        let* r =
-          match Imp.For.to_range f with
-          | Some r -> Some r
-          | None -> print_endline ("Missed range: " ^ Imp.For.to_string f);
-            None
-        in
-        Some (
-          stmts @ [For (r, body)]
-        )
-      )
+      let (stmts, cond) = Expressions.b_tr condition in
+      let inc = tr_block c in
+      let body = tr_block body in
+      let f : Imp.For.t = {
+        init = None;
+        cond = Some cond;
+        inc = Some inc;
+      } in
+      stmts @ [Imp.For.to_stmt f body]
+    | Loop {body=(If {condition; accept=[Break];reject=[]})::body; continuing=[Store _] as c} ->
+      let (stmts, cond) = Expressions.b_tr condition in
+      let inc = tr_block c in
+      let body = tr_block body in
+      let f : Imp.For.t = {
+        init = None;
+        cond = Some (Exp.b_not cond);
+        inc = Some inc;
+      } in
+      stmts @ [Imp.For.to_stmt f body]
     | _ ->
       []
 

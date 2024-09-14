@@ -172,3 +172,8 @@ end
 let to_range (loop:t) : Range.t option =
   let* inf = Infer.parse loop in
   Infer.to_range inf
+
+let to_stmt (l:t) (body:Stmt.t) : Stmt.t =
+  match to_range l with
+  | Some r -> For (r, body)
+  | None -> Star body
