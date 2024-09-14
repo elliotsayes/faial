@@ -39,19 +39,33 @@ let globals_to_arrays
 module Literals = struct
   open Imp
 
+  type t =
+    | Bool of bool
+    | Int of int
+
+  let parse : W_lang.Literal.t -> t option =
+    function
+    | U32 v -> Some (Int v)
+    | I32 v -> Some (Int v)
+    | U64 v -> Some (Int v)
+    | I64 v -> Some (Int v)
+    | AbstractInt v -> Some (Int v)
+    | Bool v -> Some (Bool v)
+    | F64 _
+    | F32 _
+    | AbstractFloat _ ->
+      None
+
   let n_tr (l:W_lang.Literal.t) : Exp.nexp option =
     W_lang.Literal.to_int l |> Option.map (fun x -> Exp.Num x)
 
   let b_tr (l:W_lang.Literal.t) : Exp.bexp option =
     W_lang.Literal.to_bool l |> Option.map (fun x -> Exp.Bool x)
 
-  let tr (l:W_lang.Literal.t) : Infer_exp.t =
-    match W_lang.Literal.to_int l with
-    | Some n -> Infer_exp.num n
-    | None ->
-      (match W_lang.Literal.to_bool l with
-        | Some b -> Infer_exp.bool b
-        | None -> Infer_exp.unknown (W_lang.Literal.to_string l))
+  let tr : t -> Infer_exp.t =
+    function
+    | Int n -> Infer_exp.num n
+    | Bool b -> Infer_exp.bool b
 end
 
 module Types = struct
@@ -75,8 +89,7 @@ module Expressions = struct
   open W_lang
   type t =
     | Unsupported
-    | Literal of Literal.t
-    | Constant
+    | Literal of Literals.t
     | ZeroValue of Type.t
     | Compose of {
         ty: Type.t;
@@ -123,7 +136,6 @@ module Expressions = struct
         comparison: bool;
       }
     | WorkGroupUniformLoadResult of Type.t
-    | ArrayLength of t
     | SubgroupBallotResult
     | SubgroupOperationResult of Type.t
 
@@ -167,8 +179,13 @@ module Expressions = struct
       let pure (e:expr) : t * expr = (ctx, e) in
       let unsupported = (ctx, Unsupported) in
       match e with
-      | Literal l -> pure (Literal l)
-      | Constant -> pure Constant
+      | Literal l ->
+        pure (
+          match Literals.parse l with
+          | Some l -> Literal l
+          | None -> Unsupported
+        )
+      | Constant -> unsupported
       | Override -> unsupported
       | ZeroValue ty -> pure (ZeroValue ty)
       | Compose {ty; components} ->
