@@ -19,4 +19,9 @@ let to_string (d:t) : string =
     |> Option.map (fun n -> " = " ^ Exp.n_to_string n)
     |> Option.value ~default:""
   in
-  ty ^ " " ^ x ^ init
+  let label =
+    match Variable.label_opt d.var with
+    | Some l -> " /* " ^ l ^ " */"
+    | None -> ""
+  in
+  ty ^ " " ^ x ^ init ^ label
