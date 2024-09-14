@@ -267,6 +267,8 @@ module Expressions = struct
         pure (AtomicResult {ty; comparison})
       | WorkGroupUniformLoadResult ty ->
         pure (WorkGroupUniformLoadResult ty)
+      | ArrayLength (Ident i) ->
+        pure (Ident (W_lang.Ident.add_suffix ".len" i))
       | ArrayLength expr ->
         let ctx = add ctx expr in
         (ctx, Unsupported)
@@ -464,14 +466,16 @@ module LocalDeclarations = struct
       | None -> ([], None)
     in
     stmts
-    @ [
+    @
+    if W_lang.Type.is_int l.ty then
+    [
       Imp.Stmt.Decl [{
         var=l.var;
         ty=Types.tr l.ty;
         init;
       }]
     ]
-
+    else []
   let tr : W_lang.LocalDeclaration.t list -> Imp.Stmt.t list =
     List.concat_map tr_local
 end

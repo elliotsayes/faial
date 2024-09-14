@@ -566,9 +566,13 @@ module Ident = struct
     ty: Type.t;
     kind: IdentKind.t;
   }
+
   let is_tid (a:t) : bool =
     a.kind = FunctionArgument (Some Binding.global_invocation_id)
     && Type.is_tid a.ty
+
+  let add_suffix (suffix:string) (x:t) =
+    { x with var = Variable.update_name (fun x -> x ^ suffix) x.var }
 
   let parse_location (j:json) : Location.t j_result =
     let open Rjson in
