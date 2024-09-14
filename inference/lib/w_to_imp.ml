@@ -487,11 +487,20 @@ module EntryPoints = struct
   :
     Imp.Kernel.t
   =
+    let arrays = globals_to_arrays globals in
+    let params =
+      arrays
+      |> Variable.Map.bindings
+      |> List.map (fun (x, _) ->
+          (Variable.add_suffix ".len" x, C_type.int)
+        )
+      |> Params.from_list
+    in
     {
       name = e.name;
       ty = "?";
-      arrays = globals_to_arrays globals;
-      params = Params.empty;
+      arrays = arrays;
+      params = params;
       code =
         Block (
         LocalDeclarations.tr e.function_.locals

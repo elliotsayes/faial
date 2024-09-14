@@ -38,6 +38,9 @@ let gdim_z : t = from_name "gridDim.z"
 let update_name (f: string -> string) (v:t) : t =
   { v with name = f v.name }
 
+let add_suffix (suffix:string) (v:t) : t =
+  { v with name = v.name ^ suffix }
+
 let set_name (name:string) : t -> t =
   update_name (fun _ -> name)
 

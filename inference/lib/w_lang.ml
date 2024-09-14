@@ -572,7 +572,7 @@ module Ident = struct
     && Type.is_tid a.ty
 
   let add_suffix (suffix:string) (x:t) =
-    { x with var = Variable.update_name (fun x -> x ^ suffix) x.var }
+    { x with var = Variable.add_suffix suffix x.var }
 
   let parse_location (j:json) : Location.t j_result =
     let open Rjson in
