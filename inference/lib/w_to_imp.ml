@@ -441,6 +441,7 @@ module Statements = struct
         inc = Some inc;
       } in
       stmts @ [Imp.For.to_stmt f body]
+    | Barrier _ -> [Imp.Stmt.Sync None]
     | _ ->
       []
 

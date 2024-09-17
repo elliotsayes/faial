@@ -339,6 +339,8 @@ module Binding = struct
 
   let global_invocation_id : t = BuiltIn BuiltIn.GlobalInvocationId
 
+  let num_workgroups : t = BuiltIn BuiltIn.NumWorkGroups
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -572,6 +574,16 @@ module IdentKind = struct
     | GlobalVariable
     | LocalVariable
     | CallResult
+
+  let is_thread_idx (k:t) : bool =
+    k = FunctionArgument (Some Binding.global_invocation_id)
+
+  let is_block_idx (k:t) : bool =
+    k = FunctionArgument (Some Binding.workgroup_id)
+
+  let is_grid_dim (k:t) : bool =
+    k = FunctionArgument (Some Binding.num_workgroups)
+
 end
 
 module Ident = struct
@@ -581,21 +593,35 @@ module Ident = struct
     kind: IdentKind.t;
   }
 
-  let is_thread_idx (a:t) : bool =
-    a.kind = FunctionArgument (Some Binding.global_invocation_id)
-    && Type.is_vec3_u32 a.ty
-
-  let is_block_idx (a:t) : bool =
-    a.kind = FunctionArgument (Some Binding.workgroup_id)
-
   let add_suffix (suffix:string) (x:t) =
     { x with var = Variable.add_suffix suffix x.var }
 
   let inline_field (index:int) (a:t) : t =
-    a.ty
-    |> Type.lookup_field index
-    |> Option.map (fun f -> add_suffix ("." ^ f) a)
-    |> Option.value ~default:(add_suffix (string_of_int index ^ ".") a)
+    let var =
+      if IdentKind.is_thread_idx a.kind then
+        List.nth_opt Variable.tid_list index
+      else if IdentKind.is_block_idx a.kind then
+        List.nth_opt Variable.bid_list index
+      else if IdentKind.is_grid_dim a.kind then
+        List.nth_opt Variable.gdim_list index
+      else
+        None
+    in
+    match var with
+    | Some var ->
+      { a with
+        var =
+          a.var
+          (* When the variable is pretty-printed, use original variable's name *)
+          |> Variable.set_label a.var.name
+          (* When the variable is used internally, use our internal name *)
+          |> Variable.set_name var.name
+      }
+    | None ->
+      a.ty
+      |> Type.lookup_field index
+      |> Option.map (fun f -> add_suffix ("." ^ f) a)
+      |> Option.value ~default:(add_suffix (string_of_int index ^ ".") a)
 
   let parse_location (j:json) : Location.t j_result =
     let open Rjson in
@@ -1414,7 +1440,7 @@ module Statement = struct
     | Continue
     | Return of Expression.t option
     | Kill
-    | Barrier (*Barrier*)
+    | Barrier of {storage: bool; work_group: bool; sub_group: bool;}
     | Store of {
         pointer: Expression.t;
         value: Expression.t;
@@ -1480,7 +1506,12 @@ module Statement = struct
         let* e = with_field "value" (cast_option Expression.parse) o in
         Ok (Return e)
       | "Kill" -> Ok Kill
-      | "Barrier" -> Ok Barrier
+      | "Barrier" ->
+        let* b = with_field "value" cast_object o in
+        let* storage = with_field "storage" cast_bool b in
+        let* work_group = with_field "work_group" cast_bool b in
+        let* sub_group = with_field "sub_group" cast_bool b in
+        Ok (Barrier {storage; work_group; sub_group;})
       | "Store" ->
         let* pointer = with_field "pointer" Expression.parse o in
         let* value = with_field "value" Expression.parse o in
@@ -1545,8 +1576,18 @@ module Statement = struct
     | Return (Some _) ->
       [Line "return TODO;"]
     | Kill -> [Line "kill;"]
-    | Barrier ->
-      [Line "barrier;"]
+    | Barrier b ->
+      if b.storage then
+        [Line "storageBarrier();"]
+      else []
+      @
+      if b.work_group then
+        [Indent.Line "workgroupBarrier();"]
+      else []
+      @
+      if b.sub_group then
+        [Indent.Line "subgroupBarrier();"]
+      else []
     | Store {pointer; value}->
       let line =
         Printf.sprintf "%s = %s;"
@@ -1739,7 +1780,7 @@ module Decl = struct
   type t = {
     name: string;
     space: AddressSpace.t;
-    binding: ResourceBinding.t;
+    binding: ResourceBinding.t option;
     ty: Type.t;
     (* TODO: init *)
   }
@@ -1749,7 +1790,7 @@ module Decl = struct
     let* name = with_field "name" cast_string o in
     let* ty = with_field "ty" Type.parse o in
     let* space = with_field "space" AddressSpace.parse o in
-    let* binding = with_field "binding" ResourceBinding.parse o in
+    let* binding = with_field "binding" (cast_option ResourceBinding.parse) o in
     Ok {ty; space; name; binding}
 
   let to_string (d:t) : string =
@@ -1761,8 +1802,13 @@ module Decl = struct
       if space <> "" then "<" ^ space ^ ">"
       else ""
     in
+    let binding =
+      d.binding
+      |> Option.map (fun x -> " " ^ ResourceBinding.to_string x)
+      |> Option.value ~default:""
+    in
     [
-    Line (ResourceBinding.to_string d.binding ^ " var" ^ space ^ " " ^ d.name ^": " ^ Type.to_string d.ty ^";")
+    Line (binding ^ "var" ^ space ^ " " ^ d.name ^": " ^ Type.to_string d.ty ^";")
     ]
 end
 
