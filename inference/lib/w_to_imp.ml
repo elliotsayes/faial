@@ -139,6 +139,9 @@ module Expressions = struct
     | SubgroupBallotResult
     | SubgroupOperationResult of Type.t
 
+  let int (i:int) : t =
+    Literal (Literals.Int i)
+
   module Context = struct
 
     type expr = t
@@ -191,6 +194,8 @@ module Expressions = struct
       | Compose {ty; components} ->
         let (ctx, components) = l_rewrite ctx components in
         (ctx, Compose {ty; components})
+      | AccessIndex {base=Ident {ty; var; _}; index} when Type.is_array ty ->
+        add_read ty var (int index) ctx
       | Access {base=Ident {ty; var; _}; index;} ->
         let (ctx, index) = rewrite ctx index in
         add_read ty var index ctx
@@ -392,6 +397,16 @@ module Statements = struct
     let open Imp.Stmt in
     let ret = Option.value ~default:[] in
     function
+    | Store {pointer=AccessIndex {base=Ident {var; ty; _}; index}; value}
+      when W_lang.Type.is_array ty
+      ->
+      let (stmts, value) = Expressions.n_tr value in
+      let payload =
+        match value with
+        | Num n -> Some n
+        | _ -> None
+      in
+      stmts @ [Write {array=var; index=[Num index]; payload}]
     | Store {pointer=Access {base; index}; value} ->
       ret (
         let* (_, array) = Variables.tr base in

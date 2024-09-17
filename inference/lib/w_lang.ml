@@ -437,6 +437,11 @@ module Type = struct
       | Scalar s -> Some s
       | _ -> None
 
+    let is_array (ty:t) : bool =
+      match ty.inner with
+      | Array _ -> true
+      | _ -> false
+
     let is_int (ty:t) : bool =
       ty
       |> to_scalar
