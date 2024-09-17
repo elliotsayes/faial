@@ -335,6 +335,8 @@ module Binding = struct
           sampling: Sampling.t option;
       }
 
+  let workgroup_id : t = BuiltIn BuiltIn.WorkGroupId
+
   let global_invocation_id : t = BuiltIn BuiltIn.GlobalInvocationId
 
   let parse (j:json) : t j_result =
@@ -439,8 +441,20 @@ module Type = struct
       |> Option.map Scalar.is_int
       |> Option.value ~default:false
 
-    let is_tid (ty:t) : bool =
+    let is_vec3_u32 (ty:t) : bool =
       ty.inner = i_vec3_u32
+
+    let vector_field : string list = ["x"; "y"; "z"; "w"]
+
+    let lookup_field (index:int) (ty:t) : string option =
+      match ty.inner with
+      | Vector _ ->
+          List.nth_opt vector_field index
+      | Struct {members; _} ->
+        index
+        |> List.nth_opt members
+        |> Option.map (fun (m:struct_member) -> m.name)
+      | _ -> None
 
     let deref (ty:t) : t option =
       match ty.inner with
@@ -567,12 +581,21 @@ module Ident = struct
     kind: IdentKind.t;
   }
 
-  let is_tid (a:t) : bool =
+  let is_thread_idx (a:t) : bool =
     a.kind = FunctionArgument (Some Binding.global_invocation_id)
-    && Type.is_tid a.ty
+    && Type.is_vec3_u32 a.ty
+
+  let is_block_idx (a:t) : bool =
+    a.kind = FunctionArgument (Some Binding.workgroup_id)
 
   let add_suffix (suffix:string) (x:t) =
     { x with var = Variable.add_suffix suffix x.var }
+
+  let inline_field (index:int) (a:t) : t =
+    a.ty
+    |> Type.lookup_field index
+    |> Option.map (fun f -> add_suffix ("." ^ f) a)
+    |> Option.value ~default:(add_suffix (string_of_int index ^ ".") a)
 
   let parse_location (j:json) : Location.t j_result =
     let open Rjson in

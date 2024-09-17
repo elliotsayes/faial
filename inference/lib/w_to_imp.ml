@@ -290,10 +290,9 @@ module Expressions = struct
     let rec to_i_exp : expr -> Imp.Infer_exp.t =
       function
       | Literal l -> Literals.tr l
-      | AccessIndex {base=Ident f; index}
-        when W_lang.Ident.is_tid f ->
-        let tid = List.nth Variable.tid_list index in
-        NExp (Var tid)
+      | AccessIndex {base=Ident f; index} ->
+        let f = Ident.inline_field index f in
+        NExp (Var f.var)
       | Ident {var; _} ->
         NExp (Var var)
       | Binary {op; left; right} ->
