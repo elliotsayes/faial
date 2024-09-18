@@ -289,6 +289,10 @@ module Kernel = struct
     code: 'a;
     (* The kernel's visibility *)
     visibility : visible;
+    (* Number of blocks *)
+    grid_dim: Dim3.t option;
+    (* Number of blocks *)
+    block_dim: Dim3.t option;
   }
 
   let apply_arch (a:Architecture.t) (k:Code.t t) : Code.t t =
@@ -378,6 +382,8 @@ module Kernel = struct
       global_variables = Params.empty;
       local_variables = Params.empty;
       visibility = k.visibility;
+      block_dim = None;
+      grid_dim = None;
     }
 
   let opt (k:Code.t t) : Code.t t =
@@ -478,6 +484,11 @@ module Kernel = struct
     assign_globals key_vals k
 
   let inline_all ~globals ~block_dim ~grid_dim (k:Code.t t) : Code.t t =
+    let or_ o1 o2 =
+      if Option.is_some o1 then o1 else o2
+    in
+    let block_dim = or_ k.block_dim block_dim in
+    let grid_dim = or_ k.grid_dim grid_dim in
     let to_dim k d =
       d
       |> Option.map (fun x -> [(k, x)])

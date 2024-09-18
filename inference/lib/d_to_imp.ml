@@ -935,10 +935,12 @@ let parse_kernel
     params;
     arrays;
     visibility =
-      match k.attribute with
-      | Default -> Global
-      | Auxiliary -> Device
-    ;
+      (match k.attribute with
+        | Default -> Proto.Kernel.Global
+        | Auxiliary -> Proto.Kernel.Device
+      );
+    block_dim = None;
+    grid_dim = None;
   })
 
 let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =

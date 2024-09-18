@@ -52,6 +52,10 @@ type t = {
   code: Stmt.t;
   (* Visibility *)
   visibility: Proto.Kernel.visible;
+  (* Number of blocks *)
+  grid_dim: Dim3.t option;
+  (* Number of blocks *)
+  block_dim: Dim3.t option;
 }
 
 (* Generate a unique id that pairs the name and type. *)
@@ -109,6 +113,8 @@ let compile (k:t) : Proto.Code.t Proto.Kernel.t =
     global_variables = globals;
     code = p;
     visibility = k.visibility;
+    block_dim = k.block_dim;
+    grid_dim = k.grid_dim;
   }
 
 let calls (k:t) : StringSet.t =

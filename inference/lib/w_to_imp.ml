@@ -532,6 +532,8 @@ module EntryPoints = struct
         LocalDeclarations.tr e.function_.locals
         @ Statements.tr_list e.function_.body);
       visibility = Global;
+      grid_dim = None;
+      block_dim = Some e.workgroup_size;
     }
 end
 
