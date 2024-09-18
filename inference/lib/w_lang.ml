@@ -631,11 +631,12 @@ module Ident = struct
   let parse_location (j:json) : Location.t j_result =
     let open Rjson in
     let* o = cast_object j in
+    let* filename = with_field "filename" cast_string o in
     let* line_number = with_field "line_number" cast_int o in
     let* line_position = with_field "line_position" cast_int o in
     let* length = with_field "length" cast_int o in
     Ok {
-      Location.filename = ""; (* TODO *)
+      Location.filename = filename;
       line = Index.from_base1 line_number;
       interval =
         Interval.from_range
