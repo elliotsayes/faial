@@ -98,6 +98,7 @@ module Expressions = struct
     | AccessIndex of {
         base: t;
         index: int;
+        location: Stage0.Location.t;
       }
     | Splat of {
         size: VectorSize.t;
@@ -194,16 +195,18 @@ module Expressions = struct
       | Compose {ty; components} ->
         let (ctx, components) = l_rewrite ctx components in
         (ctx, Compose {ty; components})
-      | AccessIndex {base=Ident {ty; var; _}; index} when Type.is_array ty ->
+      | AccessIndex {base=Ident {ty; var; _}; index; location} when Type.is_array ty ->
+        let var = Variable.set_location location var in
         add_read ty var (int index) ctx
-      | Access {base=Ident {ty; var; _}; index;} ->
+      | Access {base=Ident {ty; var; _}; index; location;} ->
         let (ctx, index) = rewrite ctx index in
+        let var = Variable.set_location location var in
         add_read ty var index ctx
       | Access {base; _} ->
         (add ctx base, Unsupported)
-      | AccessIndex {base; index} ->
+      | AccessIndex {base; index; location} ->
         let (ctx, base) = rewrite ctx base in
-        (ctx, AccessIndex {base; index})
+        (ctx, AccessIndex {base; index; location})
       | Splat {size; value} ->
         let (ctx, value) = rewrite ctx value in
         (ctx, Splat {size; value})
@@ -295,9 +298,14 @@ module Expressions = struct
     let rec to_i_exp : expr -> Imp.Infer_exp.t =
       function
       | Literal l -> Literals.tr l
-      | AccessIndex {base=Ident f; index} ->
-        let f = Ident.inline_field index f in
-        NExp (Var f.var)
+      | AccessIndex {base=Ident f; index; location} ->
+        let var =
+          f
+          |> Ident.inline_field index
+          |> Ident.var
+          |> Variable.set_location location
+        in
+        NExp (Var var)
       | Ident {var; _} ->
         NExp (Var var)
       | Binary {op; left; right} ->
@@ -397,7 +405,7 @@ module Statements = struct
     let open Imp.Stmt in
     let ret = Option.value ~default:[] in
     function
-    | Store {pointer=AccessIndex {base=Ident {var; ty; _}; index}; value}
+    | Store {pointer=AccessIndex {base=Ident {var; ty; _}; index; location}; value}
       when W_lang.Type.is_array ty
       ->
       let (stmts, value) = Expressions.n_tr value in
@@ -406,10 +414,13 @@ module Statements = struct
         | Num n -> Some n
         | _ -> None
       in
+      let var = Variable.set_location location var in
       stmts @ [Write {array=var; index=[Num index]; payload}]
-    | Store {pointer=Access {base; index}; value} ->
+    | Store {pointer=Access {base; index; location}; value; } ->
       ret (
         let* (_, array) = Variables.tr base in
+        let array = { array with location = Some location } in
+        let array = Variable.set_location location array in
         let (stmts1, index) = Expressions.n_tr index in
         let (stmts2, value) = Expressions.n_tr value in
         let payload =

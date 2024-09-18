@@ -591,12 +591,37 @@ module IdentKind = struct
 
 end
 
+let parse_location (j:json) : Location.t j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  let* filename = with_field "filename" cast_string o in
+  let* line_number = with_field "line_number" cast_int o in
+  let* line_position = with_field "line_position" cast_int o in
+  let* length = with_field "length" cast_int o in
+  Ok {
+    Location.filename = filename;
+    line = Index.from_base1 line_number;
+    interval =
+      Interval.from_range
+        ~start:(Index.from_base1 line_position)
+        ~length;
+  }
+
+let parse_var (o:Rjson.j_object) : Variable.t j_result =
+  let open Rjson in
+  let* name = with_field "name" cast_string o in
+  let* location = with_field "location" parse_location o in
+  Ok (Variable.make ~name ~location)
+
 module Ident = struct
   type t = {
     var: Variable.t;
     ty: Type.t;
     kind: IdentKind.t;
   }
+
+  let var (i:t) : Variable.t =
+    i.var
 
   let add_suffix (suffix:string) (x:t) =
     { x with var = Variable.add_suffix suffix x.var }
@@ -627,28 +652,6 @@ module Ident = struct
       |> Type.lookup_field index
       |> Option.map (fun f -> add_suffix ("." ^ f) a)
       |> Option.value ~default:(add_suffix (string_of_int index ^ ".") a)
-
-  let parse_location (j:json) : Location.t j_result =
-    let open Rjson in
-    let* o = cast_object j in
-    let* filename = with_field "filename" cast_string o in
-    let* line_number = with_field "line_number" cast_int o in
-    let* line_position = with_field "line_position" cast_int o in
-    let* length = with_field "length" cast_int o in
-    Ok {
-      Location.filename = filename;
-      line = Index.from_base1 line_number;
-      interval =
-        Interval.from_range
-          ~start:(Index.from_base1 line_position)
-          ~length;
-    }
-
-  let parse_var (o:Rjson.j_object) : Variable.t j_result =
-    let open Rjson in
-    let* name = with_field "name" cast_string o in
-    let* location = with_field "location" parse_location o in
-    Ok (Variable.make ~name ~location)
 
   let parse (j:json) : t j_result =
     let open Rjson in
@@ -1063,10 +1066,12 @@ module Expression = struct
     | Access of {
         base: t;
         index: t;
+        location: Location.t;
       }
     | AccessIndex of {
         base: t;
         index: int;
+        location: Location.t;
       }
     | Splat of {
         size: VectorSize.t;
@@ -1165,9 +1170,9 @@ module Expression = struct
         |> Common.join ", "
       in
       Type.to_string ty ^ "(" ^ components ^ ")"
-    | Access {base; index} ->
+    | Access {base; index; location=_;} ->
       to_string base ^ "[" ^ to_string index ^ "]"
-    | AccessIndex {base; index} ->
+    | AccessIndex {base; index; location=_;} ->
       to_string base ^ "." ^ string_of_int index
     | Splat _ -> (*TODO*)
       "Splat(TODO)"
@@ -1260,11 +1265,13 @@ module Expression = struct
     | "Access" ->
       let* base = with_field "base" parse o in
       let* index = with_field "index" parse o in
-      Ok (Access {base; index;})
+      let* location = with_field "location" parse_location o in
+      Ok (Access {base; index; location;})
     | "AccessIndex" ->
       let* base = with_field "base" parse o in
       let* index = with_field "index" cast_int o in
-      Ok (AccessIndex {base; index;})
+      let* location = with_field "location" parse_location o in
+      Ok (AccessIndex {base; index; location;})
     | "Splat" ->
       let* value = with_field "value" parse o in
       let* size = with_field "size" VectorSize.parse o in
@@ -1411,7 +1418,7 @@ module LocalDeclaration = struct
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
-    let* var = Ident.parse_var o in
+    let* var = parse_var o in
     let* init = with_field "init" (cast_option Expression.parse) o in
     let* ty = with_field "ty" Type.parse o in
     Ok {var; init; ty}
