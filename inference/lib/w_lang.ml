@@ -50,6 +50,8 @@ module ScalarKind = struct
     | AbstractInt -> "abstract i"
     | AbstractFloat -> "abstract f"
 
+  let is_unsigned (x:t) : bool =
+    x = Uint
 end
 
 module Scalar = struct
@@ -68,6 +70,9 @@ module Scalar = struct
 
   let is_int (s:t) : bool =
     ScalarKind.is_int s.kind
+
+  let is_unsigned (s:t) : bool =
+    ScalarKind.is_unsigned s.kind
 
   let to_string (s:t) : string =
     ScalarKind.to_string s.kind ^ string_of_int (8 * s.width)
@@ -610,8 +615,7 @@ let parse_location (j:json) : Location.t j_result =
 let parse_var (o:Rjson.j_object) : Variable.t j_result =
   let open Rjson in
   let* name = with_field "name" cast_string o in
-  let* location = with_field "location" parse_location o in
-  Ok (Variable.make ~name ~location)
+  Ok (Variable.from_name name)
 
 module Ident = struct
   type t = {

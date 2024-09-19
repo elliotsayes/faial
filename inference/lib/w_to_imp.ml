@@ -2,39 +2,41 @@ open Protocols
 
 let ( let* ) = Option.bind
 
-let tr_address_space : W_lang.AddressSpace.t-> Mem_hierarchy.t option =
-  function
-  | WorkGroup -> Some Mem_hierarchy.SharedMemory
-  | Storage ReadWrite
-  | Storage WriteOnly -> Some Mem_hierarchy.GlobalMemory
-  | Storage ReadOnly
-  | Uniform
-  | Handle
-  | PushConstant
-  | Function
-  | Private -> None
+module Arrays = struct
+  let tr_address_space : W_lang.AddressSpace.t-> Mem_hierarchy.t option =
+    function
+    | WorkGroup -> Some Mem_hierarchy.SharedMemory
+    | Storage ReadWrite
+    | Storage WriteOnly -> Some Mem_hierarchy.GlobalMemory
+    | Storage ReadOnly
+    | Uniform
+    | Handle
+    | PushConstant
+    | Function
+    | Private -> None
 
-let tr_type (ty:W_lang.Type.t) : (int list * string list) option =
-  match ty.inner with
-  | Array {base; size} ->
-    Some (Option.to_list size , [W_lang.Type.to_string base])
-  | _ -> None
+  let tr_type (ty:W_lang.Type.t) : (int list * string list) option =
+    match ty.inner with
+    | Array {base; size} ->
+      Some (Option.to_list size , [W_lang.Type.to_string base])
+    | _ -> None
 
-let tr_decl (d: W_lang.Decl.t) : (Variable.t * Memory.t) option =
-  let ( let* ) = Option.bind in
-  let* h : Mem_hierarchy.t = tr_address_space d.space in
-  let* (size, data_type) = tr_type d.ty in
-  let name = d.name in
-  Some (Variable.from_name name, Memory.{hierarchy=h; size; data_type})
+  let tr_decl (d: W_lang.Decl.t) : (Variable.t * Memory.t) option =
+    let ( let* ) = Option.bind in
+    let* h : Mem_hierarchy.t = tr_address_space d.space in
+    let* (size, data_type) = tr_type d.ty in
+    let name = d.name in
+    Some (Variable.from_name name, Memory.{hierarchy=h; size; data_type})
 
-let globals_to_arrays
-  (globals: W_lang.Decl.t list)
-:
-  Memory.t Variable.Map.t
-=
-  globals
-  |> List.filter_map tr_decl
-  |> Variable.Map.of_list
+  let tr
+    (globals: W_lang.Decl.t list)
+  :
+    Memory.t Variable.Map.t
+  =
+    globals
+    |> List.filter_map tr_decl
+    |> Variable.Map.of_list
+end
 
 module Literals = struct
   open Imp
@@ -71,9 +73,31 @@ end
 module Types = struct
   open W_lang
   let tr (ty:Type.t) : C_type.t =
-    ty
-    |> Type.to_string
-    |> C_type.make
+    match ty.inner with
+    | Scalar s when Scalar.is_int s ->
+      let unsigned = if Scalar.is_unsigned s then "u" else "" in
+      let width = string_of_int (s.width * 8) in
+      C_type.make (unsigned ^ "int" ^ width ^ "_t")
+    | _ ->
+      ty
+      |> Type.to_string
+      |> C_type.make
+end
+
+module Globals = struct
+  let tr (d:W_lang.Decl.t) : (Variable.t * C_type.t) list =
+    match d.ty.inner with
+    | Scalar s when W_lang.Scalar.is_int s -> [(Variable.from_name d.name, Types.tr d.ty)]
+    | Array _ -> [(Variable.from_name (d.name ^ ".len"), C_type.int)]
+    | Struct {members=l; _} ->
+      List.filter_map (fun m ->
+          let open W_lang.Type in
+          if W_lang.Type.is_int m.ty then
+            Some ((Variable.from_name (d.name ^ "." ^ m.name), Types.tr m.ty))
+          else
+            None
+        ) l
+    | _ -> []
 end
 
 module Variables = struct
@@ -513,13 +537,10 @@ module EntryPoints = struct
   :
     Imp.Kernel.t
   =
-    let arrays = globals_to_arrays globals in
+    let arrays = Arrays.tr globals in
     let params =
-      arrays
-      |> Variable.Map.bindings
-      |> List.map (fun (x, _) ->
-          (Variable.add_suffix ".len" x, C_type.int)
-        )
+      globals
+      |> List.concat_map Globals.tr
       |> Params.from_list
     in
     {
