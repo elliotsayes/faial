@@ -68,7 +68,7 @@ let main (fname : string) : unit =
     (try
       List.iter (fun p ->
         let ctx = create_ctx ~bank_count:32 ~env ~arrays:(shared_arrays p) in
-        let v = Vectorized.eval Metric.BankConflicts p.code ctx in
+        let v = Vectorized.eval ~verbose:true Metric.BankConflicts p.code ctx in
         print_endline ("Total cost: " ^ string_of_int v)
       ) proto;
       ()

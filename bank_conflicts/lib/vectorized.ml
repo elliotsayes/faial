@@ -295,6 +295,7 @@ let b_eval (e:Exp.bexp) (ctx:t) : BMap.t =
   b_eval_res e ctx |> Result.get_ok
 
 let to_cost
+  ?(verbose=false)
   (m:Metric.t)
   (index:Exp.nexp)
   (ctx:t)
@@ -304,7 +305,11 @@ let to_cost
   if m = Metric.CountAccesses then Ok (Cost.from_int 1) else
   let* idx = n_eval_res index ctx in
   let* enabled = b_eval_res ctx.cond ctx in
+  if verbose then
+  print_endline ("accessing index: " ^ NMap.to_string idx);
   let idx = NMap.to_array idx in
+  if verbose then
+  print_endline ("active threads: " ^ BMap.to_string enabled);
   let enabled = BMap.to_array enabled in
   let is_valid : bool =
     Array.combine idx enabled
@@ -347,14 +352,14 @@ let iter_res (r:Range.t) (ctx:t) : (loop, string) Result.t =
 let iter (r:Range.t) (ctx:t) : loop =
   iter_res r ctx |> Result.get_ok
 
-let eval (m:Metric.t) : Proto.Code.t -> t -> int =
+let eval ?(verbose=false) (m:Metric.t) : Proto.Code.t -> t -> int =
   let rec eval (cost:int) (p:Proto.Code.t) (ctx:t) : int =
     match p with
     | Sync _
     | Skip -> cost
     | Acc (x, {index=[n]; _}) ->
       if ctx.use_array x then
-        let c = to_cost m n ctx |> Result.get_ok |> Cost.value in
+        let c = to_cost ~verbose m n ctx |> Result.get_ok |> Cost.value in
         cost + c
       else
         cost
