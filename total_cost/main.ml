@@ -26,6 +26,7 @@ module Solver = struct
     use_koat: bool;
     koat_exe: string;
     show_code: bool;
+    show_map: bool;
     show_ra: bool;
     skip_simpl_ra: bool;
     asympt: bool;
@@ -68,6 +69,7 @@ module Solver = struct
     ~strategy
     ~metric
     ~compact
+    ~show_map
   :
     t
   =
@@ -102,6 +104,7 @@ module Solver = struct
       strategy;
       metric;
       compact;
+      show_map;
     }
 
   let gen_cost
@@ -220,6 +223,11 @@ module Solver = struct
           ~globals:s.params
         )
       |> List.map Proto.Kernel.opt
+      |> List.map (fun p ->
+        if s.show_map then
+          Proto.Kernel.print Proto.Code.to_s p
+        ;
+        p)
     in
     TotalCost (List.map (pair (total_cost s)) ks)
 
@@ -305,6 +313,7 @@ let run
   ?(show_code=false)
   ?(maxima_exe="maxima")
   ?(show_ra=false)
+  ?(show_map=false)
   ?(skip_simpl_ra=true)
   ~skip_distinct_vars
   ~asympt
@@ -351,6 +360,7 @@ let run
     ~strategy
     ~metric
     ~compact
+    ~show_map
   in
   if output_json then
     JUI.run app
@@ -386,6 +396,7 @@ let pico
   (metric:Metric.t)
   (compact:bool)
   (ignore_parsing_errors:bool)
+  (show_map:bool)
 =
   let parsed = Protocol_parser.Silent.to_proto
     ~abort_on_parsing_failure:(not ignore_parsing_errors)
@@ -422,6 +433,7 @@ let pico
     ~strategy
     ~metric
     ~compact
+    ~show_map
     parsed.kernels
 
 
@@ -556,6 +568,9 @@ let ignore_parsing_errors =
   let doc = "Parsing errors do not abort analysis" in
   Arg.(value & flag & info ["ignore-parsing-errors"] ~doc)
 
+let show_map =
+  let doc = "Show the inferred Memory Access Protocol (MAP)." in
+  Arg.(value & flag & info ["show-map"] ~doc)
 
 
 let pico_t = Term.(
@@ -587,6 +602,7 @@ let pico_t = Term.(
   $ metric
   $ compact
   $ ignore_parsing_errors
+  $ show_map
 )
 
 let info =
