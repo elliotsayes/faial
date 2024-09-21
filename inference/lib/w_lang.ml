@@ -938,7 +938,6 @@ module MathFunction = struct
     | Log2
     | Pow
     | Dot
-    | Outer
     | Cross
     | Distance
     | Length
@@ -953,7 +952,6 @@ module MathFunction = struct
     | SmoothStep
     | Sqrt
     | InverseSqrt
-    | Inverse
     | Transpose
     | Determinant
     | CountTrailingZeros
@@ -1017,7 +1015,6 @@ module MathFunction = struct
     | "Log2" -> Ok Log2
     | "Pow" -> Ok Pow
     | "Dot" -> Ok Dot
-    | "Outer" -> Ok Outer
     | "Cross" -> Ok Cross
     | "Distance" -> Ok Distance
     | "Length" -> Ok Length
@@ -1032,7 +1029,6 @@ module MathFunction = struct
     | "SmoothStep" -> Ok SmoothStep
     | "Sqrt" -> Ok Sqrt
     | "InverseSqrt" -> Ok InverseSqrt
-    | "Inverse" -> Ok Inverse
     | "Transpose" -> Ok Transpose
     | "Determinant" -> Ok Determinant
     | "CountTrailingZeros" -> Ok CountTrailingZeros
@@ -1061,9 +1057,78 @@ module MathFunction = struct
 
   let to_string : t -> string =
     function
+    | Abs -> "abs"
     | Min -> "min"
     | Max -> "max"
-    | _ -> "MathFunction(TODO)"
+    | Clamp -> "clamp"
+    | Saturate -> "saturate"
+    | Cos -> "cos"
+    | Cosh -> "cosh"
+    | Sin -> "sin"
+    | Sinh -> "sinh"
+    | Tan -> "tan"
+    | Tanh -> "tanh"
+    | Acos -> "acos"
+    | Asin -> "asin"
+    | Atan -> "atan"
+    | Atan2 -> "atan2"
+    | Asinh -> "asinh"
+    | Acosh -> "acosh"
+    | Atanh -> "atanh"
+    | Radians -> "radians"
+    | Degrees -> "degrees"
+    | Ceil -> "ceil"
+    | Floor -> "floor"
+    | Round -> "round"
+    | Fract -> "fract"
+    | Trunc -> "trunc"
+    | Modf -> "modf"
+    | Frexp -> "frexp"
+    | Ldexp -> "ldexp"
+    | Exp -> "exp"
+    | Exp2 -> "exp2"
+    | Log -> "log"
+    | Log2 -> "log2"
+    | Pow -> "pow"
+    | Dot -> "dot"
+    | Cross -> "cross"
+    | Distance -> "distance"
+    | Length -> "length"
+    | Normalize -> "normalize"
+    | FaceForward -> "faceForward"
+    | Reflect -> "reflect"
+    | Refract -> "refract"
+    | Sign -> "sign"
+    | Fma -> "fma"
+    | Mix -> "mix"
+    | Step -> "step"
+    | SmoothStep -> "smoothstep"
+    | Sqrt -> "sqrt"
+    | InverseSqrt -> "inverseSqrt"
+    | Transpose -> "transpose"
+    | Determinant -> "determinant"
+    | CountTrailingZeros -> "countTrailingZeros"
+    | CountLeadingZeros -> "countLeadingZeros"
+    | CountOneBits -> "countOneBits"
+    | ReverseBits -> "reverseBits"
+    | ExtractBits -> "extractBits"
+    | InsertBits -> "insertBits"
+    | FindLsb -> "firstTrailingBit"
+    | FindMsb -> "firstLeadingBit"
+    | Pack4x8snorm -> "pack4x8snorm"
+    | Pack4x8unorm -> "pack4x8unorm"
+    | Pack2x16snorm -> "pack2x16snorm"
+    | Pack2x16unorm -> "pack2x16unorm"
+    | Pack2x16float -> "pack2x16float"
+    | Pack4xI8 -> "pack4xI8"
+    | Pack4xU8 -> "pack4xU8"
+    | Unpack4x8snorm -> "unpack4x8snorm"
+    | Unpack4x8unorm -> "unpack4x8unorm"
+    | Unpack2x16snorm -> "unpack2x16snorm"
+    | Unpack2x16unorm -> "unpack2x16unorm"
+    | Unpack2x16float -> "unpack2x16float"
+    | Unpack4xI8 -> "unpack4xI8"
+    | Unpack4xU8 -> "unpack4xU8"
 end
 
 module Expression = struct
