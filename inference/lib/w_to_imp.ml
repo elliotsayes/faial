@@ -5,15 +5,18 @@ let ( let* ) = Option.bind
 module Arrays = struct
   let tr_address_space : W_lang.AddressSpace.t-> Mem_hierarchy.t option =
     function
-    | WorkGroup -> Some Mem_hierarchy.SharedMemory
+    | WorkGroup ->
+      Some Mem_hierarchy.SharedMemory
     | Storage ReadWrite
-    | Storage WriteOnly -> Some Mem_hierarchy.GlobalMemory
-    | Storage ReadOnly
+    | Storage WriteOnly
+    | Storage ReadOnly ->
+      Some Mem_hierarchy.GlobalMemory
     | Uniform
     | Handle
     | PushConstant
     | Function
-    | Private -> None
+    | Private ->
+      None
 
   let tr_type (ty:W_lang.Type.t) : (int list * string list) option =
     match ty.inner with
