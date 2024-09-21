@@ -519,6 +519,10 @@ module Type = struct
           | None -> ""
         in
         "struct " ^ name ^ "{" ^ (List.map struct_to_string m |> Common.join ", ") ^ "};"
+      | Matrix {columns; rows; scalar} ->
+        let columns = VectorSize.to_string columns in
+        let rows = VectorSize.to_string rows in
+        "mat" ^ rows ^ "x" ^ columns ^ "<" ^ Scalar.to_string scalar ^ ">"
       | k -> failwith ("inner_to_string: unsupported kind:" ^ kind k)
 
   and to_string (e:t) : string =
@@ -566,6 +570,11 @@ module Type = struct
       let* span = with_field "span" cast_int o in
       let* members = with_field "members" (cast_map struct_parse) o in
       Ok (Struct {span; members;})
+    | "Matrix" ->
+      let* rows = with_field "rows" VectorSize.parse o in
+      let* columns = with_field "columns" VectorSize.parse o in
+      let* scalar = with_field "scalar" Scalar.parse o in
+      Ok (Matrix {rows; columns; scalar})
     | _ -> root_cause ("inner_parse: unsupported kind: " ^ kind) j
 
   and struct_parse (j:json) : struct_member j_result =
@@ -1284,7 +1293,18 @@ module Expression = struct
       let* vector = with_field "vector" parse o in
       let* pattern = with_field "pattern" (cast_map cast_string) o in
       Ok (Swizzle {size; vector; pattern;})
-    | "CallResult"
+    | "CallResult" ->
+      let* i =
+        if List.assoc_opt "name" o  = Some `Null then
+          (* Naga will set name to null when the result is the result
+             of the previous call performed. We use @Call to represent
+             the contents of the last write. *)
+          let* ty = with_field "ty" Type.parse o in
+          Ok Ident.{var=Variable.from_name "@Call"; ty; kind=CallResult}
+        else
+          Ident.parse j in
+      Ok (Ident i)
+
     | "FunctionArgument"
     | "GlobalVariable"
     | "LocalVariable" ->
