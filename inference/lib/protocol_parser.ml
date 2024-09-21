@@ -76,6 +76,8 @@ module Make (L:Logger.Logger) = struct
       exit(exit_status)
 
   let wgsl_to_imp
+    ?(block_dim=None)
+    ?(grid_dim=None)
     ?(exit_status=2)
     ?(wgsl_to_json="wgsl-to-json")
     ?(ignore_asserts=false)
@@ -89,6 +91,18 @@ module Make (L:Logger.Logger) = struct
       fname
     in
     let options : Gv_parser.t = Gv_parser.make () in
+    (* Override block_dim/grid_dim if they user provided *)
+    let options = { options with
+      block_dim = (match block_dim with
+      | Some b -> b
+      | None -> options.block_dim
+      );
+      grid_dim = (match grid_dim with
+      | Some g -> g
+      | None -> options.grid_dim
+      );
+    }
+    in
     match W_lang.Program.parse j with
     | Ok p ->
       let kernels = W_to_imp.translate p in
@@ -121,6 +135,8 @@ module Make (L:Logger.Logger) = struct
     imp_kernel t =
   if String.ends_with ~suffix:".wgsl" fname then
     wgsl_to_imp
+      ~block_dim
+      ~grid_dim
       ~exit_status
       ~wgsl_to_json
       ~ignore_asserts
