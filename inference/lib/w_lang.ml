@@ -1178,8 +1178,7 @@ module Expression = struct
       to_string base ^ "[" ^ to_string index ^ "]"
     | AccessIndex {base; index; location=_;} ->
       to_string base ^ "." ^ string_of_int index
-    | Splat _ -> (*TODO*)
-      "Splat(TODO)"
+    | Splat {size; value} -> "vec" ^ VectorSize.to_string size ^ "(" ^ to_string value ^ ")"
     | Swizzle {vector; pattern; size} ->
       let pattern =
         Slice.from_finish (VectorSize.to_int size)
