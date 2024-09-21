@@ -465,7 +465,7 @@ module Statements = struct
     | If {condition; accept=[Return None]; reject=[]}
     | If {condition; accept=[Continue]; reject=[]} ->
       let (stmts, c) = Expressions.b_tr condition in
-      stmts @ [Assert (Imp.Assert.make c Local)]
+      stmts @ [Assert (Imp.Assert.make (Exp.b_not c) Local)]
     | If {condition; accept; reject} ->
       let (stmts, c) = Expressions.b_tr condition in
       stmts @ [
