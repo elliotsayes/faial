@@ -533,34 +533,6 @@ module LocalDeclarations = struct
     List.concat_map tr_local
 end
 
-module EntryPoints = struct
-  let tr
-    (globals:W_lang.Decl.t list)
-    (e: W_lang.EntryPoint.t)
-  :
-    Imp.Kernel.t
-  =
-    let arrays = Arrays.tr globals in
-    let params =
-      globals
-      |> List.concat_map Globals.tr
-      |> Params.from_list
-    in
-    {
-      name = e.name;
-      ty = "?";
-      arrays = arrays;
-      params = params;
-      code =
-        Block (
-        LocalDeclarations.tr e.function_.locals
-        @ Statements.tr_list e.function_.body);
-      visibility = Global;
-      grid_dim = None;
-      block_dim = Some e.workgroup_size;
-    }
-end
-
 module Functions = struct
   let tr
     (globals:W_lang.Decl.t list)
@@ -589,6 +561,19 @@ module Functions = struct
     }
 end
 
+
+module EntryPoints = struct
+  let tr
+    (globals:W_lang.Decl.t list)
+    (e: W_lang.EntryPoint.t)
+  :
+    Imp.Kernel.t
+  =
+    { (Functions.tr globals e.function_) with
+      block_dim = Some e.workgroup_size;
+      visibility = Global;
+    }
+end
 let translate (p: W_lang.Program.t) : Imp.Kernel.t list =
   let globals : W_lang.Decl.t list =
     List.filter_map (
