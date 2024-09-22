@@ -561,20 +561,48 @@ module EntryPoints = struct
     }
 end
 
+module Functions = struct
+  let tr
+    (globals:W_lang.Decl.t list)
+    (e: W_lang.Function.t)
+  :
+    Imp.Kernel.t
+  =
+    let arrays = Arrays.tr globals in
+    let params =
+      globals
+      |> List.concat_map Globals.tr
+      |> Params.from_list
+    in
+    {
+      name = e.name;
+      ty = "?";
+      arrays = arrays;
+      params = params;
+      code =
+        Block (
+        LocalDeclarations.tr e.locals
+        @ Statements.tr_list e.body);
+      visibility = Device;
+      grid_dim = None;
+      block_dim = None;
+    }
+end
+
 let translate (p: W_lang.Program.t) : Imp.Kernel.t list =
   let globals : W_lang.Decl.t list =
     List.filter_map (
       let open W_lang.Def in
       function
-      | EntryPoint _ -> None
+      | EntryPoint _ | Function _ -> None
       | Declaration d -> Some d
     ) p
   in
   p
   |> List.filter_map (
-    let open W_lang.Def in
-    function
-    | EntryPoint e -> Some e
-    | Declaration _ -> None
-  )
-  |> List.map (EntryPoints.tr globals)
+      let open W_lang.Def in
+      function
+      | EntryPoint e -> Some (EntryPoints.tr globals e)
+      | Function f -> Some (Functions.tr globals f)
+      | Declaration _ -> None
+    )

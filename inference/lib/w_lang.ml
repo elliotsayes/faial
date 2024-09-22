@@ -1775,6 +1775,38 @@ module Function = struct
     let* locals = with_field "locals" (cast_map LocalDeclaration.parse) o in
     let* body = with_field "body" (cast_map Statement.parse) o in
     Ok {name; result; arguments; locals; body}
+
+
+  let to_string (e:t) : string =
+    e.name
+
+  let to_s (f:t) : Indent.t list =
+    let args =
+      f.arguments
+      |> List.map FunctionArgument.to_string
+      |> Common.join ", "
+    in
+    let locals : string =
+      f.locals
+      |> List.map LocalDeclaration.to_string
+      |> Common.join ", "
+    in
+    [
+      Line (
+(*         "@" ^ ShaderStage.to_string d.stage ^ *)
+(*         " @workgroup_size(" ^ Dim3.to_string d.workgroup_size ^ ")" ^ *)
+        " fn " ^ f.name ^ "(" ^ args ^ ") {"
+      );
+      Block (
+        (if locals = "" then [] else
+          [
+            Indent.Line ("var " ^ locals ^ ";");
+          ]
+        )
+        @ Statement.block_to_s f.body
+      );
+      Line "}"
+    ]
 end
 
 module ShaderStage = struct
@@ -1917,6 +1949,7 @@ module Def = struct
   type t =
     | EntryPoint of EntryPoint.t
     | Declaration of Decl.t
+    | Function of Function.t
 
   let parse (j:json) : t j_result =
     let open Rjson in
@@ -1929,7 +1962,9 @@ module Def = struct
     | "EntryPoint" ->
       let* e = EntryPoint.parse j in
       Ok (EntryPoint e)
-
+    | "Function" ->
+      let* f = Function.parse j in
+      Ok (Function f)
     | _ ->
       root_cause ("Def.parse: unknown kind: " ^ kind) j
 
@@ -1937,11 +1972,13 @@ module Def = struct
     function
     | EntryPoint e -> EntryPoint.to_string e
     | Declaration d -> Decl.to_string d
+    | Function f -> Function.to_string f
 
   let to_s : t -> Indent.t list =
     function
     | EntryPoint e -> EntryPoint.to_s e
     | Declaration e -> Decl.to_s e
+    | Function f -> Function.to_s f
 end
 
 module Program = struct
