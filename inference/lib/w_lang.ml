@@ -686,7 +686,15 @@ module Ident = struct
       | _ ->
         root_cause ("Indent.parse: unknown kind: " ^ kind) j
     in
-    let* var = parse_var o in
+    let* var =
+      if kind = CallResult && List.assoc_opt "name" o  = Some `Null then
+        (* Naga will set name to null when the result is the result
+            of the previous call performed. We use @Call to represent
+            the contents of the last write. *)
+        Ok (Variable.from_name "@Call")
+      else
+        parse_var o
+    in
     Ok {ty; var; kind}
 
   let to_string (x:t) : string =
@@ -1358,18 +1366,7 @@ module Expression = struct
       let* vector = with_field "vector" parse o in
       let* pattern = with_field "pattern" (cast_map cast_string) o in
       Ok (Swizzle {size; vector; pattern;})
-    | "CallResult" ->
-      let* i =
-        if List.assoc_opt "name" o  = Some `Null then
-          (* Naga will set name to null when the result is the result
-             of the previous call performed. We use @Call to represent
-             the contents of the last write. *)
-          let* ty = with_field "ty" Type.parse o in
-          Ok Ident.{var=Variable.from_name "@Call"; ty; kind=CallResult}
-        else
-          Ident.parse j in
-      Ok (Ident i)
-
+    | "CallResult"
     | "FunctionArgument"
     | "GlobalVariable"
     | "LocalVariable" ->
@@ -1565,7 +1562,7 @@ module Statement = struct
     | Call of {
         function_: string;
         arguments: Expression.t list;
-        result: Expression.t option;
+        result: Ident.t option;
       }
     | SubgroupBallot (* {
         result: Handle<Expression>,
@@ -1623,7 +1620,7 @@ module Statement = struct
       | "Call" ->
         let* function_ = with_field "function" cast_string o in
         let* arguments = with_field "arguments" (cast_map Expression.parse) o in
-        let* result = with_field "result" (cast_option Expression.parse) o in
+        let* result = with_field "result" (cast_option Ident.parse) o in
         Ok (Call{function_; arguments; result})
       | "SubgroupBallot" -> Ok SubgroupBallot
       | "SubgroupGather" -> Ok SubgroupGather
@@ -1723,7 +1720,7 @@ module Statement = struct
       ->
       let result =
         result
-        |> Option.map (fun e -> "let " ^ Expression.to_string e ^ " = ")
+        |> Option.map (fun e -> "let " ^ Ident.to_string e ^ " = ")
         |> Option.value ~default:""
       in
       let arguments =
