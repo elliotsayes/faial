@@ -1674,8 +1674,8 @@ module Statement = struct
     | Continue -> [Line "continue;"]
     | Return None ->
       [Line "return;"]
-    | Return (Some _) ->
-      [Line "return TODO;"]
+    | Return (Some e) ->
+      [Line ("return " ^ Expression.to_string e ^ ";")]
     | Kill -> [Line "kill;"]
     | Barrier b ->
       if b.storage then
@@ -1792,11 +1792,7 @@ module Function = struct
       |> Common.join ", "
     in
     [
-      Line (
-(*         "@" ^ ShaderStage.to_string d.stage ^ *)
-(*         " @workgroup_size(" ^ Dim3.to_string d.workgroup_size ^ ")" ^ *)
-        " fn " ^ f.name ^ "(" ^ args ^ ") {"
-      );
+      Line (" fn " ^ f.name ^ "(" ^ args ^ ") {");
       Block (
         (if locals = "" then [] else
           [
