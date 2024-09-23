@@ -666,6 +666,8 @@ module Ident = struct
       |> Option.map (fun f -> add_suffix ("." ^ f) a)
       |> Option.value ~default:(add_suffix (string_of_int index ^ ".") a)
 
+  let call : Variable.t = Variable.from_name "@Call"
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -691,7 +693,7 @@ module Ident = struct
         (* Naga will set name to null when the result is the result
             of the previous call performed. We use @Call to represent
             the contents of the last write. *)
-        Ok (Variable.from_name "@Call")
+        Ok call
       else
         parse_var o
     in
@@ -708,6 +710,12 @@ module FunctionArgument = struct
     ty: Type.t;
     binding: Binding.t option
   }
+
+  let ty (f:t) : Type.t =
+    f.ty
+
+  let name (f:t) : string =
+    f.name
 
   let parse (j:json) : t j_result =
     let open Rjson in

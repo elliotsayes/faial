@@ -423,86 +423,202 @@ module Expressions = struct
     in
     (reads @ decls, e)
 
-  let ( let* ) = Option.bind
+
+  let n_list_tr (l: W_lang.Expression.t list) : (Imp.Stmt.t list * Exp.nexp list) =
+    let (reads, l) = Context.l_rewrite [] l in
+    let reads = List.concat_map r_tr reads in
+    let (decls, l) =
+      l
+      |> List.map Context.to_i_exp
+      |> Imp.Infer_exp.infer_nexp_list
+    in
+    (reads @ decls, l)
+
+end
+
+module Signature = struct
+  open W_lang
+  type t = (string * Type.t) list
+  let from_function (f:Function.t) : t =
+    f.arguments
+    |> List.map (fun a ->
+        let open FunctionArgument in
+        (a.name, a.ty)
+      )
+end
+
+module Typing = struct
+  open W_lang
+  open Stage0.Common
+
+  type t = Signature.t StringMap.t
+
+  let add_function (f:Function.t) (self:t) : t =
+    let f_ty = Signature.from_function f in
+    StringMap.add f.name f_ty self
+
+  let add (d:Def.t) (self:t) : t =
+    match d with
+    | EntryPoint e -> add_function e.function_ self
+    | Function f -> add_function f self
+    | Declaration _ -> self
+
+  let empty : t = StringMap.empty
+
+  let from_program : Program.t -> t =
+    List.fold_left (fun s d -> add d s) empty
+
+  let lookup (name:string) (ctx:t) : Signature.t =
+    StringMap.find name ctx
+
+end
+
+module Context = struct
+  open W_lang
+
+  type t = {
+    arrays: Memory.t Variable.Map.t;
+    params: Params.t;
+    typing: Typing.t;
+  }
+
+  let from_program (p:Program.t) : t =
+    let globals : W_lang.Decl.t list =
+      List.filter_map (
+        let open W_lang.Def in
+        function
+        | EntryPoint _ | Function _ -> None
+        | Declaration d -> Some d
+      ) p
+    in
+    let arrays = Arrays.tr globals in
+    let params =
+      globals
+      |> List.concat_map Globals.tr
+      |> Params.from_list
+    in
+    let typing = Typing.from_program p in
+    { arrays; params; typing }
+
+  let lookup (name:string) (ctx:t) : Signature.t =
+    Typing.lookup name ctx.typing
 
 end
 
 module Statements = struct
-  let rec tr : W_lang.Statement.t -> Imp.Stmt.t list =
-    let open Imp.Stmt in
-    let ret = Option.value ~default:[] in
-    function
-    | Store {pointer=AccessIndex {base=Ident {var; ty; _}; index; location}; value}
-      when W_lang.Type.is_array ty
-      ->
-      let (stmts, value) = Expressions.n_tr value in
-      let payload =
-        match value with
-        | Num n -> Some n
-        | _ -> None
-      in
-      let var = Variable.set_location location var in
-      stmts @ [Write {array=var; index=[Num index]; payload}]
-    | Store {pointer=Access {base; index; location}; value; } ->
-      ret (
-        let* (_, array) = Variables.tr base in
-        let array = { array with location = Some location } in
-        let array = Variable.set_location location array in
-        let (stmts1, index) = Expressions.n_tr index in
-        let (stmts2, value) = Expressions.n_tr value in
+  let tr (ctx:Context.t) : W_lang.Statement.t list -> Imp.Stmt.t list =
+    let rec tr : W_lang.Statement.t -> Imp.Stmt.t list =
+      let open Imp.Stmt in
+      let ret = Option.value ~default:[] in
+      function
+      | Store {pointer=AccessIndex {base=Ident {var; ty; _}; index; location}; value}
+        when W_lang.Type.is_array ty
+        ->
+        let (stmts, value) = Expressions.n_tr value in
         let payload =
           match value with
           | Num n -> Some n
           | _ -> None
         in
-        Some (stmts1 @ stmts2 @ [Write {array; index=[index]; payload}])
-      )
-    | Store {pointer=Ident ({ty; _}) as i; value} when W_lang.Type.is_int ty ->
-      ret (
-        let* (ty, var) = Variables.tr i in
-        let (stmts, data) = Expressions.n_tr value in
-        Some (stmts @ [ Assign {var; data; ty} ])
-      )
-    | Block l ->
-      [tr_block l]
-    | If {condition; accept=[Return None]; reject=[]}
-    | If {condition; accept=[Continue]; reject=[]} ->
-      let (stmts, c) = Expressions.b_tr condition in
-      stmts @ [Assert (Imp.Assert.make (Exp.b_not c) Local)]
-    | If {condition; accept; reject} ->
-      let (stmts, c) = Expressions.b_tr condition in
-      stmts @ [
-        If (c, tr_block accept, tr_block reject)
-      ]
-    | Loop {body=(If {condition; accept=[];reject=[Break]})::body; continuing=[Store _] as c} ->
-      let (stmts, cond) = Expressions.b_tr condition in
-      let inc = tr_block c in
-      let body = tr_block body in
-      let f : Imp.For.t = {
-        init = None;
-        cond = Some cond;
-        inc = Some inc;
-      } in
-      stmts @ [Imp.For.to_stmt f body]
-    | Loop {body=(If {condition; accept=[Break];reject=[]})::body; continuing=[Store _] as c} ->
-      let (stmts, cond) = Expressions.b_tr condition in
-      let inc = tr_block c in
-      let body = tr_block body in
-      let f : Imp.For.t = {
-        init = None;
-        cond = Some (Exp.b_not cond);
-        inc = Some inc;
-      } in
-      stmts @ [Imp.For.to_stmt f body]
-    | Barrier _ -> [Imp.Stmt.Sync None]
-    | _ ->
-      []
+        let var = Variable.set_location location var in
+        stmts @ [Write {array=var; index=[Num index]; payload}]
+      | Store {pointer=Access {base; index; location}; value; } ->
+        ret (
+          let* (_, array) = Variables.tr base in
+          let array = { array with location = Some location } in
+          let array = Variable.set_location location array in
+          let (stmts1, index) = Expressions.n_tr index in
+          let (stmts2, value) = Expressions.n_tr value in
+          let payload =
+            match value with
+            | Num n -> Some n
+            | _ -> None
+          in
+          Some (stmts1 @ stmts2 @ [Write {array; index=[index]; payload}])
+        )
+      | Store {pointer=Ident ({ty; _}) as i; value} when W_lang.Type.is_int ty ->
+        ret (
+          let* (ty, var) = Variables.tr i in
+          let (stmts, data) = Expressions.n_tr value in
+          Some (stmts @ [ Assign {var; data; ty} ])
+        )
+      | Block l ->
+        [tr_block l]
+      | If {condition; accept=[Return None]; reject=[]}
+      | If {condition; accept=[Continue]; reject=[]} ->
+        let (stmts, c) = Expressions.b_tr condition in
+        stmts @ [Assert (Imp.Assert.make (Exp.b_not c) Local)]
+      | If {condition; accept; reject} ->
+        let (stmts, c) = Expressions.b_tr condition in
+        stmts @ [
+          If (c, tr_block accept, tr_block reject)
+        ]
+      | Loop {body=(If {condition; accept=[];reject=[Break]})::body; continuing=[Store _] as c} ->
+        let (stmts, cond) = Expressions.b_tr condition in
+        let inc = tr_block c in
+        let body = tr_block body in
+        let f : Imp.For.t = {
+          init = None;
+          cond = Some cond;
+          inc = Some inc;
+        } in
+        stmts @ [Imp.For.to_stmt f body]
+      | Loop {body=(If {condition; accept=[Break];reject=[]})::body; continuing=[Store _] as c} ->
+        let (stmts, cond) = Expressions.b_tr condition in
+        let inc = tr_block c in
+        let body = tr_block body in
+        let f : Imp.For.t = {
+          init = None;
+          cond = Some (Exp.b_not cond);
+          inc = Some inc;
+        } in
+        stmts @ [Imp.For.to_stmt f body]
+      | Barrier _ -> [Imp.Stmt.Sync None]
 
-  and tr_list (l:W_lang.Statement.t list) : Imp.Stmt.t list =
-    List.concat_map tr l
+      | Call {result; function_=kernel; arguments=args} ->
+        let stmts, args = Expressions.n_list_tr args in
+        let args : (Variable.t * Imp.Arg.t) list =
+          List.map2 (fun arg (name, ty) ->
+            let arg =
+              let open Imp in
+              if W_lang.Type.is_array ty then
+                (match arg with
+                | Exp.Var x -> Arg.Array (Imp.Array_use.make x)
+                | _ -> Unsupported)
+              else if W_lang.Type.is_int ty then
+                (* handle scalar *)
+                Scalar arg
+              else
+                (* unsupported *)
+                Unsupported
+            in
+            (Variable.from_name name, arg)
+          ) args (Context.lookup kernel ctx)
+        in
+        stmts
+        @
+        (match result with
+          | Some {var; _} ->
+            [Decl [Imp.Decl.unset var]]
+          | None -> []
+        )
+        @
+        [ Imp.Stmt.Call Imp.Call.{ args; kernel; ty=kernel; } ]
+      | Return (Some e) ->
+        let (stmts, _) = Expressions.n_tr e in
+        stmts
+      | _ ->
+        []
 
-  and tr_block (l:W_lang.Statement.t list) : Imp.Stmt.t =
-    Imp.Stmt.Block (tr_list l)
+    and tr_list (l:W_lang.Statement.t list) : Imp.Stmt.t list =
+      List.concat_map tr l
+
+    and tr_block (l:W_lang.Statement.t list) : Imp.Stmt.t =
+      Imp.Stmt.Block (tr_list l)
+
+    in
+    tr_list
+
 end
 
 module LocalDeclarations = struct
@@ -535,26 +651,20 @@ end
 
 module Functions = struct
   let tr
-    (globals:W_lang.Decl.t list)
+    (ctx:Context.t)
     (e: W_lang.Function.t)
   :
     Imp.Kernel.t
   =
-    let arrays = Arrays.tr globals in
-    let params =
-      globals
-      |> List.concat_map Globals.tr
-      |> Params.from_list
-    in
     {
       name = e.name;
-      ty = "?";
-      arrays = arrays;
-      params = params;
+      ty = e.name;
+      arrays = ctx.arrays;
+      params = ctx.params;
       code =
         Block (
         LocalDeclarations.tr e.locals
-        @ Statements.tr_list e.body);
+        @ Statements.tr ctx e.body);
       visibility = Device;
       grid_dim = None;
       block_dim = None;
@@ -564,30 +674,24 @@ end
 
 module EntryPoints = struct
   let tr
-    (globals:W_lang.Decl.t list)
+    (ctx:Context.t)
     (e: W_lang.EntryPoint.t)
   :
     Imp.Kernel.t
   =
-    { (Functions.tr globals e.function_) with
+    { (Functions.tr ctx e.function_) with
       block_dim = Some e.workgroup_size;
       visibility = Global;
     }
 end
+
 let translate (p: W_lang.Program.t) : Imp.Kernel.t list =
-  let globals : W_lang.Decl.t list =
-    List.filter_map (
-      let open W_lang.Def in
-      function
-      | EntryPoint _ | Function _ -> None
-      | Declaration d -> Some d
-    ) p
-  in
+  let ctx = Context.from_program p in
   p
   |> List.filter_map (
       let open W_lang.Def in
       function
-      | EntryPoint e -> Some (EntryPoints.tr globals e)
-      | Function f -> Some (Functions.tr globals f)
+      | EntryPoint e -> Some (EntryPoints.tr ctx e)
+      | Function f -> Some (Functions.tr ctx f)
       | Declaration _ -> None
     )

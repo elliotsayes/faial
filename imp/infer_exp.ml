@@ -231,6 +231,11 @@ let infer_nexp (e:t) : (Stmt.t list * Exp.nexp) =
   let decls = decl_unknown decls in
   (decls, e)
 
+let infer_nexp_list (l:t list) : (Stmt.t list * Exp.nexp list) =
+  let (decls, l) = to_nexp_list l in
+  let decls = decl_unknown decls in
+  (decls, l)
+
 let infer_bexp (e:t) : (Stmt.t list * Exp.bexp) =
   let (decls, e) = to_bexp e in
   let decls = decl_unknown decls in
