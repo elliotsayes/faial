@@ -12,6 +12,8 @@ let tests = [
   "drf-saxpy.wgsl", ["--all-dims"; "--all-levels"], 0;
   "drf-read-const.wgsl", [], 0;
   "drf-indirect-read.wgsl", [], 0;
+  (* Shows an example of a loop with a break_if keyword set *)
+  "drf-loop-break-if.wgsl", [], 0;
 ]
 
 let unsupported : Fpath.t list =

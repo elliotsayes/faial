@@ -559,7 +559,17 @@ module Statements = struct
         stmts @ [
           If (c, tr_block accept, tr_block reject)
         ]
-      | Loop {body=(If {condition; accept=[];reject=[Break]})::body; continuing=[Store _] as c} ->
+      | Loop {body; continuing=[Store _] as c; break_if=Some condition} ->
+        let (stmts, cond) = Expressions.b_tr condition in
+        let inc = tr_block c in
+        let body = tr_block body in
+        let f : Imp.For.t = {
+          init = None;
+          cond = Some (Exp.b_not cond);
+          inc = Some inc;
+        } in
+        stmts @ [Imp.For.to_stmt f body]
+      | Loop {body=(If {condition; accept=[];reject=[Break]})::body; continuing=[Store _] as c; break_if=None} ->
         let (stmts, cond) = Expressions.b_tr condition in
         let inc = tr_block c in
         let body = tr_block body in
@@ -569,7 +579,7 @@ module Statements = struct
           inc = Some inc;
         } in
         stmts @ [Imp.For.to_stmt f body]
-      | Loop {body=(If {condition; accept=[Break];reject=[]})::body; continuing=[Store _] as c} ->
+      | Loop {body=(If {condition; accept=[Break];reject=[]})::body; break_if=None; continuing=[Store _] as c} ->
         let (stmts, cond) = Expressions.b_tr condition in
         let inc = tr_block c in
         let body = tr_block body in

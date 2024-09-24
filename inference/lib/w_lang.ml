@@ -1540,7 +1540,7 @@ module Statement = struct
     | Loop of {
         body: t list;
         continuing: t list;
-(*         break_if: Option<Handle<Expression>>, *)
+        break_if: Expression.t option;
       }
     | Break
     | Continue
@@ -1605,7 +1605,8 @@ module Statement = struct
       | "Loop" ->
         let* body = with_field "body" (cast_map parse) o in
         let* continuing = with_field "continuing" (cast_map parse) o in
-        Ok (Loop {body; continuing})
+        let* break_if = with_field "break_if" (cast_option Expression.parse) o in
+        Ok (Loop {body; continuing; break_if})
       | "Break" -> Ok Break
       | "Continue" -> Ok Continue
       | "Return" ->
@@ -1666,13 +1667,20 @@ module Statement = struct
         cases: SwitchCase;
       }*) ->
       [Line "switch (TODO) {TODO}"]
-    | Loop {body; continuing;} ->
+    | Loop {body; continuing; break_if;} ->
 (*         break_if: Option<Handle<Expression>>, *)
       [
         Line "loop {";
         Block (block_to_s body);
         Line "} continuing {";
-        Block (block_to_s continuing);
+        Block (
+          block_to_s continuing
+          @
+          (match break_if with
+            | Some b -> [ Line ("break if " ^ Expression.to_string b ^ ";") ]
+            | None -> []
+          )
+        );
         Line "}"
       ]
     | Break -> [Line "break;"]
