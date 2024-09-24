@@ -11,6 +11,7 @@ let tests = [
      and gridDim.{y,z}=1. *)
   "drf-saxpy.wgsl", ["--all-dims"; "--all-levels"], 0;
   "drf-read-const.wgsl", [], 0;
+  "drf-indirect-read.wgsl", [], 0;
 ]
 
 let unsupported : Fpath.t list =

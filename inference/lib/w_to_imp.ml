@@ -189,14 +189,15 @@ module Expressions = struct
 
     let empty : t = []
 
-    let add_var (f:Variable.t -> Read.t list) (st:t) : (t * Variable.t) =
+    let add_var (f:Variable.t -> Read.t) (st:t) : (t * Variable.t) =
       let count = !counter in
       counter := count + 1;
       let var = "@AccessState" ^ string_of_int count |> Variable.from_name in
-      (f var @ st, var)
+      (f var :: st, var)
 
     let add_read (ty:Type.t) (array:Variable.t) (index:expr) (st:t) : (t * expr) =
-      let (ctx, var) = add_var (fun target -> [{target; array; ty; index}]) st
+      let (ctx, var) =
+        add_var (fun target -> {target; array; ty; index}) st
       in
       (ctx, Ident {var; ty; kind=LocalVariable})
 
@@ -374,22 +375,28 @@ module Expressions = struct
       | Math {fun_=Max; args=[arg1; arg2]} ->
         NExp (Imp.Infer_exp.max (to_i_exp arg1) (to_i_exp arg2))
       | _ -> Unknown "?"
-  end
+  end (* end of Context *)
 
   let n_todo : Exp.nexp = Var (Variable.from_name "TODO")
 
   let b_todo : Exp.bexp = CastBool n_todo
 
-
   let rec n_tr (e: W_lang.Expression.t) : (Imp.Stmt.t list * Exp.nexp) =
-    let (reads, e) = Context.rewrite [] e in
-    let reads = List.concat_map r_tr reads in
+    let (reads, e) = extract_reads e in
     let (decls, e) =
       e
       |> Context.to_i_exp
       |> Imp.Infer_exp.infer_nexp
     in
     (reads @ decls, e)
+
+  and extract_reads (e:W_lang.Expression.t) : (Imp.Stmt.t list * t) =
+    let (reads, e) = Context.rewrite [] e in
+    (List.concat_map r_tr (List.rev reads), e)
+
+  and l_extract_reads (l:W_lang.Expression.t list) : (Imp.Stmt.t list * t list) =
+    let (reads, l) = Context.l_rewrite [] l in
+    (List.concat_map r_tr (List.rev reads), l)
 
   and r_tr (r: Context.Read.t) : Imp.Stmt.t list =
     (* get base type *)
@@ -414,8 +421,7 @@ module Expressions = struct
     ]
 
   let b_tr (e: W_lang.Expression.t) : (Imp.Stmt.t list * Exp.bexp) =
-    let (reads, e) = Context.rewrite [] e in
-    let reads = List.concat_map r_tr reads in
+    let (reads, e) = extract_reads e in
     let (decls, e) =
       e
       |> Context.to_i_exp
@@ -425,8 +431,7 @@ module Expressions = struct
 
 
   let n_list_tr (l: W_lang.Expression.t list) : (Imp.Stmt.t list * Exp.nexp list) =
-    let (reads, l) = Context.l_rewrite [] l in
-    let reads = List.concat_map r_tr reads in
+    let (reads, l) = l_extract_reads l in
     let (decls, l) =
       l
       |> List.map Context.to_i_exp
