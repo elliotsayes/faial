@@ -44,8 +44,17 @@ let missed_files (dir:Fpath.t) : Fpath.Set.t =
   let unsupported = Fpath.Set.of_list unsupported in
   Fpath.Set.diff (Fpath.Set.diff all_cu_files used_files) unsupported
 
+let check_wgsl_to_json () : unit =
+  match Subprocess.make "wgsl-to-json" ["--version"] |> Subprocess.check_output with
+  | Some ver -> print_endline ("Found: " ^ ver)
+  | None -> (
+      print_endline ("WGSL-TO-JSON NOT FOUND! Skipping tests related to WGSL.");
+      exit 0
+    )
+
 let () =
   let open Fpath in
+  check_wgsl_to_json ();
   print_endline "Checking examples for DRF:";
   tests
   |> List.iter (fun (filename, args, expected_status) ->
