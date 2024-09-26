@@ -68,6 +68,9 @@ module Scalar = struct
   let int : t = {kind=ScalarKind.AbstractInt; width=8}
   let float : t = {kind=ScalarKind.AbstractFloat; width=8}
 
+  let make_64 (kind:ScalarKind.t) : t =
+    {kind; width=8}
+
   let is_int (s:t) : bool =
     ScalarKind.is_int s.kind
 
@@ -103,6 +106,16 @@ module VectorSize = struct
     | 3 -> Some Tri
     | 4 -> Some Quad
     | _ -> None
+
+  let components : t -> string list =
+    function
+    | Bi -> ["x"; "y"]
+    | Tri -> ["x"; "y"; "z"]
+    | Quad -> ["x"; "y"; "z"; "w"]
+
+
+  let nth_opt (n:int) (ty:t) : string option =
+    List.nth_opt (components ty) n
 
   let to_string (s: t) : string =
     to_int s |> string_of_int
@@ -249,6 +262,10 @@ module ArraySize = struct
   type t =
     | Constant of int
     | Dynamic
+  let to_int : t -> int option =
+    function
+    | Constant i -> Some i
+    | Dynamic -> None
 end
 
 module Interpolation = struct
@@ -447,6 +464,11 @@ module Type = struct
       | Array _ -> true
       | _ -> false
 
+    let is_vector (ty:t) : bool =
+      match ty.inner with
+      | Vector _ -> true
+      | _ -> false
+
     let is_int (ty:t) : bool =
       ty
       |> to_scalar
@@ -468,12 +490,56 @@ module Type = struct
         |> Option.map (fun (m:struct_member) -> m.name)
       | _ -> None
 
+    let make (inner:inner) : t = {name=None; inner}
+
+    let scalar (s:Scalar.t) : t =
+      make (Scalar s)
+
+    let i32 : t =
+      scalar Scalar.i32
+
+    let u64 : t =
+      scalar Scalar.u64
+
+    let bool : t =
+      scalar Scalar.bool
+
+    let array ?(size=None) (base:t) : t =
+      make (Array {base; size})
+
+    (* For container types, return the type of the contained elements.
+       Does not support structs. *)
     let deref (ty:t) : t option =
       match ty.inner with
-      | Array {base; _} -> Some base
+      | ValuePointer {scalar=s; _}
+      | Vector {scalar=s; _} -> Some (scalar s)
+      | Matrix {columns; scalar; _} ->
+        Some (make (Vector {size=columns; scalar}))
+      | BindingArray {base; _}
+      | Array {base; _} ->
+        Some base
       | _ -> None
 
-    let make (inner:inner) : t = {name=None; inner}
+    (* Deref n-dimensions, rather than just one dimension, whic his what
+       deref does. *)
+    let deref_dim (count:int) (ty:t) : t option =
+      let ( let* ) = Option.bind in
+      (* we need to deref as many times as indices *)
+      let rec iter (n:int) (ty:t) : t option =
+        if n <= 0 then Some ty
+        else
+          let* ty = deref ty in
+          iter (n - 1) ty
+      in
+      iter count ty
+
+    (* Get the i-th type; if it's a struct look up the field type,
+       otherwise deref. *)
+    let nth (index:int) (ty:t) : t option =
+      match ty.inner with
+      | Struct {members; _} ->
+        Some (List.nth members index).ty
+      | _ -> deref ty
 
     let rec inner_to_string (name:string option) : inner -> string =
       function
@@ -633,13 +699,24 @@ module Ident = struct
     kind: IdentKind.t;
   }
 
+  let is_function_argument (x:t) : bool =
+    match x.kind with
+    | FunctionArgument _ -> true
+    | _ -> false
+
   let var (i:t) : Variable.t =
     i.var
+
+  let set_location (l:Location.t) (x:t) : t =
+    { x with var = Variable.set_location l x.var }
 
   let add_suffix (suffix:string) (x:t) =
     { x with var = Variable.add_suffix suffix x.var }
 
   let inline_field (index:int) (a:t) : t =
+    (* Project the type *)
+    let ty = Type.nth index a.ty |> Option.get in
+    (* Try to get a default variable name *)
     let var =
       if IdentKind.is_thread_idx a.kind then
         List.nth_opt Variable.tid_list index
@@ -650,21 +727,26 @@ module Ident = struct
       else
         None
     in
-    match var with
-    | Some var ->
-      { a with
-        var =
-          a.var
-          (* When the variable is pretty-printed, use original variable's name *)
-          |> Variable.set_label a.var.name
-          (* When the variable is used internally, use our internal name *)
-          |> Variable.set_name var.name
-      }
-    | None ->
-      a.ty
-      |> Type.lookup_field index
-      |> Option.map (fun f -> add_suffix ("." ^ f) a)
-      |> Option.value ~default:(add_suffix (string_of_int index ^ ".") a)
+    let a =
+      match var with
+        (* we found a system variable *)
+      | Some var ->
+        { a with
+          var =
+            a.var
+            (* When the variable is pretty-printed, use original variable's name *)
+            |> Variable.set_label a.var.name
+            (* When the variable is used internally, use our internal name *)
+            |> Variable.set_name var.name
+        }
+      | None ->
+        (* no system variable, but we can flatten the name *)
+        a.ty
+        |> Type.lookup_field index
+        |> Option.map (fun f -> add_suffix ("." ^ f) a)
+        |> Option.value ~default:(add_suffix (string_of_int index ^ ".") a)
+    in
+    { a with ty }
 
   let call : Variable.t = Variable.from_name "@Call"
 
@@ -880,6 +962,24 @@ module Literal = struct
     | Bool v -> Bool.to_string v
     | AbstractInt v -> Int.to_string v
     | AbstractFloat v -> Float.to_string v
+
+  let scalar_of : t -> Scalar.t =
+    function
+    | F32 _ -> Scalar.f32
+    | F64 _ -> Scalar.f64
+    | U32 _ -> Scalar.u32
+    | I32 _ -> Scalar.i32
+    | U64 _ -> Scalar.u64
+    | I64 _ -> Scalar.i64
+    | Bool _ -> Scalar.bool
+    | AbstractInt _ -> Scalar.int
+    | AbstractFloat _ -> Scalar.float
+
+  let type_of (l:t) : Type.t =
+    Type.scalar (scalar_of l)
+
+  let int (i:int) : t =
+    AbstractInt i
 
   let parse (j:json) : t j_result =
     let open Rjson in
@@ -1251,6 +1351,57 @@ module Expression = struct
     | NumLayers
     | NumSamples
 
+  let int (i:int) : t =
+    Literal (Literal.int i)
+
+  let rec type_of : t -> Type.t =
+    function
+    | AccessIndex {base; _}
+    | Access {base; _} ->
+      base
+      |> type_of
+      |> Type.deref
+      |> Option.get
+    | Literal l -> Literal.type_of l
+    | ZeroValue ty -> ty
+    | Compose {ty; _} -> ty
+    | Ident i -> i.ty
+    | Load e -> type_of e
+    | Binary {op; left=e; _} ->
+      (match op with
+        | Equal | NotEqual | Less | LessEqual
+        | Greater | GreaterEqual | LogicalAnd
+        | LogicalOr ->
+          Type.bool
+        | _ -> type_of e
+      )
+    | Select {accept=e; _} ->
+      type_of e
+    | As {kind; _} ->
+      Type.scalar (Scalar.make_64 kind) (* TODO: is this right? *)
+    | AtomicResult {ty; _} ->
+      ty (* Is this right? *)
+    | WorkGroupUniformLoadResult ty ->
+      ty
+    | ArrayLength _ ->
+      Type.u64
+    | SubgroupOperationResult ty ->
+      ty
+    | RayQueryProceedResult -> failwith "type_of RayQueryProceedResult"
+    | RayQueryGetIntersection _ -> failwith "type_of RayQueryGetIntersection"
+    | SubgroupBallotResult -> failwith "type_of SubgroupBallotResult"
+    | Relational _ -> failwith "type_of Relational"
+    | Derivative _ -> failwith "type_of Derivative"
+    | Unary _ -> failwith "type_of Unary"
+    | ImageQuery _ -> failwith "type_of ImageQuery"
+    | ImageLoad _ -> failwith "type_of ImageLoad"
+    | ImageSample _ -> failwith "type_of ImageSample"
+    | Swizzle _ -> failwith "type_of Swizzle"
+    | Constant -> failwith "type_of Constant"
+    | Override -> failwith "type_of Override"
+    | Splat _ -> failwith "type_of Splat"
+    | Math _ -> failwith "type_of Math"
+
   let rec to_string : t -> string =
     function
     | Literal l -> Literal.to_string l
@@ -1265,7 +1416,7 @@ module Expression = struct
       in
       Type.to_string ty ^ "(" ^ components ^ ")"
     | Access {base; index; location=_;} ->
-      to_string base ^ "[" ^ to_string index ^ "]"
+      to_string base ^ "[" ^ to_string index ^ "] : " ^ Type.to_string (type_of base)
     | AccessIndex {base; index; location=_;} ->
       to_string base ^ "." ^ string_of_int index
     | Splat {size; value} -> "vec" ^ VectorSize.to_string size ^ "(" ^ to_string value ^ ")"

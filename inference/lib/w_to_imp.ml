@@ -73,6 +73,7 @@ module Literals = struct
     | Bool b -> Infer_exp.bool b
 end
 
+
 module Types = struct
   open W_lang
   let tr (ty:Type.t) : C_type.t =
@@ -112,6 +113,34 @@ module Variables = struct
     | _ -> None
 end
 
+module NDAccess = struct
+  open W_lang
+  type t = {
+    var: Variable.t;
+    ty: Type.t;
+    index: Expression.t list;
+  }
+  let from_expression (e:Expression.t) : t option =
+    let ( let* ) = Option.bind in
+    let* e, l =
+      match e with
+      | Access {base=e; index; _} -> Some (e, [index])
+      | AccessIndex {base=e; index; _} -> Some (e, [Expression.int index])
+      | _ -> None
+    in
+    let rec from_exp (e:Expression.t) (l:Expression.t list) : t option =
+      match e with
+      | Access {base; index; _} ->
+        from_exp base (index :: l)
+      | AccessIndex {base; index; _} ->
+        from_exp base (Expression.int index :: l)
+      | Ident {var; ty; _} ->
+        Some {var; ty; index=l}
+      | _ -> None
+    in
+    from_exp e l
+end
+
 module Expressions = struct
   open W_lang
   type t =
@@ -121,11 +150,6 @@ module Expressions = struct
     | Compose of {
         ty: Type.t;
         components: t list;
-      }
-    | AccessIndex of {
-        base: t;
-        index: int;
-        location: Stage0.Location.t;
       }
     | Splat of {
         size: VectorSize.t;
@@ -170,6 +194,7 @@ module Expressions = struct
   let int (i:int) : t =
     Literal (Literals.Int i)
 
+
   module Context = struct
 
     type expr = t
@@ -179,7 +204,7 @@ module Expressions = struct
         target: Variable.t;
         array: Variable.t;
         ty: Type.t;
-        index: expr;
+        index: expr list;
       }
     end
 
@@ -195,7 +220,8 @@ module Expressions = struct
       let var = "@AccessState" ^ string_of_int count |> Variable.from_name in
       (f var :: st, var)
 
-    let add_read (ty:Type.t) (array:Variable.t) (index:expr) (st:t) : (t * expr) =
+    let add_read (ty:Type.t) (array:Variable.t) (index:expr list) (st:t) : (t * expr) =
+      let ty = Type.deref_dim (List.length index) ty |> Option.get in
       let (ctx, var) =
         add_var (fun target -> {target; array; ty; index}) st
       in
@@ -208,8 +234,14 @@ module Expressions = struct
       x |> Option.map (pure st)
 
     let rec rewrite (ctx:t) (e: W_lang.Expression.t) : t * expr =
+      let ( let* ) = Option.bind in
       let pure (e:expr) : t * expr = (ctx, e) in
       let unsupported = (ctx, Unsupported) in
+      let ret_or (l:W_lang.Expression.t list) (o:(t * expr) option) : t * expr =
+        match o with
+        | Some v -> v
+        | None -> (l_rewrite ctx l |> fst, Unsupported)
+      in
       match e with
       | Literal l ->
         pure (
@@ -223,18 +255,29 @@ module Expressions = struct
       | Compose {ty; components} ->
         let (ctx, components) = l_rewrite ctx components in
         (ctx, Compose {ty; components})
-      | AccessIndex {base=Ident {ty; var; _}; index; location} when Type.is_array ty ->
-        let var = Variable.set_location location var in
-        add_read ty var (int index) ctx
-      | Access {base=Ident {ty; var; _}; index; location;} ->
-        let (ctx, index) = rewrite ctx index in
-        let var = Variable.set_location location var in
-        add_read ty var index ctx
-      | Access {base; _} ->
-        (add ctx base, Unsupported)
-      | AccessIndex {base; index; location} ->
-        let (ctx, base) = rewrite ctx base in
-        (ctx, AccessIndex {base; index; location})
+      | AccessIndex {base=Ident ({ty; _} as x); location; index}
+        when Ident.is_function_argument x && Type.is_vector ty ->
+        let x =
+          x
+          |> Ident.inline_field index
+          |> Ident.set_location location
+        in
+        (ctx, Ident x)
+
+      | Access {base; location; index} ->
+        ret_or [base; index] (
+          let* a = NDAccess.from_expression e in
+          let var = Variable.set_location location a.var in
+          let (ctx, index) = l_rewrite ctx a.index in
+          Some (add_read a.ty var index ctx)
+        )
+      | AccessIndex {base; location; _} ->
+        ret_or [base] (
+          let* a = NDAccess.from_expression e in
+          let var = Variable.set_location location a.var in
+          let (ctx, index) = l_rewrite ctx a.index in
+          Some (add_read a.ty var index ctx)
+        )
       | Splat {size; value} ->
         let (ctx, value) = rewrite ctx value in
         (ctx, Splat {size; value})
@@ -326,6 +369,7 @@ module Expressions = struct
     let rec to_i_exp : expr -> Imp.Infer_exp.t =
       function
       | Literal l -> Literals.tr l
+      (*
       | AccessIndex {base=Ident f; index; location} ->
         let var =
           f
@@ -334,6 +378,7 @@ module Expressions = struct
           |> Variable.set_location location
         in
         NExp (Var var)
+      *)
       | Ident {var; _} ->
         NExp (Var var)
       | Binary {op; left; right} ->
@@ -400,23 +445,19 @@ module Expressions = struct
 
   and r_tr (r: Context.Read.t) : Imp.Stmt.t list =
     (* get base type *)
-    let ty =
-      Type.deref r.ty
-      |> Option.get
-      |> Types.tr
-    in
+    let ty = Types.tr r.ty in
     let target = r.target in
     let array = r.array in
     let (decls, index) =
       r.index
-      |> Context.to_i_exp
-      |> Imp.Infer_exp.infer_nexp
+      |> List.map Context.to_i_exp
+      |> Imp.Infer_exp.infer_nexp_list
     in
     decls
     @
     [
       Imp.Stmt.Read {
-        index=[index]; array; target; ty;
+        index=index; array; target; ty;
       }
     ]
 
@@ -438,6 +479,9 @@ module Expressions = struct
       |> Imp.Infer_exp.infer_nexp_list
     in
     (reads @ decls, l)
+
+  let reads (l:W_lang.Expression.t list) : Imp.Stmt.t list =
+    n_list_tr l |> fst
 
 end
 
@@ -515,31 +559,26 @@ module Statements = struct
     let rec tr : W_lang.Statement.t -> Imp.Stmt.t list =
       let open Imp.Stmt in
       let ret = Option.value ~default:[] in
+      let ret_or (l:W_lang.Expression.t list) (r:Imp.Stmt.t list option) =
+        match r with
+        | Some r -> r
+        | None -> Expressions.reads l
+      in
       function
-      | Store {pointer=AccessIndex {base=Ident {var; ty; _}; index; location}; value}
-        when W_lang.Type.is_array ty
+      | Store {pointer=Access {location; _} as e; value; }
+      | Store {pointer=AccessIndex {location; _} as e; value}
         ->
-        let (stmts, value) = Expressions.n_tr value in
-        let payload =
-          match value with
-          | Num n -> Some n
-          | _ -> None
-        in
-        let var = Variable.set_location location var in
-        stmts @ [Write {array=var; index=[Num index]; payload}]
-      | Store {pointer=Access {base; index; location}; value; } ->
-        ret (
-          let* (_, array) = Variables.tr base in
-          let array = { array with location = Some location } in
-          let array = Variable.set_location location array in
-          let (stmts1, index) = Expressions.n_tr index in
+        ret_or [e; value] (
+          let* a = NDAccess.from_expression e in
+          let (stmts1, index) = Expressions.n_list_tr a.index in
           let (stmts2, value) = Expressions.n_tr value in
           let payload =
             match value with
             | Num n -> Some n
             | _ -> None
           in
-          Some (stmts1 @ stmts2 @ [Write {array; index=[index]; payload}])
+          let var = Variable.set_location location a.var in
+          Some (stmts1 @ stmts2 @ [Write {array=var; index=index; payload}])
         )
       | Store {pointer=Ident ({ty; _}) as i; value} when W_lang.Type.is_int ty ->
         ret (
