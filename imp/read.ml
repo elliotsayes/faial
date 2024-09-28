@@ -1,8 +1,7 @@
 open Protocols
 
 type t = {
-  target: Variable.t;
-  ty: C_type.t;
+  target: (C_type.t * Variable.t) option;
   array: Variable.t;
   index: Exp.nexp list
 }

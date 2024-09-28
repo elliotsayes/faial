@@ -149,12 +149,19 @@ let to_s: t -> Indent.t list =
     | Assert b -> [Line (Assert.to_string b ^ ";")]
     | Atomic r -> [Line (C_type.to_string r.ty ^ " " ^ Variable.name r.target ^ " = atomic " ^ Variable.name r.array ^ Access.index_to_string r.index ^ ";")]
     | Read r ->
-      let ty = C_type.to_string r.ty in
-      let x = Variable.name r.target in
       let a = Variable.name r.array in
       let idx = Access.index_to_string r.index in
+      let prefix =
+        match r.target with
+        | Some (ty, target) ->
+          let x = Variable.name target in
+          let ty = C_type.to_string ty in
+          ty ^ " " ^ x ^ " = "
+        | None ->
+          ""
+      in
       [
-        Line (ty ^ " " ^ x ^ " = rd " ^ a ^ idx ^ ";")
+        Line (prefix ^ "rd " ^ a ^ idx ^ ";")
       ]
     | Write w ->
       let payload :string = match w.payload with

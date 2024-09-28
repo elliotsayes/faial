@@ -116,11 +116,35 @@ end
 module NDAccess = struct
   open W_lang
   type t = {
-    var: Variable.t;
-    ty: Type.t;
+    array: Ident.t;
     index: Expression.t list;
   }
-  let from_expression (e:Expression.t) : t option =
+
+  (* We are only able to flatten an NDAccess when the identifier is
+     a function-arg/global _and_ the type is a series of structs/vecs
+     _and_ every lookup is a literal number.
+    *)
+  let flatten (e:t) : Ident.t option =
+    let ( let* ) = Option.bind in
+    if not (Ident.is_global e.array || Ident.is_function_argument e.array)
+    then None else
+    let rec loop (ident:Ident.t) (index:Expression.t list) : Ident.t option =
+      if index = [] then Some ident else
+      let* (field, index) =
+        match index with
+        | Literal l :: index ->
+          l
+          |> Literal.to_int
+          |> Option.map (fun i -> (i, index))
+
+        | _ -> None
+      in
+      let* ident = Ident.inline_field field ident in
+      loop ident index
+    in
+    loop e.array e.index
+
+  let from_expression (location:Stage0.Location.t) (e:Expression.t) : t option =
     let ( let* ) = Option.bind in
     let* e, l =
       match e with
@@ -134,8 +158,8 @@ module NDAccess = struct
         from_exp base (index :: l)
       | AccessIndex {base; index; _} ->
         from_exp base (Expression.int index :: l)
-      | Ident {var; ty; _} ->
-        Some {var; ty; index=l}
+      | Ident i ->
+        Some {array=Ident.set_location location i; index=l}
       | _ -> None
     in
     from_exp e l
@@ -201,9 +225,8 @@ module Expressions = struct
 
     module Read = struct
       type t = {
-        target: Variable.t;
+        target: (Type.t * Variable.t) option;
         array: Variable.t;
-        ty: Type.t;
         index: expr list;
       }
     end
@@ -220,12 +243,30 @@ module Expressions = struct
       let var = "@AccessState" ^ string_of_int count |> Variable.from_name in
       (f var :: st, var)
 
-    let add_read (ty:Type.t) (array:Variable.t) (index:expr list) (st:t) : (t * expr) =
-      let ty = Type.deref_dim (List.length index) ty |> Option.get in
+    let add_read
+      ~array:(array:Ident.t)
+      ~index:(index:expr list)
+      (st:t)
+    :
+      (t * expr)
+    =
+      let ty = Type.deref_dim (List.length index) array.ty |> Option.get in
       let (ctx, var) =
-        add_var (fun target -> {target; array; ty; index}) st
+        add_var (fun target ->
+          {target=Some (ty, target); array=array.var; index}
+        ) st
       in
       (ctx, Ident {var; ty; kind=LocalVariable})
+
+    let add_read_to
+      ~target:(target:Ident.t)
+      ~array:(array:Variable.t)
+      ~index:(index:expr list)
+      (ctx:t)
+    :
+      (t * expr)
+    =
+      ({target=None; array; index} :: ctx, Ident target)
 
     let pure (st:t) (x:'a) : t * 'a =
       (st, x)
@@ -255,28 +296,19 @@ module Expressions = struct
       | Compose {ty; components} ->
         let (ctx, components) = l_rewrite ctx components in
         (ctx, Compose {ty; components})
-      | AccessIndex {base=Ident ({ty; _} as x); location; index}
-        when Ident.is_function_argument x && Type.is_vector ty ->
-        let x =
-          x
-          |> Ident.inline_field index
-          |> Ident.set_location location
-        in
-        (ctx, Ident x)
-
       | Access {base; location; index} ->
         ret_or [base; index] (
-          let* a = NDAccess.from_expression e in
-          let var = Variable.set_location location a.var in
+          let* a = NDAccess.from_expression location e in
           let (ctx, index) = l_rewrite ctx a.index in
-          Some (add_read a.ty var index ctx)
+          Some (add_read ~array:a.array ~index ctx)
         )
       | AccessIndex {base; location; _} ->
         ret_or [base] (
-          let* a = NDAccess.from_expression e in
-          let var = Variable.set_location location a.var in
+          let* a = NDAccess.from_expression location e in
           let (ctx, index) = l_rewrite ctx a.index in
-          Some (add_read a.ty var index ctx)
+          match NDAccess.flatten a with
+          | Some target -> Some (add_read_to ~target ~array:a.array.var ~index ctx)
+          | None -> Some (add_read ~array:a.array ~index ctx)
         )
       | Splat {size; value} ->
         let (ctx, value) = rewrite ctx value in
@@ -445,8 +477,7 @@ module Expressions = struct
 
   and r_tr (r: Context.Read.t) : Imp.Stmt.t list =
     (* get base type *)
-    let ty = Types.tr r.ty in
-    let target = r.target in
+    let target = Option.map (fun (ty, x) -> (Types.tr ty, x)) r.target in
     let array = r.array in
     let (decls, index) =
       r.index
@@ -455,11 +486,7 @@ module Expressions = struct
     in
     decls
     @
-    [
-      Imp.Stmt.Read {
-        index=index; array; target; ty;
-      }
-    ]
+    [ Imp.Stmt.Read {index; array; target;} ]
 
   let b_tr (e: W_lang.Expression.t) : (Imp.Stmt.t list * Exp.bexp) =
     let (reads, e) = extract_reads e in
@@ -569,7 +596,7 @@ module Statements = struct
       | Store {pointer=AccessIndex {location; _} as e; value}
         ->
         ret_or [e; value] (
-          let* a = NDAccess.from_expression e in
+          let* a = NDAccess.from_expression location e in
           let (stmts1, index) = Expressions.n_list_tr a.index in
           let (stmts2, value) = Expressions.n_tr value in
           let payload =
@@ -577,8 +604,7 @@ module Statements = struct
             | Num n -> Some n
             | _ -> None
           in
-          let var = Variable.set_location location a.var in
-          Some (stmts1 @ stmts2 @ [Write {array=var; index=index; payload}])
+          Some (stmts1 @ stmts2 @ [Write {array=a.array.var; index; payload}])
         )
       | Store {pointer=Ident ({ty; _}) as i; value} when W_lang.Type.is_int ty ->
         ret (

@@ -309,7 +309,12 @@ let from_stmt : Params.t * Stmt.t -> Params.t * t =
     | Read e :: p ->
       bind (imp_to_scoped_p p) (fun s ->
         let rd = Acc (e.array, {index=e.index; mode=Read}) in
-        ret (Seq (rd, Decl (Decl.unset ~ty:e.ty e.target, s)))
+        ret (match e.target with
+        | Some (ty, x) ->
+          Seq (rd, Decl (Decl.unset ~ty x, s))
+        | None ->
+          Seq (rd, s)
+        )
       )
     | Atomic e :: p ->
       bind (imp_to_scoped_p p) (fun s ->

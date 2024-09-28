@@ -704,6 +704,9 @@ module Ident = struct
     | FunctionArgument _ -> true
     | _ -> false
 
+  let is_global (x:t) : bool =
+    x.kind = GlobalVariable
+
   let var (i:t) : Variable.t =
     i.var
 
@@ -713,9 +716,10 @@ module Ident = struct
   let add_suffix (suffix:string) (x:t) =
     { x with var = Variable.add_suffix suffix x.var }
 
-  let inline_field (index:int) (a:t) : t =
+  let inline_field (index:int) (a:t) : t option =
+    let ( let* ) = Option.bind in
     (* Project the type *)
-    let ty = Type.nth index a.ty |> Option.get in
+    let* ty = Type.nth index a.ty in
     (* Try to get a default variable name *)
     let var =
       if IdentKind.is_thread_idx a.kind then
@@ -727,11 +731,11 @@ module Ident = struct
       else
         None
     in
-    let a =
+    let* a =
       match var with
         (* we found a system variable *)
       | Some var ->
-        { a with
+        Some { a with
           var =
             a.var
             (* When the variable is pretty-printed, use original variable's name *)
@@ -744,9 +748,9 @@ module Ident = struct
         a.ty
         |> Type.lookup_field index
         |> Option.map (fun f -> add_suffix ("." ^ f) a)
-        |> Option.value ~default:(add_suffix (string_of_int index ^ ".") a)
+        (*|> Option.value ~default:(add_suffix (string_of_int index ^ ".") a)*)
     in
-    { a with ty }
+    Some { a with ty }
 
   let call : Variable.t = Variable.from_name "@Call"
 

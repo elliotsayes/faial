@@ -688,7 +688,7 @@ let rec parse_stmt
     let ty = r.ty |> resolve |> C_type.strip_array in
     idx
     |> ret_ns (fun index ->
-      Read {target=r.target; array; index; ty}
+      Read {target=Some (ty, r.target); array; index}
     )
 
   | AtomicAccessStmt r ->
