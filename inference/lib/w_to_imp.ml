@@ -263,7 +263,9 @@ module Expressions = struct
       | None ->
         (* Get the type of the value being read *)
         let target_ty =
-          Type.deref_dim (List.length index) array.ty |> Option.get
+          Type.deref_dim (List.length index) array.ty
+          (* Defaults to a non-int and non-bool type so that it short circuits *)
+          |> Option.value ~default:Type.f64
         in
         if Type.is_int target_ty || Type.is_bool target_ty then
           let (ctx, var) =
@@ -699,6 +701,7 @@ module Statements = struct
       | Return (Some e) ->
         let (stmts, _) = Expressions.n_tr e in
         stmts
+
       | Return None ->
         []
 
