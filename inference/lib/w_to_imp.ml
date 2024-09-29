@@ -686,9 +686,22 @@ module Statements = struct
         )
         @
         [ Imp.Stmt.Call Imp.Call.{ args; kernel; ty=kernel; } ]
+
+      | Loop {body; continuing; break_if=Some e} ->
+        let (stmts, cond) = Expressions.b_tr e in
+        let body = tr_block (body @ continuing) in
+        stmts @ [Star (If (Exp.b_not cond, body, Block []))]
+
+      | Loop {body; continuing; break_if=None} ->
+        let body = tr_block (body @ continuing) in
+        [Star body]
+
       | Return (Some e) ->
         let (stmts, _) = Expressions.n_tr e in
         stmts
+      | Return None ->
+        []
+
       | _ ->
         []
 
