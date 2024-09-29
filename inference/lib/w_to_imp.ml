@@ -48,6 +48,11 @@ module Literals = struct
     | Bool of bool
     | Int of int
 
+  let to_int : t -> int option =
+    function
+    | Int i -> Some i
+    | Bool _ -> None
+
   let parse : W_lang.Literal.t -> t option =
     function
     | U32 v -> Some (Int v)
@@ -218,6 +223,10 @@ module Expressions = struct
   let int (i:int) : t =
     Literal (Literals.Int i)
 
+  let to_int : t -> int option =
+    function
+    | Literal l -> Literals.to_int l
+    | _ -> None
 
   module Context = struct
 
@@ -263,7 +272,7 @@ module Expressions = struct
       | None ->
         (* Get the type of the value being read *)
         let target_ty =
-          Type.deref_dim (List.length index) array.ty
+          Type.deref_list (List.map to_int index) array.ty
           (* Defaults to a non-int and non-bool type so that it short circuits *)
           |> Option.value ~default:Type.f64
         in

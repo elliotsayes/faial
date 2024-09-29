@@ -513,6 +513,9 @@ module Type = struct
     let u64 : t =
       scalar Scalar.u64
 
+    let f64 : t =
+      scalar Scalar.f64
+
     let bool : t =
       scalar Scalar.bool
 
@@ -532,19 +535,6 @@ module Type = struct
         Some base
       | _ -> None
 
-    (* Deref n-dimensions, rather than just one dimension, whic his what
-       deref does. *)
-    let deref_dim (count:int) (ty:t) : t option =
-      let ( let* ) = Option.bind in
-      (* we need to deref as many times as indices *)
-      let rec iter (n:int) (ty:t) : t option =
-        if n <= 0 then Some ty
-        else
-          let* ty = deref ty in
-          iter (n - 1) ty
-      in
-      iter count ty
-
     (* Get the i-th type; if it's a struct look up the field type,
        otherwise deref. *)
     let nth (index:int) (ty:t) : t option =
@@ -552,6 +542,24 @@ module Type = struct
       | Struct {members; _} ->
         Some (List.nth members index).ty
       | _ -> deref ty
+
+    (* Deref n-dimensions, rather than just one dimension, whic his what
+       deref does. *)
+    let deref_list (index:int option list) (ty:t) : t option =
+      let ( let* ) = Option.bind in
+      (* we need to deref as many times as indices *)
+      let rec iter (l:int option list) (ty:t) : t option =
+        match l with
+        | [] -> Some ty
+        | o :: l ->
+          let* ty =
+            match o with
+            | Some n -> nth n ty
+            | None -> deref ty
+          in
+          iter l ty
+      in
+      iter index ty
 
     let rec inner_to_string (name:string option) : inner -> string =
       function
