@@ -229,6 +229,12 @@ module Expressions = struct
         array: Variable.t;
         index: expr list;
       }
+
+      let read ~array (index:expr list) : t =
+        {target=None; array; index}
+
+      let read_to ~target_var ~target_ty ~array (index:expr list) : t =
+        {target=Some (target_ty, target_var); array; index}
     end
 
     type t = Read.t list
@@ -237,39 +243,38 @@ module Expressions = struct
 
     let empty : t = []
 
-    let add_var (f:Variable.t -> Read.t) (st:t) : (t * Variable.t) =
+    let alloc_var (f:Variable.t -> Read.t) (st:t) : (t * Variable.t) =
       let count = !counter in
       counter := count + 1;
       let var = "@AccessState" ^ string_of_int count |> Variable.from_name in
       (f var :: st, var)
 
     let add_read
+      ?(target=None)
       ~array:(array:Ident.t)
       ~index:(index:expr list)
       (st:t)
     :
       (t * expr)
     =
-      let ty = Type.deref_dim (List.length index) array.ty |> Option.get in
-      if Type.is_int ty then
-        let (ctx, var) =
-          add_var (fun target ->
-            {target=Some (ty, target); array=array.var; index}
-          ) st
+      match target with
+      | Some target ->
+        (Read.read ~array:array.var index :: st, Ident target)
+      | None ->
+        (* Get the type of the value being read *)
+        let target_ty =
+          Type.deref_dim (List.length index) array.ty |> Option.get
         in
-        (ctx, Ident {var; ty; kind=LocalVariable})
-      else
-        ({target=None; array=array.var; index} :: st, Unsupported)
-
-    let add_read_to
-      ~target:(target:Ident.t)
-      ~array:(array:Variable.t)
-      ~index:(index:expr list)
-      (ctx:t)
-    :
-      (t * expr)
-    =
-      ({target=None; array; index} :: ctx, Ident target)
+        if Type.is_int target_ty || Type.is_bool target_ty then
+          let (ctx, var) =
+            alloc_var (fun target_var ->
+              Read.read_to ~target_var ~target_ty ~array:array.var index
+            ) st
+          in
+          (ctx, Ident {var; ty=target_ty; kind=LocalVariable})
+        else
+          (* Don't generate a variable declaration when reading a non-int *)
+          (Read.read ~array:array.var index :: st, Unsupported)
 
     let pure (st:t) (x:'a) : t * 'a =
       (st, x)
@@ -309,9 +314,8 @@ module Expressions = struct
         ret_or [base] (
           let* a = NDAccess.from_expression location e in
           let (ctx, index) = l_rewrite ctx a.index in
-          match NDAccess.flatten a with
-          | Some target -> Some (add_read_to ~target ~array:a.array.var ~index ctx)
-          | None -> Some (add_read ~array:a.array ~index ctx)
+          let target = NDAccess.flatten a in
+          Some (add_read ~target ~array:a.array ~index ctx)
         )
       | Splat {size; value} ->
         let (ctx, value) = rewrite ctx value in
@@ -321,8 +325,7 @@ module Expressions = struct
       | Ident i ->
         pure (Ident i)
       | Load e ->
-        let (ctx, e) = rewrite ctx e in
-        (ctx, e)
+        rewrite ctx e
       | ImageSample {
           image;
           sampler;

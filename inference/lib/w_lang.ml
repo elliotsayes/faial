@@ -29,6 +29,9 @@ module ScalarKind = struct
     | Bool
     | AbstractFloat -> false
 
+  let is_bool (k:t) : bool =
+    k = Bool
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* n = cast_string j in
@@ -73,6 +76,9 @@ module Scalar = struct
 
   let is_int (s:t) : bool =
     ScalarKind.is_int s.kind
+
+  let is_bool (s:t) : bool =
+    ScalarKind.is_bool s.kind
 
   let is_unsigned (s:t) : bool =
     ScalarKind.is_unsigned s.kind
@@ -473,6 +479,12 @@ module Type = struct
       ty
       |> to_scalar
       |> Option.map Scalar.is_int
+      |> Option.value ~default:false
+
+    let is_bool (ty:t) : bool =
+      ty
+      |> to_scalar
+      |> Option.map Scalar.is_bool
       |> Option.value ~default:false
 
     let is_vec3_u32 (ty:t) : bool =
