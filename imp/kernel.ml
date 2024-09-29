@@ -63,12 +63,15 @@ let unique_id (k:t) : string =
   Call.kernel_id ~kernel:k.name ~ty:k.ty
 
 let to_s (k:t) : Indent.t list =
+    Line ""
+    ::
     Line (
       k.name ^
       " (" ^ Memory.map_to_string k.arrays ^ ", " ^
       Params.to_string k.params ^ ")")
     ::
     Stmt.to_s k.code
+
 
 let print (k: t) : unit =
   Indent.print (to_s k)

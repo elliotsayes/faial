@@ -1972,7 +1972,8 @@ module Function = struct
       |> Common.join ", "
     in
     [
-      Line (" fn " ^ f.name ^ "(" ^ args ^ ") {");
+      Line "";
+      Line ("fn " ^ f.name ^ "(" ^ args ^ ") {");
       Block (
         (if locals = "" then [] else
           [
@@ -1981,7 +1982,7 @@ module Function = struct
         )
         @ Statement.block_to_s f.body
       );
-      Line "}"
+      Line "}";
     ]
 end
 
@@ -2049,10 +2050,11 @@ module EntryPoint = struct
       |> Common.join ", "
     in
     [
+      Line "";
       Line (
-        "@" ^ ShaderStage.to_string d.stage ^
-        " @workgroup_size(" ^ Dim3.to_string d.workgroup_size ^ ")" ^
-        " fn " ^ d.name ^ "(" ^ args ^ ") {"
+        "@" ^ ShaderStage.to_string d.stage ^ " " ^
+        "@workgroup_size(" ^ Dim3.to_string d.workgroup_size ^ ") " ^
+        "fn " ^ d.name ^ "(" ^ args ^ ") {"
       );
       Block (
         (if locals = "" then [] else
@@ -2062,7 +2064,7 @@ module EntryPoint = struct
         )
         @ Statement.block_to_s d.function_.body
       );
-      Line "}"
+      Line "}";
     ]
 end
 
@@ -2113,7 +2115,7 @@ module Decl = struct
     in
     let binding =
       d.binding
-      |> Option.map (fun x -> " " ^ ResourceBinding.to_string x)
+      |> Option.map (fun x -> ResourceBinding.to_string x ^ " " )
       |> Option.value ~default:""
     in
     [
