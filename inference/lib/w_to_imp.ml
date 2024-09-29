@@ -407,16 +407,6 @@ module Expressions = struct
     let rec to_i_exp : expr -> Imp.Infer_exp.t =
       function
       | Literal l -> Literals.tr l
-      (*
-      | AccessIndex {base=Ident f; index; location} ->
-        let var =
-          f
-          |> Ident.inline_field index
-          |> Ident.var
-          |> Variable.set_location location
-        in
-        NExp (Var var)
-      *)
       | Ident {var; _} ->
         NExp (Var var)
       | Binary {op; left; right} ->
@@ -617,6 +607,11 @@ module Statements = struct
           let* (ty, var) = Variables.tr i in
           let (stmts, data) = Expressions.n_tr value in
           Some (stmts @ [ Assign {var; data; ty} ])
+        )
+      | Store {value; _} ->
+        ret (
+          let (stmts, _) = Expressions.n_tr value in
+          Some stmts
         )
       | Block l ->
         [tr_block l]
