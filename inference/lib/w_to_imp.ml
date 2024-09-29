@@ -251,12 +251,15 @@ module Expressions = struct
       (t * expr)
     =
       let ty = Type.deref_dim (List.length index) array.ty |> Option.get in
-      let (ctx, var) =
-        add_var (fun target ->
-          {target=Some (ty, target); array=array.var; index}
-        ) st
-      in
-      (ctx, Ident {var; ty; kind=LocalVariable})
+      if Type.is_int ty then
+        let (ctx, var) =
+          add_var (fun target ->
+            {target=Some (ty, target); array=array.var; index}
+          ) st
+        in
+        (ctx, Ident {var; ty; kind=LocalVariable})
+      else
+        ({target=None; array=array.var; index} :: st, Unsupported)
 
     let add_read_to
       ~target:(target:Ident.t)
