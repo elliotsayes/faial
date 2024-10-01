@@ -315,6 +315,12 @@ module Expressions = struct
       | Compose {ty; components} ->
         let (ctx, components) = l_rewrite ctx components in
         (ctx, Compose {ty; components})
+      | AccessIndex {base=Ident x; location; index} when Ident.is_system_var x ->
+        (ctx,
+          match Ident.inline_field index x with
+          | Some x -> Ident (Ident.set_location location x)
+          | None -> Unsupported
+        )
       | Access {base; location; index} ->
         ret_or [base; index] (
           let* a = NDAccess.from_expression location e in

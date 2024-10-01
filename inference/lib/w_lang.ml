@@ -369,6 +369,15 @@ module Binding = struct
 
   let num_workgroups : t = BuiltIn BuiltIn.NumWorkGroups
 
+  let is_system_var : t -> bool =
+    function
+    | BuiltIn BuiltIn.WorkGroupId
+    | BuiltIn BuiltIn.GlobalInvocationId
+    | BuiltIn BuiltIn.NumWorkGroups ->
+      true
+    | _ ->
+      false
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -689,6 +698,11 @@ module IdentKind = struct
   let is_grid_dim (k:t) : bool =
     k = FunctionArgument (Some Binding.num_workgroups)
 
+  let is_system_var : t -> bool =
+    function
+    | FunctionArgument (Some b) -> Binding.is_system_var b
+    | _ -> false
+
 end
 
 let parse_location (j:json) : Location.t j_result =
@@ -723,6 +737,9 @@ module Ident = struct
     match x.kind with
     | FunctionArgument _ -> true
     | _ -> false
+
+  let is_system_var (x:t) : bool =
+    IdentKind.is_system_var x.kind
 
   let is_global (x:t) : bool =
     x.kind = GlobalVariable
