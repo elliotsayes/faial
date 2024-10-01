@@ -304,6 +304,20 @@ module BuiltIn = struct
     | SubgroupSize
     | SubgroupInvocationId
 
+  let is_concurrency_related : t -> bool =
+    function
+    | GlobalInvocationId
+    | LocalInvocationId
+    | LocalInvocationIndex
+    | WorkGroupId
+    | NumWorkGroups
+    | NumSubgroups
+    | SubgroupId
+    | SubgroupSize
+    | SubgroupInvocationId ->
+      true
+    | _ -> false
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* name = cast_string j in
@@ -365,16 +379,16 @@ module Binding = struct
 
   let workgroup_id : t = BuiltIn BuiltIn.WorkGroupId
 
+  let local_invocation_id : t = BuiltIn BuiltIn.LocalInvocationId
+
   let global_invocation_id : t = BuiltIn BuiltIn.GlobalInvocationId
 
   let num_workgroups : t = BuiltIn BuiltIn.NumWorkGroups
 
-  let is_system_var : t -> bool =
+  let is_concurrency_related : t -> bool =
     function
-    | BuiltIn BuiltIn.WorkGroupId
-    | BuiltIn BuiltIn.GlobalInvocationId
-    | BuiltIn BuiltIn.NumWorkGroups ->
-      true
+    | BuiltIn b ->
+      BuiltIn.is_concurrency_related b
     | _ ->
       false
 
@@ -518,6 +532,9 @@ module Type = struct
 
     let i32 : t =
       scalar Scalar.i32
+
+    let u32 : t =
+      scalar Scalar.u32
 
     let u64 : t =
       scalar Scalar.u64
@@ -689,19 +706,42 @@ module IdentKind = struct
     | LocalVariable
     | CallResult
 
-  let is_thread_idx (k:t) : bool =
-    k = FunctionArgument (Some Binding.global_invocation_id)
+  let local_invocation_id : t =
+    FunctionArgument (Some Binding.local_invocation_id)
 
-  let is_block_idx (k:t) : bool =
-    k = FunctionArgument (Some Binding.workgroup_id)
+  let is_local_invocation_id (k:t) : bool =
+    k = local_invocation_id
 
-  let is_grid_dim (k:t) : bool =
-    k = FunctionArgument (Some Binding.num_workgroups)
+  let workgroup_id : t =
+    FunctionArgument (Some Binding.workgroup_id)
 
-  let is_system_var : t -> bool =
+  let is_workgroup_id (k:t) : bool =
+    k = workgroup_id
+
+  let num_workgroups : t =
+    FunctionArgument (Some Binding.num_workgroups)
+
+  let is_num_workgroups (k:t) : bool =
+    k = num_workgroups
+
+  let global_invocation_id : t =
+    FunctionArgument (Some Binding.global_invocation_id)
+
+  let is_global_invocation_id (k:t) =
+    k = global_invocation_id
+
+  let is_concurrency_related : t -> bool =
     function
-    | FunctionArgument (Some b) -> Binding.is_system_var b
+    | FunctionArgument (Some b) -> Binding.is_concurrency_related b
     | _ -> false
+
+  let to_string : t -> string =
+    function
+    | FunctionArgument (Some x) -> "func " ^ Binding.to_string x
+    | FunctionArgument None -> "func"
+    | GlobalVariable -> "global"
+    | LocalVariable -> "local"
+    | CallResult -> "call"
 
 end
 
@@ -738,8 +778,8 @@ module Ident = struct
     | FunctionArgument _ -> true
     | _ -> false
 
-  let is_system_var (x:t) : bool =
-    IdentKind.is_system_var x.kind
+  let is_concurrency_related (x:t) : bool =
+    IdentKind.is_concurrency_related x.kind
 
   let is_global (x:t) : bool =
     x.kind = GlobalVariable
@@ -752,42 +792,6 @@ module Ident = struct
 
   let add_suffix (suffix:string) (x:t) =
     { x with var = Variable.add_suffix suffix x.var }
-
-  let inline_field (index:int) (a:t) : t option =
-    let ( let* ) = Option.bind in
-    (* Project the type *)
-    let* ty = Type.nth index a.ty in
-    (* Try to get a default variable name *)
-    let var =
-      if IdentKind.is_thread_idx a.kind then
-        List.nth_opt Variable.tid_list index
-      else if IdentKind.is_block_idx a.kind then
-        List.nth_opt Variable.bid_list index
-      else if IdentKind.is_grid_dim a.kind then
-        List.nth_opt Variable.gdim_list index
-      else
-        None
-    in
-    let* a =
-      match var with
-        (* we found a system variable *)
-      | Some var ->
-        Some { a with
-          var =
-            a.var
-            (* When the variable is pretty-printed, use original variable's name *)
-            |> Variable.set_label a.var.name
-            (* When the variable is used internally, use our internal name *)
-            |> Variable.set_name var.name
-        }
-      | None ->
-        (* no system variable, but we can flatten the name *)
-        a.ty
-        |> Type.lookup_field index
-        |> Option.map (fun f -> add_suffix ("." ^ f) a)
-        (*|> Option.value ~default:(add_suffix (string_of_int index ^ ".") a)*)
-    in
-    Some { a with ty }
 
   let call : Variable.t = Variable.from_name "@Call"
 

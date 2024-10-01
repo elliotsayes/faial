@@ -116,6 +116,44 @@ module Variables = struct
     | Ident {var; ty; _} ->
       Some (Types.tr ty, var)
     | _ -> None
+
+  let inline_field (index:int) (a:W_lang.Ident.t) : W_lang.Ident.t option =
+    let open W_lang in
+    let open W_lang.Ident in
+    let ( let* ) = Option.bind in
+    (* Project the type *)
+    let* ty = Type.nth index a.ty in
+    (* Try to get a default variable name *)
+    let var =
+      if IdentKind.is_local_invocation_id a.kind then
+        List.nth_opt Variable.tid_list index
+      else if IdentKind.is_workgroup_id a.kind then
+        List.nth_opt Variable.bid_list index
+      else if IdentKind.is_num_workgroups a.kind then
+        List.nth_opt Variable.gdim_list index
+      else
+        None
+    in
+    let* a =
+      match var with
+        (* we found a system variable *)
+      | Some var ->
+        Some { a with
+          var =
+            a.var
+            (* When the variable is pretty-printed, use original variable's name *)
+            |> Variable.set_label a.var.name
+            (* When the variable is used internally, use our internal name *)
+            |> Variable.set_name var.name
+        }
+      | None ->
+        (* no system variable, but we can flatten the name *)
+        a.ty
+        |> Type.lookup_field index
+        |> Option.map (fun f -> add_suffix ("." ^ f) a)
+        (*|> Option.value ~default:(add_suffix (string_of_int index ^ ".") a)*)
+    in
+    Some { a with ty }
 end
 
 module NDAccess = struct
@@ -144,7 +182,7 @@ module NDAccess = struct
 
         | _ -> None
       in
-      let* ident = Ident.inline_field field ident in
+      let* ident = Variables.inline_field field ident in
       loop ident index
     in
     loop e.array e.index
@@ -222,6 +260,37 @@ module Expressions = struct
 
   let int (i:int) : t =
     Literal (Literals.Int i)
+
+  let mult (left:t) (right:t) : t =
+    Binary {op=Multiply; left; right}
+
+  let plus (left:t) (right:t) : t =
+    Binary {op=Add; left; right}
+
+  let thread_idx (index:int) : t option =
+    let open W_lang.Ident in
+    let ( let* ) = Option.bind in
+    let* var = List.nth_opt Variable.tid_list index in
+    Some (Ident {var; ty=Type.u32; kind=GlobalVariable})
+
+  let block_dim (index:int) : t option =
+    let open W_lang.Ident in
+    let ( let* ) = Option.bind in
+    let* var = List.nth_opt Variable.bdim_list index in
+    Some (Ident {var; ty=Type.u32; kind=GlobalVariable})
+
+  let block_idx (index:int) : t option =
+    let open W_lang.Ident in
+    let ( let* ) = Option.bind in
+    let* var = List.nth_opt Variable.bid_list index in
+    Some (Ident {var; ty=Type.u32; kind=GlobalVariable})
+
+  let global_idx (i:int) : t option =
+    let ( let* ) = Option.bind in
+    let* tid = thread_idx i in
+    let* bid = block_idx i in
+    let* bdim = block_dim i in
+    Some (plus tid (mult bid bdim))
 
   let to_int : t -> int option =
     function
@@ -315,9 +384,18 @@ module Expressions = struct
       | Compose {ty; components} ->
         let (ctx, components) = l_rewrite ctx components in
         (ctx, Compose {ty; components})
-      | AccessIndex {base=Ident x; location; index} when Ident.is_system_var x ->
+      | AccessIndex {base=Ident x; location; index}
+        when Ident.is_concurrency_related x ->
+        if IdentKind.is_global_invocation_id x.kind then
+          (* Global IDX is currently unsupported in MAPs *)
+          (ctx,
+            index
+            |> global_idx
+            |> Option.value ~default:Unsupported
+          )
+        else
         (ctx,
-          match Ident.inline_field index x with
+          match Variables.inline_field index x with
           | Some x -> Ident (Ident.set_location location x)
           | None -> Unsupported
         )
