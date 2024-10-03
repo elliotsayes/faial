@@ -2178,47 +2178,21 @@ module ResourceBinding = struct
 
 end
 
-module Decl = struct
-  type t = {
-    name: string;
-    space: AddressSpace.t;
-    binding: ResourceBinding.t option;
-    ty: Type.t;
-    (* TODO: init *)
-  }
-  let parse (j:json) : t j_result =
-    let open Rjson in
-    let* o = cast_object j in
-    let* name = with_field "name" cast_string o in
-    let* ty = with_field "ty" Type.parse o in
-    let* space = with_field "space" AddressSpace.parse o in
-    let* binding = with_field "binding" (cast_option ResourceBinding.parse) o in
-    Ok {ty; space; name; binding}
-
-  let to_string (d:t) : string =
-    d.name
-
-  let to_s (d:t) : Indent.t list =
-    let space =
-      let space = AddressSpace.to_string d.space in
-      if space <> "" then "<" ^ space ^ ">"
-      else ""
-    in
-    let binding =
-      d.binding
-      |> Option.map (fun x -> ResourceBinding.to_string x ^ " " )
-      |> Option.value ~default:""
-    in
-    [
-    Line (binding ^ "var" ^ space ^ " " ^ d.name ^": " ^ Type.to_string d.ty ^";")
-    ]
-end
-
-module Def = struct
+module DeclarationKind = struct
   type t =
-    | EntryPoint of EntryPoint.t
-    | Declaration of Decl.t
-    | Function of Function.t
+    | GlobalVariable of {
+        space: AddressSpace.t;
+        binding: ResourceBinding.t option;
+      }
+    | Constant
+    | Override of {id: int option}
+
+  let is_kind : string -> bool =
+    function
+    | "GlobalDeclaration" | "ConstDeclaration" ->
+      true
+    | _ ->
+      false
 
   let parse (j:json) : t j_result =
     let open Rjson in
@@ -2226,7 +2200,82 @@ module Def = struct
     let* kind = get_kind o in
     match kind with
     | "GlobalDeclaration" ->
-      let* d = Decl.parse j in
+      let* space = with_field "space" AddressSpace.parse o in
+      let* binding = with_field "binding" (cast_option ResourceBinding.parse) o in
+      Ok (GlobalVariable {space; binding})
+    | "ConstDeclaration" ->
+      Ok Constant
+    | _ -> root_cause ("DefinitionKind.parse: unknown kind: " ^ kind) j
+
+end
+
+module Declaration = struct
+  type t = {
+    name: string;
+    kind: DeclarationKind.t;
+    ty: Type.t;
+    init: Expression.t option;
+  }
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* name = with_field "name" cast_string o in
+    let* ty = with_field "ty" Type.parse o in
+    let* kind = DeclarationKind.parse j in
+    let* init = with_field "init" (cast_option Expression.parse) o in
+    Ok {name; kind; ty; init}
+
+  let to_string (d:t) : string =
+    d.name
+
+  let to_s (d:t) : Indent.t list =
+    let prefix =
+      match d.kind with
+      | GlobalVariable d ->
+        let space =
+          let space = AddressSpace.to_string d.space in
+          if space <> "" then "<" ^ space ^ ">"
+          else ""
+        in
+        let binding =
+          d.binding
+          |> Option.map (fun x -> ResourceBinding.to_string x ^ " " )
+          |> Option.value ~default:""
+        in
+        binding ^ "var" ^ space
+      | Constant ->
+        "const"
+      | Override _ ->
+        "override"
+    in
+    let init =
+      d.init
+      |> Option.map (fun x -> " = " ^ Expression.to_string x)
+      |> Option.value ~default:""
+    in
+    let line =
+      Printf.sprintf "%s %s: %s%s;"
+        prefix d.name (Type.to_string d.ty) init
+    in
+    [
+    Line line
+    ]
+end
+
+module ProgramEntry = struct
+  type t =
+    | EntryPoint of EntryPoint.t
+    | Declaration of Declaration.t
+    | Function of Function.t
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | _ when DeclarationKind.is_kind kind ->
+      let* d = Declaration.parse j in
       Ok (Declaration d)
     | "EntryPoint" ->
       let* e = EntryPoint.parse j in
@@ -2235,31 +2284,31 @@ module Def = struct
       let* f = Function.parse j in
       Ok (Function f)
     | _ ->
-      root_cause ("Def.parse: unknown kind: " ^ kind) j
+      root_cause ("ProgramEntry.parse: unknown kind: " ^ kind) j
 
   let to_string : t -> string =
     function
     | EntryPoint e -> EntryPoint.to_string e
-    | Declaration d -> Decl.to_string d
+    | Declaration d -> Declaration.to_string d
     | Function f -> Function.to_string f
 
   let to_s : t -> Indent.t list =
     function
     | EntryPoint e -> EntryPoint.to_s e
-    | Declaration e -> Decl.to_s e
+    | Declaration e -> Declaration.to_s e
     | Function f -> Function.to_s f
 end
 
 module Program = struct
-  type t = Def.t list
+  type t = ProgramEntry.t list
 
   let parse (j:json) : t j_result =
     let open Rjson in
-    let* l = cast_map Def.parse j in
+    let* l = cast_map ProgramEntry.parse j in
     Ok l
 
   let to_s : t -> Indent.t list =
-    List.concat_map Def.to_s
+    List.concat_map ProgramEntry.to_s
 
   let to_string (l:t) : string =
     Indent.to_string (to_s l)

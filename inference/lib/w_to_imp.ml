@@ -24,15 +24,18 @@ module Arrays = struct
       Some (Option.to_list size , [W_lang.Type.to_string base])
     | _ -> None
 
-  let tr_decl (d: W_lang.Decl.t) : (Variable.t * Memory.t) option =
+  let tr_decl (d: W_lang.Declaration.t) : (Variable.t * Memory.t) option =
     let ( let* ) = Option.bind in
-    let* h : Mem_hierarchy.t = tr_address_space d.space in
-    let* (size, data_type) = tr_type d.ty in
-    let name = d.name in
-    Some (Variable.from_name name, Memory.{hierarchy=h; size; data_type})
+    match d.kind with
+    | GlobalVariable g ->
+      let* h : Mem_hierarchy.t = tr_address_space g.space in
+      let* (size, data_type) = tr_type d.ty in
+      let name = d.name in
+      Some (Variable.from_name name, Memory.{hierarchy=h; size; data_type})
+    | _ -> None
 
   let tr
-    (globals: W_lang.Decl.t list)
+    (globals: W_lang.Declaration.t list)
   :
     Memory.t Variable.Map.t
   =
@@ -94,7 +97,7 @@ module Types = struct
 end
 
 module Globals = struct
-  let tr (d:W_lang.Decl.t) : (Variable.t * C_type.t) list =
+  let tr (d:W_lang.Declaration.t) : (Variable.t * C_type.t) list =
     match d.ty.inner with
     | Scalar s when W_lang.Scalar.is_int s -> [(Variable.from_name d.name, Types.tr d.ty)]
     | Array _ -> [(Variable.from_name (d.name ^ ".len"), C_type.int)]
@@ -623,7 +626,7 @@ module Typing = struct
     let f_ty = Signature.from_function f in
     StringMap.add f.name f_ty self
 
-  let add (d:Def.t) (self:t) : t =
+  let add (d:ProgramEntry.t) (self:t) : t =
     match d with
     | EntryPoint e -> add_function e.function_ self
     | Function f -> add_function f self
@@ -649,9 +652,9 @@ module Context = struct
   }
 
   let from_program (p:Program.t) : t =
-    let globals : W_lang.Decl.t list =
+    let globals : W_lang.Declaration.t list =
       List.filter_map (
-        let open W_lang.Def in
+        let open W_lang.ProgramEntry in
         function
         | EntryPoint _ | Function _ -> None
         | Declaration d -> Some d
@@ -880,7 +883,7 @@ let translate (p: W_lang.Program.t) : Imp.Kernel.t list =
   let ctx = Context.from_program p in
   p
   |> List.filter_map (
-      let open W_lang.Def in
+      let open W_lang.ProgramEntry in
       function
       | EntryPoint e -> Some (EntryPoints.tr ctx e)
       | Function f -> Some (Functions.tr ctx f)
