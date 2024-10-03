@@ -635,6 +635,8 @@ module Type = struct
         let columns = VectorSize.to_string columns in
         let rows = VectorSize.to_string rows in
         "mat" ^ rows ^ "x" ^ columns ^ "<" ^ Scalar.to_string scalar ^ ">"
+      | Atomic s ->
+        Printf.sprintf "atomic<%s>" (Scalar.to_string s)
       | k -> failwith ("inner_to_string: unsupported kind:" ^ kind k)
 
   and to_string (e:t) : string =
@@ -687,6 +689,9 @@ module Type = struct
       let* columns = with_field "columns" VectorSize.parse o in
       let* scalar = with_field "scalar" Scalar.parse o in
       Ok (Matrix {rows; columns; scalar})
+    | "Atomic" ->
+      let* scalar = with_field "scalar" Scalar.parse o in
+      Ok (Atomic scalar)
     | _ -> root_cause ("inner_parse: unsupported kind: " ^ kind) j
 
   and struct_parse (j:json) : struct_member j_result =
@@ -1721,6 +1726,53 @@ module LocalDeclaration = struct
     Variable.name d.var ^ " : " ^ Type.to_string d.ty ^ init
 end
 
+module AtomicFunction = struct
+  type t =
+    | Add
+    | Subtract
+    | And
+    | ExclusiveOr
+    | InclusiveOr
+    | Min
+    | Max
+    | Exchange of { compare : Expression.t option }
+
+  let to_string : t -> string =
+    function
+    | Add -> "Add"
+    | Subtract -> "Sub"
+    | And -> "And"
+    | ExclusiveOr -> "Xor"
+    | InclusiveOr -> "Or"
+    | Min -> "Min"
+    | Max -> "Max"
+    | Exchange { compare = None} -> "Exchange"
+    | Exchange _ -> "ExchangeWeak"
+
+  let to_list : t -> Expression.t list =
+    function
+    | Exchange {compare} -> Option.to_list compare
+    | Add | Subtract | ExclusiveOr | InclusiveOr | And | Min | Max -> []
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "Add" -> Ok Add
+    | "Subtract" -> Ok Subtract
+    | "And" -> Ok And
+    | "ExclusiveOr" -> Ok ExclusiveOr
+    | "InclusiveOr" -> Ok InclusiveOr
+    | "Min" -> Ok Min
+    | "Max" -> Ok Max
+    | "Exchange" ->
+      let* c = with_field "condition" (cast_option Expression.parse) o in
+      Ok (Exchange {compare=c})
+    | _ -> root_cause ("AtomicFunction.parse: unknown kind: " ^ kind) j
+
+end
+
 module Statement = struct
   type t =
     | Block of t list
@@ -1753,12 +1805,12 @@ module Statement = struct
         array_index: Option<Handle<Expression>>,
         value: Handle<Expression>,
       } *)
-    | Atomic (* {
-        pointer: Handle<Expression>,
-        fun: AtomicFunction,
-        value: Handle<Expression>,
-        result: Option<Handle<Expression>>,
-      } *)
+    | Atomic of {
+        pointer: Expression.t;
+        fun_: AtomicFunction.t;
+        value: Expression.t;
+        result: Expression.t option;
+      }
     | WorkGroupUniformLoad (*{
         pointer: Handle<Expression>,
         result: Handle<Expression>,
@@ -1820,7 +1872,12 @@ module Statement = struct
         let* value = with_field "value" Expression.parse o in
         Ok (Store {pointer; value;})
       | "ImageStore" -> Ok ImageStore
-      | "Atomic" -> Ok Atomic
+      | "Atomic" ->
+        let* pointer = with_field "pointer" Expression.parse o in
+        let* fun_ = with_field "fun" AtomicFunction.parse o in
+        let* value = with_field "value" Expression.parse o in
+        let* result = with_field "value" (cast_option Expression.parse) o in
+        Ok (Atomic {pointer; fun_; value; result})
       | "WorkGroupUniformLoad" -> Ok WorkGroupUniformLoad
       | "Call" ->
         let* function_ = with_field "function" cast_string o in
@@ -1914,14 +1971,18 @@ module Statement = struct
       } *)
       ->
       [Line "textureStore(TODO);"]
-    | Atomic (* {
-        pointer: Handle<Expression>,
-        fun: AtomicFunction,
-        value: Handle<Expression>,
-        result: Option<Handle<Expression>>,
-      } *)
-      ->
-      [Line "atomic(TODO);"]
+    | Atomic {pointer; fun_; value; result=_} ->
+      let args =
+        [pointer] @ AtomicFunction.to_list fun_ @ [value]
+        |> List.map Expression.to_string
+        |> Common.join ", "
+      in
+      let line =
+        Printf.sprintf "atomic%s(%s);"
+          (AtomicFunction.to_string fun_)
+          args
+      in
+      [Line line]
     | WorkGroupUniformLoad (*{
         pointer: Handle<Expression>,
         result: Handle<Expression>,
