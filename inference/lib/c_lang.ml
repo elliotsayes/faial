@@ -709,7 +709,7 @@ module Def = struct
     | Kernel of Kernel.t
     | Declaration of Decl.t
     | Typedef of Typedef.t
-    | Enum of Enum.t
+    | Enum of Imp.Enum.t
 
 
   let to_s (d:t) : Indent.t list =
@@ -717,7 +717,7 @@ module Def = struct
     | Declaration d -> Decl.to_s d
     | Kernel k -> Kernel.to_s k
     | Typedef d -> Typedef.to_s d
-    | Enum e -> Enum.to_s e
+    | Enum e -> Imp.Enum.to_s e
 end
 
 module Program = struct
@@ -1540,7 +1540,7 @@ let parse_type_param (j:Yojson.Basic.t) : Ty_param.t option j_result =
     Ok (Some (Ty_param.NonTypeTemplate {name=name; ty=J_type.from_json ty}))
   | _ -> Ok None
 
-let parse_constant (j:Yojson.Basic.t) : Enum.Constant.t j_result =
+let parse_constant (j:Yojson.Basic.t) : Imp.Enum.Constant.t j_result =
   let open Rjson in
   let* o = cast_object j in
   let* _ = expect_kind "EnumConstantDecl" o in
@@ -1555,12 +1555,12 @@ let parse_constant (j:Yojson.Basic.t) : Enum.Constant.t j_result =
       )
     ) None o
   in
-  let open Enum.Constant in
+  let open Imp.Enum.Constant in
   Ok {var; init}
 
-let parse_enum (j:Yojson.Basic.t) : Enum.t j_result =
+let parse_enum (j:Yojson.Basic.t) : Imp.Enum.t j_result =
   let open Rjson in
-  let open Enum in
+  let open Imp.Enum in
   let* o = cast_object j in
   let* var =
     match parse_variable j with

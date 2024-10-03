@@ -1,4 +1,5 @@
 open Stage0
+open Protocols
 
 module Constant = struct
   type t = {var: Variable.t; init: int option}

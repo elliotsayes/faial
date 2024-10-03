@@ -367,15 +367,6 @@ module Context = struct
     let name = C_type.to_string ty |> Variable.from_name in
     Variable.Map.find name ctx.enums
 
-  let build_params (ps:(Variable.t * C_type.t) list) (ctx:t) : Params.t =
-    List.fold_left (fun ps (x,ty) ->
-      if is_enum ty ctx then
-        Params.add_enum x (get_enum ty ctx) ps
-      else
-        Params.add x ty ps
-    )
-    Params.empty ps
-
   let add_array (var:Variable.t) (m:Memory.t) (b:t) : t =
     { b with arrays = Variable.Map.add var m b.arrays; }
 

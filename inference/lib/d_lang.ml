@@ -501,7 +501,7 @@ module Def = struct
     | Kernel of Kernel.t
     | Declaration of Decl.t
     | Typedef of Typedef.t
-    | Enum of Enum.t
+    | Enum of Imp.Enum.t
 
   let is_device_kernel : t -> bool =
     function
@@ -514,7 +514,7 @@ module Def = struct
     | Declaration d -> [Line (Decl.to_string d ^ ";")]
     | Kernel k -> Kernel.to_s k
     | Typedef d -> Typedef.to_s d
-    | Enum e -> Enum.to_s e
+    | Enum e -> Imp.Enum.to_s e
 
 end
 

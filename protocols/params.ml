@@ -16,11 +16,13 @@ let default_bound (x:Variable.t) (ty:C_type.t) : Exp.bexp * C_type.t =
 let filter (to_keep:Variable.t -> bool) : t -> t =
   Variable.Map.filter (fun x _ -> to_keep x)
 
-let add x ty =
-  Variable.Map.add x (default_bound x ty)
-
-let add_enum x e =
-  Variable.Map.add x (Enum.to_bexp x e, Enum.to_c_type e)
+let add ?(bound=None) x ty =
+  let p =
+    match bound with
+    | Some b -> (b, ty)
+    | None -> default_bound x ty
+  in
+  Variable.Map.add x p
 
 let remove_all (s:Variable.Set.t) : t -> t =
   Variable.Set.fold Variable.Map.remove s

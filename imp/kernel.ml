@@ -100,7 +100,7 @@ module ParameterList = struct
     List.fold_left (fun ps (x,ty) ->
         match ty with
         | Parameter.Type.Enum e ->
-          Params.add_enum x e ps
+          Params.add ~bound:(Some (Enum.to_bexp x e)) x (Enum.to_c_type e) ps
         | Scalar ty ->
           Params.add x ty ps
         | Unsupported | Array _ ->
