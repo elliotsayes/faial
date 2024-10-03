@@ -378,7 +378,6 @@ module Expressions = struct
           | Some l -> Literal l
           | None -> Unsupported
         )
-      | Constant -> unsupported
       | Override -> unsupported
       | ZeroValue ty -> pure (ZeroValue ty)
       | Compose {ty; components} ->

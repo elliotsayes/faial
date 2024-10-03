@@ -710,6 +710,7 @@ module IdentKind = struct
     | GlobalVariable
     | LocalVariable
     | CallResult
+    | Constant
 
   let local_invocation_id : t =
     FunctionArgument (Some Binding.local_invocation_id)
@@ -747,6 +748,7 @@ module IdentKind = struct
     | GlobalVariable -> "global"
     | LocalVariable -> "local"
     | CallResult -> "call"
+    | Constant -> "const"
 
 end
 
@@ -817,6 +819,8 @@ module Ident = struct
         Ok LocalVariable
       | "CallResult" ->
         Ok CallResult
+      | "Constant" ->
+        Ok Constant
       | _ ->
         root_cause ("Indent.parse: unknown kind: " ^ kind) j
     in
@@ -1300,7 +1304,6 @@ end
 module Expression = struct
   type t =
     | Literal of Literal.t
-    | Constant (*Handle<Constant>*)
     | Override (*Handle<Override>*)
     | ZeroValue of Type.t
     | Compose of {
@@ -1447,7 +1450,6 @@ module Expression = struct
     | ImageLoad _ -> failwith "type_of ImageLoad"
     | ImageSample _ -> failwith "type_of ImageSample"
     | Swizzle _ -> failwith "type_of Swizzle"
-    | Constant -> failwith "type_of Constant"
     | Override -> failwith "type_of Override"
     | Splat _ -> failwith "type_of Splat"
     | Math _ -> failwith "type_of Math"
@@ -1455,7 +1457,6 @@ module Expression = struct
   let rec to_string : t -> string =
     function
     | Literal l -> Literal.to_string l
-    | Constant -> (*TODO*) "Constant(TODO)"
     | Override -> (*TODO*) "Override(TODO)"
     | ZeroValue ty -> Type.to_string ty ^ "()"
     | Compose {ty; components} ->
@@ -1547,7 +1548,6 @@ module Expression = struct
     | "Literal" ->
       let* value = with_field "value" Literal.parse o in
       Ok (Literal value)
-    | "Constant" -> Ok Constant
     | "Override" -> Ok Override
     | "ZeroValue" ->
       let* ty = with_field "ty" Type.parse o in
@@ -1575,6 +1575,7 @@ module Expression = struct
       let* vector = with_field "vector" parse o in
       let* pattern = with_field "pattern" (cast_map cast_string) o in
       Ok (Swizzle {size; vector; pattern;})
+    | "Constant"
     | "CallResult"
     | "FunctionArgument"
     | "GlobalVariable"
