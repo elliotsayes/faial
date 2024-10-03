@@ -12,7 +12,7 @@ let (@) = Common.append_tr
 open Exp
 
 (* Monadic let *)
-let (let*) = Result.bind
+let ( let* ) = Result.bind
 (* Monadic pipe *)
 let (>>=) = Result.bind
 
@@ -814,7 +814,7 @@ let parse_param
   (ctx:Context.t)
   (p:Param.t)
 :
-  param option d_result
+  Kernel.Parameter.t d_result
 =
   let mk_array (h:Mem_hierarchy.t) (ty:C_type.t) : Memory.t =
     {
@@ -829,9 +829,11 @@ let parse_param
     |> Result.map_error from_j_error
     |> Result.map (fun x -> Context.resolve x ctx)
   in
-  if Context.is_int ty ctx then
-    let x = p.ty_var.name in
-    Ok (Some (Either.Left (x, ty)))
+  let x = p.ty_var.name in
+  if Context.is_enum ty ctx then
+    Ok (Kernel.Parameter.enum x (Context.get_enum ty ctx))
+  else if Context.is_int ty ctx then
+    Ok (Kernel.Parameter.scalar x ty)
   else if C_type.is_array ty then (
     let h =
       if p.is_shared then
@@ -839,20 +841,19 @@ let parse_param
       else
         Mem_hierarchy.GlobalMemory
     in
-    Ok (Some (Either.Right (p.ty_var.name, mk_array h ty)))
-  ) else Ok None
-
+    Ok (Kernel.Parameter.array x (mk_array h ty))
+  ) else Ok (Kernel.Parameter.unsupported x)
 
 let parse_params
   (ctx:Context.t)
   (ps:Param.t list)
 :
-  (Params.t * Memory.t Variable.Map.t) d_result
+  Kernel.Parameter.t list d_result
 =
-  let* params = Rjson.map_all (parse_param ctx)
-    (fun i _ e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e)) ps in
-  let globals, arrays = Common.flatten_opt params |> Common.either_split in
-  Ok (Context.build_params globals ctx, Variable.Map.of_list arrays)
+  Rjson.map_all
+    (parse_param ctx)
+    (fun i _ e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e))
+    ps
 
 let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
   let open D_lang in
@@ -901,16 +902,17 @@ let parse_kernel
   (Context.t * Imp.Kernel.t) d_result
 =
   let* code = parse_stmt ctx k.code in
-  (* Add inferred arrays to global context *)
+  (* Add inferred shared arrays to global context *)
   let ctx =
     List.fold_left (fun ctx (x, m) ->
       Context.add_array x m ctx
     ) ctx (parse_shared k.code)
   in
-  let* (params, arrays) = parse_params ctx k.params in
-  let arrays = Variable.Map.union (fun _ _ r -> Some r) arrays ctx.arrays in
-  let params = Params.union_right ctx.globals params in
-
+  (* Parse kernel parameters *)
+  let* parameters = parse_params ctx k.params in
+  (* type parameters become global variables because c-t-j doesn't represent
+     type instantiations.
+    *)
   let rec add_type_params (params:Params.t) : Ty_param.t list -> Params.t =
     function
     | [] -> params
@@ -924,20 +926,21 @@ let parse_kernel
       in
       add_type_params params l
   in
+  let global_variables = add_type_params ctx.globals k.type_params in
   let open Imp.Stmt in
   let code = Block (Context.gen_preamble ctx @ code) in
-  let params = add_type_params params k.type_params in
   let open Imp.Kernel in
   Ok (ctx, {
     name = k.name;
     ty = k.ty;
-    code = code;
-    params;
-    arrays;
+    code;
+    parameters;
+    global_arrays = ctx.arrays;
+    global_variables;
     visibility =
       (match k.attribute with
-        | Default -> Proto.Kernel.Global
-        | Auxiliary -> Proto.Kernel.Device
+        | Default -> Visibility.Global
+        | Auxiliary -> Visibility.Device
       );
     block_dim = None;
     grid_dim = None;

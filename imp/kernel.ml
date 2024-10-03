@@ -38,20 +38,98 @@ type access_expr = {access_index: nexp list; access_mode: Access.Mode.t}
   becomes in Scoped:
     local x {s1[x=1] ; ... sn[x=1]}
 *)
+module Parameter = struct
+  module Type = struct
+    type t =
+    | Scalar of C_type.t
+    | Array of Memory.t
+    | Enum of Enum.t
+    | Unsupported
+
+    let to_string : t -> string =
+      function
+      | Scalar s -> C_type.to_string s
+      | Array m -> Memory.to_string m
+      | Enum e -> Enum.name e
+      | Unsupported -> "?"
+
+  end
+
+  type t = (Variable.t * Type.t)
+
+  let enum (name:Variable.t) (e:Enum.t) : t =
+    name, Enum e
+
+  let array (name:Variable.t) (m:Memory.t) : t =
+    name, Array m
+
+  let scalar (name:Variable.t) (ty:C_type.t) : t =
+    name, Scalar ty
+
+  let unsupported (name:Variable.t) : t =
+    name, Unsupported
+
+  let to_array ((name,ty):t) : (Variable.t * Memory.t) option =
+    match ty with
+    | Type.Array m -> Some (name, m)
+    | _ -> None
+
+  let to_string ((p, ty) : t) : string =
+    Printf.sprintf "%s %s"
+      (Type.to_string ty)
+      (Variable.name p)
+
+end
+
+module ParameterList = struct
+  type t = Parameter.t list
+
+  let empty : t = []
+
+  let to_string (l:t) : string =
+    l
+    |> List.map Parameter.to_string
+    |> Common.join ", "
+
+  let to_arrays (x:t) : Memory.t Variable.Map.t =
+    x
+    |> List.filter_map Parameter.to_array
+    |> Variable.Map.of_list
+
+  let to_params (l:t) : Params.t =
+    List.fold_left (fun ps (x,ty) ->
+        match ty with
+        | Parameter.Type.Enum e ->
+          Params.add_enum x e ps
+        | Scalar ty ->
+          Params.add x ty ps
+        | Unsupported | Array _ ->
+          ps
+      )
+      Params.empty
+      l
+
+  let to_set (x:t) : Variable.Set.t =
+    x
+    |> List.map fst
+    |> Variable.Set.of_list
+end
 
 type t = {
   (* The kernel name *)
   name: string;
   (* The type signature of the kernel *)
   ty: string;
-  (* The shared locations that can be accessed in the kernel. *)
-  arrays: Memory.t Variable.Map.t;
-  (* The internal variables are used in the code of the kernel.  *)
-  params: Params.t;
+  (* Kernel parameters *)
+  parameters: ParameterList.t;
+  (* Globally-defined arrays that can be accessed by the kernel. *)
+  global_arrays: Memory.t Variable.Map.t;
+  (* Global variables of the kernels (scalars).  *)
+  global_variables: Params.t;
   (* The code of a kernel performs the actual memory accesses. *)
   code: Stmt.t;
   (* Visibility *)
-  visibility: Proto.Kernel.visible;
+  visibility: Visibility.t;
   (* Number of blocks *)
   grid_dim: Dim3.t option;
   (* Number of blocks *)
@@ -66,9 +144,19 @@ let to_s (k:t) : Indent.t list =
     Line ""
     ::
     Line (
-      k.name ^
-      " (" ^ Memory.map_to_string k.arrays ^ ", " ^
-      Params.to_string k.params ^ ")")
+      Printf.sprintf
+        "%s %s (%s)"
+        (Visibility.to_string k.visibility)
+        k.name
+        (ParameterList.to_string k.parameters)
+    )
+    ::
+    Line (
+      Printf.sprintf
+        "global {arrays: %s} {scalars: %s}"
+        (Memory.map_to_string k.global_arrays)
+        (Params.to_string k.global_variables)
+    )
     ::
     Stmt.to_s k.code
 
@@ -80,14 +168,24 @@ let remove_global_asserts (k:t) : t =
   { k with code = Stmt.filter_asserts Assert.is_local k.code }
 
 let compile (k:t) : Proto.Code.t Proto.Kernel.t =
-  let globals = k.params in
+  let globals =
+    (* Take the global variables and the scalars defined in the paramter list *)
+    k.global_variables
+    |> Params.union_left (ParameterList.to_params k.parameters)
+  in
+  (* Add any globals defined from scoped *)
   let (globals, p) = Scoped.from_stmt (globals, k.code) in
+  (* Merge globally-defined arrays and arrays defined in parameters. *)
+  let arrays =
+    k.global_arrays
+    |> Variable.MapUtil.union_left (ParameterList.to_arrays k.parameters)
+  in
   let p =
     p
-    |> Scoped.filter_locs k.arrays (* Remove unknown arrays *)
+    |> Scoped.filter_locs arrays (* Remove unknown arrays *)
     |> Scoped.fix_assigns
     (* Inline local variable assignment and ensure variables are distinct*)
-    |> Encode_assigns.from_scoped (Params.to_set k.params)
+    |> Encode_assigns.from_scoped (ParameterList.to_set k.parameters)
     |> Encode_asserts.from_encode_assigns
   in
   let (p, locals, pre) =
@@ -110,8 +208,8 @@ let compile (k:t) : Proto.Code.t Proto.Kernel.t =
     *)
   {
     name = k.name;
-    pre = pre;
-    arrays = k.arrays;
+    pre;
+    arrays;
     local_variables = locals;
     global_variables = globals;
     code = p;

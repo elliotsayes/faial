@@ -940,7 +940,7 @@ module Kernel = struct
 
   let summarize (k:Imp.Kernel.t) : json =
     let arrays =
-      k.arrays
+      k.global_arrays
       |> Variable.Map.bindings
       |> List.map (fun ((k:Variable.t), a) ->
         let open Memory in

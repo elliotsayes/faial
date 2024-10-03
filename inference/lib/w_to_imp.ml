@@ -850,8 +850,9 @@ module Functions = struct
     {
       name = e.name;
       ty = e.name;
-      arrays = ctx.arrays;
-      params = ctx.params;
+      global_arrays = ctx.arrays;
+      global_variables = ctx.params;
+      parameters = Imp.Kernel.ParameterList.empty;
       code =
         Block (
         LocalDeclarations.tr e.locals

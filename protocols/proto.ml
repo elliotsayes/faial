@@ -270,10 +270,6 @@ module Code = struct
 end
 
 module Kernel = struct
-  (* __global__ kernels are entry points and can be invoked from
-    the host. Auxiliary kernels have a __device__ attribute and
-    can only be invoked from the GPU code. *)
-  type visible = Global | Device
   type 'a t = {
     (* The kernel name *)
     name : string;
@@ -288,7 +284,7 @@ module Kernel = struct
     (* The code of a kernel performs the actual memory accesses. *)
     code: 'a;
     (* The kernel's visibility *)
-    visibility : visible;
+    visibility : Visibility.t;
     (* Number of blocks *)
     grid_dim: Dim3.t option;
     (* Number of blocks *)
