@@ -71,6 +71,9 @@ module Scalar = struct
   let int : t = {kind=ScalarKind.AbstractInt; width=8}
   let float : t = {kind=ScalarKind.AbstractFloat; width=8}
 
+  let make_32 (kind:ScalarKind.t) : t =
+    {kind; width=4}
+
   let make_64 (kind:ScalarKind.t) : t =
     {kind; width=8}
 
@@ -232,7 +235,6 @@ module ImageClass = struct
         format: string;
         access: StorageAccess.t;
     }
-
 
   let multisampled : t -> bool =
     function
@@ -539,8 +541,14 @@ module Type = struct
     let u64 : t =
       scalar Scalar.u64
 
+    let f32 : t =
+      scalar Scalar.f32
+
     let f64 : t =
       scalar Scalar.f64
+
+    let vec (size:VectorSize.t) (scalar:Scalar.t) : t =
+      make (Vector {size; scalar;})
 
     let bool : t =
       scalar Scalar.bool
@@ -1372,6 +1380,7 @@ module Expression = struct
         size: VectorSize.t;
         vector: t;
         indices: int list;
+        location: Location.t;
       }
     | Ident of Ident.t
     | Load of t
@@ -1491,7 +1500,16 @@ module Expression = struct
     | Derivative _ -> failwith "type_of Derivative"
     | Unary _ -> failwith "type_of Unary"
     | ImageQuery _ -> failwith "type_of ImageQuery"
-    | ImageLoad _ -> failwith "type_of ImageLoad"
+    | ImageLoad {image; _} ->
+      let ty = type_of image in
+      (match ty.inner with
+      | Image {image_class; _} ->
+        (match image_class with
+        | Sampled {kind; _} -> Type.vec Quad (Scalar.make_32 kind)
+        | Depth _ -> Type.f32
+        | Storage _ -> Type.vec Quad Scalar.f32
+        )
+      | _ -> failwith "must be an image")
     | ImageSample _ -> failwith "type_of ImageSample"
     | Swizzle _ -> failwith "type_of Swizzle"
     | Splat _ -> failwith "type_of Splat"
@@ -1513,7 +1531,7 @@ module Expression = struct
     | AccessIndex {base; index; location=_;} ->
       to_string base ^ "." ^ string_of_int index
     | Splat {size; value} -> "vec" ^ VectorSize.to_string size ^ "(" ^ to_string value ^ ")"
-    | Swizzle {vector; indices; size} ->
+    | Swizzle {vector; indices; size; location=_} ->
       let pattern =
         indices
         |> List.map (fun x -> VectorSize.nth_opt x size)
@@ -1620,7 +1638,8 @@ module Expression = struct
       let* size = with_field "size" VectorSize.parse o in
       let* vector = with_field "vector" parse o in
       let* indices = with_field "indices" (cast_map cast_int) o in
-      Ok (Swizzle {size; vector; indices;})
+      let* location = with_field "location" parse_location o in
+      Ok (Swizzle {size; vector; indices; location;})
     | "Override"
     | "Constant"
     | "CallResult"
