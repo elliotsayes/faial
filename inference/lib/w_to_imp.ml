@@ -211,7 +211,7 @@ module Expressions = struct
       }
     | Ident of Ident.t
     | Unary of {
-  (*         op: UnaryOperator, *)
+        op: UnaryOperator.t;
         expr: t;
       }
     | Binary of {
@@ -365,7 +365,6 @@ module Expressions = struct
           | Some l -> Literal l
           | None -> Unsupported
         )
-      | Override -> unsupported
       | ZeroValue ty -> pure (ZeroValue ty)
       | Compose {ty; components} ->
         let (ctx, components) = l_rewrite ctx components in
@@ -437,9 +436,9 @@ module Expressions = struct
           | _ -> ctx
         in
         (ctx, Unsupported)
-      | Unary {expr} ->
+      | Unary {expr; op} ->
         let (ctx, expr) = rewrite ctx expr in
-        (ctx, Unary {expr})
+        (ctx, Unary {expr; op})
       | Binary {op; left; right} ->
         let (ctx, left) = rewrite ctx left in
         let (ctx, right) = rewrite ctx right in
@@ -520,7 +519,13 @@ module Expressions = struct
         NExp (NIf (to_i_exp condition, to_i_exp accept, to_i_exp reject))
       | As {expr; _} ->
         to_i_exp expr
-      | Unary _ -> Unknown "Unary"
+      | Unary {op; expr} ->
+        let expr = to_i_exp expr in
+        (match op with
+        | Negate -> NExp (Unary (Negate, expr))
+        | LogicalNot -> BExp (BNot expr)
+        | BitwiseNot -> NExp (Unary (BitNot, expr))
+        )
       | Splat _ -> Unknown "Splat"
       | ZeroValue _ -> Unknown "ZeroValue"
       | Compose _ -> Unknown "Compose"

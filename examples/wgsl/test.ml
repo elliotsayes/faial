@@ -19,6 +19,8 @@ let tests = [
   "drf-array-vector.wgsl", [], 0;
   (* Include support for constant declarations *)
   "drf-const.wgsl", [], 0;
+  (* Overrides and unary operators *)
+  "drf-unary.wgsl", [], 0;
 ]
 
 let unsupported : Fpath.t list =

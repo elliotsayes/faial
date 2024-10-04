@@ -711,6 +711,7 @@ module IdentKind = struct
     | LocalVariable
     | CallResult
     | Constant
+    | Override
 
   let local_invocation_id : t =
     FunctionArgument (Some Binding.local_invocation_id)
@@ -749,6 +750,7 @@ module IdentKind = struct
     | LocalVariable -> "local"
     | CallResult -> "call"
     | Constant -> "const"
+    | Override -> "override"
 
 end
 
@@ -821,6 +823,8 @@ module Ident = struct
         Ok CallResult
       | "Constant" ->
         Ok Constant
+      | "Override" ->
+        Ok Override
       | _ ->
         root_cause ("Indent.parse: unknown kind: " ^ kind) j
     in
@@ -884,6 +888,28 @@ module FunctionResult = struct
     let* binding = with_field "binding" (cast_option Binding.parse) o in
     Ok {ty; binding}
 
+end
+
+module UnaryOperator = struct
+  type t =
+    | Negate
+    | LogicalNot
+    | BitwiseNot
+
+  let to_string : t -> string =
+    function
+    | Negate -> "-"
+    | LogicalNot -> "!"
+    | BitwiseNot -> "~"
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* name = cast_string j in
+    match name with
+    | "Negate" -> Ok Negate
+    | "LogicalNot" -> Ok LogicalNot
+    | "BitwiseNot" -> Ok BitwiseNot
+    | _ -> root_cause "BinaryOperator" j
 end
 
 module BinaryOperator = struct
@@ -950,7 +976,7 @@ module BinaryOperator = struct
     | "LogicalOr" -> Ok LogicalOr
     | "ShiftLeft" -> Ok ShiftLeft
     | "ShiftRight" -> Ok ShiftRight
-    | _ -> failwith name
+    | _ -> root_cause "BinaryOperator" j
 end
 
 module Literal = struct
@@ -1323,7 +1349,6 @@ end
 module Expression = struct
   type t =
     | Literal of Literal.t
-    | Override (*Handle<Override>*)
     | ZeroValue of Type.t
     | Compose of {
         ty: Type.t;
@@ -1372,7 +1397,7 @@ module Expression = struct
         query: image_query;
       }
     | Unary of {
-(*         op: UnaryOperator, *)
+        op: UnaryOperator.t;
         expr: t;
       }
     | Binary of {
@@ -1469,14 +1494,12 @@ module Expression = struct
     | ImageLoad _ -> failwith "type_of ImageLoad"
     | ImageSample _ -> failwith "type_of ImageSample"
     | Swizzle _ -> failwith "type_of Swizzle"
-    | Override -> failwith "type_of Override"
     | Splat _ -> failwith "type_of Splat"
     | Math _ -> failwith "type_of Math"
 
   let rec to_string : t -> string =
     function
     | Literal l -> Literal.to_string l
-    | Override -> (*TODO*) "Override(TODO)"
     | ZeroValue ty -> Type.to_string ty ^ "()"
     | Compose {ty; components} ->
       let components =
@@ -1532,7 +1555,8 @@ module Expression = struct
         | _ -> ""
       in
       func ^ "(" ^ to_string image ^ arg ^ ")"
-    | Unary _ -> (* TODO *) "Unary"
+    | Unary {op; expr} ->
+      Printf.sprintf "%s(%s)" (UnaryOperator.to_string op) (to_string expr)
     | Binary b ->
       Printf.sprintf
         "(%s) %s (%s)"
@@ -1571,7 +1595,6 @@ module Expression = struct
     | "Literal" ->
       let* value = with_field "value" Literal.parse o in
       Ok (Literal value)
-    | "Override" -> Ok Override
     | "ZeroValue" ->
       let* ty = with_field "ty" Type.parse o in
       Ok (ZeroValue ty)
@@ -1598,6 +1621,7 @@ module Expression = struct
       let* vector = with_field "vector" parse o in
       let* indices = with_field "indices" (cast_map cast_int) o in
       Ok (Swizzle {size; vector; indices;})
+    | "Override"
     | "Constant"
     | "CallResult"
     | "FunctionArgument"
@@ -1644,10 +1668,9 @@ module Expression = struct
         image;
       })
     | "Unary" ->
+      let* op = with_field "op" UnaryOperator.parse o in
       let* expr = with_field "expr" parse o in
-      Ok (Unary {
-        expr;
-      })
+      Ok (Unary { op; expr; })
     | "Binary" ->
       let* left = with_field "left" parse o in
       let* right = with_field "right" parse o in
@@ -2205,7 +2228,7 @@ module DeclarationKind = struct
 
   let is_kind : string -> bool =
     function
-    | "GlobalDeclaration" | "ConstDeclaration" ->
+    | "GlobalDeclaration" | "ConstDeclaration" | "Constant" ->
       true
     | _ ->
       false
@@ -2221,6 +2244,9 @@ module DeclarationKind = struct
       Ok (GlobalVariable {space; binding})
     | "ConstDeclaration" ->
       Ok Constant
+    | "Override" ->
+      let* id = with_field "space" (cast_option cast_int) o in
+      Ok (Override {id})
     | _ -> root_cause ("DefinitionKind.parse: unknown kind: " ^ kind) j
 
 end
