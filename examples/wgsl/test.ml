@@ -17,6 +17,7 @@ let tests = [
   "drf-array-array.wgsl", [], 0;
   "drf-array-vector-2.wgsl", [], 0;
   "drf-array-vector.wgsl", [], 0;
+  (* Include support for constant declarations *)
   "drf-const.wgsl", [], 0;
 ]
 
