@@ -1301,6 +1301,25 @@ module MathFunction = struct
     | Unpack4xU8 -> "unpack4xU8"
 end
 
+module RelationalFunction = struct
+  type t =
+    | All
+    | Any
+
+  let to_string : t -> string =
+    function
+    | All -> "all"
+    | Any -> "any"
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* kind = cast_string j in
+    match kind with
+    | "All" -> Ok All
+    | "Any" -> Ok Any
+    | _ -> root_cause "RelationalFunction" j
+end
+
 module Expression = struct
   type t =
     | Literal of Literal.t
@@ -1372,7 +1391,7 @@ module Expression = struct
         expr: t;
       }
     | Relational of {
-(*         fun: RelationalFunction, *)
+        fun_: RelationalFunction.t;
         argument: t;
       }
     | Math of {
@@ -1521,7 +1540,10 @@ module Expression = struct
         (to_string b.right)
     | Select _ -> (*TODO*) "Select"
     | Derivative _ -> (*TODO*) "Derivative"
-    | Relational _ -> (*TODO*) "Relational"
+    | Relational {fun_; argument} ->
+      Printf.sprintf "%s(%s)"
+        (RelationalFunction.to_string fun_)
+        (to_string argument)
     | Math {fun_; args} ->
       let args = args |> List.map to_string |> Common.join ", " in
       MathFunction.to_string fun_ ^ "(" ^ args ^ ")"
@@ -1638,25 +1660,18 @@ module Expression = struct
       let* condition = with_field "condition" parse o in
       let* accept = with_field "accept" parse o in
       let* reject = with_field "reject" parse o in
-      Ok (Select {
-        condition;
-        accept;
-        reject;
-      })
+      Ok (Select { condition; accept; reject; })
     | "Derivative" ->
       let* expr = with_field "expr" parse o in
-      Ok (Derivative {
-        expr;
-      })
+      Ok (Derivative { expr; })
     | "Relational" ->
       let* argument = with_field "argument" parse o in
-      Ok (Relational {
-        argument;
-      })
+      let* fun_ = with_field "fun" RelationalFunction.parse o in
+      Ok (Relational { fun_; argument; })
     | "Math" ->
       let* fun_ = with_field "fun" MathFunction.parse o in
       let* args = with_field "args" (cast_map parse) o in
-      Ok (Math {fun_; args;})
+      Ok (Math { fun_; args;})
     | "As" ->
       let* expr = with_field "expr" parse o in
       let* kind = with_field "scalar_kind" ScalarKind.parse o in

@@ -225,7 +225,7 @@ module Expressions = struct
         reject: t;
       }
     | Relational of {
-  (*         fun: RelationalFunction, *)
+        fun_: RelationalFunction.t;
         argument: t;
       }
     | Math of {
@@ -452,9 +452,9 @@ module Expressions = struct
       | Derivative {expr;} ->
         let ctx = add ctx expr in
         (ctx, Unsupported)
-      | Relational {argument;} ->
+      | Relational {argument; fun_ = _;} ->
         let (ctx, argument) = rewrite ctx argument in
-        (ctx, Relational {argument;})
+        (ctx, Relational {fun_; argument;})
       | Math {fun_; args;} ->
         let (ctx, args) = l_rewrite ctx args in
         (ctx, Math {fun_; args;})
@@ -936,8 +936,7 @@ module Functions = struct
       code =
         Block (
         Context.assigns ctx
-        @
-        LocalDeclarations.tr e.locals
+        @ LocalDeclarations.tr e.locals
         @ Statements.tr ctx e.body);
       visibility = Device;
       grid_dim = None;
