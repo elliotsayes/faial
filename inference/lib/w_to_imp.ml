@@ -96,22 +96,6 @@ module Types = struct
       |> C_type.make
 end
 
-module Globals = struct
-  let tr (d:W_lang.Declaration.t) : (Variable.t * C_type.t) list =
-    match d.ty.inner with
-    | Scalar s when W_lang.Scalar.is_int s -> [(Variable.from_name d.name, Types.tr d.ty)]
-    | Array _ -> [(Variable.from_name (d.name ^ ".len"), C_type.int)]
-    | Struct {members=l; _} ->
-      List.filter_map (fun m ->
-          let open W_lang.Type in
-          if W_lang.Type.is_int m.ty then
-            Some ((Variable.from_name (d.name ^ "." ^ m.name), Types.tr m.ty))
-          else
-            None
-        ) l
-    | _ -> []
-end
-
 module Variables = struct
   let tr : W_lang.Expression.t -> (C_type.t * Variable.t) option =
     let open W_lang.Expression in
@@ -642,6 +626,60 @@ module Typing = struct
 
 end
 
+module Globals = struct
+  type t = {
+    var: Variable.t;
+    ty: C_type.t;
+    init: Exp.nexp option;
+  }
+  let tr (d:W_lang.Declaration.t) : t list =
+    match d.ty.inner with
+    | Scalar s when W_lang.Scalar.is_int s ->
+      let init =
+        match d.init with
+        | Some e ->
+            let (l, e) = Expressions.n_tr e in
+            if l = [] then
+              Some e
+            else
+              None
+        | None -> None
+      in
+      [{var=Variable.from_name d.name; ty=Types.tr d.ty; init}]
+    | Array _ -> [{var=Variable.from_name (d.name ^ ".len"); ty=C_type.int;init=None}]
+    | Struct {members=l; _} ->
+      List.filter_map (fun (m:W_lang.Type.struct_member) : t option->
+          let open W_lang.Type in
+          if W_lang.Type.is_int m.ty then
+            Some {
+              var=Variable.from_name (d.name ^ "." ^ m.name);
+              ty=Types.tr m.ty;
+              init=None;
+            }
+          else
+            None
+        ) l
+    | _ -> []
+end
+
+module Const = struct
+  type t = {
+    var: Variable.t;
+    ty: C_type.t;
+    init: Exp.nexp;
+  }
+  let to_stmt (c:t) : Imp.Stmt.t option =
+    if C_type.is_int c.ty
+    then
+      Some (Imp.Stmt.Decl [{
+          var=c.var;
+          ty=c.ty;
+          init=Some c.init;
+        }])
+    else
+      None
+end
+
 module Context = struct
   open W_lang
 
@@ -649,25 +687,65 @@ module Context = struct
     arrays: Memory.t Variable.Map.t;
     params: Params.t;
     typing: Typing.t;
+    assigns: Const.t list;
   }
 
+  let empty : t =
+    {
+      arrays = Variable.Map.empty;
+      params = Params.empty;
+      typing = Typing.empty;
+      assigns = []
+    }
+
+  let add_to_arrays
+    (p:ProgramEntry.t)
+    (arrays:Memory.t Variable.Map.t)
+  :
+    Memory.t Variable.Map.t
+  =
+    match p with
+    | Declaration d ->
+      (match Arrays.tr_decl d with
+      | Some (array, m) ->
+        Variable.Map.add array m arrays
+      | None -> arrays)
+    | _ -> arrays
+
+  let add_global (g:Globals.t) (ctx:t) : t =
+    match g.init with
+    | Some init -> { ctx with assigns = Const.{var=g.var; ty=g.ty; init}::ctx.assigns }
+    | None -> { ctx with params = Params.add g.var g.ty ctx.params }
+
+  let add_scalar (p:ProgramEntry.t) (ctx:t) : t =
+    match p with
+    | Declaration d ->
+      d
+      |> Globals.tr
+      |> List.fold_left (fun (ctx:t) (g:Globals.t) : t ->
+          add_global g ctx
+        )
+        ctx
+    | _ -> ctx
+
+  let add (p:ProgramEntry.t) (ctx:t) : t =
+    { ctx with
+      arrays = add_to_arrays p ctx.arrays;
+      typing = Typing.add p ctx.typing;
+    }
+    |> add_scalar p
+
   let from_program (p:Program.t) : t =
-    let globals : W_lang.Declaration.t list =
-      List.filter_map (
-        let open W_lang.ProgramEntry in
-        function
-        | EntryPoint _ | Function _ -> None
-        | Declaration d -> Some d
-      ) p
-    in
-    let arrays = Arrays.tr globals in
-    let params =
-      globals
-      |> List.concat_map Globals.tr
-      |> Params.from_list
-    in
-    let typing = Typing.from_program p in
-    { arrays; params; typing }
+    p
+    |> List.fold_left (fun (ctx:t) (p:ProgramEntry.t) : t ->
+        add p ctx
+      )
+      empty
+
+  let assigns (ctx:t) : Imp.Stmt.t list =
+    ctx.assigns
+    |> List.rev
+    |> List.filter_map Const.to_stmt
 
   let lookup (name:string) (ctx:t) : Signature.t =
     Typing.lookup name ctx.typing
@@ -857,6 +935,8 @@ module Functions = struct
       parameters = Imp.Kernel.ParameterList.empty;
       code =
         Block (
+        Context.assigns ctx
+        @
         LocalDeclarations.tr e.locals
         @ Statements.tr ctx e.body);
       visibility = Device;
