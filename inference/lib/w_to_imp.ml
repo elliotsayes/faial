@@ -452,7 +452,7 @@ module Expressions = struct
       | Derivative {expr;} ->
         let ctx = add ctx expr in
         (ctx, Unsupported)
-      | Relational {argument; fun_ = _;} ->
+      | Relational {argument; fun_;} ->
         let (ctx, argument) = rewrite ctx argument in
         (ctx, Relational {fun_; argument;})
       | Math {fun_; args;} ->

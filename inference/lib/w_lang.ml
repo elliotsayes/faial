@@ -1346,7 +1346,7 @@ module Expression = struct
     | Swizzle of {
         size: VectorSize.t;
         vector: t;
-        pattern: string list;
+        indices: int list;
       }
     | Ident of Ident.t
     | Load of t
@@ -1490,10 +1490,11 @@ module Expression = struct
     | AccessIndex {base; index; location=_;} ->
       to_string base ^ "." ^ string_of_int index
     | Splat {size; value} -> "vec" ^ VectorSize.to_string size ^ "(" ^ to_string value ^ ")"
-    | Swizzle {vector; pattern; size} ->
+    | Swizzle {vector; indices; size} ->
       let pattern =
-        Slice.from_finish (VectorSize.to_int size)
-        |> Slice.sublist pattern
+        indices
+        |> List.map (fun x -> VectorSize.nth_opt x size)
+        |> List.map Option.get
       in
       to_string vector ^ "." ^ (pattern |> Common.join "")
     | Ident i -> Ident.to_string i
@@ -1595,8 +1596,8 @@ module Expression = struct
     | "Swizzle" ->
       let* size = with_field "size" VectorSize.parse o in
       let* vector = with_field "vector" parse o in
-      let* pattern = with_field "pattern" (cast_map cast_string) o in
-      Ok (Swizzle {size; vector; pattern;})
+      let* indices = with_field "indices" (cast_map cast_int) o in
+      Ok (Swizzle {size; vector; indices;})
     | "Constant"
     | "CallResult"
     | "FunctionArgument"
