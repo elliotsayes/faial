@@ -740,6 +740,10 @@ module Type = struct
     | "Atomic" ->
       let* scalar = with_field "scalar" Scalar.parse o in
       Ok (Atomic scalar)
+    | "Pointer" ->
+      let* base = with_field "base" parse o in
+      let* space = with_field "space" AddressSpace.parse o in
+      Ok (Pointer {base; space})
     | _ -> root_cause ("inner_parse: unsupported kind: " ^ kind) j
 
   and struct_parse (j:json) : struct_member j_result =
