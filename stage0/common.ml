@@ -241,6 +241,11 @@ end
 let is_even n =
   n mod 2 = 0
 
+let expect (s:string) (o:'a option) : 'a =
+  match o with
+  | Some v -> v
+  | None -> failwith s
+
 let pow ~base exponent : int =
   if exponent < 0 then invalid_arg "exponent can not be negative" else
   let rec aux accumulator base = function

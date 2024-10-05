@@ -400,22 +400,9 @@ module Expressions = struct
       | Splat {size; value} ->
         let (ctx, value) = rewrite ctx value in
         (ctx, Splat {size; value})
-      | Swizzle {vector; indices; location; size;} ->
-        let components : Expression.t list =
-          indices
-          |> List.map (fun index ->
-              let open W_lang.Expression in
-              AccessIndex {base=vector; index; location}
-            )
-        in
-        let ty =
-          let ty = Expression.type_of vector in
-          match ty.inner with
-          | Vector v -> { ty with inner=Vector {v with size} }
-          | _ -> failwith "should be a vector"
-        in
-        let expr : Expression.t = Compose {ty; components} in
-        rewrite ctx expr
+      | Swizzle {vector=expr; _} ->
+        let (ctx, _) = rewrite ctx expr in
+        (ctx, Unsupported)
       | Ident i ->
         pure (Ident i)
       | Load e ->

@@ -1504,61 +1504,6 @@ module Expression = struct
   let int (i:int) : t =
     Literal (Literal.int i)
 
-  let rec type_of : t -> Type.t =
-    function
-    | AccessIndex {base; _}
-    | Access {base; _} ->
-      base
-      |> type_of
-      |> Type.deref
-      |> Option.get
-    | Literal l -> Literal.type_of l
-    | ZeroValue ty -> ty
-    | Compose {ty; _} -> ty
-    | Ident i -> i.ty
-    | Load e -> type_of e
-    | Binary {op; left=e; _} ->
-      (match op with
-        | Equal | NotEqual | Less | LessEqual
-        | Greater | GreaterEqual | LogicalAnd
-        | LogicalOr ->
-          Type.bool
-        | _ -> type_of e
-      )
-    | Select {accept=e; _} ->
-      type_of e
-    | As {kind; _} ->
-      Type.scalar (Scalar.make_64 kind) (* TODO: is this right? *)
-    | AtomicResult {ty; _} ->
-      ty (* Is this right? *)
-    | WorkGroupUniformLoadResult ty ->
-      ty
-    | ArrayLength _ ->
-      Type.u64
-    | SubgroupOperationResult ty ->
-      ty
-    | RayQueryProceedResult -> failwith "type_of RayQueryProceedResult"
-    | RayQueryGetIntersection _ -> failwith "type_of RayQueryGetIntersection"
-    | SubgroupBallotResult -> failwith "type_of SubgroupBallotResult"
-    | Relational _ -> failwith "type_of Relational"
-    | Derivative _ -> failwith "type_of Derivative"
-    | Unary _ -> failwith "type_of Unary"
-    | ImageQuery _ -> failwith "type_of ImageQuery"
-    | ImageLoad {image; _} ->
-      let ty = type_of image in
-      (match ty.inner with
-      | Image {image_class; _} ->
-        (match image_class with
-        | Sampled {kind; _} -> Type.vec Quad (Scalar.make_32 kind)
-        | Depth _ -> Type.f32
-        | Storage _ -> Type.vec Quad Scalar.f32
-        )
-      | _ -> failwith "must be an image")
-    | ImageSample _ -> failwith "type_of ImageSample"
-    | Swizzle _ -> failwith "type_of Swizzle"
-    | Splat _ -> failwith "type_of Splat"
-    | Math _ -> failwith "type_of Math"
-
   let rec to_string : t -> string =
     function
     | Literal l -> Literal.to_string l
@@ -1571,7 +1516,7 @@ module Expression = struct
       in
       Type.to_string ty ^ "(" ^ components ^ ")"
     | Access {base; index; location=_;} ->
-      to_string base ^ "[" ^ to_string index ^ "] : " ^ Type.to_string (type_of base)
+      to_string base ^ "[" ^ to_string index ^ "]"
     | AccessIndex {base; index; location=_;} ->
       to_string base ^ "." ^ string_of_int index
     | Splat {size; value} -> "vec" ^ VectorSize.to_string size ^ "(" ^ to_string value ^ ")"
@@ -1648,6 +1593,65 @@ module Expression = struct
     | RayQueryGetIntersection _ -> "RayQueryGetIntersection"
     | SubgroupBallotResult -> "SubgroupBallotResult"
     | SubgroupOperationResult _ -> "SubgroupOperationResult"
+
+  let rec type_of : t -> Type.t =
+    function
+    | AccessIndex {base; index; _} as e ->
+      base
+      |> type_of
+      |> Type.nth index
+      |> Common.expect ("type_of: access_index: " ^ to_string e)
+    | Access {base; _} as e ->
+      base
+      |> type_of
+      |> Type.deref
+      |> Common.expect ("type_of: access: " ^ to_string e)
+    | Literal l -> Literal.type_of l
+    | ZeroValue ty -> ty
+    | Compose {ty; _} -> ty
+    | Ident i -> i.ty
+    | Load e -> type_of e
+    | Binary {op; left=e; _} ->
+      (match op with
+        | Equal | NotEqual | Less | LessEqual
+        | Greater | GreaterEqual | LogicalAnd
+        | LogicalOr ->
+          Type.bool
+        | _ -> type_of e
+      )
+    | Select {accept=e; _} ->
+      type_of e
+    | As {kind; _} ->
+      Type.scalar (Scalar.make_64 kind) (* TODO: is this right? *)
+    | AtomicResult {ty; _} ->
+      ty (* Is this right? *)
+    | WorkGroupUniformLoadResult ty ->
+      ty
+    | ArrayLength _ ->
+      Type.u64
+    | SubgroupOperationResult ty ->
+      ty
+    | RayQueryProceedResult -> failwith "type_of RayQueryProceedResult"
+    | RayQueryGetIntersection _ -> failwith "type_of RayQueryGetIntersection"
+    | SubgroupBallotResult -> failwith "type_of SubgroupBallotResult"
+    | Relational _ -> failwith "type_of Relational"
+    | Derivative _ -> failwith "type_of Derivative"
+    | Unary _ -> failwith "type_of Unary"
+    | ImageQuery _ -> failwith "type_of ImageQuery"
+    | ImageLoad {image; _} ->
+      let ty = type_of image in
+      (match ty.inner with
+      | Image {image_class; _} ->
+        (match image_class with
+        | Sampled {kind; _} -> Type.vec Quad (Scalar.make_32 kind)
+        | Depth _ -> Type.f32
+        | Storage _ -> Type.vec Quad Scalar.f32
+        )
+      | _ -> failwith "must be an image")
+    | ImageSample _ -> failwith "type_of ImageSample"
+    | Swizzle _ -> failwith "type_of Swizzle"
+    | Splat _ -> failwith "type_of Splat"
+    | Math _ -> failwith "type_of Math"
 
   let rec parse (j:json) : t j_result =
     let open Rjson in
