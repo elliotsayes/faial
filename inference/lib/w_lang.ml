@@ -685,6 +685,8 @@ module Type = struct
         "mat" ^ rows ^ "x" ^ columns ^ "<" ^ Scalar.to_string scalar ^ ">"
       | Atomic s ->
         Printf.sprintf "atomic<%s>" (Scalar.to_string s)
+      | Pointer {base=b; space=s} ->
+        Printf.sprintf "ptr<%s,%s>" (to_string b) (AddressSpace.to_string s)
       | k -> failwith ("inner_to_string: unsupported kind:" ^ kind k)
 
   and to_string (e:t) : string =
