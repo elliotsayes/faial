@@ -277,11 +277,47 @@ module ArraySize = struct
 end
 
 module Interpolation = struct
-  type t = string
+  type t =
+    | Perspective
+    | Linear
+    | Flat
+
+  let to_string : t -> string =
+    function
+    | Perspective -> "perspective"
+    | Linear -> "linear"
+    | Flat -> "flat"
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* name = cast_string j in
+    match name with
+    | "Perspective" -> Ok Perspective
+    | "Linear" -> Ok Linear
+    | "Flat" -> Ok Flat
+    | _ -> root_cause "Interpolation" j
 end
 
 module Sampling = struct
-  type t = string
+  type t =
+    | Center
+    | Centroid
+    | Sample
+
+  let to_string : t -> string =
+    function
+    | Center -> "center"
+    | Centroid -> "centroid"
+    | Sample -> "sample"
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* name = cast_string j in
+    match name with
+    | "Center" -> Ok Center
+    | "Centroid" -> Ok Centroid
+    | "Sample" -> Ok Sample
+    | _ -> root_cause "Sampling" j
 end
 
 module BuiltIn = struct
@@ -403,7 +439,11 @@ module Binding = struct
       let* b = with_field "value" BuiltIn.parse o in
       Ok (BuiltIn b)
     | "Location" ->
-      failwith "Binding.parse: location"
+      let* location = with_field "location" cast_int o in
+      let* second_blend_source = with_field "second_blend_source" cast_bool o in
+      let* interpolation = with_field "interpolation" (cast_option Interpolation.parse) o in
+      let* sampling = with_field "sampling" (cast_option Sampling.parse) o in
+      Ok (Location {location; second_blend_source; interpolation; sampling})
     | _ ->
       root_cause ("Unsupported kind: " ^ kind) j
 
