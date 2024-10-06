@@ -461,8 +461,6 @@ module Expressions = struct
       | As {expr; kind; convert;} ->
         let (ctx, expr) = rewrite ctx expr in
         (ctx, As {expr; kind; convert;})
-      | WorkGroupUniformLoadResult ty ->
-        pure (WorkGroupUniformLoadResult ty)
       | ArrayLength (Ident i) ->
         pure (Ident (W_lang.Ident.add_suffix ".len" i))
       | ArrayLength expr ->

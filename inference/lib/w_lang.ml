@@ -772,6 +772,7 @@ module IdentKind = struct
     | Constant
     | Override
     | AtomicResult of {comparison: bool}
+    | WorkGroupUniformLoadResult
 
   let local_invocation_id : t =
     FunctionArgument (Some Binding.local_invocation_id)
@@ -806,10 +807,13 @@ module IdentKind = struct
 
   let atomic_result : Variable.t = Variable.from_name "@Atomic"
 
+  let work_group_uniform_load_result : Variable.t = Variable.from_name "@WorkGroupUniformLoad"
+
   let default_var : t -> Variable.t option =
     function
     | CallResult -> Some call_result
     | AtomicResult _ -> Some atomic_result
+    | WorkGroupUniformLoadResult -> Some work_group_uniform_load_result
     | _ -> None
 
   let to_string : t -> string =
@@ -824,6 +828,7 @@ module IdentKind = struct
     | AtomicResult {comparison} ->
       "atomic"
       ^ if comparison then " comp" else ""
+    | WorkGroupUniformLoadResult -> "work_group_uniform_load"
 
   let is_kind : string -> bool =
     function
@@ -833,7 +838,8 @@ module IdentKind = struct
     | "CallResult"
     | "Constant"
     | "Override"
-    | "AtomicResult" -> true
+    | "AtomicResult"
+    | "WorkGroupUniformLoadResult" -> true
     | _ -> false
 
   let parse_kind (o:Rjson.j_object) : t j_result =
@@ -853,6 +859,8 @@ module IdentKind = struct
       Ok Constant
     | "Override" ->
       Ok Override
+    | "WorkGroupUniformLoadResult" ->
+      Ok WorkGroupUniformLoadResult
     | "AtomicResult" ->
       let* comparison = with_field "comparison" cast_bool o in
       Ok (AtomicResult {comparison})
@@ -1519,7 +1527,6 @@ module Expression = struct
         kind: ScalarKind.t;
         convert: int option;
       }
-    | WorkGroupUniformLoadResult of Type.t
     | ArrayLength of t
     | RayQueryProceedResult
     | RayQueryGetIntersection of {
@@ -1620,7 +1627,6 @@ module Expression = struct
         | None -> ScalarKind.to_string kind
       in
        ty ^ "(" ^ to_string expr ^ ")"
-    | WorkGroupUniformLoadResult _ -> "WorkGroupUniformLoadResult"
     | ArrayLength e -> "arrayLength(" ^ to_string e ^ ")"
     | RayQueryProceedResult -> "RayQueryProceedResult"
     | RayQueryGetIntersection _ -> "RayQueryGetIntersection"
@@ -1656,8 +1662,6 @@ module Expression = struct
       type_of e
     | As {kind; _} ->
       Type.scalar (Scalar.make_64 kind) (* TODO: is this right? *)
-    | WorkGroupUniformLoadResult ty ->
-      ty
     | ArrayLength _ ->
       Type.u64
     | SubgroupOperationResult ty ->
@@ -1794,9 +1798,6 @@ module Expression = struct
       let* kind = with_field "scalar_kind" ScalarKind.parse o in
       let* convert = with_field "convert" (cast_option cast_int) o in
       Ok (As {expr; kind; convert;})
-    | "WorkGroupUniformLoadResult" ->
-      let* ty = with_field "ty" Type.parse o in
-      Ok (WorkGroupUniformLoadResult ty)
     | "ArrayLength" ->
       let* e = with_field "array" parse o in
       Ok (ArrayLength e)
@@ -1938,10 +1939,10 @@ module Statement = struct
         result: Ident.t option;
         location: Location.t;
       }
-    | WorkGroupUniformLoad (*{
-        pointer: Handle<Expression>,
-        result: Handle<Expression>,
-      }*)
+    | WorkGroupUniformLoad of {
+        pointer: Expression.t;
+        result: Ident.t;
+      }
     | Call of {
         function_: string;
         arguments: Expression.t list;
@@ -2006,8 +2007,11 @@ module Statement = struct
         let* result = with_field "result" (cast_option Ident.parse) o in
         let* location = with_field "location" parse_location o in
         Ok (Atomic {pointer; fun_; value; result; location})
-      | "WorkGroupUniformLoad" -> Ok WorkGroupUniformLoad
-      | "Call" ->
+    | "WorkGroupUniformLoad" ->
+        let* pointer = with_field "pointer" Expression.parse o in
+        let* result = with_field "result" Ident.parse o in
+        Ok (WorkGroupUniformLoad { pointer; result })
+    | "Call" ->
         let* function_ = with_field "function" cast_string o in
         let* arguments = with_field "arguments" (cast_map Expression.parse) o in
         let* result = with_field "result" (cast_option Ident.parse) o in
@@ -2120,12 +2124,13 @@ module Statement = struct
           args
       in
       [Line line]
-    | WorkGroupUniformLoad (*{
-        pointer: Handle<Expression>,
-        result: Handle<Expression>,
-      }*)
-      ->
-      [Line "workgroupUniformLoad(TODO);"]
+    | WorkGroupUniformLoad {pointer; result} ->
+      let line = Printf.sprintf "let %s: %s = workgroupUniformLoad(%s);"
+        (Ident.to_string result)
+        (Type.to_string result.ty)
+        (Expression.to_string pointer)
+      in
+      [Line line]
     | Call {function_; arguments; result}
       ->
       let result =
