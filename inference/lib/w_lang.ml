@@ -1588,7 +1588,10 @@ module Expression = struct
         | None -> ScalarKind.to_string kind
       in
        ty ^ "(" ^ to_string expr ^ ")"
-    | AtomicResult _ -> (*TODO*) "AtomicResult"
+    | AtomicResult {ty; comparison} ->
+      Printf.sprintf "AtomicResult(%s, %b)"
+        (Type.to_string ty)
+        comparison
     | WorkGroupUniformLoadResult _ -> "WorkGroupUniformLoadResult"
     | ArrayLength e -> "arrayLength(" ^ to_string e ^ ")"
     | RayQueryProceedResult -> "RayQueryProceedResult"
@@ -1773,10 +1776,7 @@ module Expression = struct
     | "AtomicResult" ->
       let* ty = with_field "ty" Type.parse o in
       let* comparison = with_field "comparison" cast_bool o in
-      Ok (AtomicResult {
-        ty;
-        comparison;
-      })
+      Ok (AtomicResult { ty; comparison; })
     | "WorkGroupUniformLoadResult" ->
       let* ty = with_field "ty" Type.parse o in
       Ok (WorkGroupUniformLoadResult ty)
