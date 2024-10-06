@@ -461,8 +461,6 @@ module Expressions = struct
       | As {expr; kind; convert;} ->
         let (ctx, expr) = rewrite ctx expr in
         (ctx, As {expr; kind; convert;})
-      | AtomicResult {ty; comparison} ->
-        pure (AtomicResult {ty; comparison})
       | WorkGroupUniformLoadResult ty ->
         pure (WorkGroupUniformLoadResult ty)
       | ArrayLength (Ident i) ->
@@ -783,6 +781,31 @@ module Statements = struct
           in
           Some (stmts1 @ stmts2 @ [Write {array=a.array.var; index; payload}])
         )
+
+      | Atomic {pointer=e;fun_;value;result; location} ->
+        let args = [e; value] in
+        ret_or args (
+          let stmts1, _ = Expressions.n_list_tr [value] in
+          let* a = NDAccess.from_expression location e in
+          let (stmts2, index) = Expressions.n_list_tr a.index in
+          let fun_ = "atomic" ^ W_lang.AtomicFunction.to_string fun_ in
+          let atomic : Atomic.t = {
+            name = Variable.from_name fun_;
+            (* TODO: what does WGSL defaults to? *)
+            scope = Atomic.Scope.Device;
+          } in
+          let array = Variable.set_location location a.array.var in
+          let default = W_lang.Ident.atomic_result W_lang.Type.u32 in
+          let result = Option.value ~default result in
+          Some (stmts1 @ stmts2 @ [ Atomic {
+            array;
+            index;
+            ty=Types.tr result.ty;
+            atomic;
+            target=result.var;
+          }])
+        )
+
       | Store {pointer=Ident ({ty; _}) as i; value} when W_lang.Type.is_int ty ->
         ret (
           let* (ty, var) = Variables.tr i in

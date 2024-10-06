@@ -758,6 +758,11 @@ module Type = struct
     Ok {name; ty; binding; offset}
 end
 
+let parse_var (o:Rjson.j_object) : Variable.t j_result =
+  let open Rjson in
+  let* name = with_field "name" cast_string o in
+  Ok (Variable.from_name name)
+
 module IdentKind = struct
   type t =
     | FunctionArgument of Binding.t option
@@ -766,6 +771,7 @@ module IdentKind = struct
     | CallResult
     | Constant
     | Override
+    | AtomicResult of {comparison: bool}
 
   let local_invocation_id : t =
     FunctionArgument (Some Binding.local_invocation_id)
@@ -796,6 +802,16 @@ module IdentKind = struct
     | FunctionArgument (Some b) -> Binding.is_concurrency_related b
     | _ -> false
 
+  let call_result : Variable.t = Variable.from_name "@Call"
+
+  let atomic_result : Variable.t = Variable.from_name "@Atomic"
+
+  let default_var : t -> Variable.t option =
+    function
+    | CallResult -> Some call_result
+    | AtomicResult _ -> Some atomic_result
+    | _ -> None
+
   let to_string : t -> string =
     function
     | FunctionArgument (Some x) -> "func " ^ Binding.to_string x
@@ -805,7 +821,56 @@ module IdentKind = struct
     | CallResult -> "call"
     | Constant -> "const"
     | Override -> "override"
+    | AtomicResult {comparison} ->
+      "atomic"
+      ^ if comparison then " comp" else ""
 
+  let is_kind : string -> bool =
+    function
+    | "FunctionArgument"
+    | "GlobalVariable"
+    | "LocalVariable"
+    | "CallResult"
+    | "Constant"
+    | "Override"
+    | "AtomicResult" -> true
+    | _ -> false
+
+  let parse_kind (o:Rjson.j_object) : t j_result =
+    let open Rjson in
+    let* kind = get_kind o in
+    match kind with
+    | "FunctionArgument" ->
+      let* binding = with_field "binding" (cast_option Binding.parse) o in
+      Ok (FunctionArgument binding)
+    | "GlobalVariable" ->
+      Ok GlobalVariable
+    | "LocalVariable" ->
+      Ok LocalVariable
+    | "CallResult" ->
+      Ok CallResult
+    | "Constant" ->
+      Ok Constant
+    | "Override" ->
+      Ok Override
+    | "AtomicResult" ->
+      let* comparison = with_field "comparison" cast_bool o in
+      Ok (AtomicResult {comparison})
+    | _ ->
+      root_cause ("Indent.parse: unknown kind: " ^ kind) (`Assoc o)
+
+  let parse (o:Rjson.j_object) : (Variable.t * t) j_result =
+    let open Rjson in
+    let* kind = parse_kind o in
+    let* var =
+      (* Naga will set name to null when the result is the result
+          of a previous call/atomic performed. We use @Call to represent
+          the contents of the last write. *)
+      match default_var kind with
+      | Some v -> Ok v
+      | None -> parse_var o
+    in
+    Ok (var, kind)
 end
 
 let parse_location (j:json) : Location.t j_result =
@@ -823,11 +888,6 @@ let parse_location (j:json) : Location.t j_result =
         ~start:(Index.from_base1 line_position)
         ~length;
   }
-
-let parse_var (o:Rjson.j_object) : Variable.t j_result =
-  let open Rjson in
-  let* name = with_field "name" cast_string o in
-  Ok (Variable.from_name name)
 
 module Ident = struct
   type t = {
@@ -856,41 +916,17 @@ module Ident = struct
   let add_suffix (suffix:string) (x:t) =
     { x with var = Variable.add_suffix suffix x.var }
 
-  let call : Variable.t = Variable.from_name "@Call"
+  let atomic_result ?(comparison=false) (ty:Type.t) : t = {
+    var = IdentKind.call_result;
+    ty;
+    kind=AtomicResult {comparison}
+  }
 
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
     let* ty = with_field "ty" Type.parse o in
-    let* kind = get_kind o in
-    let* kind : IdentKind.t =
-      let open IdentKind in
-      match kind with
-      | "FunctionArgument" ->
-        let* binding = with_field "binding" (cast_option Binding.parse) o in
-        Ok (FunctionArgument binding)
-      | "GlobalVariable" ->
-        Ok GlobalVariable
-      | "LocalVariable" ->
-        Ok LocalVariable
-      | "CallResult" ->
-        Ok CallResult
-      | "Constant" ->
-        Ok Constant
-      | "Override" ->
-        Ok Override
-      | _ ->
-        root_cause ("Indent.parse: unknown kind: " ^ kind) j
-    in
-    let* var =
-      if kind = CallResult && List.assoc_opt "name" o  = Some `Null then
-        (* Naga will set name to null when the result is the result
-            of the previous call performed. We use @Call to represent
-            the contents of the last write. *)
-        Ok call
-      else
-        parse_var o
-    in
+    let* (var, kind) = IdentKind.parse o in
     Ok {ty; var; kind}
 
   let to_string (x:t) : string =
@@ -1483,10 +1519,6 @@ module Expression = struct
         kind: ScalarKind.t;
         convert: int option;
       }
-    | AtomicResult of {
-        ty: Type.t;
-        comparison: bool;
-      }
     | WorkGroupUniformLoadResult of Type.t
     | ArrayLength of t
     | RayQueryProceedResult
@@ -1588,10 +1620,6 @@ module Expression = struct
         | None -> ScalarKind.to_string kind
       in
        ty ^ "(" ^ to_string expr ^ ")"
-    | AtomicResult {ty; comparison} ->
-      Printf.sprintf "AtomicResult(%s, %b)"
-        (Type.to_string ty)
-        comparison
     | WorkGroupUniformLoadResult _ -> "WorkGroupUniformLoadResult"
     | ArrayLength e -> "arrayLength(" ^ to_string e ^ ")"
     | RayQueryProceedResult -> "RayQueryProceedResult"
@@ -1628,8 +1656,6 @@ module Expression = struct
       type_of e
     | As {kind; _} ->
       Type.scalar (Scalar.make_64 kind) (* TODO: is this right? *)
-    | AtomicResult {ty; _} ->
-      ty (* Is this right? *)
     | WorkGroupUniformLoadResult ty ->
       ty
     | ArrayLength _ ->
@@ -1693,12 +1719,7 @@ module Expression = struct
       let* indices = with_field "indices" (cast_map cast_int) o in
       let* location = with_field "location" parse_location o in
       Ok (Swizzle {size; vector; indices; location;})
-    | "Override"
-    | "Constant"
-    | "CallResult"
-    | "FunctionArgument"
-    | "GlobalVariable"
-    | "LocalVariable" ->
+    | _ when IdentKind.is_kind kind ->
       let* i = Ident.parse j in
       Ok (Ident i)
     | "Load" ->
@@ -1773,10 +1794,6 @@ module Expression = struct
       let* kind = with_field "scalar_kind" ScalarKind.parse o in
       let* convert = with_field "convert" (cast_option cast_int) o in
       Ok (As {expr; kind; convert;})
-    | "AtomicResult" ->
-      let* ty = with_field "ty" Type.parse o in
-      let* comparison = with_field "comparison" cast_bool o in
-      Ok (AtomicResult { ty; comparison; })
     | "WorkGroupUniformLoadResult" ->
       let* ty = with_field "ty" Type.parse o in
       Ok (WorkGroupUniformLoadResult ty)
@@ -1918,7 +1935,8 @@ module Statement = struct
         pointer: Expression.t;
         fun_: AtomicFunction.t;
         value: Expression.t;
-        result: Expression.t option;
+        result: Ident.t option;
+        location: Location.t;
       }
     | WorkGroupUniformLoad (*{
         pointer: Handle<Expression>,
@@ -1985,8 +2003,9 @@ module Statement = struct
         let* pointer = with_field "pointer" Expression.parse o in
         let* fun_ = with_field "fun" AtomicFunction.parse o in
         let* value = with_field "value" Expression.parse o in
-        let* result = with_field "value" (cast_option Expression.parse) o in
-        Ok (Atomic {pointer; fun_; value; result})
+        let* result = with_field "result" (cast_option Ident.parse) o in
+        let* location = with_field "location" parse_location o in
+        Ok (Atomic {pointer; fun_; value; result; location})
       | "WorkGroupUniformLoad" -> Ok WorkGroupUniformLoad
       | "Call" ->
         let* function_ = with_field "function" cast_string o in
@@ -2080,14 +2099,23 @@ module Statement = struct
       } *)
       ->
       [Line "textureStore(TODO);"]
-    | Atomic {pointer; fun_; value; result=_} ->
+    | Atomic {pointer; fun_; value; result; location=_;} ->
+      let target =
+        match result with
+        | Some x ->
+          Printf.sprintf "let %s : %s = "
+            (Ident.to_string x)
+            (Type.to_string x.ty)
+        | None -> ""
+      in
       let args =
         [pointer] @ AtomicFunction.to_list fun_ @ [value]
         |> List.map Expression.to_string
         |> Common.join ", "
       in
       let line =
-        Printf.sprintf "atomic%s(%s);"
+        Printf.sprintf "%satomic%s(%s);"
+          target
           (AtomicFunction.to_string fun_)
           args
       in
