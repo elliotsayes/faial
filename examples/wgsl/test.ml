@@ -21,6 +21,8 @@ let tests = [
   "drf-const.wgsl", [], 0;
   (* Overrides and unary operators *)
   "drf-unary.wgsl", [], 0;
+  (* Parse uniform load *)
+  "drf-uniform-load.wgsl", [], 0;
 ]
 
 let unsupported : Fpath.t list =
