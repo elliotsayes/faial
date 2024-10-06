@@ -590,6 +590,9 @@ module Type = struct
     let vec (size:VectorSize.t) (scalar:Scalar.t) : t =
       make (Vector {size; scalar;})
 
+    let vec4_u32 : t =
+      vec VectorSize.Quad Scalar.u32
+
     let bool : t =
       scalar Scalar.bool
 
@@ -773,6 +776,7 @@ module IdentKind = struct
     | Override
     | AtomicResult of {comparison: bool}
     | WorkGroupUniformLoadResult
+    | SubgroupBallotResult
 
   let local_invocation_id : t =
     FunctionArgument (Some Binding.local_invocation_id)
@@ -809,11 +813,14 @@ module IdentKind = struct
 
   let work_group_uniform_load_result : Variable.t = Variable.from_name "@WorkGroupUniformLoad"
 
+  let subgroup_ballot_result : Variable.t = Variable.from_name "@SubgroupBallot"
+
   let default_var : t -> Variable.t option =
     function
     | CallResult -> Some call_result
     | AtomicResult _ -> Some atomic_result
     | WorkGroupUniformLoadResult -> Some work_group_uniform_load_result
+    | SubgroupBallotResult -> Some subgroup_ballot_result
     | _ -> None
 
   let to_string : t -> string =
@@ -829,6 +836,7 @@ module IdentKind = struct
       "atomic"
       ^ if comparison then " comp" else ""
     | WorkGroupUniformLoadResult -> "work_group_uniform_load"
+    | SubgroupBallotResult -> "subgroup_ballot"
 
   let is_kind : string -> bool =
     function
@@ -839,7 +847,8 @@ module IdentKind = struct
     | "Constant"
     | "Override"
     | "AtomicResult"
-    | "WorkGroupUniformLoadResult" -> true
+    | "WorkGroupUniformLoadResult"
+    | "SubgroupBallotResult" -> true
     | _ -> false
 
   let parse_kind (o:Rjson.j_object) : t j_result =
@@ -864,12 +873,20 @@ module IdentKind = struct
     | "AtomicResult" ->
       let* comparison = with_field "comparison" cast_bool o in
       Ok (AtomicResult {comparison})
+    | "SubgroupBallotResult" ->
+      Ok SubgroupBallotResult
     | _ ->
       root_cause ("Indent.parse: unknown kind: " ^ kind) (`Assoc o)
 
-  let parse (o:Rjson.j_object) : (Variable.t * t) j_result =
+  let parse (o:Rjson.j_object) : (Variable.t * Type.t * t) j_result =
     let open Rjson in
     let* kind = parse_kind o in
+    let* ty =
+      if kind = SubgroupBallotResult then
+        Ok Type.vec4_u32
+      else
+        with_field "ty" Type.parse o
+    in
     let* var =
       (* Naga will set name to null when the result is the result
           of a previous call/atomic performed. We use @Call to represent
@@ -878,7 +895,7 @@ module IdentKind = struct
       | Some v -> Ok v
       | None -> parse_var o
     in
-    Ok (var, kind)
+    Ok (var, ty, kind)
 end
 
 let parse_location (j:json) : Location.t j_result =
@@ -933,8 +950,7 @@ module Ident = struct
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
-    let* ty = with_field "ty" Type.parse o in
-    let* (var, kind) = IdentKind.parse o in
+    let* (var, ty, kind) = IdentKind.parse o in
     Ok {ty; var; kind}
 
   let to_string (x:t) : string =
@@ -1533,7 +1549,6 @@ module Expression = struct
         query: t;
         committed: bool;
       }
-    | SubgroupBallotResult
     | SubgroupOperationResult of Type.t
 
   and image_query =
@@ -1630,7 +1645,6 @@ module Expression = struct
     | ArrayLength e -> "arrayLength(" ^ to_string e ^ ")"
     | RayQueryProceedResult -> "RayQueryProceedResult"
     | RayQueryGetIntersection _ -> "RayQueryGetIntersection"
-    | SubgroupBallotResult -> "SubgroupBallotResult"
     | SubgroupOperationResult _ -> "SubgroupOperationResult"
 
   let rec type_of : t -> Type.t =
@@ -1668,7 +1682,6 @@ module Expression = struct
       ty
     | RayQueryProceedResult -> failwith "type_of RayQueryProceedResult"
     | RayQueryGetIntersection _ -> failwith "type_of RayQueryGetIntersection"
-    | SubgroupBallotResult -> failwith "type_of SubgroupBallotResult"
     | Relational _ -> failwith "type_of Relational"
     | Derivative _ -> failwith "type_of Derivative"
     | Unary _ -> failwith "type_of Unary"
@@ -1809,7 +1822,6 @@ module Expression = struct
         query;
         committed;
       })
-    | "SubgroupBallotResult" -> Ok SubgroupBallotResult
     | "SubgroupOperationResult" ->
       let* ty = with_field "ty" Type.parse o in
       Ok (SubgroupOperationResult ty)
@@ -1948,10 +1960,10 @@ module Statement = struct
         arguments: Expression.t list;
         result: Ident.t option;
       }
-    | SubgroupBallot (* {
-        result: Handle<Expression>,
-        predicate: Option<Handle<Expression>>,
-      }*)
+    | SubgroupBallot of {
+        result: Ident.t;
+        predicate: Expression.t option;
+      }
     | SubgroupGather (*{
         mode: GatherMode,
         argument: Handle<Expression>,
@@ -2016,7 +2028,10 @@ module Statement = struct
         let* arguments = with_field "arguments" (cast_map Expression.parse) o in
         let* result = with_field "result" (cast_option Ident.parse) o in
         Ok (Call{function_; arguments; result})
-      | "SubgroupBallot" -> Ok SubgroupBallot
+      | "SubgroupBallot" ->
+        let* predicate = with_field "predicate" (cast_option Expression.parse) o in
+        let* result = with_field "result" Ident.parse o in
+        Ok (SubgroupBallot {predicate; result})
       | "SubgroupGather" -> Ok SubgroupGather
       | "SubgroupCollectiveOperation" -> Ok SubgroupCollectiveOperation
       | _ -> root_cause ("Statement.parse: unknown kind: " ^ kind) j
@@ -2053,7 +2068,6 @@ module Statement = struct
       }*) ->
       [Line "switch (TODO) {TODO}"]
     | Loop {body; continuing; break_if;} ->
-(*         break_if: Option<Handle<Expression>>, *)
       [
         Line "loop {";
         Block (block_to_s body);
@@ -2144,11 +2158,19 @@ module Statement = struct
         |> Common.join ", "
       in
       [Line (result ^ function_ ^"(" ^ arguments ^ ");")]
-    | SubgroupBallot (* {
-        result: Handle<Expression>,
-        predicate: Option<Handle<Expression>>,
-      }*) ->
-      [Line "subgroupBallot(TODO)"]
+    | SubgroupBallot {result; predicate;} ->
+      let arg =
+        predicate
+        |> Option.map Expression.to_string
+        |> Option.value ~default:""
+      in
+      let line =
+        Printf.sprintf "let %s: %s = subgroupBallot(%s)"
+        (Ident.to_string result)
+        (Type.to_string result.ty)
+        arg
+      in
+      [Line line]
     | SubgroupGather (*{
         mode: GatherMode,
         argument: Handle<Expression>,
