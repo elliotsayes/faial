@@ -245,6 +245,11 @@ module Expressions = struct
     | SubgroupBallotResult
     | SubgroupOperationResult of Type.t
 
+  let map_ident (f:Ident.t -> Ident.t) : t -> t =
+    function
+    | Ident i -> Ident (f i)
+    | e -> e
+
   let int (i:int) : t =
     Literal (Literals.Int i)
 
@@ -369,34 +374,39 @@ module Expressions = struct
       | Compose {ty; components} ->
         let (ctx, components) = l_rewrite ctx components in
         (ctx, Compose {ty; components})
-      | AccessIndex {base=Ident x; location; index}
-        when Ident.is_concurrency_related x ->
-        if IdentKind.is_global_invocation_id x.kind then
-          (* Global IDX is currently unsupported in MAPs *)
-          (ctx,
-            index
-            |> global_idx
-            |> Option.value ~default:Unsupported
-          )
-        else
-        (ctx,
-          match Variables.inline_field index x with
-          | Some x -> Ident (Ident.set_location location x)
-          | None -> Unsupported
-        )
-      | Access {base; location; index} ->
-        ret_or [base; index] (
-          let* a = NDAccess.from_expression location e in
-          let (ctx, index) = l_rewrite ctx a.index in
-          Some (add_read ~array:a.array ~index ctx)
-        )
-      | AccessIndex {base; location; _} ->
+
+      | Load (AccessIndex {base; location; _} as e) ->
         ret_or [base] (
           let* a = NDAccess.from_expression location e in
           let (ctx, index) = l_rewrite ctx a.index in
           let target = NDAccess.flatten a in
           Some (add_read ~target ~array:a.array ~index ctx)
         )
+
+      | Load (Access {base; location; index} as e) ->
+        ret_or [base; index] (
+          let* a = NDAccess.from_expression location e in
+          let (ctx, index) = l_rewrite ctx a.index in
+          Some (add_read ~array:a.array ~index ctx)
+        )
+      | Access {base; index; _} ->
+        let ctx = add ctx base in
+        let ctx = add ctx index in
+        (ctx, Unsupported)
+
+      (* We need a special case for handling gid, because we do not
+         support GID natively. *)
+      | AccessIndex {base=Ident i; index; _}
+        when IdentKind.is_global_invocation_id i.kind ->
+        (ctx, global_idx index |> Option.value ~default:Unsupported)
+
+      | AccessIndex {base; index; _} ->
+        let (ctx, base) = rewrite ctx base in
+        (ctx, map_ident (fun (x:W_lang.Ident.t) ->
+          Variables.inline_field index x
+          |> Option.value ~default:x
+        )  base)
+
       | Splat {size; value} ->
         let (ctx, value) = rewrite ctx value in
         (ctx, Splat {size; value})
