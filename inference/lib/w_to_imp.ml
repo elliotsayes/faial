@@ -480,7 +480,6 @@ module Expressions = struct
       | RayQueryGetIntersection {query; _} ->
         let ctx = add ctx query in
         (ctx, Unsupported)
-      | SubgroupOperationResult ty -> pure (SubgroupOperationResult ty)
     and add (ctx:t) (e: W_lang.Expression.t) : t =
       rewrite ctx e |> fst
     and o_add (ctx:t) (e: W_lang.Expression.t option) : t =

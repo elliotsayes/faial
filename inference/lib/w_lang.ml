@@ -777,6 +777,7 @@ module IdentKind = struct
     | AtomicResult of {comparison: bool}
     | WorkGroupUniformLoadResult
     | SubgroupBallotResult
+    | SubgroupOperationResult
 
   let local_invocation_id : t =
     FunctionArgument (Some Binding.local_invocation_id)
@@ -815,12 +816,15 @@ module IdentKind = struct
 
   let subgroup_ballot_result : Variable.t = Variable.from_name "@SubgroupBallot"
 
+  let subgroup_operation_result : Variable.t = Variable.from_name "@SubgroupOperation"
+
   let default_var : t -> Variable.t option =
     function
     | CallResult -> Some call_result
     | AtomicResult _ -> Some atomic_result
     | WorkGroupUniformLoadResult -> Some work_group_uniform_load_result
     | SubgroupBallotResult -> Some subgroup_ballot_result
+    | SubgroupOperationResult -> Some subgroup_operation_result
     | _ -> None
 
   let to_string : t -> string =
@@ -837,6 +841,7 @@ module IdentKind = struct
       ^ if comparison then " comp" else ""
     | WorkGroupUniformLoadResult -> "work_group_uniform_load"
     | SubgroupBallotResult -> "subgroup_ballot"
+    | SubgroupOperationResult -> "subgroup_operation"
 
   let is_kind : string -> bool =
     function
@@ -848,7 +853,8 @@ module IdentKind = struct
     | "Override"
     | "AtomicResult"
     | "WorkGroupUniformLoadResult"
-    | "SubgroupBallotResult" -> true
+    | "SubgroupBallotResult"
+    | "SubgroupOperationResult" -> true
     | _ -> false
 
   let parse_kind (o:Rjson.j_object) : t j_result =
@@ -875,6 +881,8 @@ module IdentKind = struct
       Ok (AtomicResult {comparison})
     | "SubgroupBallotResult" ->
       Ok SubgroupBallotResult
+    | "SubgroupOperationResult" ->
+      Ok SubgroupOperationResult
     | _ ->
       root_cause ("Indent.parse: unknown kind: " ^ kind) (`Assoc o)
 
@@ -1549,7 +1557,6 @@ module Expression = struct
         query: t;
         committed: bool;
       }
-    | SubgroupOperationResult of Type.t
 
   and image_query =
     | Size of t option
@@ -1645,7 +1652,6 @@ module Expression = struct
     | ArrayLength e -> "arrayLength(" ^ to_string e ^ ")"
     | RayQueryProceedResult -> "RayQueryProceedResult"
     | RayQueryGetIntersection _ -> "RayQueryGetIntersection"
-    | SubgroupOperationResult _ -> "SubgroupOperationResult"
 
   let rec type_of : t -> Type.t =
     function
@@ -1678,8 +1684,6 @@ module Expression = struct
       Type.scalar (Scalar.make_64 kind) (* TODO: is this right? *)
     | ArrayLength _ ->
       Type.u64
-    | SubgroupOperationResult ty ->
-      ty
     | RayQueryProceedResult -> failwith "type_of RayQueryProceedResult"
     | RayQueryGetIntersection _ -> failwith "type_of RayQueryGetIntersection"
     | Relational _ -> failwith "type_of Relational"
@@ -1822,10 +1826,7 @@ module Expression = struct
         query;
         committed;
       })
-    | "SubgroupOperationResult" ->
-      let* ty = with_field "ty" Type.parse o in
-      Ok (SubgroupOperationResult ty)
-      | _ -> failwith kind
+    | _ -> failwith kind
   and parse_image_query (j:json) : image_query j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -1912,6 +1913,109 @@ module AtomicFunction = struct
 
 end
 
+module GatherMode = struct
+  type t =
+    | BroadcastFirst
+    | Broadcast of Expression.t
+    | Shuffle of Expression.t
+    | ShuffleDown of Expression.t
+    | ShuffleUp of Expression.t
+    | ShuffleXor of Expression.t
+
+  let to_string : t -> string = function
+    | BroadcastFirst -> "broadcast_first"
+    | Broadcast expr -> Printf.sprintf "broadcast(%s)" (Expression.to_string expr)
+    | Shuffle expr -> Printf.sprintf "shuffle(%s)" (Expression.to_string expr)
+    | ShuffleDown expr -> Printf.sprintf "shuffle_down(%s)" (Expression.to_string expr)
+    | ShuffleUp expr -> Printf.sprintf "shuffle_up(%s)" (Expression.to_string expr)
+    | ShuffleXor expr -> Printf.sprintf "shuffle_xor(%s)" (Expression.to_string expr)
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "BroadcastFirst" -> Ok BroadcastFirst
+    | "Broadcast" ->
+      let* expr = with_field "value" Expression.parse o in
+      Ok (Broadcast expr)
+    | "Shuffle" ->
+      let* expr = with_field "value" Expression.parse o in
+      Ok (Shuffle expr)
+    | "ShuffleDown" ->
+      let* expr = with_field "value" Expression.parse o in
+      Ok (ShuffleDown expr)
+    | "ShuffleUp" ->
+      let* expr = with_field "value" Expression.parse o in
+      Ok (ShuffleUp expr)
+    | "ShuffleXor" ->
+      let* expr = with_field "value" Expression.parse o in
+      Ok (ShuffleXor expr)
+    | _ -> root_cause "GatherMode" j
+end
+
+module CollectiveOperation = struct
+  type t =
+    | Reduce
+    | InclusiveScan
+    | ExclusiveScan
+
+  let to_string : t -> string =
+    function
+    | Reduce -> "reduce"
+    | InclusiveScan -> "inclusive_scan"
+    | ExclusiveScan -> "exclusive_scan"
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* name = cast_string j in
+    match name with
+    | "Reduce" -> Ok Reduce
+    | "InclusiveScan" -> Ok InclusiveScan
+    | "ExclusiveScan" -> Ok ExclusiveScan
+    | _ -> root_cause "CollectiveOperation" j
+end
+
+module SubgroupOperation = struct
+  type t =
+    | All
+    | Any
+    | Add
+    | Mul
+    | Min
+    | Max
+    | And
+    | Or
+    | Xor
+
+  let to_string : t -> string =
+    function
+    | All -> "all"
+    | Any -> "any"
+    | Add -> "add"
+    | Mul -> "mul"
+    | Min -> "min"
+    | Max -> "max"
+    | And -> "and"
+    | Or -> "or"
+    | Xor -> "xor"
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* name = cast_string j in
+    match name with
+    | "All" -> Ok All
+    | "Any" -> Ok Any
+    | "Add" -> Ok Add
+    | "Mul" -> Ok Mul
+    | "Min" -> Ok Min
+    | "Max" -> Ok Max
+    | "And" -> Ok And
+    | "Or" -> Ok Or
+    | "Xor" -> Ok Xor
+    | _ -> root_cause "SubgroupOperation" j
+end
+
 module Statement = struct
   type t =
     | Block of t list
@@ -1964,17 +2068,17 @@ module Statement = struct
         result: Ident.t;
         predicate: Expression.t option;
       }
-    | SubgroupGather (*{
-        mode: GatherMode,
-        argument: Handle<Expression>,
-        result: Handle<Expression>,
+    | SubgroupGather (*of {
+        mode: GatherMode.t;
+        argument: Expression.t;
+        result: Expression.t;
       }*)
-    | SubgroupCollectiveOperation (*{
-        op: SubgroupOperation,
-        collective_op: CollectiveOperation,
-        argument: Handle<Expression>,
-        result: Handle<Expression>,
-      }*)
+    | SubgroupCollectiveOperation of {
+        op: SubgroupOperation.t;
+        collective_op: CollectiveOperation.t;
+        argument: Expression.t;
+        result: Ident.t;
+      }
 
   let rec parse (j:json) : t j_result =
     let open Rjson in
@@ -2032,8 +2136,14 @@ module Statement = struct
         let* predicate = with_field "predicate" (cast_option Expression.parse) o in
         let* result = with_field "result" Ident.parse o in
         Ok (SubgroupBallot {predicate; result})
-      | "SubgroupGather" -> Ok SubgroupGather
-      | "SubgroupCollectiveOperation" -> Ok SubgroupCollectiveOperation
+      | "SubgroupGather" ->
+        Ok SubgroupGather
+      | "SubgroupCollectiveOperation" ->
+        let* op = with_field "op" SubgroupOperation.parse o in
+        let* collective_op = with_field "collective_op" CollectiveOperation.parse o in
+        let* argument = with_field "argument" Expression.parse o in
+        let* result = with_field "result" Ident.parse o in
+        Ok (SubgroupCollectiveOperation {op; collective_op; argument; result;})
       | _ -> root_cause ("Statement.parse: unknown kind: " ^ kind) j
 
   let rec to_s : t -> Indent.t list =
@@ -2177,14 +2287,15 @@ module Statement = struct
         result: Handle<Expression>,
       }*) ->
       [Line "subgroupGather(TODO);"]
-    | SubgroupCollectiveOperation (*{
-        op: SubgroupOperation,
-        collective_op: CollectiveOperation,
-        argument: Handle<Expression>,
-        result: Handle<Expression>,
-      }*)
-      ->
-      [Line "subgroupCollective(TODO);"]
+    | SubgroupCollectiveOperation {op; collective_op=_; argument; result;} ->
+      let line =
+        Printf.sprintf "let %s: %s = subgroup%s(%s);"
+          (Ident.to_string result)
+          (Type.to_string result.ty)
+          (SubgroupOperation.to_string op)
+          (Expression.to_string argument)
+      in
+      [Line line]
   and block_to_s l = List.concat_map to_s l
 
   let to_string (s:t) : string =
