@@ -962,8 +962,10 @@ module Ident = struct
     Ok {ty; var; kind}
 
   let to_string (x:t) : string =
-    x.var |> Variable.name
+    Printf.sprintf "%s: %s" (Variable.label x.var) (Type.to_string x.ty)
 
+  let name (x:t) : string =
+    x.var |> Variable.name
 end
 
 module FunctionArgument = struct
@@ -1590,7 +1592,7 @@ module Expression = struct
         |> List.map Option.get
       in
       to_string vector ^ "." ^ (pattern |> Common.join "")
-    | Ident i -> Ident.to_string i
+    | Ident i -> Ident.name i
     | Load e ->
       "load(" ^ to_string e ^")"
     | ImageSample _ -> (*TODO*) "ImageSample"
@@ -1930,6 +1932,24 @@ module GatherMode = struct
     | ShuffleUp expr -> Printf.sprintf "shuffle_up(%s)" (Expression.to_string expr)
     | ShuffleXor expr -> Printf.sprintf "shuffle_xor(%s)" (Expression.to_string expr)
 
+  let expression : t -> Expression.t option =
+    function
+    | BroadcastFirst -> None
+    | Broadcast e
+    | Shuffle e
+    | ShuffleDown e
+    | ShuffleUp e
+    | ShuffleXor e -> Some e
+
+  let name : t -> string =
+    function
+    | BroadcastFirst -> "BroadcastFirst"
+    | Broadcast _ -> "Broadcast"
+    | Shuffle _ -> "Shuffle"
+    | ShuffleDown _ -> "ShuffleDown"
+    | ShuffleUp _ -> "ShuffleUp"
+    | ShuffleXor _ -> "ShuffleXor"
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -2068,11 +2088,11 @@ module Statement = struct
         result: Ident.t;
         predicate: Expression.t option;
       }
-    | SubgroupGather (*of {
+    | SubgroupGather of {
         mode: GatherMode.t;
         argument: Expression.t;
-        result: Expression.t;
-      }*)
+        result: Ident.t;
+      }
     | SubgroupCollectiveOperation of {
         op: SubgroupOperation.t;
         collective_op: CollectiveOperation.t;
@@ -2137,7 +2157,10 @@ module Statement = struct
         let* result = with_field "result" Ident.parse o in
         Ok (SubgroupBallot {predicate; result})
       | "SubgroupGather" ->
-        Ok SubgroupGather
+        let* mode = with_field "mode" GatherMode.parse o in
+        let* argument = with_field "argument" Expression.parse o in
+        let* result = with_field "result" Ident.parse o in
+        Ok (SubgroupGather { mode; argument; result })
       | "SubgroupCollectiveOperation" ->
         let* op = with_field "op" SubgroupOperation.parse o in
         let* collective_op = with_field "collective_op" CollectiveOperation.parse o in
@@ -2231,9 +2254,8 @@ module Statement = struct
       let target =
         match result with
         | Some x ->
-          Printf.sprintf "let %s : %s = "
+          Printf.sprintf "let %s = "
             (Ident.to_string x)
-            (Type.to_string x.ty)
         | None -> ""
       in
       let args =
@@ -2249,9 +2271,8 @@ module Statement = struct
       in
       [Line line]
     | WorkGroupUniformLoad {pointer; result} ->
-      let line = Printf.sprintf "let %s: %s = workgroupUniformLoad(%s);"
+      let line = Printf.sprintf "let %s = workgroupUniformLoad(%s);"
         (Ident.to_string result)
-        (Type.to_string result.ty)
         (Expression.to_string pointer)
       in
       [Line line]
@@ -2275,18 +2296,26 @@ module Statement = struct
         |> Option.value ~default:""
       in
       let line =
-        Printf.sprintf "let %s: %s = subgroupBallot(%s)"
+        Printf.sprintf "let %s = subgroupBallot(%s);"
         (Ident.to_string result)
-        (Type.to_string result.ty)
         arg
       in
       [Line line]
-    | SubgroupGather (*{
-        mode: GatherMode,
-        argument: Handle<Expression>,
-        result: Handle<Expression>,
-      }*) ->
-      [Line "subgroupGather(TODO);"]
+    | SubgroupGather { mode; argument; result } ->
+      let line =
+        let args =
+          argument
+          ::
+          (GatherMode.expression mode |> Option.to_list)
+          |> List.map Expression.to_string
+          |> Common.join ", "
+        in
+        Printf.sprintf "let %s = subgroup%s(%s);"
+          (Ident.to_string result)
+          (GatherMode.name mode)
+          args
+      in
+      [Line line]
     | SubgroupCollectiveOperation {op; collective_op=_; argument; result;} ->
       let line =
         Printf.sprintf "let %s: %s = subgroup%s(%s);"
