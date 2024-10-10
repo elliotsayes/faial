@@ -309,27 +309,61 @@ module Expressions = struct
 
     type t = Read.t list
 
+    type 'a state = t -> (t * 'a)
+
+    let return (x:'a) : 'a state =
+      fun s -> (s, x)
+
+    let bind (m : 'a state) (f: 'a -> 'b state) : 'b state =
+      fun s ->
+        let (s', x) = m s in
+        f x s'
+
+    let ( let* ) = bind
+
+    let get : t state =
+      fun s -> (s, s)
+
+    let put (s': t) : unit state =
+      fun _ -> (s', ())
+
+    let rec map (f: 'a -> 'b state) (l:'a list) : 'b list state =
+      match l with
+      | [] -> return []
+      | x :: l ->
+        let* x = f x in
+        let* l = map f l in
+        return (x::l)
+
     let counter = ref 1
 
     let empty : t = []
 
-    let alloc_var (f:Variable.t -> Read.t) (st:t) : (t * Variable.t) =
+    let push (r: Read.t) : unit state =
+      let* s = get in
+      put (r::s)
+
+    let alloc (f: Variable.t -> Read.t) : Variable.t state =
       let count = !counter in
       counter := count + 1;
       let var = "@AccessState" ^ string_of_int count |> Variable.from_name in
-      (f var :: st, var)
+      let* _ = push (f var) in
+      return var
 
-    let add_read
+    (* Add a read to the current state, returns a variable that represents
+       the value being read. *)
+    let add
       ?(target=None)
       ~array:(array:Ident.t)
       ~index:(index:expr list)
-      (st:t)
+      ()
     :
-      (t * expr)
+      expr state
     =
       match target with
       | Some target ->
-        (Read.read ~array:array.var index :: st, Ident target)
+        let* () = push (Read.read ~array:array.var index) in
+        return (Ident target)
       | None ->
         (* Get the type of the value being read *)
         let target_ty =
@@ -338,156 +372,115 @@ module Expressions = struct
           |> Option.value ~default:Type.f64
         in
         if Type.is_int target_ty || Type.is_bool target_ty then
-          let (ctx, var) =
-            alloc_var (fun target_var ->
+          let* var = alloc (fun target_var ->
               Read.read_to ~target_var ~target_ty ~array:array.var index
-            ) st
+            )
           in
-          (ctx, Ident {var; ty=target_ty; kind=LocalVariable})
+          return (Ident {var; ty=target_ty; kind=LocalVariable})
         else
           (* Don't generate a variable declaration when reading a non-int *)
-          (Read.read ~array:array.var index :: st, Unsupported)
+          let* () = push (Read.read ~array:array.var index) in
+          return Unsupported
 
-    let pure (st:t) (x:'a) : t * 'a =
-      (st, x)
-
-    let opt_pure (st:t) (x:'a option) : (t * 'a) option =
-      x |> Option.map (pure st)
-
-    let rec rewrite (ctx:t) (e: W_lang.Expression.t) : t * expr =
-      let ( let* ) = Option.bind in
-      let pure (e:expr) : t * expr = (ctx, e) in
-      let unsupported = (ctx, Unsupported) in
-      let ret_or (l:W_lang.Expression.t list) (o:(t * expr) option) : t * expr =
-        match o with
-        | Some v -> v
-        | None -> (l_rewrite ctx l |> fst, Unsupported)
+    let rec rewrite (e: W_lang.Expression.t) : expr state =
+      let unsupported ?(expr=e) () : expr state =
+        let* _ = map rewrite (W_lang.Expression.children expr) in
+        return Unsupported
       in
       match e with
       | Literal l ->
-        pure (
+        return (
           match Literals.parse l with
           | Some l -> Literal l
           | None -> Unsupported
         )
-      | ZeroValue ty -> pure (ZeroValue ty)
+
+      | ZeroValue ty -> return (ZeroValue ty)
+
       | Compose {ty; components} ->
-        let (ctx, components) = l_rewrite ctx components in
-        (ctx, Compose {ty; components})
+        let* components = map rewrite components in
+        return (Compose {ty; components})
 
-      | Load (AccessIndex {base; location; _} as e) ->
-        ret_or [base] (
-          let* a = NDAccess.from_expression location e in
-          let (ctx, index) = l_rewrite ctx a.index in
+      | Load (Access {location; _} as e)
+      | Load (AccessIndex {location; _} as e) ->
+        (* Try to parse the access from the expression using NDAccess *)
+        (match NDAccess.from_expression location e with
+        | Some a ->
+          (* rewrite the inferred list of indices *)
+          let* index = map rewrite a.index in
+          (* try to extract the target variable if there is on *)
           let target = NDAccess.flatten a in
-          Some (add_read ~target ~array:a.array ~index ctx)
-        )
-
-      | Load (Access {base; location; index} as e) ->
-        ret_or [base; index] (
-          let* a = NDAccess.from_expression location e in
-          let (ctx, index) = l_rewrite ctx a.index in
-          Some (add_read ~array:a.array ~index ctx)
-        )
-      | Access {base; index; _} ->
-        let ctx = add ctx base in
-        let ctx = add ctx index in
-        (ctx, Unsupported)
+          (* emit a read *)
+          add ~target ~array:a.array ~index ()
+        | None ->
+          (* we override the target expression we're passing to unsupported
+             because we want to get the children of the access, not the children
+             of the load (which is what the default is). *)
+          unsupported ~expr:e ())
 
       (* We need a special case for handling gid, because we do not
          support GID natively. *)
       | AccessIndex {base=Ident i; index; _}
         when IdentKind.is_global_invocation_id i.kind ->
-        (ctx, global_idx index |> Option.value ~default:Unsupported)
+        return (global_idx index |> Option.value ~default:Unsupported)
 
       | AccessIndex {base; index; _} ->
-        let (ctx, base) = rewrite ctx base in
-        (ctx, map_ident (fun (x:W_lang.Ident.t) ->
+        let* base = rewrite base in
+        return (map_ident (fun (x:W_lang.Ident.t) ->
           Variables.inline_field index x
           |> Option.value ~default:x
         )  base)
 
       | Splat {size; value} ->
-        let (ctx, value) = rewrite ctx value in
-        (ctx, Splat {size; value})
-      | Swizzle {vector=expr; _} ->
-        let (ctx, _) = rewrite ctx expr in
-        (ctx, Unsupported)
+        let* value = rewrite value in
+        return (Splat {size; value})
+
       | Ident i ->
-        pure (Ident i)
+        return (Ident i)
+
       | Load e ->
-        rewrite ctx e
-      | ImageSample {
-          image;
-          sampler;
-          coordinate;
-          array_index;
-          offset;
-          depth_ref
-        } ->
-        let ctx = add ctx image in
-        let ctx = add ctx sampler in
-        let ctx = add ctx coordinate in
-        let ctx = o_add ctx array_index in
-        let ctx = o_add ctx offset in
-        let ctx = o_add ctx depth_ref in
-        (ctx, Unsupported)
-      | ImageLoad {image; coordinate; array_index; sample; level} ->
-        let ctx = add ctx image in
-        let ctx = add ctx coordinate in
-        let ctx = o_add ctx array_index in
-        let ctx = o_add ctx sample in
-        let ctx = o_add ctx level in
-        (ctx, Unsupported)
-      | ImageQuery {image; query} ->
-        let ctx = add ctx image in
-        let ctx =
-          match query with
-          | Size (Some e) -> add ctx e
-          | _ -> ctx
-        in
-        (ctx, Unsupported)
+        rewrite e
+
       | Unary {expr; op} ->
-        let (ctx, expr) = rewrite ctx expr in
-        (ctx, Unary {expr; op})
+        let* expr = rewrite expr in
+        return (Unary {expr; op})
+
       | Binary {op; left; right} ->
-        let (ctx, left) = rewrite ctx left in
-        let (ctx, right) = rewrite ctx right in
-        (ctx, Binary {op; left; right})
+        let* left = rewrite left in
+        let* right = rewrite right in
+        return (Binary {op; left; right})
+
       | Select {condition; accept; reject;} ->
-        let (ctx, condition) = rewrite ctx condition in
-        let (ctx, accept) = rewrite ctx accept in
-        let (ctx, reject) = rewrite ctx reject in
-        (ctx, Select {condition; accept; reject;})
-      | Derivative {expr;} ->
-        let ctx = add ctx expr in
-        (ctx, Unsupported)
+        let* condition = rewrite condition in
+        let* accept = rewrite accept in
+        let* reject = rewrite reject in
+        return (Select {condition; accept; reject;})
+
       | Relational {argument; fun_;} ->
-        let (ctx, argument) = rewrite ctx argument in
-        (ctx, Relational {fun_; argument;})
+        let* argument = rewrite argument in
+        return (Relational {fun_; argument;})
+
       | Math {fun_; args;} ->
-        let (ctx, args) = l_rewrite ctx args in
-        (ctx, Math {fun_; args;})
+        let* args = map rewrite args in
+        return (Math {fun_; args;})
+
       | As {expr; kind; convert;} ->
-        let (ctx, expr) = rewrite ctx expr in
-        (ctx, As {expr; kind; convert;})
+        let* expr = rewrite expr in
+        return (As {expr; kind; convert;})
+
       | ArrayLength (Ident i) ->
-        pure (Ident (W_lang.Ident.add_suffix ".len" i))
-      | ArrayLength expr ->
-        let ctx = add ctx expr in
-        (ctx, Unsupported)
-      | RayQueryProceedResult -> unsupported
-      | RayQueryGetIntersection {query; _} ->
-        let ctx = add ctx query in
-        (ctx, Unsupported)
-    and add (ctx:t) (e: W_lang.Expression.t) : t =
-      rewrite ctx e |> fst
-    and o_add (ctx:t) (e: W_lang.Expression.t option) : t =
-      match e with
-      | Some e -> add ctx e
-      | None -> ctx
-    and l_rewrite (ctx:t) (l: W_lang.Expression.t list) : t * expr list =
-      List.fold_left_map rewrite ctx l
+        return (Ident (W_lang.Ident.add_suffix ".len" i))
+
+      | ArrayLength _
+      | RayQueryProceedResult
+      | RayQueryGetIntersection _
+      | Derivative _
+      | Access _
+      | Swizzle _
+      | ImageSample _
+      | ImageLoad _
+      | ImageQuery _ ->
+        unsupported ()
 
     let rec to_i_exp : expr -> Imp.Infer_exp.t =
       function
@@ -541,10 +534,6 @@ module Expressions = struct
       | _ -> Unknown "?"
   end (* end of Context *)
 
-  let n_todo : Exp.nexp = Var (Variable.from_name "TODO")
-
-  let b_todo : Exp.bexp = CastBool n_todo
-
   let rec n_tr (e: W_lang.Expression.t) : (Imp.Stmt.t list * Exp.nexp) =
     let (reads, e) = extract_reads e in
     let (decls, e) =
@@ -555,11 +544,11 @@ module Expressions = struct
     (reads @ decls, e)
 
   and extract_reads (e:W_lang.Expression.t) : (Imp.Stmt.t list * t) =
-    let (reads, e) = Context.rewrite [] e in
+    let (reads, e) = Context.rewrite e [] in
     (List.concat_map r_tr (List.rev reads), e)
 
   and l_extract_reads (l:W_lang.Expression.t list) : (Imp.Stmt.t list * t list) =
-    let (reads, l) = Context.l_rewrite [] l in
+    let (reads, l) = (Context.map Context.rewrite l) [] in
     (List.concat_map r_tr (List.rev reads), l)
 
   and r_tr (r: Context.Read.t) : Imp.Stmt.t list =

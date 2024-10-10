@@ -7,7 +7,7 @@ type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
 (* Monadic let *)
-let (let*) = Result.bind
+let ( let* ) = Result.bind
 (* Monadic pipe *)
 let (>>=) = Result.bind
 
@@ -1654,6 +1654,47 @@ module Expression = struct
     | ArrayLength e -> "arrayLength(" ^ to_string e ^ ")"
     | RayQueryProceedResult -> "RayQueryProceedResult"
     | RayQueryGetIntersection _ -> "RayQueryGetIntersection"
+
+  let children : t -> t list =
+    let o_list : t option list -> t list =
+      List.concat_map Option.to_list
+    in
+    function
+    | Ident _
+    | Literal _
+    | ZeroValue _ -> []
+    | Compose {components; _} -> components
+    | Access {base; index; _} -> [base; index]
+    | AccessIndex {base; _} -> [base]
+    | Splat {value; _} -> [value]
+    | Swizzle {vector; _} -> [vector]
+    | Load e -> [e]
+    | ImageSample {
+        image=e1; sampler=e2; coordinate=e3;
+        array_index=o1; offset=o2; depth_ref=o3;
+      } ->
+      [e1; e2; e3] @ (o_list [o1; o2; o3])
+    | ImageLoad {
+        image=e1; coordinate=e2;
+        array_index=o1; sample=o2; level=o3;
+      } ->
+      [e1; e2] @ (o_list [o1; o2; o3])
+    | ImageQuery { image=e; query=q;} ->
+      let o = match q with
+        | Size o -> o
+        | _ -> None
+      in
+      e :: (Option.to_list o)
+    | Unary {expr; _} -> [expr]
+    | Binary {left; right; _} -> [left; right]
+    | Select { condition; accept; reject;} -> [condition; accept; reject]
+    | Derivative { expr; } -> [expr]
+    | Relational {argument; _} -> [argument]
+    | Math { fun_=_; args;} -> args
+    | As { expr; _ } -> [expr]
+    | ArrayLength e -> [e]
+    | RayQueryProceedResult -> []
+    | RayQueryGetIntersection {query; _} -> [query]
 
   let rec type_of : t -> Type.t =
     function
