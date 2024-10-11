@@ -3,21 +3,102 @@ open Protocols
 open Inference
 open Bank_conflicts
 
-let load_data (fname : string) : (string * int) list =
-   try
-    let open Yojson.Basic in
-    let j = from_file ~fname fname in
-    j
-    |> Util.to_assoc
-    |> List.filter_map (fun (k, v) ->
-      v
-      |> Util.to_int_option
-      |> Option.map (fun v -> (k, v))
-    )
-  with
-    | Yojson.Json_error e | Sys_error e ->
-      prerr_endline ("Error parsing '" ^ fname ^ "': " ^ e);
-      []
+module Data = struct
+  open Vectorized
+
+  type t =
+    | Int of int
+    | Vector of int list
+
+  let from_json (j:Yojson.Basic.t) : t option =
+    let open Yojson.Basic.Util in
+    match j with
+    | `Int i -> Some (Int i)
+    | `List l ->
+      (try
+        Some (Vector (List.filter_map Yojson.Basic.Util.to_int_option l))
+      with
+        Type_error _ -> None)
+    | _ -> None
+
+  let to_int : t -> int =
+    function
+    | Int i -> i
+    | _ -> failwith "to_int"
+
+  let to_nmap ~count : t -> NMap.t option =
+    function
+    | Int value ->
+      Some (NMap.constant ~count ~value)
+    | Vector v ->
+      if count <> List.length v then
+        None
+      else
+        Some (NMap.from_array (Array.of_list v))
+
+  let to_string : t -> string =
+    function
+    | Int i -> string_of_int i
+    | Vector l ->
+      let l = List.map string_of_int l |> Common.join ", " in
+      "[" ^ l ^ "]"
+end
+
+module Env = struct
+  type t = (string * Data.t) list
+  let load (fname : string) : t =
+    try
+      let open Yojson.Basic in
+      let j = from_file ~fname fname in
+      j
+      |> Util.to_assoc
+      |> List.filter_map (fun (k, v) ->
+        v
+        |> Data.from_json
+        |> Option.map (fun v -> (k, v))
+      )
+    with
+      | Yojson.Json_error e | Sys_error e ->
+        prerr_endline ("Error parsing '" ^ fname ^ "': " ^ e);
+        []
+
+  let to_vectorized ~bank_count ~env:(env:t) ~arrays : Vectorized.t =
+    let use_array x = Variable.Set.mem x arrays in
+    let block_dim =
+      let to_v (key:string) (default:int) : int =
+        env
+        |> List.assoc_opt key
+        |> Option.map Data.to_int
+        |> Option.value ~default
+      in
+      let x = to_v "blockDim.x" bank_count in
+      let y = to_v "blockDim.y" 1 in
+      let z = to_v "blockDim.z" 1 in
+      Dim3.{x; y; z}
+    in
+    print_endline (Dim3.to_string block_dim);
+    let ctx =
+      Vectorized.make ~bank_count ~thread_count:bank_count ~use_array
+      |> Vectorized.put_tids block_dim
+    in
+    print_endline (Vectorized.to_string ctx);
+    List.fold_left (fun ctx ((k:string), v) ->
+      let k = Variable.from_name k in
+      match Data.to_nmap v ~count:bank_count with
+      | Some v' ->
+        print_endline (Variable.name k ^ " = " ^ Data.to_string v);
+        Vectorized.put k v' ctx
+      | None -> ctx
+    ) ctx env
+
+  let to_string (env:t) : string =
+    let env =
+      env
+      |> List.map (fun (x, y) -> x ^ "=" ^ Data.to_string y)
+      |> String.concat ", "
+    in
+    "{" ^ env ^ "}"
+end
 
 
 let shared_arrays (k:Proto.Code.t Proto.Kernel.t) : Variable.Set.t =
@@ -30,26 +111,6 @@ let shared_arrays (k:Proto.Code.t Proto.Kernel.t) : Variable.Set.t =
   )
   |> Variable.Set.of_list
 
-let create_ctx ~bank_count ~env:(env:(string*int) list) ~arrays : Vectorized.t =
-  let use_array x = Variable.Set.mem x arrays in
-  let block_dim =
-    let x = List.assoc_opt "blockDim.x" env |> Option.value ~default:bank_count in
-    let y = List.assoc_opt "blockDim.y" env |> Option.value ~default:1 in
-    let z = List.assoc_opt "blockDim.z" env |> Option.value ~default:1 in
-    Dim3.{x; y; z}
-  in
-  print_endline (Dim3.to_string block_dim);
-  let ctx =
-    Vectorized.make ~bank_count ~thread_count:bank_count ~use_array
-    |> Vectorized.put_tids block_dim
-  in
-  print_endline (Vectorized.to_string ctx);
-  List.fold_left (fun ctx ((k:string), (v:int)) ->
-    print_endline (k ^ " = " ^ string_of_int v);
-    let k = Variable.from_name k in
-    let v = Vectorized.NMap.constant ~count:bank_count ~value:v in
-    Vectorized.put k v ctx
-  ) ctx env
 
 let main (fname : string) : unit =
   try
@@ -58,16 +119,11 @@ let main (fname : string) : unit =
     let d_ast = c_ast |> D_lang.rewrite_program in
     let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
     let proto = imp |> List.map Imp.Kernel.compile in
-    let env = load_data "env.json" in
-    print_string "env.json:";
-    print_endline (
-      env
-      |> List.map (fun (x, y) -> x ^ "=" ^ string_of_int y)
-      |> String.concat ", "
-    );
+    let env = Env.load "env.json" in
+    print_endline ("env.json: " ^ Env.to_string env);
     (try
       List.iter (fun p ->
-        let ctx = create_ctx ~bank_count:32 ~env ~arrays:(shared_arrays p) in
+        let ctx = Env.to_vectorized ~bank_count:32 ~env ~arrays:(shared_arrays p) in
         let v = Vectorized.eval ~verbose:true Metric.BankConflicts p.code ctx in
         print_endline ("Total cost: " ^ string_of_int v)
       ) proto;
