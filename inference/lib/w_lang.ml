@@ -366,19 +366,40 @@ module StorageAccess = struct
     | false, true -> Ok WriteOnly
     | false, false -> root_cause ("StorageAccess.parse: false, false") j
 end
+(** {1 AddressSpace Module}
+    This module defines the various address spaces in WGSL (WebGPU Shading Language),
+    which are used to specify where variables are stored and how they are accessed
+    during the execution of shaders. The types align with WGSL's memory model concepts.
+*)
 
 module AddressSpace = struct
-  type t =
-    | Function
-    | Private
-    | WorkGroup
-    | Uniform
-    | Storage of StorageAccess.t
-    | Handle
-    | PushConstant
+  (** {2 Types} *)
 
-  let to_string : t -> string =
-    function
+  (** The type [t] represents the different address spaces in WGSL. *)
+  type t =
+    | Function (** A function-level variable, local to the shader function. *)
+    | Private  (** A private variable, local to a single shader invocation. *)
+    | WorkGroup (** A variable shared among all invocations within a workgroup. *)
+    | Uniform  (** A variable accessible via the uniform address space. *)
+    | Storage of StorageAccess.t (** A storage buffer with specific access permissions. *)
+    | Handle  (** A resource handle, such as a texture or sampler. *)
+    | PushConstant (** A push constant, which provides fast access to small amounts of data. *)
+
+  (** {2 Functions} *)
+
+  (** [to_string addr_space] converts the address space [addr_space] to its
+      string representation in WGSL.
+
+      @param addr_space The address space to convert.
+      @return A string representation of the address space.
+
+      {b Example:}
+      {[
+        let s = AddressSpace.to_string Function
+        (* s is "function" *)
+      ]}
+  *)
+  let to_string : t -> string = function
     | Function -> "function"
     | Private -> "private"
     | WorkGroup -> "workgroup"
@@ -387,7 +408,23 @@ module AddressSpace = struct
     | Handle -> ""
     | PushConstant -> "push_constant"
 
-  let parse (j:json) : t j_result =
+  (** [parse j] parses a JSON representation into an address space value [t].
+
+      @param j The JSON value to parse.
+      @return A result containing the parsed address space or an error if parsing fails.
+
+      {b Example:}
+      {[
+        let json = `Assoc [("kind", `String "Function")] in
+        match AddressSpace.parse json with
+        | Ok addr_space -> print_endline (AddressSpace.to_string addr_space)
+        | Error e -> print_endline ("Error: " ^ e)
+        (* Output: function *)
+      ]}
+
+      This function is useful for interpreting WGSL metadata stored in JSON format.
+  *)
+  let parse (j: json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
     let* kind = get_kind o in
@@ -896,6 +933,8 @@ module Type = struct
         Printf.sprintf "atomic<%s>" (Scalar.to_string s)
       | Pointer {base=b; space=s} ->
         Printf.sprintf "ptr<%s,%s>" (to_string b) (AddressSpace.to_string s)
+      | Sampler {comparison} ->
+        if comparison then "sampler_comparison" else "sampler"
       | k -> failwith ("inner_to_string: unsupported kind:" ^ kind k)
 
   and to_string (e:t) : string =
@@ -955,6 +994,9 @@ module Type = struct
       let* base = with_field "base" parse o in
       let* space = with_field "space" AddressSpace.parse o in
       Ok (Pointer {base; space})
+    | "Sampler" ->
+      let* comparison = with_field "comparison" cast_bool o in
+      Ok (Sampler {comparison})
     | _ -> root_cause ("inner_parse: unsupported kind: " ^ kind) j
 
   and struct_parse (j:json) : struct_member j_result =
@@ -1391,6 +1433,9 @@ module Literal = struct
   let int (i:int) : t =
     AbstractInt i
 
+  let float (f:float) : t =
+    AbstractFloat f
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -1709,11 +1754,11 @@ module Expression = struct
     | ImageSample of {
         image: t;
         sampler: t;
-(*         gather: Option<SwizzleComponent>, *)
+        gather: int option;
         coordinate: t;
         array_index: t option;
         offset: t option;
-(*         level: SampleLevel, *)
+        level: sample_level;
         depth_ref: t option;
       }
     | ImageLoad of {
@@ -1772,8 +1817,41 @@ module Expression = struct
     | NumLayers
     | NumSamples
 
+  (**
+    The type [sample_level] represents the different ways of controlling texture
+    sampling level of detail in WGSL.
+
+    In WGSL, sampling operations can be modified with various sample level
+    parameters, such as automatic selection, explicit bias, or gradients.
+    This module provides types for these options and functions to convert
+    them to string representations and parse them from JSON.
+
+    Example WGSL usage:
+    - In WGSL, when sampling from a texture with `textureSampleLevel`,
+      you can specify levels like auto or explicit bias:
+      {[
+        textureSampleLevel(sampler, coords, level);
+      ]}
+
+  *)
+  and sample_level =
+    | Auto  (** Use the automatic level of detail (LOD). This is the default in WGSL. *)
+    | Zero  (** Use a fixed LOD of zero. *)
+    | Exact of t
+    (** Use an exact, explicit LOD. This corresponds to providing a specific LOD value. *)
+    | Bias of t
+    (** Apply a bias to the LOD. This is useful in mipmapping to offset the LOD. *)
+    | Gradient of {
+        x : t;  (** The x-component of the gradient. *)
+        y : t;  (** The y-component of the gradient. *)
+      }
+
+
   let int (i:int) : t =
     Literal (Literal.int i)
+
+  let float (f:float) : t =
+    Literal (Literal.float f)
 
   let rec to_string : t -> string =
     function
@@ -1801,7 +1879,35 @@ module Expression = struct
     | Ident i -> Ident.name i
     | Load e ->
       "load(" ^ to_string e ^")"
-    | ImageSample _ -> (*TODO*) "ImageSample"
+    | ImageSample {image; sampler; gather; coordinate; array_index; offset; level; depth_ref} ->
+      let cmp = if Option.is_some depth_ref then "Compare" else "" in
+      let lvl =
+        match level with
+        | Auto -> ""
+        | Zero | Exact _ -> "Level"
+        | Bias _ -> "Bias"
+        | Gradient _ -> "Grad"
+      in
+      let args =
+        (
+          gather
+          |> Option.map int
+          |> Option.to_list
+        )
+        @ [image; sampler; coordinate]
+        @ Option.to_list array_index
+        @ Option.to_list depth_ref
+        @ (match level with
+          | Auto -> []
+          | Zero -> [float 0.0]
+          | Exact e | Bias e -> [e]
+          | Gradient {x; y} -> [x; y]
+        )
+        @ Option.to_list offset
+        |> List.map to_string
+        |> Common.join ", "
+      in
+      Printf.sprintf "textureSample%s%s(%s)" cmp lvl args
     | ImageLoad {image; coordinate; array_index; sample; level;} ->
       let args =
         let index =
@@ -1861,6 +1967,37 @@ module Expression = struct
     | RayQueryProceedResult -> "RayQueryProceedResult"
     | RayQueryGetIntersection _ -> "RayQueryGetIntersection"
 
+  (** [sample_level_to_string t] returns a string representation of the sample level [t].
+
+      Example:
+      {[
+        sample_level_to_string (Exact expr)
+        (* Output: "exact(<expression>)" *)
+      ]}
+  *)
+  and sample_level_to_string : sample_level -> string = function
+    | Auto -> "auto"
+    | Zero -> "zero"
+    | Exact expr -> Printf.sprintf "exact(%s)" (to_string expr)
+    | Bias expr -> Printf.sprintf "bias(%s)" (to_string expr)
+    | Gradient { x; y } ->
+        Printf.sprintf "gradient(x: %s, y: %s)"
+          (to_string x)
+          (to_string y)
+
+  (** [children ast] returns the list of child nodes for a given AST node [ast] of type [t].
+      This function is useful for traversing the abstract syntax tree (AST) of WGSL code,
+      where each node may have zero or more children representing sub-expressions or components.
+
+      For example, given a WGSL swizzle expression like `vec4(1.0).xyz`, the [Swizzle] node
+      will contain a child node representing the vector being swizzled.
+
+      This function simplifies working with nested WGSL constructs by extracting child
+      nodes, enabling recursive tree traversals or transformations.
+
+      @param ast the AST node to extract children from
+      @return the list of child nodes contained within [ast]
+  *)
   let children : t -> t list =
     let o_list : t option list -> t list =
       List.concat_map Option.to_list
@@ -1878,8 +2015,18 @@ module Expression = struct
     | ImageSample {
         image=e1; sampler=e2; coordinate=e3;
         array_index=o1; offset=o2; depth_ref=o3;
+        gather=_; level;
       } ->
-      [e1; e2; e3] @ (o_list [o1; o2; o3])
+      let level =
+        match level with
+        | Auto | Zero -> []
+        | Bias e | Exact e -> [e]
+        | Gradient {x; y} -> [x; y]
+      in
+      [e1; e2; e3]
+      @ (o_list [o1; o2])
+      @ level
+      @ (o_list [o3])
     | ImageLoad {
         image=e1; coordinate=e2;
         array_index=o1; sample=o2; level=o3;
@@ -1998,16 +2145,20 @@ module Expression = struct
     | "ImageSample" ->
       let* image = with_field "image" parse o in
       let* sampler = with_field "sampler" parse o in
+      let* gather = with_field "gather" (cast_option cast_int) o in
       let* coordinate = with_field "coordinate" parse o in
       let* array_index = with_field "array_index" (cast_option parse) o in
       let* offset = with_field "offset" (cast_option parse) o in
+      let* level = with_field "level" sample_level_parse o in
       let* depth_ref = with_field "depth_ref" (cast_option parse) o in
       Ok (ImageSample {
         image;
         sampler;
+        gather;
         coordinate;
         array_index;
         offset;
+        level;
         depth_ref;
       })
     | "ImageLoad" ->
@@ -2025,7 +2176,7 @@ module Expression = struct
       })
     | "ImageQuery" ->
       let* image = with_field "image" parse o in
-      let* query = with_field "query" parse_image_query o in
+      let* query = with_field "query" image_query_parse o in
       Ok (ImageQuery {
         query;
         image;
@@ -2076,7 +2227,8 @@ module Expression = struct
         committed;
       })
     | _ -> failwith kind
-  and parse_image_query (j:json) : image_query j_result =
+
+  and image_query_parse (j:json) : image_query j_result =
     let open Rjson in
     let* o = cast_object j in
     let* kind = get_kind o in
@@ -2089,6 +2241,39 @@ module Expression = struct
     | "NumSamples" -> Ok NumSamples
     | _ -> root_cause "parse_image_query" j
 
+  (** [sample_level_parse j] parses a JSON object [j] into a sample level of
+      type [sample_level].
+
+      This function expects the JSON to contain a field [kind] indicating the
+      type of sample level, with optional fields [value], [x], and [y]
+      depending on the kind.
+
+      Example JSON:
+      {[
+        { "kind": "Exact", "value": <expression> }
+      ]}
+
+      @param j The JSON object to parse.
+      @return A result containing the parsed sample level or an error.
+  *)
+  and sample_level_parse (j: json) : sample_level j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "Auto" -> Ok Auto
+    | "Zero" -> Ok Zero
+    | "Exact" ->
+      let* expr = with_field "value" parse o in
+      Ok (Exact expr)
+    | "Bias" ->
+      let* expr = with_field "value" parse o in
+      Ok (Bias expr)
+    | "Gradient" ->
+      let* x = with_field "x" parse o in
+      let* y = with_field "y" parse o in
+      Ok (Gradient { x; y })
+    | _ -> root_cause "sample_level" j
 end
 
 module LocalDeclaration = struct
