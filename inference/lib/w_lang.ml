@@ -2597,6 +2597,99 @@ module SubgroupOperation = struct
     | _ -> root_cause "SubgroupOperation" j
 end
 
+(**
+  {1 SwitchValue Module}
+
+  This module defines a type [t] to represent values in a WGSL switch statement.
+  In WGSL, [switch] statements can match against 32-bit signed or unsigned
+  integer literals or use a [default] case.
+
+  This module provides utilities to convert these switch values to strings
+  and parse them from JSON representations. These utilities can be useful when
+  working with AST representations of WGSL.
+
+  Example WGSL switch:
+  {[
+    switch (value) {
+      case 1: { /*...*/ }
+      case 42u: { /*...*/ }
+      default: { /*...*/ }
+    }
+  ]}
+*)
+
+module SwitchValue = struct
+  (**
+    {2 Type Definition}
+    [t] is a type representing the possible values of a WGSL switch case.
+    *)
+  type t =
+    | I32 of int  (** A 32-bit signed integer value. *)
+    | U32 of int  (** A 32-bit unsigned integer value (using OCaml's [int32]). *)
+    | Default       (** The [default] case in a WGSL switch statement. *)
+
+  (**
+    Converts a [SwitchValue.t] to its string representation.
+
+    @param value the switch value to convert
+    @return a string representation of the switch value
+
+    Example:
+    {[
+      let s = SwitchValue.to_string (I32 42l)
+      (* s = "i32(42)" *)
+
+      let s = SwitchValue.to_string (U32 42l)
+      (* s = "u32(42)" *)
+
+      let s = SwitchValue.to_string Default
+      (* s = "default" *)
+    ]}
+  *)
+  let to_string : t -> string = function
+    | I32 value -> Printf.sprintf "i32(%d)" value
+    | U32 value -> Printf.sprintf "u32(%d)" value
+    | Default -> "default"
+
+  (**
+    Parses a [SwitchValue.t] from a JSON object.
+
+    @param j the JSON representation of a switch value
+    @return a result containing either a parsed [SwitchValue.t] or an error
+
+    Example JSON input:
+    {[
+      { "kind": "I32", "value": 42 }
+    ]}
+    {[
+      { "kind": "U32", "value": 42 }
+    ]}
+    {[
+      { "kind": "Default" }
+    ]}
+
+    WGSL Example:
+    {[
+      let json = `Assoc [("kind", `String "I32"); ("value", `Int 42)] in
+      let result = SwitchValue.parse json
+      (* result = Ok (I32 42l) *)
+    ]}
+  *)
+  let parse (j : json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "I32" ->
+      let* value = with_field "value" cast_int o in
+      Ok (I32 value)
+    | "U32" ->
+      let* value = with_field "value" cast_int o in
+      Ok (U32 value)
+    | "Default" -> Ok Default
+    | _ -> root_cause "SwitchValue" j
+end
+
 module Statement = struct
   type t =
     | Block of t list
@@ -2605,10 +2698,10 @@ module Statement = struct
         accept: t list;
         reject: t list;
       }
-    | Switch (*of {
-        selector: Expression;
-        cases: SwitchCase;
-      }*)
+    | Switch of {
+        selector: Expression.t;
+        cases: switch_case list;
+      }
     | Loop of {
         body: t list;
         continuing: t list;
@@ -2661,6 +2754,21 @@ module Statement = struct
         result: Ident.t;
       }
 
+  (**
+      The type representing a switch case in WGSL.
+      A case includes:
+      - [value]: The case value to match against the switch expression.
+      - [body]: A block of code to execute if the case matches.
+      - [fall_through]: A boolean flag indicating whether execution should fall through
+        to the next case (if [true]), similar to the 'fall-through' behavior
+        in C-like languages.
+    *)
+  and switch_case = {
+    value: SwitchValue.t;  (** The value to match against the switch expression. *)
+    body: t list;         (** The block of code executed if the value matches. *)
+    fall_through: bool;    (** Whether control should proceed to the next case. *)
+  }
+
   let rec parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -2674,7 +2782,10 @@ module Statement = struct
         let* accept = with_field "accept" (cast_map parse) o in
         let* reject = with_field "reject" (cast_map parse) o in
         Ok (If {accept; reject; condition;})
-      | "Switch" -> Ok Switch
+      | "Switch" ->
+        let* selector = with_field "selector" Expression.parse o in
+        let* cases = with_field "cases" (cast_map switch_case_parse) o in
+        Ok (Switch {selector; cases})
       | "Loop" ->
         let* body = with_field "body" (cast_map parse) o in
         let* continuing = with_field "continuing" (cast_map parse) o in
@@ -2730,6 +2841,29 @@ module Statement = struct
         Ok (SubgroupCollectiveOperation {op; collective_op; argument; result;})
       | _ -> root_cause ("Statement.parse: unknown kind: " ^ kind) j
 
+  (**
+    Parses a JSON representation of a switch case into a [t] type.
+
+    Example JSON input:
+    {[
+      {
+        "value": 1,
+        "body": [],
+        "fall_through": false
+      }
+    ]}
+
+    @param j The JSON object representing a switch case.
+    @return A parsed switch case or an error if the JSON is invalid.
+  *)
+  and switch_case_parse (j: json) : switch_case j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* value = with_field "value" SwitchValue.parse o in
+    let* body = with_field "body" (cast_map parse) o in
+    let* fall_through = with_field "fall_through" cast_bool o in
+    Ok { value; body; fall_through }
+
   let rec to_s : t -> Indent.t list =
     function
     | Block l ->
@@ -2756,11 +2890,10 @@ module Statement = struct
       @
       [ Line "}" ]
 
-    | Switch (*of {
-        selector: Expression;
-        cases: SwitchCase;
-      }*) ->
-      [Line "switch (TODO) {TODO}"]
+    | Switch { selector; cases;} ->
+      [ Indent.Line ("switch (" ^ Expression.to_string selector ^ ") {"); ]
+      @ List.concat_map switch_case_to_s cases
+      @ [ Line "}"; ]
     | Loop {body; continuing; break_if;} ->
       [
         Line "loop {";
@@ -2886,7 +3019,16 @@ module Statement = struct
           (Expression.to_string argument)
       in
       [Line line]
+
   and block_to_s l = List.concat_map to_s l
+
+  and switch_case_to_s (s:switch_case) : Indent.t list =
+    [
+      Line ("case " ^ SwitchValue.to_string s.value ^ ":");
+      Block (
+        block_to_s (s.body @ if s.fall_through then [Break] else [])
+      )
+    ]
 
   let to_string (s:t) : string =
     Indent.to_string (to_s s)
