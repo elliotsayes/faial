@@ -157,7 +157,7 @@ let tests = "test_predicates" >::: [
     ]) in
     (* Translate: *)
     let (_, p) = Scoped.from_stmt (Params.empty, p) in
-    let p : Proto.Code.t = p
+    let p : Protocols.Code.t = p
       |> Encode_assigns.from_scoped Variable.Set.empty
       |> Encode_asserts.from_encode_assigns
     in
@@ -172,7 +172,7 @@ let tests = "test_predicates" >::: [
         assert_nexp tid e1;
         assert_nexp (inc tid) e2;
         ()
-      | _ -> assert_failure ("Pattern matching failed:\n" ^ Proto.Code.to_string p)
+      | _ -> assert_failure ("Pattern matching failed:\n" ^ Protocols.Code.to_string p)
     end;
     ()
   );
@@ -217,7 +217,7 @@ let tests = "test_predicates" >::: [
     ]) in
     (* Translate: *)
     let (_, p) = Scoped.from_stmt (Params.empty, p) in
-    let p : Proto.Code.t = p
+    let p : Protocols.Code.t = p
       |> Encode_assigns.from_scoped Variable.Set.empty
       |> Encode_asserts.from_encode_assigns
     in
@@ -239,7 +239,7 @@ let tests = "test_predicates" >::: [
         assert_nexp (inc tid) e2;
         assert_nexp (inc (inc tid)) e3;
         ()
-      | _ -> assert_failure ("Pattern matching failed:\n" ^ Proto.Code.to_string p)
+      | _ -> assert_failure ("Pattern matching failed:\n" ^ Protocols.Code.to_string p)
     end;
     ()
 
@@ -309,7 +309,7 @@ let tests = "test_predicates" >::: [
     assert_ea p3 (Encode_assigns.from_scoped Variable.Set.empty p2);
     (* Translate: *)
     let (_, p) = Scoped.from_stmt (Params.empty, p) in
-    let p : Proto.Code.t = p
+    let p : Protocols.Code.t = p
       |> Encode_assigns.from_scoped Variable.Set.empty
       |> Encode_asserts.from_encode_assigns
     in
@@ -324,7 +324,7 @@ let tests = "test_predicates" >::: [
         when Variable.name y1 = "x" && Variable.name y2 = "x1" ->
       assert_nexp (Var (Variable.from_name "x")) x1;
       assert_nexp (Var (Variable.from_name "x1")) x2;
-    | _ -> assert_failure ("Pattern matching failed:\n" ^ Proto.Code.to_string p)
+    | _ -> assert_failure ("Pattern matching failed:\n" ^ Protocols.Code.to_string p)
   )
 ]
 

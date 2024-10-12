@@ -1,7 +1,6 @@
 open Stage0
 open Protocols
 open Exp
-open Proto
 
 module VarSet = Variable.Set
 module VarMap = Variable.Map
@@ -189,7 +188,7 @@ let arr_to_dummy (vm : Memory.t VarMap.t) : Indent.t list =
       Indent.Line (arr_type v ~strip_const:true ^ " " ^ var_to_dummy k ^ ";"))
 
 (* Serialization of the kernel header *)
-let header_to_s (g : Generator.t) (gv : Gv_parser.t) (k : Code.t Kernel.t)
+let header_to_s (g : Generator.t) (gv : Gv_parser.t) (k : Kernel.t)
   : Indent.t =
   let comments =
     if g.gen_params && not g.toml then [Gv_parser.serialize gv] else []
@@ -208,7 +207,7 @@ let header_to_s (g : Generator.t) (gv : Gv_parser.t) (k : Code.t Kernel.t)
 let body_to_s
   (f : Code.t -> Indent.t list)
   (g : Generator.t)
-  (k : Code.t Kernel.t)
+  (k : Kernel.t)
 :
   Indent.t
 =
@@ -226,7 +225,7 @@ let kernel_to_s
     (f : Code.t -> Indent.t list)
     (g : Generator.t)
     (gv : Gv_parser.t)
-    (k : Code.t Kernel.t)
+    (k : Kernel.t)
   : Indent.t list =
   let base_params = if g.use_dummy_array then ["int *__dummy"] else [] in
   let global_arr =
@@ -250,7 +249,7 @@ let prog_to_s (g : Generator.t) (p : Code.t) : Indent.t list =
 let gen_cuda
   (g : Generator.t)
   (gv : Gv_parser.t)
-  (k : Code.t Kernel.t)
+  (k : Kernel.t)
 :
   string
 =

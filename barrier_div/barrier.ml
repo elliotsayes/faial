@@ -8,7 +8,7 @@ module Code = struct
     | Cond of Exp.bexp * t
     | Barrier of Location.t option
 
-  let rec from_proto : Proto.Code.t -> t Seq.t =
+  let rec from_proto : Protocols.Code.t -> t Seq.t =
     function
     | Skip
     | Acc _ -> Seq.empty
@@ -56,7 +56,7 @@ module Kernel = struct
     code: Code.t list;
   }
 
-  let from_proto (k : Proto.Code.t Proto.Kernel.t) : t =
+  let from_proto (k : Protocols.Kernel.t) : t =
     {
       name = k.name;
       global_variables = Params.to_set k.global_variables;

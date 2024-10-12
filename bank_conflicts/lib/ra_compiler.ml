@@ -28,7 +28,7 @@ module Make (L:Logger.Logger) = struct
     ?(strategy=Exact)
     (idx_analysis : Variable.Set.t -> Exp.nexp -> int)
     (cfg:Config.t)
-    (k: Proto.Code.t Proto.Kernel.t)
+    (k:Kernel.t)
   :
     Ra.Stmt.t
   =
@@ -39,7 +39,7 @@ module Make (L:Logger.Logger) = struct
     in
     let lin = L.linearize cfg k.arrays in
     let params = k.global_variables in
-    let rec from_p (locals:Variable.Set.t) : Proto.Code.t -> Ra.Stmt.t =
+    let rec from_p (locals:Variable.Set.t) : Code.t -> Ra.Stmt.t =
       function
       | Skip -> Skip
       | Seq (p, q) -> Seq (from_p locals p, from_p locals q)
@@ -109,8 +109,8 @@ module Make (L:Logger.Logger) = struct
       |> Variable.Set.union Variable.tid_set
     in
     k.code
-    |> Proto.Code.subst_block_dim cfg.block_dim
-    |> Proto.Code.subst_grid_dim cfg.grid_dim
+    |> Code.subst_block_dim cfg.block_dim
+    |> Code.subst_grid_dim cfg.grid_dim
     |> from_p locals
 end
 module Default = Make(Logger.Colors)

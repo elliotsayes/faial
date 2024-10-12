@@ -1,7 +1,6 @@
 open Stage0
 open Protocols
 open Exp
-open Proto
 
 module Opt = Unsync.Opt
 
@@ -38,9 +37,9 @@ module Code = struct
       |> Unsync.free_names q
 
   (* Given a regular program, return a well-formed one *)
-  let from_proto : Proto.Code.t -> Sync.t Streamutil.stream =
+  let from_proto : Protocols.Code.t -> Sync.t Streamutil.stream =
     let open Streamutil in
-    let rec infer : Proto.Code.t -> t Streamutil.stream =
+    let rec infer : Protocols.Code.t -> t Streamutil.stream =
       function
       | Skip -> UInst Skip |> one
       | Acc e -> UInst (Acc e) |> one
@@ -93,34 +92,91 @@ module Code = struct
       )
 end
 
-let binders (k: Sync.t Kernel.t) : Variable.Set.t =
-  Sync.free_names k.code Variable.Set.empty
-  |> Exp.b_free_names k.pre
+module Kernel = struct
 
-let trim_binders (k: Sync.t Kernel.t) : Sync.t Kernel.t =
-  let fns = binders k in
-  { k with
-    global_variables = Params.retain_all fns k.global_variables;
-    local_variables = Params.retain_all fns k.local_variables;
+  type t = {
+    (* The kernel name *)
+    name : string;
+    (* The internal variables are used in the code of the kernel.  *)
+    global_variables: Params.t;
+    (* The internal variables are used in the code of the kernel.  *)
+    local_variables: Params.t;
+    (* The modifiers of each array *)
+    arrays: Memory.t Variable.Map.t;
+    (* A thread-local pre-condition that is true on all phases. *)
+    pre: bexp;
+    (* The code of a kernel performs the actual memory accesses. *)
+    code: Sync.t;
+    (* The kernel's visibility *)
+    visibility : Visibility.t;
+    (* Number of blocks *)
+    grid_dim: Dim3.t option;
+    (* Number of blocks *)
+    block_dim: Dim3.t option;
   }
 
-let translate (k: Proto.Code.t Kernel.t) : Sync.t Kernel.t Streamutil.stream =
-  let k = Proto.Kernel.hoist_decls k in
-  Code.from_proto k.code
-  |> Streamutil.map (fun p -> { k with code = p})
+  let to_s (k:t) : Indent.t list =
+    [
+      Line ("name: " ^ k.name ^ ";");
+      Line ("arrays: " ^ Memory.map_to_string k.arrays ^ ";");
+      Line ("globals: " ^ Params.to_string k.global_variables ^ ";");
+      Line ("locals: " ^ Params.to_string k.local_variables ^ ";");
+      Line ("invariant:");
+      Block (b_to_s k.pre);
+      Line ";";
+      Line "code:";
+      Block (Sync.to_s k.code);
+      Line "; end of code"
+    ]
 
-(* ---------------- Pretty printing -------------------- *)
+  let print (k:t) : unit =
+    Indent.print (to_s k)
 
-let print_kernel (k : Sync.t Kernel.t) : unit =
-  Proto.Kernel.print Sync.to_s k
+  let binders (k: t) : Variable.Set.t =
+    Sync.free_names k.code Variable.Set.empty
+    |> Exp.b_free_names k.pre
 
-let print_kernels (ks : Sync.t Kernel.t Streamutil.stream) : unit =
+  let trim_binders (k: t) : t =
+    let fns = binders k in
+    { k with
+      global_variables = Params.retain_all fns k.global_variables;
+      local_variables = Params.retain_all fns k.local_variables;
+    }
+
+  let from_protocol (k: Protocols.Kernel.t) : t Streamutil.stream =
+    let k = Protocols.Kernel.hoist_decls k in
+
+    let from_protocol (code: Sync.t) : t =
+      {
+        name = k.name;
+        global_variables = k.global_variables;
+        local_variables = k.local_variables;
+        arrays = k.arrays;
+        pre = k.pre;
+        code;
+        visibility = k.visibility;
+        grid_dim = k.grid_dim;
+        block_dim = k.block_dim;
+      }
+    in
+    Code.from_proto k.code
+    |> Streamutil.map from_protocol
+
+
+end
+
+
+let translate : Protocols.Kernel.t -> Kernel.t Streamutil.stream =
+  Kernel.from_protocol
+
+
+let print_kernels (ks : Kernel.t Streamutil.stream) : unit =
   print_endline "; w-lang";
   let count = ref 0 in
   Streamutil.iter (fun k ->
     let curr = !count + 1 in
     count := curr;
     print_endline ("; w-prog " ^ (string_of_int curr));
-    print_kernel k
+    Kernel.print k
   ) ks;
   print_endline "; end of w-lang"

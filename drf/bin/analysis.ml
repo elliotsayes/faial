@@ -1,7 +1,6 @@
-open Protocols
 
 type t = {
-  kernel: Proto.Code.t Proto.Kernel.t;
+  kernel: Protocols.Kernel.t;
   report: Solve_drf.Solution.t list;
 }
 

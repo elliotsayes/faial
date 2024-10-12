@@ -1,6 +1,7 @@
-open Protocols
+module Variable = Protocols.Variable
+module Params = Protocols.Params
 
-let kernel_env (k: Proto.Code.t Proto.Kernel.t) : Variable.Set.t =
+let kernel_env (k: Protocols.Kernel.t) : Variable.Set.t =
   let globals = Params.to_set k.global_variables in
   Variable.Set.union globals Variable.tid_set
 
@@ -31,13 +32,13 @@ let to_string (x:t) =
   let di = if x.data_independent then "DI" else "DD" in
   ci ^ di
 
-let per_kernel (k: Proto.Code.t Proto.Kernel.t) : t =
+let per_kernel (k: Protocols.Kernel.t) : t =
   let env = kernel_env k in
   k
   |> Code.from_kernel
   |> Seq.fold_left (add env) ci_di
 
-let per_access (k: Proto.Code.t Proto.Kernel.t) : (Code.t * t) list =
+let per_access (k: Protocols.Kernel.t) : (Code.t * t) list =
   let env = kernel_env k in
   k
   |> Code.from_kernel

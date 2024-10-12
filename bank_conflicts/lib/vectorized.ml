@@ -352,8 +352,8 @@ let iter_res (r:Range.t) (ctx:t) : (loop, string) Result.t =
 let iter (r:Range.t) (ctx:t) : loop =
   iter_res r ctx |> Result.get_ok
 
-let eval ?(verbose=false) (m:Metric.t) : Proto.Code.t -> t -> int =
-  let rec eval (cost:int) (p:Proto.Code.t) (ctx:t) : int =
+let eval ?(verbose=false) (m:Metric.t) : Protocols.Code.t -> t -> int =
+  let rec eval (cost:int) (p:Protocols.Code.t) (ctx:t) : int =
     match p with
     | Sync _
     | Skip -> cost

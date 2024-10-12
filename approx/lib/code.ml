@@ -37,7 +37,7 @@ let rec location : t -> Location.t =
   | Acc (x, _) ->
     Variable.location x
 
-let rec from_code : Proto.Code.t -> t Seq.t =
+let rec from_code : Protocols.Code.t -> t Seq.t =
   function
   | Acc (x, y) -> Seq.return (Acc (x, y))
   | Sync _ | Skip -> Seq.empty
@@ -52,7 +52,7 @@ let rec from_code : Proto.Code.t -> t Seq.t =
   | Decl {var; ty; body} ->
     from_code body |> Seq.map (fun body -> Decl {var; ty; body})
 
-let from_kernel (k: Proto.Code.t Proto.Kernel.t) : t Seq.t =
+let from_kernel (k: Protocols.Kernel.t) : t Seq.t =
   If (k.pre, k.code, Skip)
   |> from_code
 

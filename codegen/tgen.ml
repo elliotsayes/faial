@@ -5,7 +5,7 @@ open Cgen
 module VarSet = Variable.Set
 module VarMap = Variable.Map
 
-type kernel = Proto.Code.t Proto.Kernel.t
+type kernel = Protocols.Kernel.t
 
 (* Kernel to TOML conversion *)
 let gv_args_to_l (g : Generator.t) (gv : Gv_parser.t)

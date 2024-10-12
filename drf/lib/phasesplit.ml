@@ -2,7 +2,6 @@ open Stage0
 open Protocols
 
 open Exp
-open Proto
 open Common
 open Streamutil
 
@@ -18,8 +17,8 @@ module Phased = struct
     { bi with ranges = r :: bi.ranges }
 
   (* Implements |> *)
-  let from_aligned (pre:bexp) : Aligned.t -> t stream =
-    let rec phase: Aligned.t -> t stream =
+  let from_aligned (pre:bexp) : Aligned.Code.t -> t stream =
+    let rec phase: Aligned.Code.t -> t stream =
       function
       | Sync Skip -> Streamutil.empty
         (* ^P; sync |> { P } *)
@@ -75,7 +74,7 @@ module Kernel = struct
     code: Unsync.t;
   }
 
-  let from_aligned (k: Aligned.t Kernel.t) : t stream =
+  let from_aligned (k: Aligned.Kernel.t) : t stream =
     let p_to_k ((bi,locations):(Phased.t * Variable.Set.t)) : t =
       {
         name = k.name;
@@ -114,7 +113,7 @@ module Kernel = struct
 
 end
 
-let translate (ks: Aligned.t Proto.Kernel.t stream) : Kernel.t stream =
+let translate (ks: Aligned.Kernel.t stream) : Kernel.t stream =
   map Kernel.from_aligned ks |> concat
 
 

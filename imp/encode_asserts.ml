@@ -1,6 +1,6 @@
 open Protocols
 
-let if_ (b:Exp.bexp) (s:Proto.Code.t) : Proto.Code.t =
+let if_ (b:Exp.bexp) (s:Code.t) : Code.t =
   match b with
   | Bool true -> s
   | Bool false -> Skip
@@ -100,9 +100,9 @@ module AssertionTree = struct
 
 end
 
-let from_encode_assigns : Encode_assigns.t -> Proto.Code.t =
+let from_encode_assigns : Encode_assigns.t -> Code.t =
   let open Exp in
-  let rec from : Encode_assigns.t -> Proto.Code.t * AssertionTree.t =
+  let rec from : Encode_assigns.t -> Code.t * AssertionTree.t =
     function
     | Skip -> Skip, AssertionTree.true_
     | Acc (x, e) -> Acc (x, e), AssertionTree.true_

@@ -6,7 +6,8 @@
  *)
 
 open Stage0
-open Protocols
+module Variable = Protocols.Variable
+module Memory = Protocols.Memory
 
 (*
   Given a protocol, generates a sequence of accesses with their
@@ -30,12 +31,12 @@ module Make (L:Logger.Logger) = struct
    *)
   let simplify_kernel
     (cfg: Config.t)
-    (k: Proto.Code.t Proto.Kernel.t)
+    (k: Protocols.Kernel.t)
   :
-    Proto.Code.t Proto.Kernel.t
+    Protocols.Kernel.t
   =
     let lin = L.linearize cfg k.arrays in
-    let rec simpl : Proto.Code.t -> Proto.Code.t =
+    let rec simpl : Protocols.Code.t -> Protocols.Code.t =
       function
       | Acc (x, ({index=l; _} as a)) ->
         (* Flatten n-dimensional array and apply word size *)
@@ -54,7 +55,7 @@ module Make (L:Logger.Logger) = struct
         (match R.uniform k.global_variables cfg.block_dim r with
         | Some r' ->
           let cnd =
-            let open Exp in
+            let open Protocols.Exp in
             b_and
               (n_ge (Var r.var) r.lower_bound)
               (n_lt (Var r.var) r.upper_bound)
@@ -80,8 +81,8 @@ module Make (L:Logger.Logger) = struct
     { k with
       code =
         k.code
-        |> Proto.Code.subst_block_dim cfg.block_dim
-        |> Proto.Code.subst_grid_dim cfg.grid_dim
+        |> Protocols.Code.subst_block_dim cfg.block_dim
+        |> Protocols.Code.subst_grid_dim cfg.grid_dim
         |> simpl;
       arrays = arrays;
     }

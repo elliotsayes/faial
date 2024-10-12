@@ -3,8 +3,6 @@ open Inference
 open Bank_conflicts
 open Protocols
 
-type kernel = Proto.Code.t Proto.Kernel.t
-
 let abort_when (b:bool) (msg:string) : unit =
   if b then (
     Logger.Colors.error msg;
@@ -29,7 +27,7 @@ end
 module Solver = struct
 
   type t = {
-    kernels: kernel list;
+    kernels: Kernel.t list;
     skip_zero: bool;
     config: Config.t;
     ignore_absent: bool;
@@ -60,7 +58,7 @@ module Solver = struct
       if skip_distinct_vars then
         kernels
       else
-        List.map Proto.Kernel.vars_distinct kernels
+        List.map Kernel.vars_distinct kernels
     in
     {
       kernels;
@@ -75,7 +73,7 @@ module Solver = struct
       simulate;
     }
 
-  let sliced_cost (a:t) (k:kernel) : Hotspot.t list =
+  let sliced_cost (a:t) (k:Kernel.t) : Hotspot.t list =
     Bank.from_proto a.config k
     |> Seq.filter_map (fun bank ->
       let m =
@@ -110,7 +108,7 @@ module Solver = struct
     )
     |> List.of_seq
 
-  let run (s:t) : (kernel * Hotspot.t list) list =
+  let run (s:t) : (Kernel.t * Hotspot.t list) list =
     let pair f k =
       (k, f k)
     in
@@ -126,14 +124,14 @@ module Solver = struct
     in
     let ks =
       s.kernels
-      |> List.map (Proto.Kernel.filter_access retain_acc)
+      |> List.map (Kernel.filter_access retain_acc)
       |> List.map (
-          Proto.Kernel.inline_all
-          ~block_dim:(Some s.block_dim)
-          ~grid_dim:(Some s.grid_dim)
-          ~globals:s.params
+          Kernel.inline_all
+            ~block_dim:(Some s.block_dim)
+            ~grid_dim:(Some s.grid_dim)
+            ~globals:s.params
         )
-      |> List.map Proto.Kernel.opt
+      |> List.map Kernel.opt
     in
       List.map (pair (sliced_cost s)) ks
 
@@ -142,7 +140,7 @@ end
 module TUI = struct
 
   let run (s:Solver.t) =
-    let print_slice ((k:kernel), (s:Hotspot.t list)) : unit =
+    let print_slice ((k:Kernel.t), (s:Hotspot.t list)) : unit =
       ANSITerminal.(print_string [Bold; Foreground Green] ("\n### Kernel '" ^ k.name ^ "' ###\n\n"));
       Logger.Colors.info ("Accesses found: " ^ string_of_int (List.length s));
       Stdlib.flush_all ();
@@ -272,7 +270,7 @@ module JUI = struct
   open Yojson.Basic
   type json = Yojson.Basic.t
   let to_json (s:Solver.t) : json =
-    let s_to_j ((k:kernel), l) : json =
+    let s_to_j ((k:Kernel.t), l) : json =
       let accs : json =
         `List (
           l
@@ -352,7 +350,7 @@ let run
   ~grid_dim
   ~params
   ~simulate
-  (kernels : Proto.Code.t Proto.Kernel.t list)
+  (kernels : Kernel.t list)
 :
   unit
 =

@@ -5,7 +5,7 @@ open Protocols
 open Ra
 open Analyze_cost
 
-type kernel = Proto.Code.t Proto.Kernel.t
+type kernel = Protocols.Kernel.t
 
 let abort_when (b:bool) (msg:string) : unit =
   if b then (
@@ -77,7 +77,7 @@ module Solver = struct
       if skip_distinct_vars then
         kernels
       else
-        List.map Proto.Kernel.vars_distinct kernels
+        List.map Protocols.Kernel.vars_distinct kernels
     in
     {
       kernels;
@@ -202,7 +202,7 @@ module Solver = struct
       s.kernels
       |> (
         if s.only_reads || s.only_writes then
-          List.map (Proto.Kernel.filter_access retain_acc)
+          List.map (Protocols.Kernel.filter_access retain_acc)
         else
           fun x -> x
         )
@@ -210,22 +210,22 @@ module Solver = struct
           if s.metric = CountAccesses then k else
           let vs : Variable.Set.t =
             match s.metric with
-            | BankConflicts -> Proto.Kernel.shared_arrays k
-            | UncoalescedAccesses -> Proto.Kernel.global_arrays k
+            | BankConflicts -> Protocols.Kernel.shared_arrays k
+            | UncoalescedAccesses -> Protocols.Kernel.global_arrays k
             | _ -> failwith "internal error"
           in
-          Proto.Kernel.filter_array (fun x -> Variable.Set.mem x vs) k
+          Protocols.Kernel.filter_array (fun x -> Variable.Set.mem x vs) k
         )
       |> List.map (
-          Proto.Kernel.inline_all
+          Protocols.Kernel.inline_all
           ~block_dim:(Some s.block_dim)
           ~grid_dim:(Some s.grid_dim)
           ~globals:s.params
         )
-      |> List.map Proto.Kernel.opt
+      |> List.map Protocols.Kernel.opt
       |> List.map (fun p ->
         if s.show_map then
-          Proto.Kernel.print Proto.Code.to_s p
+          Protocols.Kernel.print p
         ;
         p)
     in
@@ -330,7 +330,7 @@ let run
   ~strategy
   ~metric
   ~compact
-  (kernels : Proto.Code.t Proto.Kernel.t list)
+  (kernels : Protocols.Kernel.t list)
 :
   unit
 =

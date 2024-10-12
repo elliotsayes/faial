@@ -167,7 +167,7 @@ let print (k: t) : unit =
 let remove_global_asserts (k:t) : t =
   { k with code = Stmt.filter_asserts Assert.is_local k.code }
 
-let compile (k:t) : Proto.Code.t Proto.Kernel.t =
+let compile (k:t) : Protocols.Kernel.t =
   let globals =
     (* Take the global variables and the scalars defined in the paramter list *)
     k.global_variables
@@ -190,9 +190,9 @@ let compile (k:t) : Proto.Code.t Proto.Kernel.t =
   in
   let (p, locals, pre) =
     let rec inline_header :
-      (Proto.Code.t * Params.t * bexp)
+      (Protocols.Code.t * Params.t * bexp)
       ->
-      (Proto.Code.t * Params.t * bexp)
+      (Protocols.Code.t * Params.t * bexp)
     =
       fun (p, locals, pre) ->
       match p with

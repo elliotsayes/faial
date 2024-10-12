@@ -12,21 +12,9 @@ let read_params (fname : string) : Gv_parser.t =
   | None -> Gv_parser.default
 
 (* Parses a list of protocols from the CUDA file *)
-let read_kernels (fname : string) : Proto.Code.t Proto.Kernel.t list =
+let read_kernels (fname : string) : Protocols.Kernel.t list =
   Protocol_parser.Silent.to_proto fname
   |> (fun x -> x.kernels)
-  (*
-  try
-    let parsed_json = Cu_to_json.cu_to_json fname in
-    let c_ast = parsed_json |> C_lang.parse_program |> Result.get_ok in
-    let d_ast = c_ast |> D_lang.rewrite_program in
-    let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
-    imp |> List.map Imp.compile
-  with
-  | Common.ParseError b ->
-    Buffer.output_buffer stderr b;
-    exit (-1)
-  *)
 
 (* Generates the output file *)
 let write_string (fname : string) (data : string) : unit =

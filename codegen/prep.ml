@@ -1,7 +1,6 @@
 open Protocols
 open Bank_conflicts
 open Exp
-open Proto
 
 module VarSet = Variable.Set
 module VarMap = Variable.Map
@@ -57,7 +56,7 @@ let variables_used (p : Code.t) : VarSet.t =
   inst_to_vars p |> VarSet.of_list
 
 (* Remove unused local variables from the kernel *)
-let remove_unused_variables (k : Code.t Kernel.t) : Code.t Kernel.t =
+let remove_unused_variables (k : Kernel.t) : Kernel.t =
   let used_variables = variables_used k.code in
   let local_variables =
     VarSet.inter used_variables (Params.to_set k.local_variables)
@@ -85,7 +84,7 @@ let rec convert_type : string list -> string list =
     else modifier :: convert_type types
 
 (* Replace the type of each array with a compatible alternative *)
-let mk_types_compatible (k : Code.t Kernel.t) : Code.t Kernel.t =
+let mk_types_compatible (k : Kernel.t) : Kernel.t =
   let mk_array_compatible (arr : Memory.t) : Memory.t =
     {arr with data_type = convert_type arr.data_type}
   in
@@ -96,9 +95,9 @@ let mk_types_compatible (k : Code.t Kernel.t) : Code.t Kernel.t =
 let prepare_kernel
   (g : Generator.t)
   (params : Config.t)
-  (k : Code.t Kernel.t)
+  (k : Kernel.t)
 :
-  Code.t Kernel.t
+  Kernel.t
 =
   k
   |> (if g.const_fold then Kernel.opt else Fun.id)

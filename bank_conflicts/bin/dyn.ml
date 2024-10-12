@@ -101,7 +101,7 @@ module Env = struct
 end
 
 
-let shared_arrays (k:Proto.Code.t Proto.Kernel.t) : Variable.Set.t =
+let shared_arrays (k:Protocols.Kernel.t) : Variable.Set.t =
   Variable.Map.bindings k.arrays
   |> List.filter_map (fun (k, a) ->
     if Memory.is_shared a then
@@ -114,11 +114,8 @@ let shared_arrays (k:Proto.Code.t Proto.Kernel.t) : Variable.Set.t =
 
 let main (fname : string) : unit =
   try
-    let parsed_json = Cu_to_json.cu_to_json fname in
-    let c_ast = parsed_json |> C_lang.parse_program |> Result.get_ok in
-    let d_ast = c_ast |> D_lang.rewrite_program in
-    let imp = d_ast |> D_to_imp.Silent.parse_program |> Result.get_ok in
-    let proto = imp |> List.map Imp.Kernel.compile in
+    let parsed = Protocol_parser.Default.to_proto fname in
+    let proto = parsed.kernels in
     let env = Env.load "env.json" in
     print_endline ("env.json: " ^ Env.to_string env);
     (try

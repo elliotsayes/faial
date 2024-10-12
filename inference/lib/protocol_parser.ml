@@ -3,7 +3,7 @@ open Protocols
 
 
 type imp_kernel = Imp.Kernel.t
-type proto_kernel = Proto.Code.t Proto.Kernel.t
+type proto_kernel = Protocols.Kernel.t
 
 type 'a t = {options: Gv_parser.t; kernels: 'a list}
 
@@ -186,7 +186,7 @@ module Make (L:Logger.Logger) = struct
       |> (if inline_calls then Imp.Inline_calls.inline_calls else fun x -> x)
       |> List.map Imp.Kernel.compile
       |> List.filter (fun k ->
-        not only_globals || (only_globals && Proto.Kernel.is_global k)
+        not only_globals || (only_globals && Protocols.Kernel.is_global k)
       )
     }
 end

@@ -5,7 +5,7 @@ open Inference
 
 type t = {
   filename: string;
-  kernels: Proto.Code.t Proto.Kernel.t list;
+  kernels: Kernel.t list;
   timeout:int option;
   show_proofs:bool;
   show_proto:bool;
@@ -184,18 +184,18 @@ let show (b:bool) (call:'a -> unit) (x:'a) : 'a =
   if b then call x else ();
   x
 
-let translate (arch:Architecture.t) (a:t) (k:Proto.Code.t Proto.Kernel.t) : Flatacc.Kernel.t Streamutil.stream =
+let translate (arch:Architecture.t) (a:t) (k:Kernel.t) : Flatacc.Kernel.t Streamutil.stream =
   k
   (* 0. filter arrays *)
   |> (fun k ->
     match a.only_array with
-    | Some arr -> Proto.Kernel.filter_array (fun x -> Variable.name x = arr) k
+    | Some arr -> Protocols.Kernel.filter_array (fun x -> Variable.name x = arr) k
     | None -> k
   )
   (* 1. apply block-level/grid-level analysis constraints *)
-  |> Proto.Kernel.apply_arch arch
+  |> Protocols.Kernel.apply_arch arch
   (* 2. inline global assignments, including block_dim/grid_dim *)
-  |> Proto.Kernel.inline_all
+  |> Protocols.Kernel.inline_all
     ~grid_dim:a.grid_dim
     ~block_dim:a.block_dim
     ~globals:a.params
@@ -204,19 +204,19 @@ let translate (arch:Architecture.t) (a:t) (k:Proto.Code.t Proto.Kernel.t) : Flat
     match arch, a.block_idx_1 with
     | Architecture.Block, Some bid ->
       let kvs = Dim3.to_assoc ~prefix:"blockIdx." bid in
-      Proto.Kernel.assign_globals kvs k
+      Protocols.Kernel.assign_globals kvs k
     | _, _ ->
       k
   )
-  |> Proto.Kernel.add_missing_binders
-  |> (if a.only_true_data_races then Proto.Kernel.to_ci_di else Fun.id)
-  |> show a.show_proto (Proto.Kernel.print Proto.Code.to_s)
+  |> Protocols.Kernel.add_missing_binders
+  |> (if a.only_true_data_races then Protocols.Kernel.to_ci_di else Fun.id)
+  |> show a.show_proto Protocols.Kernel.print
   (* 3. constant folding optimization *)
-  |> Proto.Kernel.opt
+  |> Protocols.Kernel.opt
   (* 4. convert to well-formed protocol *)
   |> Wellformed.translate
   (* 4.1. remove unnecessary binders *)
-  |> Streamutil.map Wellformed.trim_binders
+  |> Streamutil.map Wellformed.Kernel.trim_binders
   |> show a.show_wf Wellformed.print_kernels
   (* 5. align protocol *)
   |> Aligned.translate
@@ -233,15 +233,15 @@ let translate (arch:Architecture.t) (a:t) (k:Proto.Code.t Proto.Kernel.t) : Flat
 
 let only_kernel
   (a:t)
-  (ks:Proto.Code.t Proto.Kernel.t list)
+  (ks:Protocols.Kernel.t list)
 :
-  Proto.Code.t Proto.Kernel.t list
+  Protocols.Kernel.t list
 =
   match a.only_kernel with
   | Some name ->
     let ks =
       ks
-      |> List.filter (fun k -> let open Proto.Kernel in k.name = name)
+      |> List.filter (fun k -> let open Protocols.Kernel in k.name = name)
     in
     if ks = [] then
       (Logger.Colors.error ("kernel '" ^ name ^ "' not found!");
@@ -277,7 +277,7 @@ let check_unreachable (a:t) : unit =
 
 
 let run (a:t) : Analysis.t list =
-  let check_kernel (arch) (kernel:Proto.Code.t Proto.Kernel.t) : Analysis.t =
+  let check_kernel (arch) (kernel:Protocols.Kernel.t) : Analysis.t =
     let report =
       kernel
       |> translate arch a

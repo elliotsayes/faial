@@ -1,6 +1,7 @@
 open Stage0
-open Protocols
 module IntMap = Common.IntMap
+module Variable = Protocols.Variable
+open Protocols
 
 module Code = struct
   type t =
@@ -227,10 +228,10 @@ module Code = struct
       (arrays:Memory.t Variable.Map.t)
       (cfg:Config.t)
     :
-      Variable.Set.t -> Proto.Code.t -> (Variable.t * t) Seq.t
+      Variable.Set.t -> Protocols.Code.t -> (Variable.t * t) Seq.t
     =
       let lin = L.linearize cfg arrays in
-      let rec on_p (locals:Variable.Set.t) : Proto.Code.t -> (Variable.t * t) Seq.t =
+      let rec on_p (locals:Variable.Set.t) : Code.t -> (Variable.t * t) Seq.t =
         function
         | Acc (x, {index=l; _}) ->
           l
@@ -274,7 +275,7 @@ module Code = struct
       Memory.t Variable.Map.t ->
       Config.t ->
       Variable.Set.t ->
-      Proto.Code.t ->
+      Code.t ->
       (Variable.t * t) Seq.t
     = Default.from_proto
 
@@ -329,14 +330,14 @@ module Make (L:Logger.Logger) = struct
   *)
   let from_proto
     (cfg:Config.t)
-    (k: Proto.Code.t Proto.Kernel.t)
+    (k:Kernel.t)
   :
     t Seq.t
   =
     let local_variables = Params.to_set k.local_variables in
     k.code
-    |> Proto.Code.subst_block_dim cfg.block_dim
-    |> Proto.Code.subst_grid_dim cfg.grid_dim
+    |> Protocols.Code.subst_block_dim cfg.block_dim
+    |> Protocols.Code.subst_grid_dim cfg.grid_dim
     |> Code.from_proto k.arrays cfg local_variables
     |> Seq.map (fun (array, p) ->
       let code = if k.pre = Bool true then p else Code.Cond (k.pre, p) in
@@ -367,7 +368,7 @@ module Silent = Make(Logger.Silent)
 module Default = Make(Logger.Colors)
 let from_proto :
   Config.t ->
-  Proto.Code.t Proto.Kernel.t ->
+  Kernel.t ->
   t Seq.t
 = Default.from_proto
 
