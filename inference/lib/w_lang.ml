@@ -12,16 +12,22 @@ let ( let* ) = Result.bind
 let (>>=) = Result.bind
 
 module ScalarKind = struct
-  type t =
-    | Sint
-    | Uint
-    | Float
-    | Bool
-    | AbstractInt
-    | AbstractFloat
 
-  let is_int : t -> bool =
-    function
+  (** Type definition for scalar kinds. *)
+  type t =
+    | Sint          (** Signed integer type. *)
+    | Uint          (** Unsigned integer type. *)
+    | Float         (** Floating-point type. *)
+    | Bool          (** Boolean type. *)
+    | AbstractInt   (** Abstract integer type (not bound to a specific size). *)
+    | AbstractFloat (** Abstract floating-point type (not bound to a specific size). *)
+
+  (**
+    Checks if a scalar kind is an integer type.
+    @param k The scalar kind to check.
+    @return [true] if the scalar kind is [Sint], [Uint], or [AbstractInt], otherwise [false].
+  *)
+  let is_int : t -> bool = function
     | Sint
     | Uint
     | AbstractInt -> true
@@ -29,10 +35,20 @@ module ScalarKind = struct
     | Bool
     | AbstractFloat -> false
 
-  let is_bool (k:t) : bool =
+  (**
+    Checks if the given scalar kind is a boolean.
+    @param k The scalar kind to check.
+    @return [true] if the scalar kind is [Bool], otherwise [false].
+  *)
+  let is_bool (k: t) : bool =
     k = Bool
 
-  let parse (j:json) : t j_result =
+  (**
+    Parses a JSON value into a scalar kind.
+    @param j The JSON value to parse.
+    @return A result containing the parsed scalar kind on success or an error message on failure.
+  *)
+  let parse (j: json) : t j_result =
     let open Rjson in
     let* n = cast_string j in
     match n with
@@ -44,8 +60,12 @@ module ScalarKind = struct
     | "AbstractFloat" -> Ok AbstractFloat
     | _ -> root_cause ("ScalarKind.parse: unknown kind: " ^ n) j
 
-  let to_string : t -> string =
-    function
+  (**
+    Converts a scalar kind to its corresponding string representation.
+    @param k The scalar kind to convert.
+    @return The string representation of the scalar kind.
+  *)
+  let to_string : t -> string = function
     | Sint -> "i"
     | Uint -> "u"
     | Float -> "f"
@@ -53,103 +73,289 @@ module ScalarKind = struct
     | AbstractInt -> "abstract i"
     | AbstractFloat -> "abstract f"
 
-  let is_unsigned (x:t) : bool =
+  (**
+    Checks if a scalar kind is an unsigned integer.
+    @param x The scalar kind to check.
+    @return [true] if the scalar kind is [Uint], otherwise [false].
+  *)
+  let is_unsigned (x: t) : bool =
     x = Uint
+
 end
+(** {1 Scalar Module}
+
+    This module defines scalar types as used in WGSL (WebGPU Shading Language).
+    WGSL supports multiple scalar types, including integers, floats, and booleans,
+    which are fundamental to shader programming.
+*)
 
 module Scalar = struct
-  type t = {kind: ScalarKind.t; width: int}
+  (** {2 Types} *)
 
-  let u32 : t = {kind=ScalarKind.Uint; width=4}
-  let u64 : t = {kind=ScalarKind.Uint; width=8}
-  let i32 : t = {kind=ScalarKind.Sint; width=4}
-  let i64 : t = {kind=ScalarKind.Sint; width=8}
-  let f32 : t = {kind=ScalarKind.Float; width=4}
-  let f64 : t = {kind=ScalarKind.Float; width=8}
+  (** The type representing a scalar, which includes a kind and width. *)
+  type t = { kind: ScalarKind.t; width: int }
 
-  let bool : t = {kind=ScalarKind.Bool; width=1}
-  let int : t = {kind=ScalarKind.AbstractInt; width=8}
-  let float : t = {kind=ScalarKind.AbstractFloat; width=8}
+  (** {2 Predefined Scalars} *)
 
-  let make_32 (kind:ScalarKind.t) : t =
-    {kind; width=4}
+  (** [u32] is an unsigned 32-bit integer scalar. *)
+  let u32 : t = { kind = ScalarKind.Uint; width = 4 }
 
-  let make_64 (kind:ScalarKind.t) : t =
-    {kind; width=8}
+  (** [u64] is an unsigned 64-bit integer scalar. *)
+  let u64 : t = { kind = ScalarKind.Uint; width = 8 }
 
-  let is_int (s:t) : bool =
+  (** [i32] is a signed 32-bit integer scalar. *)
+  let i32 : t = { kind = ScalarKind.Sint; width = 4 }
+
+  (** [i64] is a signed 64-bit integer scalar. *)
+  let i64 : t = { kind = ScalarKind.Sint; width = 8 }
+
+  (** [f32] is a 32-bit floating-point scalar. This is common in WGSL for
+      representing fractional values with limited precision. *)
+  let f32 : t = { kind = ScalarKind.Float; width = 4 }
+
+  (** [f64] is a 64-bit floating-point scalar, offering higher precision
+      compared to [f32]. *)
+  let f64 : t = { kind = ScalarKind.Float; width = 8 }
+
+  (** [bool] is a boolean scalar, typically used for conditional logic.
+      WGSL booleans are 1-bit wide. *)
+  let bool : t = { kind = ScalarKind.Bool; width = 1 }
+
+  (** [int] is an abstract integer scalar, used when the integer width
+      is not explicitly defined. *)
+  let int : t = { kind = ScalarKind.AbstractInt; width = 8 }
+
+  (** [float] is an abstract floating-point scalar, used when the width
+      of the float is unspecified. *)
+  let float : t = { kind = ScalarKind.AbstractFloat; width = 8 }
+
+  (** {2 Constructors} *)
+
+  (** [make_32 kind] creates a 32-bit scalar of the given [kind].
+      This is useful for types like [i32] and [f32]. *)
+  let make_32 (kind: ScalarKind.t) : t =
+    { kind; width = 4 }
+
+  (** [make_64 kind] creates a 64-bit scalar of the given [kind].
+      Use this for constructing larger precision types like [i64] and [f64]. *)
+  let make_64 (kind: ScalarKind.t) : t =
+    { kind; width = 8 }
+
+  (** {2 Predicates} *)
+
+  (** [is_int s] checks if the scalar [s] is of an integer type
+      (either signed or unsigned). *)
+  let is_int (s: t) : bool =
     ScalarKind.is_int s.kind
 
-  let is_bool (s:t) : bool =
+  (** [is_bool s] checks if the scalar [s] is a boolean.
+      Boolean scalars are often used in control flow in WGSL shaders. *)
+  let is_bool (s: t) : bool =
     ScalarKind.is_bool s.kind
 
-  let is_unsigned (s:t) : bool =
+  (** [is_unsigned s] checks if the scalar [s] is an unsigned integer. *)
+  let is_unsigned (s: t) : bool =
     ScalarKind.is_unsigned s.kind
 
-  let to_string (s:t) : string =
+  (** {2 Conversion} *)
+
+  (** [to_string s] converts the scalar [s] to a string representation.
+      The format includes the scalar kind and its bit width.
+      For example, an [i32] scalar will be rendered as "Sint32". *)
+  let to_string (s: t) : string =
     ScalarKind.to_string s.kind ^ string_of_int (8 * s.width)
 
-  let parse (j:json) : t j_result =
+  (** {2 Parsing} *)
+
+  (** [parse j] parses a JSON object [j] into a scalar [t].
+
+      The expected JSON structure is:
+      {[
+        {
+          "kind": "Uint" | "Sint" | "Float" | "Bool" | "AbstractInt" | "AbstractFloat",
+          "width": <int>
+        }
+      ]}
+
+      This function returns [Ok t] if the parsing succeeds, or an error
+      if the JSON format is invalid. *)
+  let parse (j: json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
     let* kind = with_field "kind" ScalarKind.parse o in
     let* width = with_field "width" cast_int o in
-    Ok {kind; width}
+    Ok { kind; width }
 end
+(** {1 VectorSize Module}
+    This module provides utilities to handle vector sizes in WGSL (WebGPU Shading Language).
+    In WGSL, vectors can have different sizes (2, 3, or 4 components), corresponding
+    to typical constructs in shader programming, such as 2D, 3D, or 4D vectors.
+
+    This module defines a type to represent these sizes, along with utility functions
+    for converting between representations, accessing components, and parsing from JSON. *)
 
 module VectorSize = struct
-  type t =
-    | Bi
-    | Tri
-    | Quad
 
-  let to_int : t -> int =
-    function
+  (** {2 Types} *)
+
+  (** The type [t] represents the possible sizes of vectors in WGSL. *)
+  type t =
+    | Bi  (** Represents a 2D vector (e.g., `vec2` in WGSL). *)
+    | Tri (** Represents a 3D vector (e.g., `vec3` in WGSL). *)
+    | Quad (** Represents a 4D vector (e.g., `vec4` in WGSL). *)
+
+  (** {2 Functions} *)
+
+  (** [to_int t] converts the vector size [t] to its integer representation.
+      - [Bi] returns 2.
+      - [Tri] returns 3.
+      - [Quad] returns 4.
+
+      Example:
+      {[
+        let size = VectorSize.to_int Tri  (* returns 3 *)
+      ]}
+  *)
+  let to_int : t -> int = function
     | Bi -> 2
     | Tri -> 3
     | Quad -> 4
 
-  let from_int (n:int) : t option =
+  (** [from_int n] converts an integer [n] to a [VectorSize.t] option.
+      If the integer is not 2, 3, or 4, returns [None].
+
+      Example:
+      {[
+        match VectorSize.from_int 3 with
+        | Some size -> (* Use size *)
+        | None -> failwith "Invalid size"
+      ]}
+  *)
+  let from_int (n : int) : t option =
     match n with
     | 2 -> Some Bi
     | 3 -> Some Tri
     | 4 -> Some Quad
     | _ -> None
 
-  let components : t -> string list =
-    function
+  (** [components t] returns the list of component names for the given vector size [t].
+      The components follow WGSL conventions with ["x"; "y"; "z"; "w"].
+
+      Example:
+      {[
+        VectorSize.components Quad  (* returns ["x"; "y"; "z"; "w"] *)
+      ]}
+  *)
+  let components : t -> string list = function
     | Bi -> ["x"; "y"]
     | Tri -> ["x"; "y"; "z"]
     | Quad -> ["x"; "y"; "z"; "w"]
 
+  (** [nth_opt n ty] returns the [n]-th component of the vector size [ty], if it exists.
+      Uses [List.nth_opt] to safely access components by index.
 
-  let nth_opt (n:int) (ty:t) : string option =
+      Example:
+      {[
+        VectorSize.nth_opt 2 Tri  (* returns Some "z" *)
+      ]}
+  *)
+  let nth_opt (n : int) (ty : t) : string option =
     List.nth_opt (components ty) n
 
-  let to_string (s: t) : string =
+  (** [to_string s] converts a [VectorSize.t] value to its string representation.
+      This is useful for logging or debugging purposes.
+
+      Example:
+      {[
+        let str = VectorSize.to_string Tri  (* returns "3" *)
+      ]}
+  *)
+  let to_string (s : t) : string =
     to_int s |> string_of_int
 
-  let parse (j:json) : t j_result =
+  (** [parse j] parses a JSON value [j] into a [VectorSize.t] value.
+      If the JSON value is not a valid vector size, returns an error.
+
+      Example:
+      {[
+        let json = `Int 3 in
+        match VectorSize.parse json with
+        | Ok size -> (* Use size *)
+        | Error msg -> print_endline msg
+      ]}
+  *)
+  let parse (j : json) : t j_result =
     let open Rjson in
     let* n = cast_int j in
     match from_int n with
     | Some n -> Ok n
     | None -> root_cause "VectorSize.parse: invalid JSON" j
 end
+(**
+  {1 StorageAccess Module}
+
+  This module defines the type of storage access in WGSL (WebGPU Shading Language)
+  and provides utilities to convert these types to strings and parse them from JSON.
+  In WGSL, storage access controls how buffers and textures are accessed in shaders.
+
+  Example:
+  - A `read_write` buffer in WGSL would correspond to `ReadWrite` here.
+  - A texture with `readonly` access corresponds to `ReadOnly`.
+
+  @see <https://www.w3.org/TR/WGSL/#storage-texture-types> WGSL Storage Texture Types
+*)
 
 module StorageAccess = struct
-  type t =
-    | ReadWrite
-    | ReadOnly
-    | WriteOnly
+  (**
+    {2 Types}
 
-  let to_string : t -> string =
-    function
+    [t] represents the different kinds of storage access that can exist in WGSL.
+    It corresponds to the possible access qualifiers for storage buffers or textures.
+  *)
+  type t =
+    | ReadWrite  (** Represents 'read_write' access in WGSL. *)
+    | ReadOnly   (** Represents 'read' access in WGSL. *)
+    | WriteOnly  (** Represents 'write' access in WGSL. *)
+
+  (**
+    Converts a [StorageAccess.t] value into a string that corresponds
+    to the WGSL access qualifier.
+
+    @param access The [StorageAccess.t] value to convert.
+    @return A string representation of the access mode.
+
+    Example:
+    {[
+      let mode = StorageAccess.ReadWrite in
+      let str = StorageAccess.to_string mode; (* "read_write" *)
+    ]}
+  *)
+  let to_string : t -> string = function
     | ReadWrite -> "read_write"
     | ReadOnly -> "read"
     | WriteOnly -> "write"
 
-  let parse (j:json) : t j_result =
+  (**
+    Parses a JSON object into a [StorageAccess.t] value.
+
+    The JSON is expected to have two boolean fields: ["load"] and ["store"].
+    - ["load"] indicates if the storage can be read.
+    - ["store"] indicates if the storage can be written to.
+
+    @param j A JSON object to parse.
+    @return A result with either the parsed [StorageAccess.t] or an error.
+
+    Example:
+    {[
+      let json = `Assoc [("load", `Bool true); ("store", `Bool false)] in
+      match StorageAccess.parse json with
+      | Ok ReadOnly -> print_endline "Parsed as ReadOnly"
+      | _ -> print_endline "Failed to parse"
+    ]}
+
+    This function is useful for loading WGSL shader configurations from JSON.
+  *)
+  let parse (j : json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
     let* load = with_field "load" cast_bool o in
@@ -599,7 +805,7 @@ module Type = struct
     let array ?(size=None) (base:t) : t =
       make (Array {base; size})
 
-    (* For container types, return the type of the contained elements.
+    (** For container types, return the type of the contained elements.
        Does not support structs. *)
     let deref (ty:t) : t option =
       match ty.inner with
@@ -612,7 +818,7 @@ module Type = struct
         Some base
       | _ -> None
 
-    (* Get the i-th type; if it's a struct look up the field type,
+    (** Get the i-th type; if it's a struct look up the field type,
        otherwise deref. *)
     let nth (index:int) (ty:t) : t option =
       match ty.inner with
