@@ -472,8 +472,6 @@ module Expressions = struct
         return (Ident (W_lang.Ident.add_suffix ".len" i))
 
       | ArrayLength _
-      | RayQueryProceedResult
-      | RayQueryGetIntersection _
       | Derivative _
       | Access _
       | Swizzle _

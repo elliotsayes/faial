@@ -1949,11 +1949,6 @@ module Expression = struct
         convert: int option;
       }
     | ArrayLength of t
-    | RayQueryProceedResult
-    | RayQueryGetIntersection of {
-        query: t;
-        committed: bool;
-      }
 
   and image_query =
     | Size of t option
@@ -2112,8 +2107,6 @@ module Expression = struct
       in
        ty ^ "(" ^ to_string expr ^ ")"
     | ArrayLength e -> "arrayLength(" ^ to_string e ^ ")"
-    | RayQueryProceedResult -> "RayQueryProceedResult"
-    | RayQueryGetIntersection _ -> "RayQueryGetIntersection"
 
   (** [sample_level_to_string t] returns a string representation of the sample level [t].
 
@@ -2194,8 +2187,6 @@ module Expression = struct
     | Math { fun_=_; args;} -> args
     | As { expr; _ } -> [expr]
     | ArrayLength e -> [e]
-    | RayQueryProceedResult -> []
-    | RayQueryGetIntersection {query; _} -> [query]
 
   let rec type_of : t -> Type.t =
     function
@@ -2228,8 +2219,6 @@ module Expression = struct
       Type.scalar (Scalar.make_64 kind) (* TODO: is this right? *)
     | ArrayLength _ ->
       Type.u64
-    | RayQueryProceedResult -> failwith "type_of RayQueryProceedResult"
-    | RayQueryGetIntersection _ -> failwith "type_of RayQueryGetIntersection"
     | Relational _ -> failwith "type_of Relational"
     | Derivative _ -> failwith "type_of Derivative"
     | Unary _ -> failwith "type_of Unary"
@@ -2368,14 +2357,6 @@ module Expression = struct
       let* ctrl = with_field "ctrl" DerivativeControl.parse o in
       let* expr = with_field "expr" parse o in
       Ok (Derivative {axis; ctrl; expr})
-    | "RayQueryProceedResult" -> Ok RayQueryProceedResult
-    | "RayQueryGetIntersection" ->
-      let* query = with_field "query" parse o in
-      let* committed = with_field "committed" cast_bool o in
-      Ok (RayQueryGetIntersection {
-        query;
-        committed;
-      })
     | _ -> failwith kind
 
   and image_query_parse (j:json) : image_query j_result =
