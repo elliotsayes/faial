@@ -118,8 +118,8 @@ module Scalar = struct
   let f64 : t = { kind = ScalarKind.Float; width = 8 }
 
   (** [bool] is a boolean scalar, typically used for conditional logic.
-      WGSL booleans are 1-bit wide. *)
-  let bool : t = { kind = ScalarKind.Bool; width = 1 }
+      WGSL booleans are 4 bytes wide (32 bits). *)
+  let bool : t = { kind = ScalarKind.Bool; width = 4 }
 
   (** [int] is an abstract integer scalar, used when the integer width
       is not explicitly defined. *)
