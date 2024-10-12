@@ -738,7 +738,6 @@ module Type = struct
       }
     | Sampler of {comparison: bool}
     | AccelerationStructure
-    | RayQuery
     | BindingArray of {
         base: t;
         size: ArraySize.t;
@@ -763,7 +762,6 @@ module Type = struct
       | Image _ -> "Image"
       | Sampler _ -> "Sampler"
       | AccelerationStructure -> "AccelerationStructure"
-      | RayQuery -> "RayQuery"
       | BindingArray _ -> "BindingArray"
 
     let i_vec3_u32 : inner = Vector {size=VectorSize.Tri; scalar=Scalar.u32}
