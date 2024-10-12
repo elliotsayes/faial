@@ -1721,6 +1721,150 @@ module RelationalFunction = struct
     | _ -> root_cause "RelationalFunction" j
 end
 
+(**
+  {1 DerivativeAxis Module}
+
+  This module defines a type representing axes for derivatives, which can be used to
+  specify which axis to compute a derivative along, such as {b x}, {b y}, or {b width}.
+  This concept is useful in WGSL where derivatives are often computed for operations
+  like texture filtering or gradient evaluation.
+
+  Example: A WGSL shader may compute partial derivatives using `dpdx` or `dpdy`
+  to determine rate-of-change along the X or Y axis.
+*)
+
+module DerivativeAxis = struct
+  (**
+    {2 Type: [t]}
+    This type represents the possible derivative axes.
+  *)
+  type t =
+    | X      (** Derivative along the X-axis. *)
+    | Y      (** Derivative along the Y-axis. *)
+    | Width  (** Derivative considering a range or width. *)
+
+  (**
+    {2 Function: [to_string]}
+
+    [to_string axis] converts a [DerivativeAxis.t] value to its string representation.
+    This can be useful when serializing data or logging the selected axis.
+
+    @param axis The axis to convert to string.
+    @return A string representing the axis ("x", "y", or "width").
+
+    Example:
+    {[
+      let axis_str = DerivativeAxis.to_string X  (* "x" *)
+    ]}
+  *)
+  let to_string : t -> string = function
+    | X -> "dpdx"
+    | Y -> "dpdy"
+    | Width -> "fwidth"
+
+  (**
+    {2 Function: [parse]}
+
+    [parse j] attempts to parse a JSON value into a [DerivativeAxis.t].
+    If the JSON string matches "X", "Y", or "Width", the corresponding variant
+    is returned. Otherwise, it returns an error.
+
+    This function is useful when interpreting configuration or input data for
+    shader derivatives.
+
+    @param j A JSON value containing the axis name as a string.
+    @return A result containing either a parsed [DerivativeAxis.t] or an error message.
+
+    Example:
+    {[
+      let json_value = `String "X" in
+      match DerivativeAxis.parse json_value with
+      | Ok X -> print_endline "Parsed X-axis"
+      | Error msg -> print_endline ("Error: " ^ msg)
+    ]}
+  *)
+  let parse (j: json) : t j_result =
+    let open Rjson in
+    let* name = cast_string j in
+    match name with
+    | "X" -> Ok X
+    | "Y" -> Ok Y
+    | "Width" -> Ok Width
+    | _ -> root_cause "DerivativeAxis" j
+end
+
+(**
+  Module for representing and parsing derivative control options
+  used in WGSL.
+
+  In WGSL, derivative control affects how partial derivatives are computed,
+  with options such as coarse, fine, or none. These options are useful in
+  controlling how shaders handle level-of-detail (LOD) computations and
+  other operations that rely on derivatives.
+
+  @see <https://www.w3.org/TR/WGSL/#derivatives> WGSL Derivative Control Specification
+*)
+module DerivativeControl = struct
+
+  (**
+    Type representing derivative control options.
+    - [Coarse]: Computes derivatives at a coarse granularity, potentially faster.
+    - [Fine]: Computes derivatives at a finer granularity for better precision.
+    - [None]: No derivative control applied.
+
+    These are analogous to settings in WGSL for controlling the granularity
+    of partial derivative calculations.
+  *)
+  type t =
+    | Coarse  (** Coarse derivative control. *)
+    | Fine    (** Fine-grained derivative control. *)
+    | None    (** No derivative control. *)
+
+  (**
+    Converts a derivative control option to its string representation.
+    Useful for logging or serializing the control option.
+
+    @param t The derivative control option.
+    @return A string corresponding to the derivative control option.
+
+    @example
+    {[
+      let d = DerivativeControl.Fine in
+      let str = DerivativeControl.to_string d in
+      (* str will be "fine" *)
+    ]}
+  *)
+  let to_string : t -> string = function
+    | Coarse -> "Coarse"
+    | Fine -> "Fine"
+    | None -> ""
+
+  (**
+    Parses a JSON value into a derivative control option.
+    This function expects the JSON input to be a string matching one of
+    the control options ["Coarse"], ["Fine"], or ["None"].
+
+    @param j A JSON value.
+    @return A result containing the parsed derivative control option or an error.
+
+    @example
+    {[
+      let json = `String "Coarse" in
+      match DerivativeControl.parse json with
+      | Ok control -> (* control is Coarse *)
+      | Error e -> (* handle parsing error *)
+    ]}
+  *)
+  let parse (j : json) : t j_result =
+    let open Rjson in
+    let* name = cast_string j in
+    match name with
+    | "Coarse" -> Ok Coarse
+    | "Fine" -> Ok Fine
+    | "None" -> Ok None
+    | _ -> root_cause "DerivativeControl" j
+end
+
 module Expression = struct
   type t =
     | Literal of Literal.t
@@ -1787,8 +1931,8 @@ module Expression = struct
         reject: t;
       }
     | Derivative of {
-(*         axis: DerivativeAxis, *)
-(*         ctrl: DerivativeControl, *)
+        axis: DerivativeAxis.t;
+        ctrl: DerivativeControl.t;
         expr: t;
       }
     | Relational of {
@@ -1948,7 +2092,11 @@ module Expression = struct
         (BinaryOperator.to_string b.op)
         (to_string b.right)
     | Select _ -> (*TODO*) "Select"
-    | Derivative _ -> (*TODO*) "Derivative"
+    | Derivative {axis; ctrl; expr} ->
+      Printf.sprintf "%s%s(%s)"
+        (DerivativeAxis.to_string axis)
+        (DerivativeControl.to_string ctrl)
+        (to_string expr)
     | Relational {fun_; argument} ->
       Printf.sprintf "%s(%s)"
         (RelationalFunction.to_string fun_)
@@ -2041,7 +2189,7 @@ module Expression = struct
     | Unary {expr; _} -> [expr]
     | Binary {left; right; _} -> [left; right]
     | Select { condition; accept; reject;} -> [condition; accept; reject]
-    | Derivative { expr; } -> [expr]
+    | Derivative { expr; _ } -> [expr]
     | Relational {argument; _} -> [argument]
     | Math { fun_=_; args;} -> args
     | As { expr; _ } -> [expr]
@@ -2199,9 +2347,6 @@ module Expression = struct
       let* accept = with_field "accept" parse o in
       let* reject = with_field "reject" parse o in
       Ok (Select { condition; accept; reject; })
-    | "Derivative" ->
-      let* expr = with_field "expr" parse o in
-      Ok (Derivative { expr; })
     | "Relational" ->
       let* argument = with_field "argument" parse o in
       let* fun_ = with_field "fun" RelationalFunction.parse o in
@@ -2218,6 +2363,11 @@ module Expression = struct
     | "ArrayLength" ->
       let* e = with_field "array" parse o in
       Ok (ArrayLength e)
+    | "Derivative" ->
+      let* axis = with_field "axis" DerivativeAxis.parse o in
+      let* ctrl = with_field "ctrl" DerivativeControl.parse o in
+      let* expr = with_field "expr" parse o in
+      Ok (Derivative {axis; ctrl; expr})
     | "RayQueryProceedResult" -> Ok RayQueryProceedResult
     | "RayQueryGetIntersection" ->
       let* query = with_field "query" parse o in
