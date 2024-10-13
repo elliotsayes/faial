@@ -2716,12 +2716,12 @@ module Statement = struct
         pointer: Expression.t;
         value: Expression.t;
       }
-    | ImageStore (* {
-        image: Handle<Expression>,
-        coordinate: Handle<Expression>,
-        array_index: Option<Handle<Expression>>,
-        value: Handle<Expression>,
-      } *)
+    | ImageStore of {
+        image: Expression.t;
+        coordinate: Expression.t;
+        array_index: Expression.t option;
+        value: Expression.t;
+      }
     | Atomic of {
         pointer: Expression.t;
         fun_: AtomicFunction.t;
@@ -2807,7 +2807,12 @@ module Statement = struct
         let* pointer = with_field "pointer" Expression.parse o in
         let* value = with_field "value" Expression.parse o in
         Ok (Store {pointer; value;})
-      | "ImageStore" -> Ok ImageStore
+      | "ImageStore" ->
+        let* image = with_field "image" Expression.parse o in
+        let* coordinate = with_field "coordinate" Expression.parse o in
+        let* array_index = with_field "array_index" (cast_option Expression.parse) o in
+        let* value = with_field "value" Expression.parse o in
+        Ok (ImageStore {image; coordinate; array_index; value})
       | "Atomic" ->
         let* pointer = with_field "pointer" Expression.parse o in
         let* fun_ = with_field "fun" AtomicFunction.parse o in
@@ -2815,15 +2820,15 @@ module Statement = struct
         let* result = with_field "result" (cast_option Ident.parse) o in
         let* location = with_field "location" parse_location o in
         Ok (Atomic {pointer; fun_; value; result; location})
-    | "WorkGroupUniformLoad" ->
-        let* pointer = with_field "pointer" Expression.parse o in
-        let* result = with_field "result" Ident.parse o in
-        Ok (WorkGroupUniformLoad { pointer; result })
-    | "Call" ->
-        let* function_ = with_field "function" cast_string o in
-        let* arguments = with_field "arguments" (cast_map Expression.parse) o in
-        let* result = with_field "result" (cast_option Ident.parse) o in
-        Ok (Call{function_; arguments; result})
+      | "WorkGroupUniformLoad" ->
+          let* pointer = with_field "pointer" Expression.parse o in
+          let* result = with_field "result" Ident.parse o in
+          Ok (WorkGroupUniformLoad { pointer; result })
+      | "Call" ->
+          let* function_ = with_field "function" cast_string o in
+          let* arguments = with_field "arguments" (cast_map Expression.parse) o in
+          let* result = with_field "result" (cast_option Ident.parse) o in
+          Ok (Call{function_; arguments; result})
       | "SubgroupBallot" ->
         let* predicate = with_field "predicate" (cast_option Expression.parse) o in
         let* result = with_field "result" Ident.parse o in
@@ -2936,14 +2941,15 @@ module Statement = struct
       in
       [Line line]
 
-    | ImageStore (* {
-        image: Handle<Expression>,
-        coordinate: Handle<Expression>,
-        array_index: Option<Handle<Expression>>,
-        value: Handle<Expression>,
-      } *)
-      ->
-      [Line "textureStore(TODO);"]
+    | ImageStore { image; coordinate; array_index; value} ->
+      let args =
+        [image; coordinate]
+        @ Option.to_list array_index
+        @ [value]
+        |> List.map Expression.to_string
+        |> Common.join ", "
+      in
+      [Line (Printf.sprintf "textureStore(%s);" args)]
     | Atomic {pointer; fun_; value; result; location=_;} ->
       let target =
         match result with
