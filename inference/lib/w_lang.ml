@@ -509,16 +509,6 @@ module ImageClass = struct
     | _ -> "ImageClass"
 end
 
-module ArraySize = struct
-  type t =
-    | Constant of int
-    | Dynamic
-  let to_int : t -> int option =
-    function
-    | Constant i -> Some i
-    | Dynamic -> None
-end
-
 module Interpolation = struct
   type t =
     | Perspective
@@ -695,6 +685,73 @@ module Binding = struct
     | BuiltIn b -> "builtin(" ^ BuiltIn.to_string b ^ ")"
     | Location _ -> failwith "Binding.to_string: Location"
 end
+
+(**
+   {1 ArraySize Module}
+
+   This module defines and handles the size of arrays, which can be either a constant value or dynamic.
+   It reflects WGSL’s capability of defining arrays with fixed or runtime-determined sizes.
+
+   In WGSL, arrays are often sized either by compile-time constants or dynamically when using runtime-sized
+   arrays, especially in buffer storage. This module provides tools for parsing and representing such constructs.
+*)
+
+module ArraySize = struct
+  (** {2 Types} *)
+
+  (**
+      The type [t] represents the size of an array in WGSL.
+      - A [Constant] size is a positive integer representing a fixed size known at compile time.
+      - [Dynamic] represents a size determined at runtime (like in runtime-sized arrays).
+  *)
+  type t =
+    | Constant of int  (** A constant array size, represented by a positive integer. *)
+    | Dynamic          (** A dynamic size, where the size is determined at runtime. *)
+
+  (**
+      Converts an [ArraySize.t] value into its string representation.
+
+      Example:
+      {[
+        ArraySize.to_string (Constant 4)  (* returns "constant(4)" *)
+        ArraySize.to_string Dynamic       (* returns "dynamic" *)
+      ]}
+  *)
+  let to_string : t -> string = function
+    | Constant n -> Printf.sprintf "constant(%d)" n
+    | Dynamic -> "dynamic"
+
+  (**
+      Parses a JSON object into an [ArraySize.t] value.
+
+      The input JSON object must have a "kind" field indicating the type of size,
+      and, if it's a [Constant], it should also include a "value" field with a positive integer.
+
+      Example JSON inputs:
+      {[
+        { "kind": "Constant", "value": 4 }  (* Parsed as Constant 4 *)
+        { "kind": "Dynamic" }               (* Parsed as Dynamic *)
+      ]}
+
+      @param j The JSON object to parse.
+      @return A result containing either the parsed [ArraySize.t] or an error message.
+  *)
+  let parse (j: json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "Constant" ->
+      let* value = with_field "value" cast_int o in
+      if value > 0 then
+        Ok (Constant value)
+      else
+        root_cause "Constant value must be greater than zero" j
+    | "Dynamic" -> Ok Dynamic
+    | _ -> root_cause "ArraySize" j
+
+end
+
 
 module Type = struct
 
@@ -933,6 +990,12 @@ module Type = struct
         Printf.sprintf "ptr<%s,%s>" (to_string b) (AddressSpace.to_string s)
       | Sampler {comparison} ->
         if comparison then "sampler_comparison" else "sampler"
+      | BindingArray {base; size} ->
+        let base = to_string base in
+        (match size with
+        | Dynamic -> Printf.sprintf "binding_array<%s>" base
+        | Constant k -> Printf.sprintf "binding_array<%s,%d>" base k
+        )
       | k -> failwith ("inner_to_string: unsupported kind:" ^ kind k)
 
   and to_string (e:t) : string =
@@ -995,6 +1058,10 @@ module Type = struct
     | "Sampler" ->
       let* comparison = with_field "comparison" cast_bool o in
       Ok (Sampler {comparison})
+    | "BindingArray" ->
+      let* base = with_field "base" parse o in
+      let* size = with_field "size" ArraySize.parse o in
+      Ok (BindingArray {base; size})
     | _ -> root_cause ("inner_parse: unsupported kind: " ^ kind) j
 
   and struct_parse (j:json) : struct_member j_result =
