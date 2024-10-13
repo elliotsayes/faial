@@ -721,6 +721,13 @@ module ArraySize = struct
     | Constant n -> Printf.sprintf "constant(%d)" n
     | Dynamic -> "dynamic"
 
+  (** Converts the size to an optional integer. When the size is dynamic
+      we get none, otherwise we get the constant size *)
+  let to_int : t -> int option =
+    function
+    | Constant n -> Some n
+    | Dynamic -> None
+
   (**
       Parses a JSON object into an [ArraySize.t] value.
 
@@ -782,7 +789,7 @@ module Type = struct
       }
     | Array of {
         base: t;
-        size: int option;
+        size: ArraySize.t;
       }
     | Struct of {
         members: struct_member list;
@@ -894,7 +901,7 @@ module Type = struct
     let bool : t =
       scalar Scalar.bool
 
-    let array ?(size=None) (base:t) : t =
+    let array ?(size=ArraySize.Dynamic) (base:t) : t =
       make (Array {base; size})
 
     (** For container types, return the type of the contained elements.
@@ -943,8 +950,8 @@ module Type = struct
       | Array a ->
         let size =
           match a.size with
-          | Some i -> ", " ^ string_of_int i
-          | None -> ""
+          | Constant i -> ", " ^ string_of_int i
+          | Dynamic -> ""
         in
         "array<" ^ to_string a.base ^ size ^ ">"
       | Vector v ->
@@ -1025,7 +1032,7 @@ module Type = struct
     match kind with
     | "Array" ->
       let* base = with_field "base" parse o in
-      let* size = with_field "size" (cast_option cast_int) o in
+      let* size = with_field "size" ArraySize.parse o in
       Ok (Array {base; size})
     | "Scalar" ->
       let* s = with_field "value" Scalar.parse o in

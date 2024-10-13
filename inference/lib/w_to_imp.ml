@@ -21,7 +21,7 @@ module Arrays = struct
   let tr_type (ty:W_lang.Type.t) : (int list * string list) option =
     match ty.inner with
     | Array {base; size} ->
-      Some (Option.to_list size , [W_lang.Type.to_string base])
+      Some (size |> W_lang.ArraySize.to_int |> Option.to_list , [W_lang.Type.to_string base])
     | _ -> None
 
   let tr_decl (d: W_lang.Declaration.t) : (Variable.t * Memory.t) option =
