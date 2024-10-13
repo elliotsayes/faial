@@ -813,21 +813,6 @@ module Type = struct
         offset: int;
       }
 
-    let kind : inner -> string =
-      function
-      | Scalar _ -> "Scalar"
-      | Vector _ -> "Vector"
-      | Matrix _ -> "Matrix"
-      | Atomic _ -> "Atomic"
-      | Pointer _ -> "Pointer"
-      | ValuePointer _ -> "ValuePointer"
-      | Array _ -> "Array"
-      | Struct _ -> "Struct"
-      | Image _ -> "Image"
-      | Sampler _ -> "Sampler"
-      | AccelerationStructure -> "AccelerationStructure"
-      | BindingArray _ -> "BindingArray"
-
     let i_vec3_u32 : inner = Vector {size=VectorSize.Tri; scalar=Scalar.u32}
 
     let to_scalar (ty:t) : Scalar.t option =
@@ -1003,7 +988,24 @@ module Type = struct
         | Dynamic -> Printf.sprintf "binding_array<%s>" base
         | Constant k -> Printf.sprintf "binding_array<%s,%d>" base k
         )
-      | k -> failwith ("inner_to_string: unsupported kind:" ^ kind k)
+      | ValuePointer {size; scalar; space} ->
+        let args =
+          (size
+            |> Option.map (fun s ->
+                s
+                |> VectorSize.to_int
+                |> string_of_int
+              )
+            |> Option.to_list
+          )
+          @ [
+            Scalar.to_string scalar;
+            AddressSpace.to_string space
+          ]
+          |> Common.join ", "
+        in
+        Printf.sprintf "ptr<%s>" args
+      | AccelerationStructure -> "acceleration_structure"
 
   and to_string (e:t) : string =
     match e.name with
