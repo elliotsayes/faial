@@ -2661,6 +2661,117 @@ module Expression = struct
     | As { expr; _ } -> [expr]
     | ArrayLength e -> [e]
 
+  (** Map applied to child expressions. *)
+  let map (f: t -> t) : t -> t =
+    fun e ->
+    match e with
+    | Ident _
+    | Literal _
+    | ZeroValue _ -> e
+    | Compose {components; ty} ->
+      Compose {components=List.map f components; ty}
+    | Access {base; index; location} ->
+      Access {
+        base = f base;
+        index = f index;
+        location
+      }
+    | AccessIndex {base; index; location} ->
+      AccessIndex {
+        base = f base;
+        index;
+        location;
+      }
+    | Splat {value; size} ->
+      Splat {
+        value = f value;
+        size;
+      }
+    | Swizzle {vector; size; indices; location} ->
+      Swizzle {
+        vector = f vector;
+        size;
+        indices;
+        location;
+      }
+    | Load e -> Load (f e)
+    | ImageSample {
+        image; sampler; coordinate;
+        array_index; offset; depth_ref;
+        gather; level;
+      } ->
+      ImageSample {
+        image = f image;
+        sampler = f sampler;
+        coordinate = f coordinate;
+        array_index = Option.map f array_index;
+        offset = Option.map f offset;
+        depth_ref = Option.map f depth_ref;
+        gather;
+        level;
+      }
+    | ImageLoad {
+        image; coordinate;
+        array_index; sample; level;
+      } ->
+      ImageLoad {
+        image = f image;
+        coordinate = f coordinate;
+        array_index = Option.map f array_index;
+        sample = Option.map f sample;
+        level = Option.map f level;
+      }
+    | ImageQuery { image; query;} ->
+      let query =
+        match query with
+        | Size o -> Size (Option.map f o)
+        | _ -> query
+      in
+      ImageQuery {
+        image = f image;
+        query;
+      }
+    | Unary {expr; op} ->
+      Unary {
+        expr = f expr;
+        op;
+      }
+    | Binary {left; right; op} ->
+      Binary {
+        left = f left;
+        right = f right;
+        op;
+      }
+    | Select { condition; accept; reject;} ->
+      Select {
+        condition = f condition;
+        accept = f accept;
+        reject = f reject;
+      }
+    | Derivative { expr; axis; ctrl } ->
+      Derivative {
+        expr = f expr;
+        axis;
+        ctrl;
+      }
+    | Relational {argument; fun_} ->
+      Relational {
+        argument = f argument;
+        fun_;
+      }
+    | Math { fun_; args;} ->
+      Math {
+        fun_; args = List.map f args;
+      }
+    | As { expr; kind; convert } ->
+      As {
+        expr = f expr;
+        kind;
+        convert;
+      }
+    | ArrayLength e -> ArrayLength (f e)
+
+
   (**
     Returns the type of the given expression.
   *)
