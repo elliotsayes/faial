@@ -2661,6 +2661,9 @@ module Expression = struct
     | As { expr; _ } -> [expr]
     | ArrayLength e -> [e]
 
+  (**
+    Returns the type of the given expression.
+  *)
   (*
     Implementation follows Naga's type checker:
 
