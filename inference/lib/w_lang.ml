@@ -449,6 +449,11 @@ module ImageDimension = struct
     | D3
     | Cube
 
+  let is_1d : t -> bool =
+    function
+    | D1 -> true
+    | _ -> false
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* data = cast_string j in
@@ -478,6 +483,17 @@ module ImageClass = struct
         format: string;
         access: StorageAccess.t;
     }
+
+  let scalar_kind : t -> ScalarKind.t option =
+    function
+    | Sampled {kind; _} -> Some kind
+    | Depth _ -> None
+    | Storage _ -> None
+
+  let is_depth : t -> bool =
+    function
+    | Depth _ -> true
+    | _ -> false
 
   let multisampled : t -> bool =
     function
@@ -877,17 +893,28 @@ module Type = struct
     let f64 : t =
       scalar Scalar.f64
 
-    let vec (size:VectorSize.t) (scalar:Scalar.t) : t =
+    let vec (size:int) (scalar:Scalar.t) : t =
+      let size = VectorSize.from_int size |> Option.get in
       make (Vector {size; scalar;})
 
     let vec4_u32 : t =
-      vec VectorSize.Quad Scalar.u32
+      vec 4 Scalar.u32
 
     let bool : t =
       scalar Scalar.bool
 
     let array ?(size=ArraySize.Dynamic) (base:t) : t =
       make (Array {base; size})
+
+    let modf_result (ty:t) : t =
+      make (Struct {
+        members = [
+          {name="fract"; ty; binding=None; offset=0};
+          {name="whole"; ty; binding=None; offset=0};
+        ];
+        span = 0;
+      })
+
 
     (** For container types, return the type of the contained elements.
        Does not support structs. *)
@@ -1019,6 +1046,37 @@ module Type = struct
       | None -> ""
     in
     binding ^ s.name ^ " : " ^ to_string s.ty
+
+    let frexp_result (ty:t) : t =
+      let fract, exp =
+        match ty.inner with
+        | Scalar {kind=Float; width=(4 | 2) as w} ->
+          scalar {kind=Float; width=w}, i32
+        | Vector {scalar={kind=Float; width=(4 | 2) as w}; size} ->
+          (
+            make (Vector {scalar={kind=Float; width=w}; size}),
+            make (Vector {scalar=Scalar.i32; size})
+          )
+        | Scalar {kind=AbstractFloat; width} ->
+          (
+            scalar {kind=AbstractFloat; width},
+            scalar {kind=AbstractInt; width}
+          )
+        | Vector {scalar={kind=AbstractFloat; width;}; size} ->
+          (
+            make (Vector {scalar={kind=AbstractFloat; width}; size}),
+            make (Vector {scalar={kind=AbstractInt; width}; size})
+          )
+        | _ ->
+          failwith ("frexp_result: " ^ to_string ty)
+      in
+      make (Struct {
+        members = [
+          {name="fract"; ty=fract; binding=None; offset=0};
+          {name="exp"; ty=exp; binding=None; offset=0};
+        ];
+        span = 0;
+      })
 
   let rec parse (j:json) : t j_result =
     let open Rjson in
@@ -1355,7 +1413,7 @@ module UnaryOperator = struct
     | "Negate" -> Ok Negate
     | "LogicalNot" -> Ok LogicalNot
     | "BitwiseNot" -> Ok BitwiseNot
-    | _ -> root_cause "BinaryOperator" j
+    | _ -> root_cause "UnaryOperator" j
 end
 
 module BinaryOperator = struct
@@ -1774,6 +1832,122 @@ module MathFunction = struct
     | Unpack2x16float -> "unpack2x16float"
     | Unpack4xI8 -> "unpack4xI8"
     | Unpack4xU8 -> "unpack4xU8"
+
+  (*
+    Logic taken from:
+    https://github.com/gfx-rs/wgpu/blob/f669024eeb9e86e553eb955a02b18a7723fb64e1/naga/src/proc/typifier.rs#L640
+    *)
+  let type_of : t -> Type.t list -> Type.t =
+    fun op args ->
+    match op, args with
+    (* Modf returns a modf_result *)
+    | Modf, [arg0] ->
+      Type.modf_result arg0
+
+    (* Frexp returns a frexp_result *)
+    | Frexp, [arg0] ->
+      Type.frexp_result arg0
+
+    (* Handle the Dot function, which returns a scalar based on vector input *)
+    | Dot, [{inner=Vector { scalar; _ }; _}; _] ->
+      Type.make (Scalar scalar)
+
+    (* Handle Distance and Length functions, which return a scalar based on the input *)
+    | Distance, [{inner=(Scalar scalar | Vector { scalar; size = _ }); _}; _] ->
+      Type.make (Scalar scalar)
+
+    (* Handle Distance and Length functions, which return a scalar based on the input *)
+    | Length, [{inner=(Scalar scalar | Vector { scalar; size = _ }); _}]  ->
+      Type.make (Scalar scalar)
+
+    (* Handle functions that normalize or manipulate vector inputs, returning the same type *)
+    | (Abs
+      | Min
+      | Max
+      | Clamp
+      | Saturate
+      | Cos
+      | Cosh
+      | Sin
+      | Sinh
+      | Tan
+      | Tanh
+      | Acos
+      | Asin
+      | Atan
+      | Atan2
+      | Asinh
+      | Acosh
+      | Atanh
+      | Radians
+      | Degrees
+      | Ceil
+      | Floor
+      | Round
+      | Fract
+      | Trunc
+      | Ldexp
+      | Exp
+      | Exp2
+      | Log
+      | Log2
+      | Pow
+      | Cross
+      | Normalize
+      | FaceForward
+      | Reflect
+      | Refract
+      | Sign
+      | Fma
+      | Mix
+      | Step
+      | SmoothStep
+      | Sqrt
+      | InverseSqrt
+      ), arg0 :: _ -> arg0
+
+    (* Handle Transpose, which swaps the rows and columns of a matrix *)
+    | Transpose, [{inner=Matrix { columns; rows; scalar }; _}] ->
+      Type.make (Matrix { columns = rows; rows = columns; scalar })
+
+    (* Handle Determinant, which returns a scalar based on a matrix input *)
+    | Determinant, [{inner=Matrix { scalar; _ }; _}] ->
+      Type.make (Scalar scalar)
+
+    (* Handle bit manipulation functions, which can operate on scalars or vectors *)
+    | (CountTrailingZeros
+      | CountLeadingZeros
+      | CountOneBits
+      | ReverseBits
+      | ExtractBits
+      | InsertBits
+      ), [{inner=(Scalar s | Vector {scalar=s; _}) as a0; _}]
+        when Scalar.is_int s->
+        Type.make a0
+
+    (* Handle data packing functions, which return a scalar *)
+    | (Pack4x8snorm
+      | Pack4x8unorm
+      | Pack2x16snorm
+      | Pack2x16unorm
+      | Pack2x16float
+      | Pack4xI8
+      | Pack4xU8), [_] ->
+      Type.u32
+
+    (* Handle data unpacking functions, which return a vector *)
+    | (Unpack4x8snorm | Unpack4x8unorm), [_] ->
+      Type.(vec 4 Scalar.f32)
+    | (Unpack2x16snorm | Unpack2x16unorm | Unpack2x16float), [_] ->
+      Type.(vec 2 Scalar.f32)
+    | Unpack4xI8, [_] ->
+      Type.(vec 4 Scalar.i32)
+    | Unpack4xU8, [_] ->
+      Type.(vec 4 Scalar.u32)
+    | _, _ ->
+      failwith "MathFunction.type_of"
+
+
 end
 
 module RelationalFunction = struct
@@ -2302,9 +2476,9 @@ module Expression = struct
       (match ty.inner with
       | Image {image_class; _} ->
         (match image_class with
-        | Sampled {kind; _} -> Type.vec Quad (Scalar.make_32 kind)
+        | Sampled {kind; _} -> Type.vec 4 (Scalar.make_32 kind)
         | Depth _ -> Type.f32
-        | Storage _ -> Type.vec Quad Scalar.f32
+        | Storage _ -> Type.vec 4 Scalar.f32
         )
       | _ -> failwith "must be an image")
     | ImageSample _ -> failwith "type_of ImageSample"
