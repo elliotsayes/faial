@@ -2494,7 +2494,7 @@ module Expression = struct
 
   let rec type_of : t -> Type.t =
     function
-    | AccessIndex {base; index; _} as e ->
+    | AccessIndex {base; index; _} as e -> (* TODO *)
       base
       |> type_of
       |> Type.nth index
@@ -2539,16 +2539,16 @@ module Expression = struct
       BinaryOperator.type_of op (type_of left) (type_of right)
     | Select {accept=e; _} ->
       type_of e
-    | As {kind; _} ->
-      Type.scalar (Scalar.make_64 kind) (* TODO: is this right? *)
+    | As {kind; _} -> (* TODO *)
+      Type.scalar (Scalar.make_64 kind)
     | ArrayLength _ ->
       Type.u32
-    | Relational _ -> failwith "type_of Relational"
+    | Relational _ -> (* TODO *) failwith "type_of Relational"
     | Unary {expr; _}
     | Derivative {expr; _} -> type_of expr
 
-    | ImageQuery _ -> failwith "type_of ImageQuery"
-    | ImageLoad {image; _} ->
+    | ImageQuery _ -> (* TODO *) failwith "type_of ImageQuery"
+    | ImageLoad {image; _} (* TODO: double-check *) ->
       let ty = type_of image in
       (match ty.inner with
       | Image {image_class; _} ->
@@ -2558,8 +2558,8 @@ module Expression = struct
         | Storage _ -> Type.vec 4 Scalar.f32
         )
       | _ -> failwith "must be an image")
-    | ImageSample _ -> failwith "type_of ImageSample"
-    | Swizzle _ -> failwith "type_of Swizzle"
+    | ImageSample _ -> (* TODO *) failwith "type_of ImageSample"
+    | Swizzle _ -> (* TODO *) failwith "type_of Swizzle"
     | Splat {size; value} as e ->
       (match type_of value with
       | {inner=Scalar scalar; _} -> Type.make (Vector {size; scalar})
