@@ -2561,7 +2561,8 @@ module Expression = struct
     | ImageSample _ -> failwith "type_of ImageSample"
     | Swizzle _ -> failwith "type_of Swizzle"
     | Splat _ -> failwith "type_of Splat"
-    | Math _ -> failwith "type_of Math"
+    | Math {fun_; args} ->
+      MathFunction.type_of fun_ (List.map type_of args)
 
   let rec parse (j:json) : t j_result =
     let open Rjson in
