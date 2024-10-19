@@ -2044,6 +2044,7 @@ module RelationalFunction = struct
     | "All" -> Ok All
     | "Any" -> Ok Any
     | _ -> root_cause "RelationalFunction" j
+
 end
 
 (**
@@ -2629,7 +2630,8 @@ module Expression = struct
       )
     | ArrayLength _ ->
       Type.u32
-    | Relational _ -> (* TODO *) failwith "type_of Relational"
+    | Relational _ ->
+      Type.bool
     | Unary {expr; _}
     | Derivative {expr; _} -> type_of expr
 
