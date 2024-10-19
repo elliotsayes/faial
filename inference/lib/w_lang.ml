@@ -1481,6 +1481,62 @@ module BinaryOperator = struct
     | "ShiftLeft" -> Ok ShiftLeft
     | "ShiftRight" -> Ok ShiftRight
     | _ -> root_cause "BinaryOperator" j
+
+
+  (** Given the type of both operations return the return type. *)
+  let type_of (op : t) (lhs : Type.t) (rhs : Type.t) : Type.t =
+    match op, lhs.inner, rhs.inner with
+
+    (* Handle basic arithmetic operators that return the type of the left operand *)
+    | (Add
+      | Subtract
+      | Divide
+      | Modulo
+      | And
+      | ExclusiveOr
+      | InclusiveOr
+      | ShiftLeft
+      | ShiftRight), ty, _ -> Type.make ty
+
+    (* Handle multiplication, which requires more detailed type resolution,
+       due to matrix-matrix and matrix-vector, scalar-vector/matrix/scalar *)
+    | Multiply,
+      Matrix { columns = _; rows; scalar },
+      Matrix { columns; _ } ->
+      Type.make (Matrix { columns; rows; scalar })
+    | Multiply,
+      Matrix { columns = _; rows; scalar }, Vector _ ->
+      Type.make (Vector { size = rows; scalar })
+    | Multiply,
+      Vector _, Matrix { columns; rows = _; scalar } ->
+      Type.make (Vector { size = columns; scalar })
+
+    | Multiply, Scalar _, ty
+    | Multiply, ty, Scalar _
+    | Multiply, (Vector _ as ty), Vector _ ->
+      Type.make ty
+
+    (* Handle comparison and logical operators, which return boolean values *)
+
+    | (Equal
+      | NotEqual
+      | Less
+      | LessEqual
+      | Greater
+      | GreaterEqual
+      | LogicalAnd
+      | LogicalOr), ((Scalar _ | Vector _) as ty), _ ->
+        let scalar = Scalar.bool in
+        let inner : Type.inner =
+          match ty with
+          | Scalar _ -> Scalar scalar
+          | Vector { size; _ } -> Vector { size; scalar }
+          | _ -> failwith "impossible"
+        in
+        Type.make inner
+
+    | _, _, _ ->
+      failwith "BinaryOperator.type_of"
 end
 
 module Literal = struct
