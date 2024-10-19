@@ -831,6 +831,29 @@ module Type = struct
 
     let i_vec3_u32 : inner = Vector {size=VectorSize.Tri; scalar=Scalar.u32}
 
+    let make (inner:inner) : t = {name=None; inner}
+
+    let update_scalar (f:Scalar.t -> Scalar.t) (ty:t) : t =
+      match ty.inner with
+      | Scalar s ->
+        make (Scalar (f s))
+      | Vector {size; scalar} ->
+        make (Vector {size; scalar=f scalar})
+      | Matrix {columns; rows; scalar} ->
+        make (Matrix {columns; rows; scalar=f scalar})
+      | Atomic s ->
+        make (Atomic (f s))
+      | ValuePointer {size; scalar; space} ->
+        make (ValuePointer {size; scalar=f scalar; space})
+      | Pointer _
+      | Array _
+      | Struct _
+      | AccelerationStructure
+      | BindingArray _
+      | Image _
+      | Sampler _ ->
+        ty
+
     let to_scalar (ty:t) : Scalar.t option =
       match ty.inner with
       | Scalar s -> Some s
@@ -872,8 +895,6 @@ module Type = struct
         |> List.nth_opt members
         |> Option.map (fun (m:struct_member) -> m.name)
       | _ -> None
-
-    let make (inner:inner) : t = {name=None; inner}
 
     let scalar (s:Scalar.t) : t =
       make (Scalar s)
@@ -2494,11 +2515,61 @@ module Expression = struct
 
   let rec type_of : t -> Type.t =
     function
-    | AccessIndex {base; index; _} as e -> (* TODO *)
-      base
-      |> type_of
-      |> Type.nth index
-      |> Common.expect ("type_of: access_index: " ^ to_string e)
+    | AccessIndex {base; index; _} as e ->
+      (match (base |> type_of).inner with
+
+      (* Handle indexing a vector *)
+      | Vector { size=_; scalar } ->
+        Type.make (Scalar scalar)
+
+      (* Handle indexing a matrix *)
+      | Matrix { columns=_; rows; scalar } ->
+        Type.make (Vector { size = rows; scalar })
+
+      (* Handle indexing an array *)
+      | Array { base; _ } -> base
+
+      (* Handle indexing a struct *)
+      | Struct { members; _ } ->
+          let member =
+            match List.nth_opt members index with
+            | Some m -> m
+            | None -> failwith ("type_of: " ^ to_string e)
+          in
+          member.ty
+
+      (* Handle indexing a value pointer with size *)
+      | ValuePointer { size = Some _; scalar; space } ->
+        Type.make (ValuePointer { size = None; scalar; space })
+
+      (* Handle indexing a pointer *)
+      | Pointer { base; space } ->
+        Type.make (
+          match base.inner with
+          | Array { base; _ } -> Pointer { base; space }
+          | Vector { size=_; scalar } ->
+            ValuePointer { size = None; scalar; space }
+          | Matrix { rows; columns=_; scalar } ->
+            ValuePointer { size = Some rows; scalar; space }
+          | Struct { members; _ } ->
+              let member =
+                match List.nth_opt members index with
+                | Some m -> m
+                | None -> failwith ("type_of: " ^ to_string e)
+              in
+              Pointer { base = member.ty; space }
+          | BindingArray { base; _ } -> Pointer { base; space }
+          | _ ->
+            failwith ("type_of: " ^ to_string e)
+        )
+
+      (* Handle indexing a binding array *)
+      | BindingArray { base; _ } -> base
+
+      (* Handle unexpected types *)
+      | _ ->
+        failwith ("type_of: " ^ to_string e)
+      )
     | Access {base; _} as e ->
       (match (base |> type_of).inner with
       (* Arrays and matrices can only be indexed dynamically behind a pointer,
@@ -2539,8 +2610,23 @@ module Expression = struct
       BinaryOperator.type_of op (type_of left) (type_of right)
     | Select {accept=e; _} ->
       type_of e
-    | As {kind; _} -> (* TODO *)
-      Type.scalar (Scalar.make_64 kind)
+    | As {kind; expr; convert} as e ->
+      let ty = type_of expr in
+      (match ty.inner with
+      | Scalar _ | Vector _ | Matrix _ ->
+        (*
+          Update the kind of the scalar.
+          Additionally, if convert is set, then we update the scalar width.
+        *)
+        let update : Scalar.t -> Scalar.t =
+          match convert with
+          | Some width -> fun _ -> { width; kind }
+          | None -> fun s -> { s with kind }
+        in
+        Type.update_scalar update ty
+      | _ ->
+        failwith ("type_of: " ^ to_string e)
+      )
     | ArrayLength _ ->
       Type.u32
     | Relational _ -> (* TODO *) failwith "type_of Relational"
