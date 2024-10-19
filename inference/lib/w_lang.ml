@@ -472,6 +472,153 @@ module ImageDimension = struct
     | Cube -> "cube"
 end
 
+module StorageFormat = struct
+  type t =
+    | R8Unorm
+    | R8Snorm
+    | R8Uint
+    | R8Sint
+    | R16Uint
+    | R16Sint
+    | R16Float
+    | Rg8Unorm
+    | Rg8Snorm
+    | Rg8Uint
+    | Rg8Sint
+    | R32Uint
+    | R32Sint
+    | R32Float
+    | Rg16Uint
+    | Rg16Sint
+    | Rg16Float
+    | Rgba8Unorm
+    | Rgba8Snorm
+    | Rgba8Uint
+    | Rgba8Sint
+    | Bgra8Unorm
+    | Rgb10a2Uint
+    | Rgb10a2Unorm
+    | Rg11b10Float
+    | Rg32Uint
+    | Rg32Sint
+    | Rg32Float
+    | Rgba16Uint
+    | Rgba16Sint
+    | Rgba16Float
+    | Rgba32Uint
+    | Rgba32Sint
+    | Rgba32Float
+    | R16Unorm
+    | R16Snorm
+    | Rg16Unorm
+    | Rg16Snorm
+    | Rgba16Unorm
+    | Rgba16Snorm
+
+  let to_string : t -> string = function
+    | R8Unorm -> "r8_unorm"
+    | R8Snorm -> "r8_snorm"
+    | R8Uint -> "r8_uint"
+    | R8Sint -> "r8_sint"
+    | R16Uint -> "r16_uint"
+    | R16Sint -> "r16_sint"
+    | R16Float -> "r16_float"
+    | Rg8Unorm -> "rg8_unorm"
+    | Rg8Snorm -> "rg8_snorm"
+    | Rg8Uint -> "rg8_uint"
+    | Rg8Sint -> "rg8_sint"
+    | R32Uint -> "r32_uint"
+    | R32Sint -> "r32_sint"
+    | R32Float -> "r32_float"
+    | Rg16Uint -> "rg16_uint"
+    | Rg16Sint -> "rg16_sint"
+    | Rg16Float -> "rg16_float"
+    | Rgba8Unorm -> "rgba8_unorm"
+    | Rgba8Snorm -> "rgba8_snorm"
+    | Rgba8Uint -> "rgba8_uint"
+    | Rgba8Sint -> "rgba8_sint"
+    | Bgra8Unorm -> "bgra8_unorm"
+    | Rgb10a2Uint -> "rgb10a2_uint"
+    | Rgb10a2Unorm -> "rgb10a2_unorm"
+    | Rg11b10Float -> "rg11b10_float"
+    | Rg32Uint -> "rg32_uint"
+    | Rg32Sint -> "rg32_sint"
+    | Rg32Float -> "rg32_float"
+    | Rgba16Uint -> "rgba16_uint"
+    | Rgba16Sint -> "rgba16_sint"
+    | Rgba16Float -> "rgba16_float"
+    | Rgba32Uint -> "rgba32_uint"
+    | Rgba32Sint -> "rgba32_sint"
+    | Rgba32Float -> "rgba32_float"
+    | R16Unorm -> "r16_unorm"
+    | R16Snorm -> "r16_snorm"
+    | Rg16Unorm -> "rg16_unorm"
+    | Rg16Snorm -> "rg16_snorm"
+    | Rgba16Unorm -> "rgba16_unorm"
+    | Rgba16Snorm -> "rgba16_snorm"
+
+  let to_kind : t -> ScalarKind.t =
+    function
+    | R8Unorm | R8Snorm | R16Float | Rg8Unorm | Rg8Snorm
+    | R32Float | Rg16Float | Rgba8Unorm | Rgba8Snorm
+    | Bgra8Unorm | Rgb10a2Unorm | Rg11b10Float | Rg32Float
+    | Rgba16Float | Rgba32Float | R16Unorm | R16Snorm
+    | Rg16Unorm | Rg16Snorm | Rgba16Unorm | Rgba16Snorm -> Float
+
+    | R8Uint | R16Uint | Rg8Uint | R32Uint | Rg16Uint
+    | Rgba8Uint | Rgb10a2Uint | Rg32Uint | Rgba16Uint
+    | Rgba32Uint -> Uint
+
+    | R8Sint | R16Sint | Rg8Sint | R32Sint | Rg16Sint
+    | Rgba8Sint | Rg32Sint | Rgba16Sint | Rgba32Sint -> Sint
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* name = cast_string j in
+    match name with
+    | "R8Unorm" -> Ok R8Unorm
+    | "R8Snorm" -> Ok R8Snorm
+    | "R8Uint" -> Ok R8Uint
+    | "R8Sint" -> Ok R8Sint
+    | "R16Uint" -> Ok R16Uint
+    | "R16Sint" -> Ok R16Sint
+    | "R16Float" -> Ok R16Float
+    | "Rg8Unorm" -> Ok Rg8Unorm
+    | "Rg8Snorm" -> Ok Rg8Snorm
+    | "Rg8Uint" -> Ok Rg8Uint
+    | "Rg8Sint" -> Ok Rg8Sint
+    | "R32Uint" -> Ok R32Uint
+    | "R32Sint" -> Ok R32Sint
+    | "R32Float" -> Ok R32Float
+    | "Rg16Uint" -> Ok Rg16Uint
+    | "Rg16Sint" -> Ok Rg16Sint
+    | "Rg16Float" -> Ok Rg16Float
+    | "Rgba8Unorm" -> Ok Rgba8Unorm
+    | "Rgba8Snorm" -> Ok Rgba8Snorm
+    | "Rgba8Uint" -> Ok Rgba8Uint
+    | "Rgba8Sint" -> Ok Rgba8Sint
+    | "Bgra8Unorm" -> Ok Bgra8Unorm
+    | "Rgb10a2Uint" -> Ok Rgb10a2Uint
+    | "Rgb10a2Unorm" -> Ok Rgb10a2Unorm
+    | "Rg11b10Float" -> Ok Rg11b10Float
+    | "Rg32Uint" -> Ok Rg32Uint
+    | "Rg32Sint" -> Ok Rg32Sint
+    | "Rg32Float" -> Ok Rg32Float
+    | "Rgba16Uint" -> Ok Rgba16Uint
+    | "Rgba16Sint" -> Ok Rgba16Sint
+    | "Rgba16Float" -> Ok Rgba16Float
+    | "Rgba32Uint" -> Ok Rgba32Uint
+    | "Rgba32Sint" -> Ok Rgba32Sint
+    | "Rgba32Float" -> Ok Rgba32Float
+    | "R16Unorm" -> Ok R16Unorm
+    | "R16Snorm" -> Ok R16Snorm
+    | "Rg16Unorm" -> Ok Rg16Unorm
+    | "Rg16Snorm" -> Ok Rg16Snorm
+    | "Rgba16Unorm" -> Ok Rgba16Unorm
+    | "Rgba16Snorm" -> Ok Rgba16Snorm
+    | _ -> root_cause "StorageFormat" j
+end
+
 module ImageClass = struct
   type t =
   | Sampled of {
@@ -480,7 +627,7 @@ module ImageClass = struct
     }
   | Depth of {multi: bool}
   | Storage of {
-        format: string;
+        format: StorageFormat.t;
         access: StorageAccess.t;
     }
 
@@ -514,7 +661,7 @@ module ImageClass = struct
       let* multi = with_field "multi" cast_bool o in
       Ok (Depth {multi})
     | "Storage" ->
-      let* format = with_field "format" cast_string o in
+      let* format = with_field "format" StorageFormat.parse o in
       let* access = with_field "access" StorageAccess.parse o in
       Ok (Storage {format; access;})
     | _ ->
@@ -1003,7 +1150,7 @@ module Type = struct
           | Depth _ ->
             ("depth_", "", "")
           | Storage {format; access;} ->
-            ("storage_", format, StorageAccess.to_string access)
+            ("storage_", StorageFormat.to_string format, StorageAccess.to_string access)
         in
         let multi = if ImageClass.multisampled image_class then "multisampled_" else "" in
         let addendum =
@@ -2635,18 +2782,38 @@ module Expression = struct
     | Unary {expr; _}
     | Derivative {expr; _} -> type_of expr
 
-    | ImageQuery _ -> (* TODO *) failwith "type_of ImageQuery"
+    | ImageQuery {image; query} as e -> (
+        match query with
+
+        (* Handle ImageQuery::Size with an image type *)
+        | Size _ -> (
+            match (type_of image).inner with
+            | Image { dim; _ } -> (
+                match dim with
+                | D1 -> Type.u32
+                | D2 | Cube -> Type.(vec 2 Scalar.u32)
+                | D3 -> Type.(vec 3 Scalar.u32)
+              )
+            | _ -> failwith ("type_of: " ^ to_string e)
+          )
+
+        (* Handle other image queries that return a scalar *)
+        | NumLevels | NumLayers | NumSamples -> Type.u32
+      )
+
+    | ImageSample {image; _}
     | ImageLoad {image; _} (* TODO: double-check *) ->
       let ty = type_of image in
       (match ty.inner with
       | Image {image_class; _} ->
         (match image_class with
-        | Sampled {kind; _} -> Type.vec 4 (Scalar.make_32 kind)
         | Depth _ -> Type.f32
-        | Storage _ -> Type.vec 4 Scalar.f32
+        | Sampled {kind; _} -> Type.vec 4 (Scalar.make_32 kind)
+        | Storage {format; _ } ->
+          let k = StorageFormat.to_kind format in
+          Type.vec 4 (Scalar.make_32 k)
         )
       | _ -> failwith "must be an image")
-    | ImageSample _ -> (* TODO *) failwith "type_of ImageSample"
     | Swizzle _ -> (* TODO *) failwith "type_of Swizzle"
     | Splat {size; value} as e ->
       (match type_of value with
