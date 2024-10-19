@@ -2661,6 +2661,11 @@ module Expression = struct
     | As { expr; _ } -> [expr]
     | ArrayLength e -> [e]
 
+  (*
+    Implementation follows Naga's type checker:
+
+    https://github.com/gfx-rs/wgpu/blob/f669024eeb9e86e553eb955a02b18a7723fb64e1/naga/src/proc/typifier.rs#L238
+  *)
   let rec type_of : t -> Type.t =
     function
     | AccessIndex {base; index; _} as e ->
@@ -2802,7 +2807,7 @@ module Expression = struct
       )
 
     | ImageSample {image; _}
-    | ImageLoad {image; _} (* TODO: double-check *) ->
+    | ImageLoad {image; _} ->
       let ty = type_of image in
       (match ty.inner with
       | Image {image_class; _} ->
@@ -2814,7 +2819,12 @@ module Expression = struct
           Type.vec 4 (Scalar.make_32 k)
         )
       | _ -> failwith "must be an image")
-    | Swizzle _ -> (* TODO *) failwith "type_of Swizzle"
+    | Swizzle {size; vector; _} as e ->
+      (match (type_of vector).inner with
+      | Vector {scalar; _} ->
+        Type.make (Vector {size; scalar})
+      | _ -> failwith ("type_of: " ^ to_string e)
+      )
     | Splat {size; value} as e ->
       (match type_of value with
       | {inner=Scalar scalar; _} -> Type.make (Vector {size; scalar})
