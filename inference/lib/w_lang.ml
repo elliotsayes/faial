@@ -2560,7 +2560,11 @@ module Expression = struct
       | _ -> failwith "must be an image")
     | ImageSample _ -> failwith "type_of ImageSample"
     | Swizzle _ -> failwith "type_of Swizzle"
-    | Splat _ -> failwith "type_of Splat"
+    | Splat {size; value} as e ->
+      (match type_of value with
+      | {inner=Scalar scalar; _} -> Type.make (Vector {size; scalar})
+      | _ -> failwith ("type_of: " ^ to_string e)
+      )
     | Math {fun_; args} ->
       MathFunction.type_of fun_ (List.map type_of args)
 
