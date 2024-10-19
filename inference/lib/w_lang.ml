@@ -2500,32 +2500,53 @@ module Expression = struct
       |> Type.nth index
       |> Common.expect ("type_of: access_index: " ^ to_string e)
     | Access {base; _} as e ->
-      base
-      |> type_of
-      |> Type.deref
-      |> Common.expect ("type_of: access: " ^ to_string e)
+      (match (base |> type_of).inner with
+      (* Arrays and matrices can only be indexed dynamically behind a pointer,
+        but that's a validation error, not a type error, so go ahead and provide a type here. *)
+      | Array { base; _ } -> base
+      | Matrix { rows; scalar; _ } -> Type.make (Vector { size = rows; scalar })
+      | Vector { size = _; scalar } -> Type.make (Scalar scalar)
+      | ValuePointer { size = Some _; scalar; space } ->
+          Type.make (ValuePointer { size = None; scalar; space })
+
+      (* Handle pointers that can point to different types *)
+      | Pointer { base; space } ->
+          Type.make (
+            match base.inner with
+            | Array { base; _ } -> Pointer { base; space }
+            | Vector { size = _; scalar } -> ValuePointer { size = None; scalar; space }
+            | Matrix { columns = _; rows; scalar } ->
+                ValuePointer { size = Some rows; scalar; space }
+            | BindingArray { base; _ } -> Pointer { base; space }
+            | _ ->
+              failwith ("type_of: " ^ to_string e)
+          )
+
+      (* Handle binding arrays *)
+      | BindingArray { base; _ } -> base
+
+      (* Handle unexpected types *)
+      | _ ->
+        failwith ("type_of: " ^ to_string e)
+      )
+
     | Literal l -> Literal.type_of l
     | ZeroValue ty -> ty
     | Compose {ty; _} -> ty
     | Ident i -> i.ty
     | Load e -> type_of e
-    | Binary {op; left=e; _} ->
-      (match op with
-        | Equal | NotEqual | Less | LessEqual
-        | Greater | GreaterEqual | LogicalAnd
-        | LogicalOr ->
-          Type.bool
-        | _ -> type_of e
-      )
+    | Binary {op; left; right} ->
+      BinaryOperator.type_of op (type_of left) (type_of right)
     | Select {accept=e; _} ->
       type_of e
     | As {kind; _} ->
       Type.scalar (Scalar.make_64 kind) (* TODO: is this right? *)
     | ArrayLength _ ->
-      Type.u64
+      Type.u32
     | Relational _ -> failwith "type_of Relational"
-    | Derivative _ -> failwith "type_of Derivative"
-    | Unary _ -> failwith "type_of Unary"
+    | Unary {expr; _}
+    | Derivative {expr; _} -> type_of expr
+
     | ImageQuery _ -> failwith "type_of ImageQuery"
     | ImageLoad {image; _} ->
       let ty = type_of image in
