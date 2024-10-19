@@ -643,7 +643,8 @@ module Globals = struct
         | None -> None
       in
       [{var=Variable.from_name d.name; ty=Types.tr d.ty; init}]
-    | Array _ -> [{var=Variable.from_name (d.name ^ ".len"); ty=C_type.int;init=None}]
+    | Array _ ->
+      [{var=Variable.from_name (d.name ^ ".len"); ty=C_type.int;init=None}]
     | Struct {members=l; _} ->
       List.filter_map (fun (m:W_lang.Type.struct_member) : t option->
           let open W_lang.Type in
