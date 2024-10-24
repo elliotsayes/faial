@@ -2650,6 +2650,76 @@ module Expression = struct
   let float (f:float) : t =
     Literal (Literal.float f)
 
+
+  (**
+    Returns the type of the given expression.
+  *)
+  (*
+    Implementation follows Naga's type checker:
+
+    https://github.com/gfx-rs/wgpu/blob/f669024eeb9e86e553eb955a02b18a7723fb64e1/naga/src/proc/typifier.rs#L238
+  *)
+  let rec type_of : t -> Type.t =
+    function
+    | AccessIndex {base; index; _} ->
+      Type.access_index index (type_of base)
+
+    | Access {base; _} ->
+      Type.access (type_of base)
+
+    | Literal l ->
+      Literal.type_of l
+
+    | ZeroValue ty
+    | Compose {ty; _} ->
+      ty
+
+    | Ident i -> i.ty
+
+    | Load e ->
+      type_of e
+
+    | Binary {op; left; right} ->
+      BinaryOperator.type_of op (type_of left) (type_of right)
+
+    | Select {accept=e; _} ->
+      type_of e
+
+    | As {kind; expr; convert} ->
+      Type.cast kind convert (type_of expr)
+
+    | ArrayLength _ ->
+      Type.u32
+
+    | Relational _ ->
+      Type.bool
+
+    | Unary {expr; _}
+    | Derivative {expr; _} ->
+      type_of expr
+
+    | ImageQuery {image; query} ->
+      (match query with
+      (* Handle image_query.Size with an image type *)
+      | Size _ ->
+        Type.image_dim (type_of image)
+
+      (* Handle other image queries that return a scalar *)
+      | NumLevels | NumLayers | NumSamples -> Type.u32)
+
+    | ImageSample {image; _}
+    | ImageLoad {image; _} ->
+      Type.image_class (type_of image)
+
+    | Swizzle {size; vector; _} ->
+      Type.swizzle size (type_of vector)
+
+    | Splat {size; value} ->
+      Type.splat size (type_of value)
+
+    | Math {fun_; args} ->
+      MathFunction.type_of fun_ (List.map type_of args)
+
   let rec to_string : t -> string =
     function
     | Literal l -> Literal.to_string l
@@ -2956,75 +3026,6 @@ module Expression = struct
       }
     | ArrayLength e -> ArrayLength (f e)
 
-
-  (**
-    Returns the type of the given expression.
-  *)
-  (*
-    Implementation follows Naga's type checker:
-
-    https://github.com/gfx-rs/wgpu/blob/f669024eeb9e86e553eb955a02b18a7723fb64e1/naga/src/proc/typifier.rs#L238
-  *)
-  let rec type_of : t -> Type.t =
-    function
-    | AccessIndex {base; index; _} ->
-      Type.access_index index (type_of base)
-
-    | Access {base; _} ->
-      Type.access (type_of base)
-
-    | Literal l ->
-      Literal.type_of l
-
-    | ZeroValue ty
-    | Compose {ty; _} ->
-      ty
-
-    | Ident i -> i.ty
-
-    | Load e ->
-      type_of e
-
-    | Binary {op; left; right} ->
-      BinaryOperator.type_of op (type_of left) (type_of right)
-
-    | Select {accept=e; _} ->
-      type_of e
-
-    | As {kind; expr; convert} ->
-      Type.cast kind convert (type_of expr)
-
-    | ArrayLength _ ->
-      Type.u32
-
-    | Relational _ ->
-      Type.bool
-
-    | Unary {expr; _}
-    | Derivative {expr; _} ->
-      type_of expr
-
-    | ImageQuery {image; query} ->
-      (match query with
-      (* Handle image_query.Size with an image type *)
-      | Size _ ->
-        Type.image_dim (type_of image)
-
-      (* Handle other image queries that return a scalar *)
-      | NumLevels | NumLayers | NumSamples -> Type.u32)
-
-    | ImageSample {image; _}
-    | ImageLoad {image; _} ->
-      Type.image_class (type_of image)
-
-    | Swizzle {size; vector; _} ->
-      Type.swizzle size (type_of vector)
-
-    | Splat {size; value} ->
-      Type.splat size (type_of value)
-
-    | Math {fun_; args} ->
-      MathFunction.type_of fun_ (List.map type_of args)
 
   let rec parse (j:json) : t j_result =
     let open Rjson in
