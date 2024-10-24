@@ -1083,7 +1083,6 @@ module Type = struct
         span = 0;
       })
 
-
     (** For container types, return the type of the contained elements.
        Does not support structs. *)
     let deref (ty:t) : t option =
@@ -1245,6 +1244,70 @@ module Type = struct
         ];
         span = 0;
       })
+
+
+  let access_index (index:int) (base:t) : t =
+    let fail () =
+      failwith (Printf.sprintf
+        "access_index(index=%d, base=%s)"
+        index
+        (to_string base)
+      )
+    in
+    match base.inner with
+
+    (* Handle indexing a vector *)
+    | Vector { size=_; scalar } ->
+      make (Scalar scalar)
+
+    (* Handle indexing a matrix *)
+    | Matrix { columns=_; rows; scalar } ->
+      (* Guarantee that index is within columns *)
+      make (Vector { size = rows; scalar })
+
+    (* Handle indexing an array *)
+    | Array { base; _ } -> base
+
+    (* Handle indexing a struct *)
+    | Struct { members; _ } ->
+        let member =
+          match List.nth_opt members index with
+          | Some m -> m
+          | None -> fail ()
+        in
+        member.ty
+
+    (* Handle indexing a value pointer with size *)
+    | ValuePointer { size = Some _; scalar; space } ->
+      make (ValuePointer { size = None; scalar; space })
+
+    (* Handle indexing a pointer *)
+    | Pointer { base; space } ->
+      make (
+        match base.inner with
+        | Array { base; _ } -> Pointer { base; space }
+        | Vector { size=_; scalar } ->
+          ValuePointer { size = None; scalar; space }
+        | Matrix { rows; columns=_; scalar } ->
+          ValuePointer { size = Some rows; scalar; space }
+        | Struct { members; _ } ->
+            let member =
+              match List.nth_opt members index with
+              | Some m -> m
+              | None -> fail ()
+            in
+            Pointer { base = member.ty; space }
+        | BindingArray { base; _ } -> Pointer { base; space }
+        | _ -> fail ()
+      )
+
+    (* Handle indexing a binding array *)
+    | BindingArray { base; _ } -> base
+
+    (* Handle unexpected types *)
+    | _ ->
+      fail ()
+
 
   let rec parse (j:json) : t j_result =
     let open Rjson in
@@ -2782,61 +2845,9 @@ module Expression = struct
   *)
   let rec type_of : t -> Type.t =
     function
-    | AccessIndex {base; index; _} as e ->
-      (match (base |> type_of).inner with
+    | AccessIndex {base; index; _} ->
+      Type.access_index index (type_of base)
 
-      (* Handle indexing a vector *)
-      | Vector { size=_; scalar } ->
-        Type.make (Scalar scalar)
-
-      (* Handle indexing a matrix *)
-      | Matrix { columns=_; rows; scalar } ->
-        Type.make (Vector { size = rows; scalar })
-
-      (* Handle indexing an array *)
-      | Array { base; _ } -> base
-
-      (* Handle indexing a struct *)
-      | Struct { members; _ } ->
-          let member =
-            match List.nth_opt members index with
-            | Some m -> m
-            | None -> failwith ("type_of: " ^ to_string e)
-          in
-          member.ty
-
-      (* Handle indexing a value pointer with size *)
-      | ValuePointer { size = Some _; scalar; space } ->
-        Type.make (ValuePointer { size = None; scalar; space })
-
-      (* Handle indexing a pointer *)
-      | Pointer { base; space } ->
-        Type.make (
-          match base.inner with
-          | Array { base; _ } -> Pointer { base; space }
-          | Vector { size=_; scalar } ->
-            ValuePointer { size = None; scalar; space }
-          | Matrix { rows; columns=_; scalar } ->
-            ValuePointer { size = Some rows; scalar; space }
-          | Struct { members; _ } ->
-              let member =
-                match List.nth_opt members index with
-                | Some m -> m
-                | None -> failwith ("type_of: " ^ to_string e)
-              in
-              Pointer { base = member.ty; space }
-          | BindingArray { base; _ } -> Pointer { base; space }
-          | _ ->
-            failwith ("type_of: " ^ to_string e)
-        )
-
-      (* Handle indexing a binding array *)
-      | BindingArray { base; _ } -> base
-
-      (* Handle unexpected types *)
-      | _ ->
-        failwith ("type_of: " ^ to_string e)
-      )
     | Access {base; _} as e ->
       (match (base |> type_of).inner with
       (* Arrays and matrices can only be indexed dynamically behind a pointer,
