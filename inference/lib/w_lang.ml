@@ -976,230 +976,230 @@ module Type = struct
         offset: int;
       }
 
-    let i_vec3_u32 : inner = Vector {size=VectorSize.Tri; scalar=Scalar.u32}
+  let i_vec3_u32 : inner = Vector {size=VectorSize.Tri; scalar=Scalar.u32}
 
-    let make (inner:inner) : t = {name=None; inner}
+  let make (inner:inner) : t = {name=None; inner}
 
-    let update_scalar (f:Scalar.t -> Scalar.t) (ty:t) : t =
-      match ty.inner with
-      | Scalar s ->
-        make (Scalar (f s))
-      | Vector {size; scalar} ->
-        make (Vector {size; scalar=f scalar})
-      | Matrix {columns; rows; scalar} ->
-        make (Matrix {columns; rows; scalar=f scalar})
-      | Atomic s ->
-        make (Atomic (f s))
-      | ValuePointer {size; scalar; space} ->
-        make (ValuePointer {size; scalar=f scalar; space})
-      | Pointer _
-      | Array _
-      | Struct _
-      | AccelerationStructure
-      | BindingArray _
-      | Image _
-      | Sampler _ ->
-        ty
-
-    let to_scalar (ty:t) : Scalar.t option =
-      match ty.inner with
-      | Scalar s -> Some s
-      | _ -> None
-
-    let is_array (ty:t) : bool =
-      match ty.inner with
-      | Array _ -> true
-      | _ -> false
-
-    let is_vector (ty:t) : bool =
-      match ty.inner with
-      | Vector _ -> true
-      | _ -> false
-
-    let is_int (ty:t) : bool =
+  let update_scalar (f:Scalar.t -> Scalar.t) (ty:t) : t =
+    match ty.inner with
+    | Scalar s ->
+      make (Scalar (f s))
+    | Vector {size; scalar} ->
+      make (Vector {size; scalar=f scalar})
+    | Matrix {columns; rows; scalar} ->
+      make (Matrix {columns; rows; scalar=f scalar})
+    | Atomic s ->
+      make (Atomic (f s))
+    | ValuePointer {size; scalar; space} ->
+      make (ValuePointer {size; scalar=f scalar; space})
+    | Pointer _
+    | Array _
+    | Struct _
+    | AccelerationStructure
+    | BindingArray _
+    | Image _
+    | Sampler _ ->
       ty
-      |> to_scalar
-      |> Option.map Scalar.is_int
-      |> Option.value ~default:false
 
-    let is_bool (ty:t) : bool =
-      ty
-      |> to_scalar
-      |> Option.map Scalar.is_bool
-      |> Option.value ~default:false
+  let to_scalar (ty:t) : Scalar.t option =
+    match ty.inner with
+    | Scalar s -> Some s
+    | _ -> None
 
-    let is_vec3_u32 (ty:t) : bool =
-      ty.inner = i_vec3_u32
+  let is_array (ty:t) : bool =
+    match ty.inner with
+    | Array _ -> true
+    | _ -> false
 
-    let vector_field : string list = ["x"; "y"; "z"; "w"]
+  let is_vector (ty:t) : bool =
+    match ty.inner with
+    | Vector _ -> true
+    | _ -> false
 
-    let lookup_field (index:int) (ty:t) : string option =
-      match ty.inner with
-      | Vector _ ->
-          List.nth_opt vector_field index
-      | Struct {members; _} ->
-        index
-        |> List.nth_opt members
-        |> Option.map (fun (m:struct_member) -> m.name)
-      | _ -> None
+  let is_int (ty:t) : bool =
+    ty
+    |> to_scalar
+    |> Option.map Scalar.is_int
+    |> Option.value ~default:false
 
-    let scalar (s:Scalar.t) : t =
-      make (Scalar s)
+  let is_bool (ty:t) : bool =
+    ty
+    |> to_scalar
+    |> Option.map Scalar.is_bool
+    |> Option.value ~default:false
 
-    let i32 : t =
-      scalar Scalar.i32
+  let is_vec3_u32 (ty:t) : bool =
+    ty.inner = i_vec3_u32
 
-    let u32 : t =
-      scalar Scalar.u32
+  let vector_field : string list = ["x"; "y"; "z"; "w"]
 
-    let u64 : t =
-      scalar Scalar.u64
+  let lookup_field (index:int) (ty:t) : string option =
+    match ty.inner with
+    | Vector _ ->
+        List.nth_opt vector_field index
+    | Struct {members; _} ->
+      index
+      |> List.nth_opt members
+      |> Option.map (fun (m:struct_member) -> m.name)
+    | _ -> None
 
-    let f32 : t =
-      scalar Scalar.f32
+  let scalar (s:Scalar.t) : t =
+    make (Scalar s)
 
-    let f64 : t =
-      scalar Scalar.f64
+  let i32 : t =
+    scalar Scalar.i32
 
-    let vec (size:int) (scalar:Scalar.t) : t =
-      let size = VectorSize.from_int size |> Option.get in
-      make (Vector {size; scalar;})
+  let u32 : t =
+    scalar Scalar.u32
 
-    let vec4_u32 : t =
-      vec 4 Scalar.u32
+  let u64 : t =
+    scalar Scalar.u64
 
-    let bool : t =
-      scalar Scalar.bool
+  let f32 : t =
+    scalar Scalar.f32
 
-    let array ?(size=ArraySize.Dynamic) (base:t) : t =
-      make (Array {base; size})
+  let f64 : t =
+    scalar Scalar.f64
 
-    let modf_result (ty:t) : t =
-      make (Struct {
-        members = [
-          {name="fract"; ty; binding=None; offset=0};
-          {name="whole"; ty; binding=None; offset=0};
-        ];
-        span = 0;
-      })
+  let vec (size:int) (scalar:Scalar.t) : t =
+    let size = VectorSize.from_int size |> Option.get in
+    make (Vector {size; scalar;})
 
-    (** For container types, return the type of the contained elements.
-       Does not support structs. *)
-    let deref (ty:t) : t option =
-      match ty.inner with
-      | ValuePointer {scalar=s; _}
-      | Vector {scalar=s; _} -> Some (scalar s)
-      | Matrix {columns; scalar; _} ->
-        Some (make (Vector {size=columns; scalar}))
-      | BindingArray {base; _}
-      | Array {base; _} ->
-        Some base
-      | _ -> None
+  let vec4_u32 : t =
+    vec 4 Scalar.u32
 
-    (** Get the i-th type; if it's a struct look up the field type,
-       otherwise deref. *)
-    let nth (index:int) (ty:t) : t option =
-      match ty.inner with
-      | Struct {members; _} ->
-        Some (List.nth members index).ty
-      | _ -> deref ty
+  let bool : t =
+    scalar Scalar.bool
 
-    (* Deref n-dimensions, rather than just one dimension, whic his what
-       deref does. *)
-    let deref_list (index:int option list) (ty:t) : t option =
-      let ( let* ) = Option.bind in
-      (* we need to deref as many times as indices *)
-      let rec iter (l:int option list) (ty:t) : t option =
-        match l with
-        | [] -> Some ty
-        | o :: l ->
-          let* ty =
-            match o with
-            | Some n -> nth n ty
-            | None -> deref ty
-          in
-          iter l ty
+  let array ?(size=ArraySize.Dynamic) (base:t) : t =
+    make (Array {base; size})
+
+  let modf_result (ty:t) : t =
+    make (Struct {
+      members = [
+        {name="fract"; ty; binding=None; offset=0};
+        {name="whole"; ty; binding=None; offset=0};
+      ];
+      span = 0;
+    })
+
+  (** For container types, return the type of the contained elements.
+      Does not support structs. *)
+  let deref (ty:t) : t option =
+    match ty.inner with
+    | ValuePointer {scalar=s; _}
+    | Vector {scalar=s; _} -> Some (scalar s)
+    | Matrix {columns; scalar; _} ->
+      Some (make (Vector {size=columns; scalar}))
+    | BindingArray {base; _}
+    | Array {base; _} ->
+      Some base
+    | _ -> None
+
+  (** Get the i-th type; if it's a struct look up the field type,
+      otherwise deref. *)
+  let nth (index:int) (ty:t) : t option =
+    match ty.inner with
+    | Struct {members; _} ->
+      Some (List.nth members index).ty
+    | _ -> deref ty
+
+  (* Deref n-dimensions, rather than just one dimension, whic his what
+      deref does. *)
+  let deref_list (index:int option list) (ty:t) : t option =
+    let ( let* ) = Option.bind in
+    (* we need to deref as many times as indices *)
+    let rec iter (l:int option list) (ty:t) : t option =
+      match l with
+      | [] -> Some ty
+      | o :: l ->
+        let* ty =
+          match o with
+          | Some n -> nth n ty
+          | None -> deref ty
+        in
+        iter l ty
+    in
+    iter index ty
+
+  let rec inner_to_string (name:string option) : inner -> string =
+    function
+    | Scalar s ->
+      Scalar.to_string s
+    | Array a ->
+      let size =
+        match a.size with
+        | Constant i -> ", " ^ string_of_int i
+        | Dynamic -> ""
       in
-      iter index ty
-
-    let rec inner_to_string (name:string option) : inner -> string =
-      function
-      | Scalar s ->
-        Scalar.to_string s
-      | Array a ->
-        let size =
-          match a.size with
-          | Constant i -> ", " ^ string_of_int i
-          | Dynamic -> ""
-        in
-        "array<" ^ to_string a.base ^ size ^ ">"
-      | Vector v ->
-        "vec" ^ VectorSize.to_string v.size ^ "<" ^ Scalar.to_string v.scalar ^ ">"
-      | Image {dim; arrayed; image_class} ->
-        let dim = ImageDimension.to_string dim in
-        let arrayed = if arrayed then "_array" else "" in
-        let (klass, format, storage) =
-          match image_class with
-          | Sampled {kind; _;} ->
-            let scalar =
-              {kind; width=4}
-              |> Scalar.to_string
-            in
-            ("", scalar, "")
-          | Depth _ ->
-            ("depth_", "", "")
-          | Storage {format; access;} ->
-            ("storage_", StorageFormat.to_string format, StorageAccess.to_string access)
-        in
-        let multi = if ImageClass.multisampled image_class then "multisampled_" else "" in
-        let addendum =
-          if format <> "" then
-            "<" ^ format ^ storage ^ ">"
-          else
-            ""
-        in
-        "texture_" ^ klass ^ multi ^ dim ^ arrayed ^ addendum
-      | Struct {members=m; _} ->
-        let name =
-          match name with
-          | Some name -> name ^ " "
-          | None -> ""
-        in
-        "struct " ^ name ^ "{" ^ (List.map struct_to_string m |> Common.join ", ") ^ "};"
-      | Matrix {columns; rows; scalar} ->
-        let columns = VectorSize.to_string columns in
-        let rows = VectorSize.to_string rows in
-        "mat" ^ rows ^ "x" ^ columns ^ "<" ^ Scalar.to_string scalar ^ ">"
-      | Atomic s ->
-        Printf.sprintf "atomic<%s>" (Scalar.to_string s)
-      | Pointer {base=b; space=s} ->
-        Printf.sprintf "ptr<%s,%s>" (to_string b) (AddressSpace.to_string s)
-      | Sampler {comparison} ->
-        if comparison then "sampler_comparison" else "sampler"
-      | BindingArray {base; size} ->
-        let base = to_string base in
-        (match size with
-        | Dynamic -> Printf.sprintf "binding_array<%s>" base
-        | Constant k -> Printf.sprintf "binding_array<%s,%d>" base k
+      "array<" ^ to_string a.base ^ size ^ ">"
+    | Vector v ->
+      "vec" ^ VectorSize.to_string v.size ^ "<" ^ Scalar.to_string v.scalar ^ ">"
+    | Image {dim; arrayed; image_class} ->
+      let dim = ImageDimension.to_string dim in
+      let arrayed = if arrayed then "_array" else "" in
+      let (klass, format, storage) =
+        match image_class with
+        | Sampled {kind; _;} ->
+          let scalar =
+            {kind; width=4}
+            |> Scalar.to_string
+          in
+          ("", scalar, "")
+        | Depth _ ->
+          ("depth_", "", "")
+        | Storage {format; access;} ->
+          ("storage_", StorageFormat.to_string format, StorageAccess.to_string access)
+      in
+      let multi = if ImageClass.multisampled image_class then "multisampled_" else "" in
+      let addendum =
+        if format <> "" then
+          "<" ^ format ^ storage ^ ">"
+        else
+          ""
+      in
+      "texture_" ^ klass ^ multi ^ dim ^ arrayed ^ addendum
+    | Struct {members=m; _} ->
+      let name =
+        match name with
+        | Some name -> name ^ " "
+        | None -> ""
+      in
+      "struct " ^ name ^ "{" ^ (List.map struct_to_string m |> Common.join ", ") ^ "};"
+    | Matrix {columns; rows; scalar} ->
+      let columns = VectorSize.to_string columns in
+      let rows = VectorSize.to_string rows in
+      "mat" ^ rows ^ "x" ^ columns ^ "<" ^ Scalar.to_string scalar ^ ">"
+    | Atomic s ->
+      Printf.sprintf "atomic<%s>" (Scalar.to_string s)
+    | Pointer {base=b; space=s} ->
+      Printf.sprintf "ptr<%s,%s>" (to_string b) (AddressSpace.to_string s)
+    | Sampler {comparison} ->
+      if comparison then "sampler_comparison" else "sampler"
+    | BindingArray {base; size} ->
+      let base = to_string base in
+      (match size with
+      | Dynamic -> Printf.sprintf "binding_array<%s>" base
+      | Constant k -> Printf.sprintf "binding_array<%s,%d>" base k
+      )
+    | ValuePointer {size; scalar; space} ->
+      let args =
+        (size
+          |> Option.map (fun s ->
+              s
+              |> VectorSize.to_int
+              |> string_of_int
+            )
+          |> Option.to_list
         )
-      | ValuePointer {size; scalar; space} ->
-        let args =
-          (size
-            |> Option.map (fun s ->
-                s
-                |> VectorSize.to_int
-                |> string_of_int
-              )
-            |> Option.to_list
-          )
-          @ [
-            Scalar.to_string scalar;
-            AddressSpace.to_string space
-          ]
-          |> Common.join ", "
-        in
-        Printf.sprintf "ptr<%s>" args
-      | AccelerationStructure -> "acceleration_structure"
+        @ [
+          Scalar.to_string scalar;
+          AddressSpace.to_string space
+        ]
+        |> Common.join ", "
+      in
+      Printf.sprintf "ptr<%s>" args
+    | AccelerationStructure -> "acceleration_structure"
 
   and to_string (e:t) : string =
     match e.name with
@@ -1214,36 +1214,36 @@ module Type = struct
     in
     binding ^ s.name ^ " : " ^ to_string s.ty
 
-    let frexp_result (ty:t) : t =
-      let fract, exp =
-        match ty.inner with
-        | Scalar {kind=Float; width=(4 | 2) as w} ->
-          scalar {kind=Float; width=w}, i32
-        | Vector {scalar={kind=Float; width=(4 | 2) as w}; size} ->
-          (
-            make (Vector {scalar={kind=Float; width=w}; size}),
-            make (Vector {scalar=Scalar.i32; size})
-          )
-        | Scalar {kind=AbstractFloat; width} ->
-          (
-            scalar {kind=AbstractFloat; width},
-            scalar {kind=AbstractInt; width}
-          )
-        | Vector {scalar={kind=AbstractFloat; width;}; size} ->
-          (
-            make (Vector {scalar={kind=AbstractFloat; width}; size}),
-            make (Vector {scalar={kind=AbstractInt; width}; size})
-          )
-        | _ ->
-          failwith ("frexp_result: " ^ to_string ty)
-      in
-      make (Struct {
-        members = [
-          {name="fract"; ty=fract; binding=None; offset=0};
-          {name="exp"; ty=exp; binding=None; offset=0};
-        ];
-        span = 0;
-      })
+  let frexp_result (ty:t) : t =
+    let fract, exp =
+      match ty.inner with
+      | Scalar {kind=Float; width=(4 | 2) as w} ->
+        scalar {kind=Float; width=w}, i32
+      | Vector {scalar={kind=Float; width=(4 | 2) as w}; size} ->
+        (
+          make (Vector {scalar={kind=Float; width=w}; size}),
+          make (Vector {scalar=Scalar.i32; size})
+        )
+      | Scalar {kind=AbstractFloat; width} ->
+        (
+          scalar {kind=AbstractFloat; width},
+          scalar {kind=AbstractInt; width}
+        )
+      | Vector {scalar={kind=AbstractFloat; width;}; size} ->
+        (
+          make (Vector {scalar={kind=AbstractFloat; width}; size}),
+          make (Vector {scalar={kind=AbstractInt; width}; size})
+        )
+      | _ ->
+        failwith ("frexp_result: " ^ to_string ty)
+    in
+    make (Struct {
+      members = [
+        {name="fract"; ty=fract; binding=None; offset=0};
+        {name="exp"; ty=exp; binding=None; offset=0};
+      ];
+      span = 0;
+    })
 
 
   let access_index (index:int) (base:t) : t =
