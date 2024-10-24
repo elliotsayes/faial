@@ -1346,6 +1346,53 @@ module Type = struct
     | _ ->
       fail ()
 
+  let cast (kind:ScalarKind.t) (width:int option) (ty:t) : t =
+    match ty.inner with
+    | Scalar _ | Vector _ | Matrix _ ->
+      (*
+        Update the kind of the scalar.
+        Additionally, if convert is set, then we update the scalar width.
+      *)
+      let update : Scalar.t -> Scalar.t =
+        match width with
+        | Some width -> fun _ -> { width; kind }
+        | None -> fun s -> { s with kind }
+      in
+      update_scalar update ty
+    | _ ->
+      failwith (
+        Printf.sprintf
+        "Type.cast(kind=%s, width=%s)"
+        (ScalarKind.to_string kind)
+        (width
+          |> Option.map string_of_int
+          |> Option.value ~default:"null"
+        )
+      )
+
+  let swizzle (size:VectorSize.t) (ty:t) : t =
+    match ty.inner with
+    | Vector {scalar; _} ->
+      make (Vector {size; scalar})
+    | _ ->
+      failwith (
+        Printf.sprintf
+        "swizzle(size=%s, ty=%s)"
+        (VectorSize.to_string size)
+        (to_string ty)
+      )
+
+  let splat (size:VectorSize.t) : t -> t =
+    function
+    | {inner=Scalar scalar; _} ->
+      make (Vector {size; scalar})
+    | ty ->
+      failwith (
+        Printf.sprintf
+        "splat(size=%s, value=%s)"
+        (VectorSize.to_string size)
+        (to_string ty)
+      )
 
   let rec parse (j:json) : t j_result =
     let open Rjson in
@@ -2898,23 +2945,8 @@ module Expression = struct
       BinaryOperator.type_of op (type_of left) (type_of right)
     | Select {accept=e; _} ->
       type_of e
-    | As {kind; expr; convert} as e ->
-      let ty = type_of expr in
-      (match ty.inner with
-      | Scalar _ | Vector _ | Matrix _ ->
-        (*
-          Update the kind of the scalar.
-          Additionally, if convert is set, then we update the scalar width.
-        *)
-        let update : Scalar.t -> Scalar.t =
-          match convert with
-          | Some width -> fun _ -> { width; kind }
-          | None -> fun s -> { s with kind }
-        in
-        Type.update_scalar update ty
-      | _ ->
-        failwith ("type_of: " ^ to_string e)
-      )
+    | As {kind; expr; convert} ->
+      Type.cast kind convert (type_of expr)
     | ArrayLength _ ->
       Type.u32
     | Relational _ ->
@@ -2954,17 +2986,10 @@ module Expression = struct
           Type.vec 4 (Scalar.make_32 k)
         )
       | _ -> failwith "must be an image")
-    | Swizzle {size; vector; _} as e ->
-      (match (type_of vector).inner with
-      | Vector {scalar; _} ->
-        Type.make (Vector {size; scalar})
-      | _ -> failwith ("type_of: " ^ to_string e)
-      )
-    | Splat {size; value} as e ->
-      (match type_of value with
-      | {inner=Scalar scalar; _} -> Type.make (Vector {size; scalar})
-      | _ -> failwith ("type_of: " ^ to_string e)
-      )
+    | Swizzle {size; vector; _} ->
+      Type.swizzle size (type_of vector)
+    | Splat {size; value} ->
+      Type.splat size (type_of value)
     | Math {fun_; args} ->
       MathFunction.type_of fun_ (List.map type_of args)
 
