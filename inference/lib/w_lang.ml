@@ -1249,7 +1249,7 @@ module Type = struct
   let access_index (index:int) (base:t) : t =
     let fail () =
       failwith (Printf.sprintf
-        "access_index(index=%d, base=%s)"
+        "Type.access_index(index=%d, base=%s)"
         index
         (to_string base)
       )
@@ -1303,6 +1303,44 @@ module Type = struct
 
     (* Handle indexing a binding array *)
     | BindingArray { base; _ } -> base
+
+    (* Handle unexpected types *)
+    | _ ->
+      fail ()
+
+  let access (base:t) : t =
+    let fail () =
+      failwith (Printf.sprintf
+        "Type.access(%s)"
+        (to_string base)
+      )
+    in
+    match base.inner with
+    | Array { base; _ }
+    | BindingArray { base; _ } ->
+      base
+
+    | Matrix { rows; scalar; _ } ->
+      make (Vector { size = rows; scalar })
+
+    | Vector { size = _; scalar } ->
+      make (Scalar scalar)
+
+    | ValuePointer { size = Some _; scalar; space } ->
+      make (ValuePointer { size = None; scalar; space })
+
+    (* Handle pointers that can point to different types *)
+    | Pointer { base; space } ->
+      make (
+        match base.inner with
+        | Array { base; _ } -> Pointer { base; space }
+        | Vector { size = _; scalar } -> ValuePointer { size = None; scalar; space }
+        | Matrix { columns = _; rows; scalar } ->
+            ValuePointer { size = Some rows; scalar; space }
+        | BindingArray { base; _ } -> Pointer { base; space }
+        | _ ->
+          fail ()
+      )
 
     (* Handle unexpected types *)
     | _ ->
@@ -2848,36 +2886,8 @@ module Expression = struct
     | AccessIndex {base; index; _} ->
       Type.access_index index (type_of base)
 
-    | Access {base; _} as e ->
-      (match (base |> type_of).inner with
-      (* Arrays and matrices can only be indexed dynamically behind a pointer,
-        but that's a validation error, not a type error, so go ahead and provide a type here. *)
-      | Array { base; _ } -> base
-      | Matrix { rows; scalar; _ } -> Type.make (Vector { size = rows; scalar })
-      | Vector { size = _; scalar } -> Type.make (Scalar scalar)
-      | ValuePointer { size = Some _; scalar; space } ->
-          Type.make (ValuePointer { size = None; scalar; space })
-
-      (* Handle pointers that can point to different types *)
-      | Pointer { base; space } ->
-          Type.make (
-            match base.inner with
-            | Array { base; _ } -> Pointer { base; space }
-            | Vector { size = _; scalar } -> ValuePointer { size = None; scalar; space }
-            | Matrix { columns = _; rows; scalar } ->
-                ValuePointer { size = Some rows; scalar; space }
-            | BindingArray { base; _ } -> Pointer { base; space }
-            | _ ->
-              failwith ("type_of: " ^ to_string e)
-          )
-
-      (* Handle binding arrays *)
-      | BindingArray { base; _ } -> base
-
-      (* Handle unexpected types *)
-      | _ ->
-        failwith ("type_of: " ^ to_string e)
-      )
+    | Access {base; _} ->
+      Type.access (type_of base)
 
     | Literal l -> Literal.type_of l
     | ZeroValue ty -> ty
@@ -2915,7 +2925,7 @@ module Expression = struct
     | ImageQuery {image; query} as e -> (
         match query with
 
-        (* Handle ImageQuery::Size with an image type *)
+        (* Handle image_query.Size with an image type *)
         | Size _ -> (
             match (type_of image).inner with
             | Image { dim; _ } -> (
