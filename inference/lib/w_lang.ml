@@ -1394,6 +1394,43 @@ module Type = struct
         (to_string ty)
       )
 
+  (**
+    Return the type of the image operation associated with an image type.
+    *)
+  let image_class (ty:t) : t =
+    match ty.inner with
+    | Image {image_class; _} ->
+      (match image_class with
+      | Depth _ -> f32
+      | Sampled {kind; _} -> vec 4 (Scalar.make_32 kind)
+      | Storage {format; _ } ->
+        let k = StorageFormat.to_kind format in
+        vec 4 (Scalar.make_32 k)
+      )
+    | _ ->
+      failwith (
+        Printf.sprintf
+        "Type.image_class(%s)"
+        (to_string ty)
+      )
+
+  (** In the context of image queries of Size, return the type of
+      the operation. *)
+  let image_dim (ty:t) : t =
+    match ty.inner with
+    | Image { dim; _ } -> (
+        match dim with
+        | D1 -> u32
+        | D2 | Cube -> vec 2 Scalar.u32
+        | D3 -> vec 3 Scalar.u32
+      )
+    | _ ->
+      failwith (
+        Printf.sprintf
+        "Type.image_dim(%s)"
+        (to_string ty)
+      )
+
   let rec parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -2936,60 +2973,56 @@ module Expression = struct
     | Access {base; _} ->
       Type.access (type_of base)
 
-    | Literal l -> Literal.type_of l
-    | ZeroValue ty -> ty
-    | Compose {ty; _} -> ty
+    | Literal l ->
+      Literal.type_of l
+
+    | ZeroValue ty
+    | Compose {ty; _} ->
+      ty
+
     | Ident i -> i.ty
-    | Load e -> type_of e
+
+    | Load e ->
+      type_of e
+
     | Binary {op; left; right} ->
       BinaryOperator.type_of op (type_of left) (type_of right)
+
     | Select {accept=e; _} ->
       type_of e
+
     | As {kind; expr; convert} ->
       Type.cast kind convert (type_of expr)
+
     | ArrayLength _ ->
       Type.u32
+
     | Relational _ ->
       Type.bool
+
     | Unary {expr; _}
-    | Derivative {expr; _} -> type_of expr
+    | Derivative {expr; _} ->
+      type_of expr
 
-    | ImageQuery {image; query} as e -> (
-        match query with
+    | ImageQuery {image; query} ->
+      (match query with
+      (* Handle image_query.Size with an image type *)
+      | Size _ ->
+        Type.image_dim (type_of image)
 
-        (* Handle image_query.Size with an image type *)
-        | Size _ -> (
-            match (type_of image).inner with
-            | Image { dim; _ } -> (
-                match dim with
-                | D1 -> Type.u32
-                | D2 | Cube -> Type.(vec 2 Scalar.u32)
-                | D3 -> Type.(vec 3 Scalar.u32)
-              )
-            | _ -> failwith ("type_of: " ^ to_string e)
-          )
-
-        (* Handle other image queries that return a scalar *)
-        | NumLevels | NumLayers | NumSamples -> Type.u32
-      )
+      (* Handle other image queries that return a scalar *)
+      | NumLevels | NumLayers | NumSamples -> Type.u32)
 
     | ImageSample {image; _}
     | ImageLoad {image; _} ->
-      let ty = type_of image in
-      (match ty.inner with
-      | Image {image_class; _} ->
-        (match image_class with
-        | Depth _ -> Type.f32
-        | Sampled {kind; _} -> Type.vec 4 (Scalar.make_32 kind)
-        | Storage {format; _ } ->
-          let k = StorageFormat.to_kind format in
-          Type.vec 4 (Scalar.make_32 k)
-        )
-      | _ -> failwith "must be an image")
+      Type.image_class (type_of image)
+
     | Swizzle {size; vector; _} ->
       Type.swizzle size (type_of vector)
+
     | Splat {size; value} ->
       Type.splat size (type_of value)
+
     | Math {fun_; args} ->
       MathFunction.type_of fun_ (List.map type_of args)
 
