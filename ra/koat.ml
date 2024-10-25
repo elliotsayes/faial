@@ -11,7 +11,7 @@ module Rule = struct
     {id = x.src; args =[] }
 
   let to_string (env:Environ.t) (x:t) =
-    let arr l = "(" ^ Common.join "," l ^ ")" in
+    let arr l = "(" ^ String.concat "," l ^ ")" in
     let b_to_s s =
       s
       |> Environ.b_to_string env
@@ -21,7 +21,7 @@ module Rule = struct
     let cost = string_of_int x.cost in
     let src : string = Environ.c_to_string env (src x) in
     let cnd = if List.length cnd = 0 then "" else
-      " :|: " ^ Common.join " && " cnd
+      " :|: " ^ String.concat " && " cnd
     in
     let dst = List.map (Environ.c_to_string env) x.dst in
     if List.length dst = 0 then
@@ -124,7 +124,7 @@ let to_string (p:prog) : string =
   in
   "(GOAL COMPLEXITY)\n" ^
   "(STARTTERM (FUNCTIONSYMBOLS inst_0))\n" ^
-  "(VAR " ^ Common.join " " (Array.to_list p.env.data) ^ ")\n" ^
+  "(VAR " ^ String.concat " " (Array.to_list p.env.data) ^ ")\n" ^
   "(RULES\n" ^
   rules ^
   "\n)"

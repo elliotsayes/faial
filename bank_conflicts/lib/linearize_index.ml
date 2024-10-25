@@ -23,7 +23,7 @@ module Make (L:Logger.Logger) = struct
       let open Exp in
       let n_s = Exp.n_to_string in
       let bs = string_of_int byte_count ^  "/" ^ string_of_int bytes_per_word in
-      let arr l = List.map n_s l |> Common.join ", " in
+      let arr l = List.map n_s l |> String.concat ", " in
       let l' = List.map (fun n ->
         n_mult (Num byte_count) (n_div n (Num bytes_per_word))
         ) l
@@ -37,7 +37,7 @@ module Make (L:Logger.Logger) = struct
     let open Exp in
     let n_s = Exp.n_to_string in
     let bs = string_of_int byte_count in
-    let arr l = List.map n_s l |> Common.join ", " in
+    let arr l = List.map n_s l |> String.concat ", " in
     let l' = List.map (fun n -> n_mult (Num byte_count) n) l in
     L.info ("Applied byte-modifier : " ^ bs ^ " " ^ arr l  ^ " -> " ^ arr l');
     l'
@@ -68,7 +68,7 @@ module Make (L:Logger.Logger) = struct
     mem
     |> Variable.Map.filter_map (fun _ v ->
       let open Memory in
-      let ty = Common.join " " v.data_type |> C_type.make in
+      let ty = String.concat " " v.data_type |> C_type.make in
       match C_type.sizeof ty with
       | Some n -> Some {byte_count=n; dim=v.size}
       | None -> Some {byte_count=bytes_per_word; dim=v.size}

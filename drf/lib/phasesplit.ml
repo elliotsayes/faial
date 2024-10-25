@@ -2,7 +2,6 @@ open Stage0
 open Protocols
 
 open Exp
-open Common
 open Streamutil
 
 (* ---------------- SECOND STAGE OF TRANSLATION ---------------------- *)
@@ -99,7 +98,7 @@ module Kernel = struct
     let open Indent in
     let ranges =
       List.map Range.to_string k.ranges
-      |> join "; "
+      |> String.concat "; "
     in
     [
         Line ("arrays: " ^ Variable.set_to_string k.arrays ^ ";");

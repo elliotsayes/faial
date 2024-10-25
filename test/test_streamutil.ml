@@ -7,7 +7,7 @@ let list_str (f:'a -> string) (l:'a list) : string =
   let x = List.map f l in
   match x with
   | [] -> "[]"
-  | _ -> "[ " ^ (Common.join "," x) ^ " ]"
+  | _ -> "[ " ^ (String.concat "," x) ^ " ]"
 
 let stream_eq (f:'a->string) (l:'a list) (s:'a stream) : unit =
     let g = to_list s in

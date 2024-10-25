@@ -57,7 +57,7 @@ let corvo
   let prepare_kernel = Prep.prepare_kernel g params in
   let kernels = read_kernels input_file |> List.map prepare_kernel in
   let generator = (if toml then Tgen.gen_toml else Cgen.gen_cuda) g gv in
-  List.map generator kernels |> Common.join "\n" |> write_string output_file;
+  List.map generator kernels |> String.concat "\n" |> write_string output_file;
   if g.gen_params then
     Cgen.gen_params gv |> write_string (output_file ^ ".params");
 

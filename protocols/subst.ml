@@ -108,7 +108,7 @@ module SubstAssoc =
     let to_string ht =
       Common.hashtbl_elements ht
       |> List.map (fun (k, v) -> k ^ "=" ^ n_to_string v)
-      |> Common.join ", "
+      |> String.concat ", "
       |> fun x -> "[" ^ x ^ "]"
   end
 module ReplaceAssoc = Make(SubstAssoc)

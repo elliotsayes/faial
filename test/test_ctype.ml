@@ -1,4 +1,3 @@
-open Stage0
 open Protocols
 
 open OUnit2
@@ -14,7 +13,7 @@ let s_option (f:'a -> string) (o:'a option) : string =
 	| None -> "None"
 
 let s_list (f:'a -> string) (l:'a list) : string =
-	let x = List.map f l |> Common.join ", " in
+	let x = List.map f l |> String.concat ", " in
 	"[" ^ x ^ "]"
 
 let s_list_string : string list -> string = s_list s_string

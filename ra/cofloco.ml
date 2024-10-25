@@ -18,7 +18,7 @@ module Rule = struct
     let cnd = List.map b_to_s x.cnd in
     let cost = string_of_int x.cost in
     let dst = List.map (Environ.c_to_string env) x.dst in
-    let arr l = "[" ^ Common.join "," l ^ "]" in
+    let arr l = "[" ^ String.concat "," l ^ "]" in
     "eq(" ^ src ^ ", " ^ cost ^ ", " ^ arr dst ^ ", " ^ arr cnd ^ ")."
 end
 

@@ -1,4 +1,3 @@
-open Stage0
 
 type t = {
   hierarchy: Mem_hierarchy.t;
@@ -35,12 +34,12 @@ let make_map (h:Mem_hierarchy.t) (vs:Variable.t list) : t Variable.Map.t =
 
 
 let to_string (a:t) : string =
-  let ty = a.data_type |> Common.join " " in
+  let ty = a.data_type |> String.concat " " in
   let ty = if ty = "" then "" else ty ^ "  "
   in
   let size =
     List.map string_of_int a.size
-    |> Common.join ", "
+    |> String.concat ", "
   in
   let h = a.hierarchy |> Mem_hierarchy.to_string in
   h ^ " " ^ ty ^ "[" ^ size ^ "]"
@@ -48,4 +47,4 @@ let to_string (a:t) : string =
 let map_to_string (vs:t Variable.Map.t) : string =
   Variable.Map.bindings vs
   |> List.map (fun (k,v) -> Variable.name k ^ ": " ^ to_string v)
-  |> Common.join ", "
+  |> String.concat ", "

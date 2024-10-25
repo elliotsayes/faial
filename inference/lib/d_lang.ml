@@ -13,7 +13,7 @@ type 'a j_result = 'a Rjson.j_result
 type array_t = Protocols.Memory.t
 
 let list_to_s (f:'a -> string) (l:'a list) : string =
-  List.map f l |> Common.join ", "
+  List.map f l |> String.concat ", "
 
 module Expr = struct
   type t =
@@ -230,7 +230,7 @@ module Decl = struct
       | None -> ""
     in
     let attr = if d.attrs = [] then "" else
-      let attrs = Common.join " " d.attrs |> String.trim in
+      let attrs = String.concat " " d.attrs |> String.trim in
       attrs ^ " "
     in
     let ty = J_type.to_string d.ty in
@@ -448,7 +448,7 @@ module Stmt = struct
         let c = List.length l |> string_of_int in
         "{ " ^ c ^ " stmts... }"
       | DeclStmt d ->
-        "decl {" ^ Common.join ", " (List.map Decl.to_string d) ^ "}"
+        "decl {" ^ String.concat ", " (List.map Decl.to_string d) ^ "}"
       | SExpr e -> Expr.to_string e
     in
     stmt_to_s

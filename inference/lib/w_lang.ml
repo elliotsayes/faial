@@ -1165,7 +1165,7 @@ module Type = struct
         | Some name -> name ^ " "
         | None -> ""
       in
-      "struct " ^ name ^ "{" ^ (List.map struct_to_string m |> Common.join ", ") ^ "};"
+      "struct " ^ name ^ "{" ^ (List.map struct_to_string m |> String.concat ", ") ^ "};"
     | Matrix {columns; rows; scalar} ->
       let columns = VectorSize.to_string columns in
       let rows = VectorSize.to_string rows in
@@ -1196,7 +1196,7 @@ module Type = struct
           Scalar.to_string scalar;
           AddressSpace.to_string space
         ]
-        |> Common.join ", "
+        |> String.concat ", "
       in
       Printf.sprintf "ptr<%s>" args
     | AccelerationStructure -> "acceleration_structure"
@@ -1270,12 +1270,12 @@ module Type = struct
 
     (* Handle indexing a struct *)
     | Struct { members; _ } ->
-        let member =
-          match List.nth_opt members index with
-          | Some m -> m
-          | None -> fail ()
-        in
-        member.ty
+      let member =
+        match List.nth_opt members index with
+        | Some m -> m
+        | None -> fail ()
+      in
+      member.ty
 
     (* Handle indexing a value pointer with size *)
     | ValuePointer { size = Some _; scalar; space } ->
@@ -2728,7 +2728,7 @@ module Expression = struct
       let components =
         components
         |> List.map to_string
-        |> Common.join ", "
+        |> String.concat ", "
       in
       Type.to_string ty ^ "(" ^ components ^ ")"
     | Access {base; index; location=_;} ->
@@ -2742,10 +2742,14 @@ module Expression = struct
         |> List.map (fun x -> VectorSize.nth_opt x size)
         |> List.map Option.get
       in
-      to_string vector ^ "." ^ (pattern |> Common.join "")
+      to_string vector ^ "." ^ (pattern |> String.concat "")
     | Ident i -> Ident.name i
     | Load e ->
-      "load(" ^ to_string e ^")"
+      Printf.sprintf
+        "load(%s : %s)"
+        (to_string e)
+        (Type.to_string (type_of e))
+
     | ImageSample {image; sampler; gather; coordinate; array_index; offset; level; depth_ref} ->
       let cmp = if Option.is_some depth_ref then "Compare" else "" in
       let lvl =
@@ -2772,7 +2776,7 @@ module Expression = struct
         )
         @ Option.to_list offset
         |> List.map to_string
-        |> Common.join ", "
+        |> String.concat ", "
       in
       Printf.sprintf "textureSample%s%s(%s)" cmp lvl args
     | ImageLoad {image; coordinate; array_index; sample; level;} ->
@@ -2789,7 +2793,7 @@ module Expression = struct
         @ Option.to_list array_index
         @ index
         |> List.map to_string
-        |> Common.join ", "
+        |> String.concat ", "
       in
       "textureLoad(" ^ args ^")"
     | ImageQuery {image; query} ->
@@ -2825,7 +2829,7 @@ module Expression = struct
         (RelationalFunction.to_string fun_)
         (to_string argument)
     | Math {fun_; args} ->
-      let args = args |> List.map to_string |> Common.join ", " in
+      let args = args |> List.map to_string |> String.concat ", " in
       MathFunction.to_string fun_ ^ "(" ^ args ^ ")"
     | As {expr; kind; convert} ->
       let ty =
@@ -3025,8 +3029,15 @@ module Expression = struct
         convert;
       }
     | ArrayLength e -> ArrayLength (f e)
-
-
+(*
+  let components (e:t) : t list =
+    let open Stage0 in
+    match (type_of e).inner with
+    | Vector {size; _} ->
+      (Interval.from_length ( with
+      | Bi -> AccessIndex {base; index; location=}
+      | Tri
+*)
   let rec parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -3738,7 +3749,7 @@ module Statement = struct
         @ Option.to_list array_index
         @ [value]
         |> List.map Expression.to_string
-        |> Common.join ", "
+        |> String.concat ", "
       in
       [Line (Printf.sprintf "textureStore(%s);" args)]
     | Atomic {pointer; fun_; value; result; location=_;} ->
@@ -3752,7 +3763,7 @@ module Statement = struct
       let args =
         [pointer] @ AtomicFunction.to_list fun_ @ [value]
         |> List.map Expression.to_string
-        |> Common.join ", "
+        |> String.concat ", "
       in
       let line =
         Printf.sprintf "%satomic%s(%s);"
@@ -3777,7 +3788,7 @@ module Statement = struct
       let arguments =
         arguments
         |> List.map Expression.to_string
-        |> Common.join ", "
+        |> String.concat ", "
       in
       [Line (result ^ function_ ^"(" ^ arguments ^ ");")]
     | SubgroupBallot {result; predicate;} ->
@@ -3799,7 +3810,7 @@ module Statement = struct
           ::
           (GatherMode.expression mode |> Option.to_list)
           |> List.map Expression.to_string
-          |> Common.join ", "
+          |> String.concat ", "
         in
         Printf.sprintf "let %s = subgroup%s(%s);"
           (Ident.to_string result)
@@ -3858,12 +3869,12 @@ module Function = struct
     let args =
       f.arguments
       |> List.map FunctionArgument.to_string
-      |> Common.join ", "
+      |> String.concat ", "
     in
     let locals : string =
       f.locals
       |> List.map LocalDeclaration.to_string
-      |> Common.join ", "
+      |> String.concat ", "
     in
     [
       Line "";
@@ -3936,12 +3947,12 @@ module EntryPoint = struct
     let args =
       d.function_.arguments
       |> List.map FunctionArgument.to_string
-      |> Common.join ", "
+      |> String.concat ", "
     in
     let locals : string =
       d.function_.locals
       |> List.map LocalDeclaration.to_string
-      |> Common.join ", "
+      |> String.concat ", "
     in
     [
       Line "";

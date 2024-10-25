@@ -10,7 +10,7 @@ let pointwise (f:'a -> 'a -> 'b) (l1:'a list) (l2:'a list) :
 
 
 let list_to_string (l:string list) : string =
-  "[" ^ Common.join ", " l ^ "]"
+  "[" ^ String.concat ", " l ^ "]"
 
 type 'a index = {index:int; value:'a}
 

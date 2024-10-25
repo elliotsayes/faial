@@ -1,5 +1,4 @@
 open OUnit2
-open Stage0
 open Protocols
 open Inference
 open Queries
@@ -24,7 +23,7 @@ let tests = "tests" >::: [
       let to_s (x:VarSet.t) =
         VarSet.elements x
         |> List.map Variable.name
-        |> Common.join ", "
+        |> String.concat ", "
       in
       assert_equal
         ~printer:(fun x -> "[" ^ to_s x ^ "]")

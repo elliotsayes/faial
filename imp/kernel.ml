@@ -89,7 +89,7 @@ module ParameterList = struct
   let to_string (l:t) : string =
     l
     |> List.map Parameter.to_string
-    |> Common.join ", "
+    |> String.concat ", "
 
   let to_arrays (x:t) : Memory.t Variable.Map.t =
     x

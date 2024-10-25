@@ -41,7 +41,7 @@ let vector_types : StringSet.t =
 
 (* Converts an array index to a string *)
 let idx_to_s (f : 'a -> string) (l : 'a list) : string =
-  "[" ^ (Common.join "][" (List.map f l)) ^ "]"
+  "[" ^ (String.concat "][" (List.map f l)) ^ "]"
 
 (* Gives the dummy variable string for any variable *)
 let var_to_dummy (v : Variable.t) : string = "__dummy" ^ Variable.name v
@@ -138,8 +138,8 @@ let decl_unknown_types (vm : Memory.t VarMap.t) : string list =
 let arr_type ?(strip_const=false) (arr : Memory.t) : string =
   if arr.data_type = [] then "int"
   else if strip_const then
-    List.filter (fun x -> x <> "const") arr.data_type |> Common.join " "
-  else Common.join " " arr.data_type
+    List.filter (fun x -> x <> "const") arr.data_type |> String.concat " "
+  else String.concat " " arr.data_type
 
 (* Create external function prototypes for writing to each array *)
 let arr_to_proto (vm : Memory.t VarMap.t) (g : Generator.t) : string list =
@@ -201,7 +201,7 @@ let header_to_s (g : Generator.t) (gv : Gv_parser.t) (k : Kernel.t)
     else ["extern __device__ int __dummy_int();"]
   in
   let funct_protos = base_protos @ arr_to_proto k.arrays g in
-  Indent.Line (comments @ type_decls @ funct_protos |> Common.join "\n")
+  Indent.Line (comments @ type_decls @ funct_protos |> String.concat "\n")
 
 (* Serialization of the kernel body *)
 let body_to_s
@@ -234,7 +234,7 @@ let kernel_to_s
     |> global_arr_to_l
   in
   let global_var = global_var_to_l (Params.to_set k.global_variables) in
-  let params = base_params @ global_arr @ global_var |> Common.join ", " in
+  let params = base_params @ global_arr @ global_var |> String.concat ", " in
   [
     header_to_s g gv k;
     Line ("__global__ void " ^ k.name ^ "(" ^ params ^ ")");

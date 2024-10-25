@@ -313,19 +313,18 @@ module Proof = struct
     }
 
   let to_s (p:t) : Indent.t list =
-    let open Common in
     let open Indent in
     let preds =
       let open Predicates in
       List.map (fun x -> x.pred_name) p.preds
-      |> join ", "
+      |> String.concat ", "
     in
     [
         Line ("id: " ^ string_of_int p.id);
         Line ("array: " ^ p.array_name);
         Line ("kernel: " ^ p.kernel_name);
         Line ("predicates: " ^ preds ^ ";");
-        Line ("decls: " ^ (p.decls |> join ", ") ^ ";");
+        Line ("decls: " ^ (p.decls |> String.concat ", ") ^ ";");
         Line ("accesses: " ^ (List.map AccessSummary.to_string p.accesses |> String.concat ", "));
         Line ("goal:");
         Block (b_to_s p.goal);

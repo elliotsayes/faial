@@ -1,4 +1,3 @@
-open Stage0
 
 module Mode = struct
   type t =
@@ -57,7 +56,7 @@ let index_to_string (ns:Exp.nexp list) : string =
   let idx =
     ns
     |> List.map Exp.n_to_string
-    |> Common.join ", "
+    |> String.concat ", "
   in
     "[" ^ idx ^ "]"
 

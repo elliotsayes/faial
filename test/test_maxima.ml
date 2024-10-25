@@ -105,13 +105,14 @@ let unit_test
     print_endline("Assignments:");
     List.iter (fun (x,y) -> print_endline ("  " ^ x ^ " = " ^ string_of_int y)) assigns;
     print_endline("Generated maxima:\n" ^ generated);
-    print_endline("Expected output: " ^ expected_output)
+    print_endline("Expected output: '" ^ expected_output ^ "'")
   in
   match generated |> Maxima.run_exe with
   | Ok given_output ->
+    let given_output = String.trim given_output in
     if expected_output <> given_output then (
       debug ();
-      print_endline("Maxima output: " ^ given_output);
+      print_endline("Maxima output: '" ^ given_output ^ "'");
       exit 1
     ) else ()
   | Error e ->

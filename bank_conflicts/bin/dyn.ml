@@ -40,7 +40,7 @@ module Data = struct
     function
     | Int i -> string_of_int i
     | Vector l ->
-      let l = List.map string_of_int l |> Common.join ", " in
+      let l = List.map string_of_int l |> String.concat ", " in
       "[" ^ l ^ "]"
 end
 

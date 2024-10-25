@@ -116,7 +116,7 @@ let sizeof (x:t) : int option =
     x
     |> String.split_on_char ' '
     |> List.filter (fun x -> x <> "const" || x <> "unsigned")
-    |> Common.join " "
+    |> String.concat " "
   in
   if String.starts_with ~prefix:"long" x then Some 8
   else if x = "int" then Some 4

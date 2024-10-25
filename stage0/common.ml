@@ -51,13 +51,6 @@ let rec repeat (s:string) (n:int) : string =
   if n <= 0 then ""
   else s ^ repeat s (n - 1)
 
-let join (sep:string) (elems:string list) : string =
-  let on_elem accum x =
-    if String.equal accum ""
-    then x
-    else x ^ sep ^ accum
-  in
-  List.fold_left on_elem "" (List.rev elems)
 
 let rsplit (c:char) (s:string) :  (string * string) option =
   String.rindex_opt s c

@@ -127,7 +127,7 @@ let parse_maxima (x:string) : string option =
       Slice.from_start min_offset
       |> Slice.substring line
     )
-    |> Common.join "\n"
+    |> String.concat "\n"
   )
 
 let compile ?(compact=false) (code:string) : string =

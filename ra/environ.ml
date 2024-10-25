@@ -113,7 +113,7 @@ let c_to_string (env:t) (x:call) : string =
   let env =
     instantiate env x
     |> to_list
-    |> Common.join ", "
+    |> String.concat ", "
   in
   "inst_" ^ string_of_int x.id ^ "(" ^ env ^ ")"
 

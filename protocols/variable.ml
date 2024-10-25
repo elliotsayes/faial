@@ -99,7 +99,7 @@ let map_to_string
 let list_to_string (vs: t list) : string =
   vs
   |> List.map name
-  |> Common.join ", "
+  |> String.concat ", "
 
 let set_to_string (vs:Set.t) : string =
   Set.elements vs

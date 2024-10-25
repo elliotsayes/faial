@@ -9,7 +9,7 @@ type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
 
 let list_to_s (f:'a -> string) (l:'a list) : string =
-  List.map f l |> Common.join ", "
+  List.map f l |> String.concat ", "
 
 module Expr = struct
   type t =
@@ -329,7 +329,7 @@ end = struct
       | None -> ""
     in
     let attr = if d.attrs = [] then "" else
-      let attrs = Common.join " " d.attrs |> String.trim in
+      let attrs = String.concat " " d.attrs |> String.trim in
       attrs ^ " "
     in
     attr ^ J_type.to_string d.ty ^ " " ^ Variable.name d.var ^ i

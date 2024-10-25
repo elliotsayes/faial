@@ -199,11 +199,11 @@ module GlobalState = struct
   let from_witness (w:Witness.t) : t =
     let brackets =
       List.map (fun _ -> "[]") w.indices
-      |> Common.join ""
+      |> String.concat ""
     in
     {
       index = w.array_name ^ brackets;
-      state = Common.join " │ " w.indices;
+      state = String.concat " │ " w.indices;
       rows = Row.from_witness w;
     }
 

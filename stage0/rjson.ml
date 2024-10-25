@@ -245,7 +245,7 @@ let get_field (k:string) (kv: j_object) : Yojson.Basic.t j_result =
   | None ->
     let avail_keys = kv
       |> List.map (fun (k, _) -> "'" ^ k ^ "'")
-      |> Common.join ", "
+      |> String.concat ", "
       |> fun k -> "[" ^ k ^ "]"
     in
     root_cause

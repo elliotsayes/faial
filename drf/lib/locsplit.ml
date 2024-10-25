@@ -29,7 +29,7 @@ module Kernel = struct
     let open Indent in
     let ranges =
       List.map Range.to_string k.ranges
-      |> Common.join "; "
+      |> String.concat "; "
     in
     [
         Line ("array: " ^ k.array_name ^ ";");
