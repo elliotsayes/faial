@@ -15,6 +15,7 @@
    test_loop
    test_prob_exp
    test_maxima
+   test_py
  )
  (libraries stage0 ra protocols drf inference oUnit bank_conflicts analyze_cost)
 )

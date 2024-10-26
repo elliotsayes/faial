@@ -1971,6 +1971,15 @@ module Literal = struct
   let type_of (l:t) : Type.t =
     Type.scalar (scalar_of l)
 
+  let bool (b:bool) : t =
+    Bool b
+
+  let true_ : t =
+    Bool true
+
+  let false_ : t =
+    Bool false
+
   let int (i:int) : t =
     AbstractInt i
 
@@ -3029,15 +3038,48 @@ module Expression = struct
         convert;
       }
     | ArrayLength e -> ArrayLength (f e)
-(*
-  let components (e:t) : t list =
+
+  let access_index
+    ?(location=Location.empty)
+    (index:int)
+    (base:t)
+  :
+    t
+  =
+    AccessIndex {base; index; location}
+
+  (**
+    When the type of the expression is a vector or a matrix,
+    return the components
+    *)
+  let to_vector (e:t) : t list option =
     let open Stage0 in
     match (type_of e).inner with
     | Vector {size; _} ->
-      (Interval.from_length ( with
-      | Bi -> AccessIndex {base; index; location=}
-      | Tri
-*)
+      Some (
+        Py.range (VectorSize.to_int size)
+        |> List.map (fun i -> access_index i e)
+      )
+    | _ -> None
+
+  let true_ : t = Literal (Literal.true_)
+
+  let false_ : t = Literal (Literal.false_)
+
+  let and_ : t -> t -> t =
+    fun left right ->
+    Binary {op=LogicalAnd; left; right}
+
+  let or_ : t -> t -> t =
+    fun left right ->
+    Binary {op=LogicalOr; left; right}
+
+  let all : t list -> t =
+    List.fold_left and_ true_
+
+  let any : t list -> t =
+    List.fold_left or_ false_
+
   let rec parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -3205,6 +3247,72 @@ module Expression = struct
       let* y = with_field "y" parse o in
       Ok (Gradient { x; y })
     | _ -> root_cause "sample_level" j
+
+
+
+  let rec simplify : t -> t =
+    function
+    (* Eval if possible *)
+    | Access {base; index=Literal l; location} ->
+      let index = Literal.to_int l |> Option.get in
+      simplify (AccessIndex {base; index; location})
+
+    (* Eval if possible *)
+    | AccessIndex {base; index; location} ->
+      let base = simplify base in
+      let e : t = AccessIndex {base; index; location} in
+      (match base with
+      | Compose {components; _} ->
+        List.nth_opt components index
+        |> Option.value ~default:e
+      | _ -> e
+      )
+
+    (* Inline component-wise *)
+    | Relational {fun_=All; argument=a} ->
+      let a = simplify a in
+      (match to_vector a with
+      | Some a ->
+        all a
+      | None -> a
+      )
+
+    (* Inline component-wise *)
+    | Relational {fun_=Any; argument=a} ->
+      let a = simplify a in
+      (match to_vector a with
+      | Some a ->
+        any a
+      | None -> a
+      )
+
+    (* Inline component-wise *)
+    | Select {condition=c; accept=a; reject=r} as e ->
+      (match
+        to_vector c,
+        to_vector a,
+        to_vector r
+      with
+      | Some c, Some a, Some r ->
+        let components : t list =
+          Stage0.Common.zip3
+            (List.map simplify c)
+            (List.map simplify a)
+            (List.map simplify r)
+          |> List.map (fun (c, a, r) : t ->
+              Select {condition=c; accept=a; reject=r}
+            )
+        in
+        Compose {
+          ty=type_of e;
+          components;
+        }
+      | _, _, _ -> map simplify e
+      )
+
+    (* continue simplifying *)
+    | e -> map simplify e
+
 end
 
 module LocalDeclaration = struct

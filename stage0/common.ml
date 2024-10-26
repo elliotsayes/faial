@@ -144,6 +144,11 @@ let rec zip (l1:'a list) (l2:'b list) : ('a * 'b) list =
   | [], _ | _, [] -> []
   | x::l1, y::l2 -> (x,y) :: (zip l1 l2)
 
+let rec zip3 (l1:'a list) (l2:'b list) (l3:'c list) : ('a * 'b * 'c) list =
+  match l1, l2, l3 with
+  | [], _, _ | _, [], _ | _, _, [] -> []
+  | x::l1, y::l2, z::l3 -> (x,y,z) :: (zip3 l1 l2 l3)
+
 let range ?(from=0) (until:int) : int list =
   let rec iter (curr:int) (acc:int list) : int list =
     if curr < from then acc else iter (curr - 1) (curr :: acc)
