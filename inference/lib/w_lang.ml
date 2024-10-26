@@ -3039,26 +3039,41 @@ module Expression = struct
       }
     | ArrayLength e -> ArrayLength (f e)
 
-  let access_index
+  let rec access_index
     ?(location=Location.empty)
     (index:int)
     (base:t)
   :
     t
   =
-    AccessIndex {base; index; location}
+    let default = AccessIndex {base; index; location} in
+    match base with
+    | Compose {components; _} ->
+      List.nth_opt components index
+      |> Option.value ~default
+    | Swizzle {indices; vector; _} ->
+      (* when we find a swizzle, we must translate the index,
+         and access with the new index *)
+      (match List.nth_opt indices index with
+      | Some index -> access_index ~location index vector
+      | None -> default)
+
+    | _ ->
+      AccessIndex {base; index; location}
 
   (**
     When the type of the expression is a vector or a matrix,
     return the components
     *)
-  let to_vector (e:t) : t list option =
+  let to_vector (e:t) : (t list * Type.t) option =
     let open Stage0 in
-    match (type_of e).inner with
+    let ty = type_of e in
+    match ty.inner with
     | Vector {size; _} ->
       Some (
         Py.range (VectorSize.to_int size)
-        |> List.map (fun i -> access_index i e)
+        |> List.map (fun i -> access_index i e),
+        ty
       )
     | _ -> None
 
@@ -3074,11 +3089,17 @@ module Expression = struct
     fun left right ->
     Binary {op=LogicalOr; left; right}
 
-  let all : t list -> t =
-    List.fold_left and_ true_
+  let all (l:t list) : t =
+    match l with
+    | [] -> true_
+    | x :: l ->
+      List.fold_left and_ x l
 
-  let any : t list -> t =
-    List.fold_left or_ false_
+  let any (l:t list) : t =
+    match l with
+    | [] -> false_
+    | x :: l ->
+      List.fold_left or_ x l
 
   let rec parse (j:json) : t j_result =
     let open Rjson in
@@ -3272,7 +3293,7 @@ module Expression = struct
     | Relational {fun_=All; argument=a} ->
       let a = simplify a in
       (match to_vector a with
-      | Some a ->
+      | Some (a, _) ->
         all a
       | None -> a
       )
@@ -3281,10 +3302,26 @@ module Expression = struct
     | Relational {fun_=Any; argument=a} ->
       let a = simplify a in
       (match to_vector a with
-      | Some a ->
+      | Some (a, _) ->
         any a
       | None -> a
       )
+
+    (* Inline component-wise *)
+    | Binary {op; left=l; right=r} as e ->
+      (match to_vector l, to_vector r with
+      | Some (l, l_ty), Some (r, r_ty) ->
+        let ty = BinaryOperator.type_of op l_ty r_ty in
+        let components =
+          Stage0.Common.zip
+            (List.map simplify l)
+            (List.map simplify r)
+          |> List.map (fun (left, right) ->
+              Binary {op; left; right}
+            )
+        in
+        Compose {ty; components}
+      | _, _ -> map simplify e)
 
     (* Inline component-wise *)
     | Select {condition=c; accept=a; reject=r} as e ->
@@ -3293,7 +3330,7 @@ module Expression = struct
         to_vector a,
         to_vector r
       with
-      | Some c, Some a, Some r ->
+      | Some (c,_), Some (a, ty), Some (r, _) ->
         let components : t list =
           Stage0.Common.zip3
             (List.map simplify c)
@@ -3304,7 +3341,7 @@ module Expression = struct
             )
         in
         Compose {
-          ty=type_of e;
+          ty;
           components;
         }
       | _, _, _ -> map simplify e
@@ -3679,6 +3716,87 @@ module Statement = struct
     fall_through: bool;    (** Whether control should proceed to the next case. *)
   }
 
+
+  (** Update every expression that occurs in a statement *)
+  let map (f:Expression.t -> Expression.t) : t -> t =
+    let rec map : t -> t =
+      function
+      | Block l -> Block (List.map map l)
+      | If {condition=c; accept=a; reject=r} ->
+        If {
+          condition = f c;
+          accept = List.map map a;
+          reject = List.map map r
+        }
+      | Switch {selector=s; cases} ->
+        let cases =
+          cases
+          |> List.map (function
+              {value; body; fall_through} ->
+              {value; body=List.map map body; fall_through}
+            )
+        in
+        Switch {selector=f s; cases}
+      | Loop {body; continuing; break_if} ->
+        Loop {
+          body=List.map map body;
+          continuing=List.map map continuing;
+          break_if=Option.map f break_if;
+        }
+      | Return e -> Return (Option.map f e)
+      | Store {pointer; value} ->
+        Store {
+          pointer = f pointer;
+          value = f value;
+        }
+      | ImageStore {image; coordinate; array_index; value}->
+        ImageStore {
+          image = f image;
+          coordinate = f coordinate;
+          array_index = Option.map f array_index;
+          value = f value
+        }
+      | Atomic {pointer; fun_; value; result; location} ->
+        Atomic {
+          pointer = f pointer;
+          fun_;
+          value = f value;
+          result;
+          location;
+        }
+      | WorkGroupUniformLoad {pointer; result} ->
+        WorkGroupUniformLoad {
+          pointer=f pointer;
+          result;
+        }
+      | Call {function_; arguments; result} ->
+        Call {
+          function_;
+          arguments = List.map f arguments;
+          result;
+        }
+      | SubgroupBallot {result; predicate} ->
+        SubgroupBallot {
+          result;
+          predicate = Option.map f predicate;
+        }
+      | SubgroupGather {mode; argument; result;} ->
+        SubgroupGather {
+          mode;
+          argument = f argument;
+          result;
+        }
+      | SubgroupCollectiveOperation { op; collective_op; argument; result; } ->
+        SubgroupCollectiveOperation {
+          op;
+          collective_op;
+          argument = f argument;
+          result;
+        }
+      | s -> s
+    in
+    map
+
   let rec parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -3969,6 +4087,8 @@ module Function = struct
     let* body = with_field "body" (cast_map Statement.parse) o in
     Ok {name; result; arguments; locals; body}
 
+  let map (f: Statement.t -> Statement.t) (b:t) : t =
+    { b with body = List.map f b.body }
 
   let to_string (e:t) : string =
     e.name
@@ -4047,6 +4167,9 @@ module EntryPoint = struct
     in
     let* function_ = with_field "function" Function.parse o in
     Ok {name; workgroup_size; stage; function_}
+
+  let map (f: Statement.t -> Statement.t) (e:t) : t =
+    { e with function_ = Function.map f e.function_ }
 
   let to_string (e:t) : string =
     e.name
@@ -4142,6 +4265,9 @@ module Declaration = struct
     init: Expression.t option;
   }
 
+  let map (f:Expression.t -> Expression.t) (d:t) : t =
+    { d with init = Option.map f d.init }
+
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -4211,6 +4337,15 @@ module ProgramEntry = struct
     | _ ->
       root_cause ("ProgramEntry.parse: unknown kind: " ^ kind) j
 
+  let map_expression (f: Expression.t -> Expression.t) : t -> t =
+    function
+    | EntryPoint e ->
+      EntryPoint (EntryPoint.map (Statement.map f) e)
+    | Declaration d ->
+      Declaration (Declaration.map f d)
+    | Function e ->
+      Function (Function.map (Statement.map f) e)
+
   let to_string : t -> string =
     function
     | EntryPoint e -> EntryPoint.to_string e
@@ -4226,6 +4361,9 @@ end
 
 module Program = struct
   type t = ProgramEntry.t list
+
+  let map_expression (f: Expression.t -> Expression.t) : t -> t =
+    List.map (ProgramEntry.map_expression f)
 
   let parse (j:json) : t j_result =
     let open Rjson in

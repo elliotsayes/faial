@@ -12,7 +12,7 @@ let main
   (fname: string)
 : unit =
   let j = Wgsl_to_json.wgsl_to_json fname in
-  let p = parse j in
+  let p = parse j |> W_lang.Program.map_expression W_lang.Expression.simplify in
   print_string (W_lang.Program.to_string p);
   print_endline ("\n-------------------------------------- IMP --------------------------------------\n");
   (
