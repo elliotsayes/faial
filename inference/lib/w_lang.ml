@@ -3326,6 +3326,19 @@ module Expression = struct
         Compose {ty; components}
       | _, _ -> map simplify e)
 
+    | Unary {op; expr=e} ->
+      (match to_vector e with
+      | Some (l, ty) ->
+        let components =
+          l
+          |> List.map (fun e ->
+              Unary {op; expr=simplify e}
+            )
+        in
+        Compose {ty; components}
+      | None ->
+        Unary {op; expr=simplify e})
+
     (* Inline component-wise *)
     | Select {condition=c; accept=a; reject=r} as e ->
       (match

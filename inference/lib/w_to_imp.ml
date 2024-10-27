@@ -984,6 +984,7 @@ end
 let translate (p: W_lang.Program.t) : Imp.Kernel.t list =
   let ctx = Context.from_program p in
   p
+  |> W_lang.Program.map_expression W_lang.Expression.simplify
   |> List.filter_map (
       let open W_lang.ProgramEntry in
       function
