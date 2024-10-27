@@ -1019,6 +1019,11 @@ module Type = struct
     | Vector _ -> true
     | _ -> false
 
+  let is_scalar (ty:t) : bool =
+    match ty.inner with
+    | Scalar _ -> true
+    | _ -> false
+
   let is_int (ty:t) : bool =
     ty
     |> to_scalar
@@ -1974,6 +1979,15 @@ module Literal = struct
   let type_of (l:t) : Type.t =
     Type.scalar (scalar_of l)
 
+  let zero (s: Scalar.t) : t =
+    match s.kind with
+    | Sint -> if s.width <= 4 then I32 0 else I64 0
+    | Uint -> if s.width <= 4 then U32 0 else U64 0
+    | AbstractInt -> AbstractInt 0
+    | Float -> if s.width <= 4 then F32 0.0 else F64 0.0
+    | AbstractFloat -> AbstractFloat 0.0
+    | Bool -> Bool false
+
   let bool (b:bool) : t =
     Bool b
 
@@ -2534,6 +2548,9 @@ module DerivativeControl = struct
     | "None" -> Ok None
     | _ -> root_cause "DerivativeControl" j
 end
+
+let repeat (x:'a) (count:int) : 'a list =
+  List.init count (fun _ -> x)
 
 module Expression = struct
   type t =
@@ -3272,10 +3289,50 @@ module Expression = struct
       Ok (Gradient { x; y })
     | _ -> root_cause "sample_level" j
 
+  let zero (s:Scalar.t) : t =
+    Literal (Literal.zero s)
 
+  let compose (ty:Type.t) (components:t list) : t =
+    match ty.inner with
+    | Vector {size; scalar} ->
+      (match size, components, List.map type_of components with
+      | _, [e], [ty] when Type.is_vector ty ->
+        (* Vectors accept a copy-constructor *)
+        let components =
+          size
+          |> VectorSize.to_int
+          |> Py.range
+          |> List.map (fun i -> access_index i e)
+        in
+        Compose {ty; components}
+      | _, [e], [ty] when Type.is_scalar ty ->
+        (* Vectors accept a component-wise initialization
+           when argument is a scalar. *)
+        Compose {ty; components=repeat e (VectorSize.to_int size)}
+      | _, [], _ ->
+        let z = zero scalar in
+        Compose {ty; components=repeat z (VectorSize.to_int size)}
+      | _, c, _ when List.length components < VectorSize.to_int size ->
+        (* when there are fewer arguments than the size of the vector, then
+           we must expand each vector component *)
+        let components =
+          c
+          |> List.concat_map (fun e ->
+              match to_vector e with
+              | Some (l, _) -> l
+              | None -> [e]
+            )
+        in
+        Compose {ty; components}
+      | _, _, _ ->
+        Compose {ty; components}
+      )
+    | _ ->
+      Compose {ty; components}
 
   let rec simplify : t -> t =
     function
+    | Compose {ty; components} -> compose ty components
     (* Eval if possible *)
     | Access {base; index=Literal l; location} ->
       let index = Literal.to_int l |> Option.get in
