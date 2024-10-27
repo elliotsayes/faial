@@ -163,7 +163,10 @@ module Scalar = struct
       The format includes the scalar kind and its bit width.
       For example, an [i32] scalar will be rendered as "Sint32". *)
   let to_string (s: t) : string =
-    ScalarKind.to_string s.kind ^ string_of_int (8 * s.width)
+    if s.kind = Bool then
+      "bool"
+    else
+      ScalarKind.to_string s.kind ^ string_of_int (8 * s.width)
 
   (** {2 Parsing} *)
 
