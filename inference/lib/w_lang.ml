@@ -3334,7 +3334,13 @@ module Expression = struct
 
   let rec simplify : t -> t =
     function
-    | Compose {ty; components} -> compose ty components
+    | Splat {size; value} ->
+      let value = simplify value in
+      let ty = type_of value in
+      (match Type.to_scalar ty with
+      | Some scalar -> compose (Type.make (Vector {size; scalar;})) [value]
+      | None -> Splat {size; value})
+    | Compose {ty; components} -> compose ty (List.map simplify components)
     (* Eval if possible *)
     | Access {base; index=Literal l; location} ->
       let index = Literal.to_int l |> Option.get in
@@ -4340,9 +4346,6 @@ module Declaration = struct
     init: Expression.t option;
   }
 
-  let map (f:Expression.t -> Expression.t) (d:t) : t =
-    { d with init = Option.map f d.init }
-
   let parse (j:json) : t j_result =
     let open Rjson in
     let* o = cast_object j in
@@ -4353,9 +4356,6 @@ module Declaration = struct
     Ok {name; kind; ty; init}
 
   let to_string (d:t) : string =
-    d.name
-
-  let to_s (d:t) : Indent.t list =
     let prefix =
       match d.kind with
       | GlobalVariable d ->
@@ -4380,13 +4380,15 @@ module Declaration = struct
       |> Option.map (fun x -> " = " ^ Expression.to_string x)
       |> Option.value ~default:""
     in
-    let line =
-      Printf.sprintf "%s %s: %s%s;"
-        prefix d.name (Type.to_string d.ty) init
-    in
-    [
-    Line line
-    ]
+    Printf.sprintf "%s %s: %s%s;"
+      prefix d.name (Type.to_string d.ty) init
+
+  let to_s (d:t) : Indent.t list =
+    [Line (to_string d)]
+
+  let map (f:Expression.t -> Expression.t) (d:t) : t =
+    { d with init = Option.map f d.init }
+
 end
 
 module ProgramEntry = struct
