@@ -1997,6 +1997,9 @@ module Literal = struct
   let false_ : t =
     Bool false
 
+  let i32 (i:int) : t =
+    I32 i
+
   let int (i:int) : t =
     AbstractInt i
 
@@ -2673,6 +2676,9 @@ module Expression = struct
       }
 
 
+  let i32 (i:int) : t =
+    Literal (Literal.i32 i)
+
   let int (i:int) : t =
     Literal (Literal.int i)
 
@@ -3295,38 +3301,34 @@ module Expression = struct
   let compose (ty:Type.t) (components:t list) : t =
     match ty.inner with
     | Vector {size; scalar} ->
-      (match size, components, List.map type_of components with
-      | _, [e], [ty] when Type.is_vector ty ->
-        (* Vectors accept a copy-constructor *)
-        let components =
+      let components =
+        match size, components, List.map type_of components with
+        | _, [e], [ty] when Type.is_vector ty ->
+          (* Vectors accept a copy-constructor *)
           size
           |> VectorSize.to_int
           |> Py.range
           |> List.map (fun i -> access_index i e)
-        in
-        Compose {ty; components}
-      | _, [e], [ty] when Type.is_scalar ty ->
-        (* Vectors accept a component-wise initialization
-           when argument is a scalar. *)
-        Compose {ty; components=repeat e (VectorSize.to_int size)}
-      | _, [], _ ->
-        let z = zero scalar in
-        Compose {ty; components=repeat z (VectorSize.to_int size)}
-      | _, c, _ when List.length components < VectorSize.to_int size ->
-        (* when there are fewer arguments than the size of the vector, then
-           we must expand each vector component *)
-        let components =
+        | _, [e], [ty] when Type.is_scalar ty ->
+          (* Vectors accept a component-wise initialization
+            when argument is a scalar. *)
+          repeat e (VectorSize.to_int size)
+        | _, [], _ ->
+          let z = zero scalar in
+          repeat z (VectorSize.to_int size)
+        | _, c, _ when List.length components < VectorSize.to_int size ->
+          (* when there are fewer arguments than the size of the vector, then
+            we must expand each vector component *)
           c
           |> List.concat_map (fun e ->
               match to_vector e with
               | Some (l, _) -> l
               | None -> [e]
             )
-        in
-        Compose {ty; components}
-      | _, _, _ ->
-        Compose {ty; components}
-      )
+        | _, _, _ ->
+          components
+      in
+      Compose {ty; components}
     | _ ->
       Compose {ty; components}
 
