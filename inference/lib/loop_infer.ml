@@ -80,7 +80,7 @@ let rec parse_inc (i:D_lang.Expr.t option) : (Variable.t * increment unop) optio
 
 
 let from_for (loop: D_lang.Stmt.d_for) : t option =
-  let (let*) = Option.bind in
+  let ( let* ) = Option.bind in
   let* (x1, inc) = parse_inc loop.inc in
   let* init =
     match parse_init loop.init with
@@ -96,7 +96,7 @@ let from_for (loop: D_lang.Stmt.d_for) : t option =
   }
 
 let from_while (loop: D_lang.Stmt.d_cond) : (t * D_lang.Stmt.t) option =
-  let (let*) = Option.bind in
+  let ( let* ) = Option.bind in
   let (body, inc) = D_lang.Stmt.last loop.body in
   let inc = match inc with
     | SExpr inc ->
