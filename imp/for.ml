@@ -55,6 +55,7 @@ module Comparator = struct
     | Le
     | Gt
     | Ge
+    | RelMinus
 
   let parse : N_rel.t -> t option =
     function
@@ -91,11 +92,14 @@ module Infer = struct
       (match Comparator.parse o with
       | Some o -> Some (d, {op=o; arg=r})
       | _ -> None)
+    | Some (CastBool (Binary (Minus, Var d, r))) ->
+      Some (d, {op=RelMinus; arg=r})
     | _ -> None
 
   let rec parse_inc : Stmt.t option -> (Variable.t * Increment.t unop) option =
     function
     | Some (Block [i]) -> parse_inc (Some i)
+    | Some (Assign {var=l; data=Binary (o, r, Var l'); _})
     | Some (Assign {var=l; data=Binary (o, Var l', r); _}) ->
       begin
         match
@@ -130,10 +134,9 @@ module Infer = struct
     (* (int i = 0; i <= 4; i++) *)
     | {init=lb; cond={op=Le; arg=ub; _}; _} ->
       (lb, ub, Increase)
-    (* TODO: (int i = 4; i - k; i++)
+    (* (int i = 4; i - k; i++) *)
     | {init=lb; cond={op=RelMinus; arg=ub; _}; _} ->
       (lb, ub, Range.Increase)
-      *)
     (* (int i = 4; i >= 0; i--) *)
     | {init=ub; cond={op=Ge; arg=lb; _}; _} ->
       (lb, ub, Decrease)

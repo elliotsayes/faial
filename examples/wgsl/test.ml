@@ -23,6 +23,10 @@ let tests = [
   "drf-unary.wgsl", [], 0;
   (* Parse uniform load *)
   "drf-uniform-load.wgsl", [], 0;
+  (* Loop inference *)
+  "drf-loop-lt.wgsl", [], 0;
+  (* Loop inference *)
+  "drf-loop-relminus.wgsl", [], 0;
 ]
 
 let unsupported : Fpath.t list =

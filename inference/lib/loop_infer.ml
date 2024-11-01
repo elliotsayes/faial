@@ -62,9 +62,12 @@ let rec parse_inc (i:D_lang.Expr.t option) : (Variable.t * increment unop) optio
   | Some (BinaryOperator {opcode=","; lhs=l; _}) ->
     parse_inc (Some l)
   | Some (BinaryOperator {
-      lhs=Ident l;
-      opcode="=";
-      rhs=BinaryOperator{lhs=Ident l'; opcode=o; rhs=r; _};
+      lhs = Ident l;
+      opcode = "=";
+      rhs = BinaryOperator (
+          {lhs=Ident l'; opcode=o; rhs=r; _}
+        | {lhs=r; opcode=o; rhs=Ident l'; _}
+      );
       _
     }) ->
     begin
