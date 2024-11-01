@@ -617,33 +617,10 @@ end
 
 (* ------------------------------------- *)
 
-
-type ('s, 'a) state = 's -> 's * 'a
-
-let state_pure (x:'a) : ('s, 'a) state = fun (st:'s) -> (st, x)
-
-let state_bind (f:'a -> ('s, 'b) state) (eff1:('s, 'a) state) : ('s, 'b) state =
-    fun (st1:'s) ->
-      let (st2, x : 's * 'a) = eff1 st1 in
-      f x st2
-
-
-let state_map (f:'a -> ('s, 'b) state) (l:'a list) : ('s, 'b list) state =
-  let rec handle_list (l:'a list) : ('s, 'b list) state =
-    match l with
-    | [] -> state_pure []
-    | x::l ->
-      fun st ->
-      let (st, x) = f x st in
-      let (st, l) = handle_list l st in
-      state_pure (x::l) st
-  in
-  handle_list l
-
 (* Monadic let *)
-let (let*) = state_bind
+let ( let* ) = State.bind
 (* Monadic pipe *)
-let (>>=) = state_bind
+let (>>=) = State.bind
 let (@) = Common.append_tr
 
 module AccessState = struct
@@ -734,20 +711,24 @@ let curand_read : Variable.Set.t =
   |> List.map Variable.from_name
   |> Variable.Set.of_list
 
-let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
+type 'a state = (AccessState.t, 'a) State.t
+
+open State.Syntax
+
+let rec rewrite_exp (c:C_lang.Expr.t) : Expr.t state =
   let open Expr in
+
   match c with
 
   (* When an atomic happens *)
-  | CallExpr {func=Ident f; args=e::args; ty}
+  | CallExpr {func=Ident f; args=(e:C_lang.Expr.t)::args; ty}
     when Atomic.is_valid f.name ->
     let atomic = Atomic.from_name f.name |> Option.get in
-    fun st ->
-    let (st, e) = rewrite_exp e st in
+    let* e : Expr.t = rewrite_exp e in
     (* we want to make sure we extract any reads from the other arguments,
        but we can safely discard the arguments, as we only care that an
        atomic happened, not exactly what was done by the atomic. *)
-    let (st, args) = state_map rewrite_exp args st in
+    let* args = State.map rewrite_exp args in
     (match e with
     | Ident x ->
       rewrite_atomic atomic (
@@ -756,7 +737,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
           ~index:[IntegerLiteral 0]
           ~location:(Variable.location f.name)
           ~ty
-      ) st
+      )
     | BinaryOperator {lhs=Ident x; rhs=e; opcode="+"; _} ->
       rewrite_atomic atomic (
         make_subscript
@@ -764,9 +745,9 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
           ~index:[e]
           ~location:(Variable.location f.name)
           ~ty
-      ) st
+      )
     | _ ->
-      (st, CallExpr {func=Ident f; args=e::args; ty})
+      return (CallExpr {func=Ident f; args=e::args; ty})
     )
 
   (* When a write happens *)
@@ -841,82 +822,76 @@ let rec rewrite_exp (c:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
     rewrite_read a
 
   | SizeOfExpr ty ->
-    fun st -> (st, SizeOfExpr ty)
+    return (SizeOfExpr ty)
 
   | RecoveryExpr ty ->
-    fun st -> (st, RecoveryExpr ty)
+    return (RecoveryExpr ty)
 
-  | BinaryOperator {lhs=l; rhs=r; opcode=o; ty=ty} ->
-    fun st ->
-    let (st, l) = rewrite_exp l st in
-    let (st, r) = rewrite_exp r st in
-    (st, BinaryOperator {lhs=l; rhs=r; opcode=o; ty=ty})
+  | BinaryOperator {lhs; rhs; opcode; ty} ->
+    let* lhs = rewrite_exp lhs in
+    let* rhs = rewrite_exp rhs in
+    return (BinaryOperator {lhs; rhs; opcode; ty})
 
-  | ConditionalOperator {cond=e1; then_expr=e2; else_expr=e3; ty=ty} ->
-    fun st ->
-    let (st, e1) = rewrite_exp e1 st in
-    let (st, e2) = rewrite_exp e2 st in
-    let (st, e3) = rewrite_exp e3 st in
-    (st, ConditionalOperator {cond=e1; then_expr=e2; else_expr=e3; ty=ty})
+  | ConditionalOperator {cond; then_expr; else_expr; ty} ->
+    let* cond = rewrite_exp cond in
+    let* then_expr = rewrite_exp then_expr in
+    let* else_expr = rewrite_exp else_expr in
+    return (ConditionalOperator {cond; then_expr; else_expr; ty})
 
-  | CXXNewExpr {arg=arg; ty=ty} ->
-    fun st ->
-    let (st, arg) = rewrite_exp arg st in
-    (st, CXXNewExpr {arg=arg; ty=ty})
+  | CXXNewExpr {arg; ty} ->
+    let* arg = rewrite_exp arg in
+    return (CXXNewExpr {arg; ty})
 
-  | CXXDeleteExpr {arg=arg; ty=ty} ->
-    fun st ->
-    let (st, arg) = rewrite_exp arg st in
-    (st, CXXDeleteExpr {arg=arg; ty=ty})
+  | CXXDeleteExpr {arg; ty} ->
+    let* arg = rewrite_exp arg in
+    return (CXXDeleteExpr {arg; ty})
 
-  | CXXOperatorCallExpr {func=f; args=args; ty=ty} ->
-    fun st ->
-    let (st, f) = rewrite_exp f st in
-    let (st, args) = state_map rewrite_exp args st in
-    (st, CXXOperatorCallExpr {func=f; args=args; ty=ty})
+  | CXXOperatorCallExpr {func; args; ty} ->
+    let* func = rewrite_exp func in
+    let* args = State.map rewrite_exp args in
+    return (CXXOperatorCallExpr {func; args; ty})
 
   | CallExpr {func; args; ty} when J_type.matches C_type.is_void ty ->
-    fun st ->
-    let (st, func) = rewrite_exp func st in
-    let (st, args) = state_map rewrite_exp args st in
-    (st, CallExpr {func; args; ty})
+    let* func = rewrite_exp func in
+    let* args = State.map rewrite_exp args in
+    return (CallExpr {func; args; ty})
 
-  | CallExpr {func=f; args=args; ty=ty} ->
-    fun st ->
-    let (st, f) = rewrite_exp f st in
-    let (st, args) = state_map rewrite_exp args st in
-    let c:d_call = {func=f; args=args; ty=ty} in
-    rewrite_call c st
+  | CallExpr {func; args; ty} ->
+    let* func = rewrite_exp func in
+    let* args = State.map rewrite_exp args in
+    rewrite_call {func; args; ty}
 
   | CXXConstructExpr c ->
-    fun st ->
-    let (st, args) = state_map rewrite_exp c.args st in
-    (st, CXXConstructExpr {args=args; ty=c.ty})
+    let* args = State.map rewrite_exp c.args in
+    State.return (CXXConstructExpr {args=args; ty=c.ty})
 
   | UnaryOperator {child=ArraySubscriptExpr a; opcode="&"; ty=ty} ->
     rewrite_exp (BinaryOperator{lhs=a.lhs; opcode="+"; rhs=a.rhs; ty=ty})
 
-  | UnaryOperator {child=e; opcode=o; ty=ty} ->
-    fun st ->
-    let (st, e) = rewrite_exp e st in
-    (st, UnaryOperator {child=e; opcode=o; ty=ty})
+  | UnaryOperator {child; opcode; ty} ->
+    let* child = rewrite_exp child in
+    return (UnaryOperator {child; opcode; ty=ty})
 
-  | MemberExpr {base=e; name=o; ty=ty} ->
-    fun st ->
-    let (st, e) = rewrite_exp e st in
-    state_pure (MemberExpr {base=e; name=o; ty=ty}) st
+  | MemberExpr {base; name; ty} ->
+    let* base = rewrite_exp base in
+    return (MemberExpr {base; name; ty})
 
-  | Ident v -> state_pure (Ident v)
-  | UnresolvedLookupExpr {name=n;tys=tys} -> state_pure (UnresolvedLookupExpr {name=n;tys=tys})
-  | FloatingLiteral f -> state_pure (FloatingLiteral f)
-  | IntegerLiteral i -> state_pure (IntegerLiteral i)
-  | CharacterLiteral c -> state_pure (CharacterLiteral c)
-  | CXXBoolLiteralExpr b -> state_pure (CXXBoolLiteralExpr b)
+  | Ident v -> return (Ident v)
+  | UnresolvedLookupExpr {name=n;tys=tys} -> return (UnresolvedLookupExpr {name=n;tys=tys})
+  | FloatingLiteral f -> return (FloatingLiteral f)
+  | IntegerLiteral i -> return (IntegerLiteral i)
+  | CharacterLiteral c -> return (CharacterLiteral c)
+  | CXXBoolLiteralExpr b -> return (CXXBoolLiteralExpr b)
 
-and rewrite_subscript (c:C_lang.Expr.c_array_subscript) : (AccessState.t, d_subscript) state =
-  let rec rewrite_subscript (c:C_lang.Expr.c_array_subscript) (indices:Expr.t list) (loc:Location.t option) : (AccessState.t, d_subscript) state =
-    fun st ->
-    let (st, idx) = rewrite_exp c.rhs st in
+and rewrite_subscript (c:C_lang.Expr.c_array_subscript) : d_subscript state =
+  let rec rewrite_subscript
+    (c:C_lang.Expr.c_array_subscript)
+    (indices:Expr.t list)
+    (loc:Location.t option)
+  :
+    d_subscript state
+  =
+    let* idx = rewrite_exp c.rhs in
     let loc = Some (match loc with
     | Some loc -> Location.add_or_lhs loc c.location
     | None -> c.location)
@@ -924,45 +899,41 @@ and rewrite_subscript (c:C_lang.Expr.c_array_subscript) : (AccessState.t, d_subs
     let indices = idx :: indices in
     match c.lhs with
     | ArraySubscriptExpr a ->
-      rewrite_subscript a indices loc st
+      rewrite_subscript a indices loc
 
     | Ident {name; ty; _} ->
-      state_pure {name; index=indices; ty; location=Option.get loc} st
+      return {name; index=indices; ty; location=Option.get loc}
 
     | e ->
       let ty = C_lang.Expr.to_type e in
-      let (st, e) = rewrite_exp e st in
-      let (st, x) = AccessState.add_expr e ty st in
-      state_pure {name=x; index=indices; ty=ty; location=Option.get loc} st
+      let* e = rewrite_exp e in
+      let* x = AccessState.add_expr e ty in
+      return {name=x; index=indices; ty=ty; location=Option.get loc}
   in
   rewrite_subscript c [] None
 
-and rewrite_write (a:C_lang.Expr.c_array_subscript) (src:C_lang.Expr.t) : (AccessState.t, Expr.t) state =
-  fun st ->
-    let (st, src') = rewrite_exp src st in
-    let (st, a) = rewrite_subscript a st in
-    let payload = match src with
-      | IntegerLiteral x -> Some x
-      | _ -> None
-    in
-    let (st, x) = AccessState.add_write a src' payload st in
-  state_pure (Expr.ident ~ty:(C_lang.Expr.to_type src) x) st
+and rewrite_write (a:C_lang.Expr.c_array_subscript) (src:C_lang.Expr.t) : (AccessState.t, Expr.t) State.t =
+  let* src' = rewrite_exp src in
+  let* a = rewrite_subscript a in
+  let payload = match src with
+    | IntegerLiteral x -> Some x
+    | _ -> None
+  in
+  let* x = AccessState.add_write a src' payload in
+  return (Expr.ident ~ty:(C_lang.Expr.to_type src) x)
 
-and rewrite_read (a:C_lang.Expr.c_array_subscript): (AccessState.t, Expr.t) state =
-  fun st ->
-    let (st, a) = rewrite_subscript a st in
-    let (st, x) = AccessState.add_read a st in
-    state_pure (Expr.ident ~ty:a.ty x) st
+and rewrite_read (a:C_lang.Expr.c_array_subscript): (AccessState.t, Expr.t) State.t =
+  let* a = rewrite_subscript a in
+  let* x = AccessState.add_read a in
+  return (Expr.ident ~ty:a.ty x)
 
-and rewrite_atomic (atomic:Atomic.t) (a:d_subscript) : (AccessState.t, Expr.t) state =
-  fun st ->
-    let (st, x) = AccessState.add_atomic atomic a st in
-    state_pure (Expr.ident ~ty:a.ty x) st
+and rewrite_atomic (atomic:Atomic.t) (a:d_subscript) : Expr.t state =
+  let* x = AccessState.add_atomic atomic a in
+  return (Expr.ident ~ty:a.ty x)
 
-and rewrite_call (a:Expr.d_call) : (AccessState.t, Expr.t) state =
-  fun st ->
-    let (st, x) = AccessState.add_call a st in
-    state_pure (Expr.ident ~ty:a.ty x) st
+and rewrite_call (a:Expr.d_call) : Expr.t state =
+  let* x = AccessState.add_call a in
+  return (Expr.ident ~ty:a.ty x)
 
 let map_opt (f:'a -> ('s * 'b)) (o:'a option) : ('s * 'b option) =
   match o with
