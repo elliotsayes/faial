@@ -728,7 +728,7 @@ let rec rewrite_exp (c:C_lang.Expr.t) : Expr.t state =
     (* we want to make sure we extract any reads from the other arguments,
        but we can safely discard the arguments, as we only care that an
        atomic happened, not exactly what was done by the atomic. *)
-    let* args = State.map rewrite_exp args in
+    let* args = State.list_map rewrite_exp args in
     (match e with
     | Ident x ->
       rewrite_atomic atomic (
@@ -848,21 +848,21 @@ let rec rewrite_exp (c:C_lang.Expr.t) : Expr.t state =
 
   | CXXOperatorCallExpr {func; args; ty} ->
     let* func = rewrite_exp func in
-    let* args = State.map rewrite_exp args in
+    let* args = State.list_map rewrite_exp args in
     return (CXXOperatorCallExpr {func; args; ty})
 
   | CallExpr {func; args; ty} when J_type.matches C_type.is_void ty ->
     let* func = rewrite_exp func in
-    let* args = State.map rewrite_exp args in
+    let* args = State.list_map rewrite_exp args in
     return (CallExpr {func; args; ty})
 
   | CallExpr {func; args; ty} ->
     let* func = rewrite_exp func in
-    let* args = State.map rewrite_exp args in
+    let* args = State.list_map rewrite_exp args in
     rewrite_call {func; args; ty}
 
   | CXXConstructExpr c ->
-    let* args = State.map rewrite_exp c.args in
+    let* args = State.list_map rewrite_exp c.args in
     State.return (CXXConstructExpr {args=args; ty=c.ty})
 
   | UnaryOperator {child=ArraySubscriptExpr a; opcode="&"; ty=ty} ->
@@ -935,57 +935,42 @@ and rewrite_call (a:Expr.d_call) : Expr.t state =
   let* x = AccessState.add_call a in
   return (Expr.ident ~ty:a.ty x)
 
-let map_opt (f:'a -> ('s * 'b)) (o:'a option) : ('s * 'b option) =
-  match o with
-  | Some v ->
-    let (st, v) = f v in
-    (st, Some v)
-  | None -> ([], None)
-
-
-let rewrite_exp (e:C_lang.Expr.t) : (Stmt.t list * Expr.t) =
-  let (st, e) = rewrite_exp e AccessState.make_empty in
-  (st |> List.rev, e)
-
-let rewrite_subscript
-  (a:C_lang.Expr.c_array_subscript)
-:
-  (Stmt.t list * d_subscript)
-=
-  let (st, e) = rewrite_subscript a AccessState.make_empty in
-  (st |> List.rev, e)
-
-let rewrite_exp_list (es:C_lang.Expr.t list) : (Stmt.t list * Expr.t list) =
-  let (ss, es) = List.map rewrite_exp es |> List.split in
-  (List.concat ss, es)
-
-let rewrite_decl (d:C_lang.Decl.t) : (Stmt.t list * Decl.t) =
-  let rewrite_init (c:C_lang.Init.t) : (Stmt.t list * Init.t) =
+let rewrite_decl (d:C_lang.Decl.t) : Decl.t state =
+  let rewrite_init (c:C_lang.Init.t) : Init.t state =
     match c with
-    | InitListExpr {ty=ty; args=args} ->
-      let (pre, args) = rewrite_exp_list args in
-      (pre, InitListExpr {ty=ty; args=args})
+    | InitListExpr {ty; args} ->
+      let* args = State.list_map rewrite_exp args in
+      return (Init.InitListExpr {ty; args})
     | IExpr e ->
-      let (pre, e) = rewrite_exp e in
-      (pre, IExpr e)
+      let* e = rewrite_exp e in
+      return (Init.IExpr e)
   in
-  let (pre, init) = d |> C_lang.Decl.init |> map_opt rewrite_init in
-  (pre, Decl.make ~ty:(C_lang.Decl.ty d) ~var:(C_lang.Decl.var d) ~init ~attrs:(C_lang.Decl.attrs d))
+  let* init = State.option_map rewrite_init d.init in
+  return (Decl.make ~ty:(C_lang.Decl.ty d) ~var:(C_lang.Decl.var d) ~init ~attrs:(C_lang.Decl.attrs d))
 
-let rewrite_for_init (f:C_lang.ForInit.t) : (Stmt.t list * ForInit.t) =
+let rewrite_for_init (f:C_lang.ForInit.t) : ForInit.t state =
   match f with
   | Decls d ->
-    let (pre, d) = List.map rewrite_decl d |> List.split in
-    (List.concat pre, Decls d)
+    let* d = State.list_map rewrite_decl d in
+    return (ForInit.Decls d)
   | Expr e ->
-    let (s, e) = rewrite_exp e in
-    (s, Expr e)
+    let* e = rewrite_exp e in
+    return (ForInit.Expr e)
+
+let append (l:Stmt.t list) : unit state =
+  State.write (fun s -> l @ s)
+
+let add (s:Stmt.t) : unit state =
+  State.write (fun l -> s :: l)
+
+let run0 (m: 'a state) : (Stmt.t list * 'a) =
+  let (st, a) = State.run AccessState.make_empty m in
+  (st |> List.rev, a)
 
 let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t list =
-  let decl (pre:Stmt.t list) (s:Stmt.t) =
-    match pre with
-    | [] -> [s]
-    | _ -> [CompoundStmt (pre @ [s])]
+  let run (m:unit state) =
+    let (code, ()) = run0 m in
+    code
   in
   let rewrite_s (s:C_lang.Stmt.t) : Stmt.t =
     match rewrite_stmt s with
@@ -997,56 +982,74 @@ let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t list =
   | GotoStmt -> [GotoStmt]
   | ReturnStmt None -> [ReturnStmt None]
   | ReturnStmt (Some e) ->
-    let (pre, e) = rewrite_exp e  in
-    decl pre (
-      ReturnStmt (Some e)
+    run (
+      let* e = rewrite_exp e in
+      add (ReturnStmt (Some e))
     )
   | ContinueStmt -> [ContinueStmt]
-  | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
-    let (pre, c) = rewrite_exp c in
-    decl pre (IfStmt {
-      cond=c;
-      then_stmt=rewrite_s s1;
-      else_stmt=rewrite_s s2;
-    })
+  | IfStmt {cond; then_stmt; else_stmt} ->
+    run (
+      let* cond = rewrite_exp cond in
+      add (IfStmt {
+        cond;
+        then_stmt=rewrite_s then_stmt;
+        else_stmt=rewrite_s else_stmt;
+      })
+    )
   | CompoundStmt l -> [CompoundStmt (List.concat_map rewrite_stmt l)]
 
   | DeclStmt ({var; init=Some (IExpr (ArraySubscriptExpr a)); _}::d) ->
-    let (pre, a) = rewrite_subscript a in
-    decl pre (Stmt.read_access var a) @ rewrite_stmt (DeclStmt d)
-
-  | DeclStmt d ->
-    let (pre, d) = List.map rewrite_decl d |> List.split in
-    List.concat pre @ [DeclStmt d]
-
-  | WhileStmt {cond=c; body=b} ->
-    let (pre, c) = rewrite_exp c in
-    decl pre (WhileStmt {cond=c; body=rewrite_s b})
-
-  | ForStmt {init=e1; cond=e2; inc=e3; body=b} ->
-    let (pre1, e1) = map_opt rewrite_for_init e1 in
-    let (pre2, e2) = map_opt rewrite_exp e2 in
-    let (pre3, e3) = map_opt rewrite_exp e3 in
-    decl (pre1 @ pre2 @ pre3) (
-      ForStmt {init=e1; cond=e2; inc=e3; body=rewrite_s b}
+    run (
+      let* a = rewrite_subscript a in
+      append (Stmt.read_access var a :: rewrite_stmt (DeclStmt d))
     )
 
-  | DoStmt {cond=c; body=b} ->
-    let (pre, c) = rewrite_exp c in
-    decl pre (DoStmt {cond=c; body=rewrite_s b})
+  | DeclStmt d ->
+    run (
+      let* d = State.list_map rewrite_decl d in
+      add (DeclStmt d)
+    )
 
-  | SwitchStmt {cond=c; body=b} ->
-    let (pre, c) = rewrite_exp c in
-    decl pre (SwitchStmt {cond=c; body=rewrite_s b})
+  | WhileStmt {cond; body} ->
+    run (
+      let* cond = rewrite_exp cond in
+      add (WhileStmt {cond; body=rewrite_s body})
+    )
 
-  | CaseStmt {case=c; body=b} ->
-    let (pre, c) = rewrite_exp c in
-    decl pre (CaseStmt {case=c; body=rewrite_s b})
+  | ForStmt {init; cond; inc; body} ->
+    run (
+      let* init = State.option_map rewrite_for_init init in
+      let* cond = State.option_map rewrite_exp cond in
+      let* inc = State.option_map rewrite_exp inc in
+      add (
+        ForStmt {init; cond; inc; body=rewrite_s body}
+      )
+    )
+
+  | DoStmt {cond; body} ->
+    run (
+      let* cond = rewrite_exp cond in
+      add (DoStmt {cond; body=rewrite_s body})
+    )
+
+  | SwitchStmt {cond; body} ->
+    run (
+      let* cond = rewrite_exp cond in
+      add (SwitchStmt {cond; body=rewrite_s body})
+    )
+
+  | CaseStmt {case; body} ->
+    run (
+      let* case = rewrite_exp case in
+      add (CaseStmt {case; body=rewrite_s body})
+    )
   | DefaultStmt s ->
     [DefaultStmt (rewrite_s s)]
   | SExpr e ->
-    let (pre, e) = rewrite_exp e in
-    decl pre (SExpr e)
+    run (
+      let* e = rewrite_exp e in
+      add (SExpr e)
+    )
 
 let rewrite_kernel (k:C_lang.Kernel.t) : Kernel.t =
   let rewrite_s (s:C_lang.Stmt.t) : Stmt.t =
@@ -1067,7 +1070,7 @@ let rewrite_def (d:C_lang.Def.t) : Def.t =
   match d with
   | Kernel k -> Kernel (rewrite_kernel k)
   | Declaration d ->
-    let (_, d) = rewrite_decl d in
+    let (_, d) = run0 (rewrite_decl d) in
     Declaration d
   | Typedef d -> Typedef d
   | Enum e -> Enum e
