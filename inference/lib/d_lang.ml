@@ -1011,26 +1011,43 @@ let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t list =
     )
 
   | WhileStmt {cond; body} ->
-    run (
-      let* cond = rewrite_exp cond in
-      add (WhileStmt {cond; body=rewrite_s body})
-    )
+    let (s, cond) = run0 (rewrite_exp cond) in
+    if s = [] then
+      [WhileStmt {cond; body=rewrite_s body}]
+    else
+      (* we unroll the side effects, before the loop runs, and
+         at the end of each iteration *)
+      let body : Stmt.t = CompoundStmt (rewrite_stmt body @ s) in
+      run (
+        let* () = append s in
+        add (WhileStmt {cond; body})
+      )
 
   | ForStmt {init; cond; inc; body} ->
+    let (s1, cond) = run0 (State.option_map rewrite_exp cond) in
+    let (s2, inc) = run0 (State.option_map rewrite_exp inc) in
+    if s1 = [] && s2 = [] then
+      run (
+        let* init = State.option_map rewrite_for_init init in
+        add (ForStmt {init; cond; inc; body=rewrite_s body})
+      )
+    else
+    (* we unroll the side effects, before the loop runs, and
+        at the end of each iteration *)
+    let body : Stmt.t = CompoundStmt (rewrite_stmt body @ s2 @ s1) in
     run (
       let* init = State.option_map rewrite_for_init init in
-      let* cond = State.option_map rewrite_exp cond in
-      let* inc = State.option_map rewrite_exp inc in
-      add (
-        ForStmt {init; cond; inc; body=rewrite_s body}
-      )
+      let* () = append s1 in
+      add (ForStmt {init; cond; inc; body})
     )
 
   | DoStmt {cond; body} ->
-    run (
-      let* cond = rewrite_exp cond in
-      add (DoStmt {cond; body=rewrite_s body})
-    )
+    let (s, cond) = run0 (rewrite_exp cond) in
+    if s = [] then
+      [DoStmt {cond; body=rewrite_s body}]
+    else
+      let body : Stmt.t = CompoundStmt (rewrite_stmt body @ s) in
+      [DoStmt {cond; body}]
 
   | SwitchStmt {cond; body} ->
     run (
@@ -1060,7 +1077,7 @@ let rewrite_kernel (k:C_lang.Kernel.t) : Kernel.t =
   {
     ty = k.ty;
     name = k.name;
-    code = rewrite_s k.code;
+    code = rewrite_s (C_lang.Stmt.rewrite_comma k.code);
     params = k.params;
     type_params = k.type_params;
     attribute = k.attribute;

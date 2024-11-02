@@ -230,6 +230,84 @@ module Expr = struct
 
   end
 
+
+  (** Rewrites a comma operator, by returning the last expression and a list
+      of side-effects.
+      For instance, if you have
+        i++, i < n
+      this function would return
+        i < n, [i++]
+
+      Note that this will recursively iterate over all sub-comma expressions,
+      so the output expressions will all be absent of a comma operator.
+      *)
+  let rewrite_comma : t -> (t list * t) =
+    let open State.Syntax in
+    let add (e:t) : (t list, unit) State.t =
+      State.write (fun st -> e :: st)
+    in
+    let rec rw : t -> (t list, t) State.t =
+      function
+      (* the main case is handling the comma operator *)
+      | BinaryOperator {opcode=","; lhs; rhs; ty=_} ->
+        (* we hoist the left-hand side expression to the state,
+           and we return the right-hand side expression *)
+        let* lhs = rw lhs in
+        let* rhs = rw rhs in
+        let* () = add lhs in
+        return rhs
+      | SizeOfExpr j -> return (SizeOfExpr j)
+      | CXXNewExpr {arg; ty} ->
+        let* arg = rw arg in
+        return (CXXNewExpr {arg; ty})
+      | CXXDeleteExpr {arg; ty} ->
+        let* arg = rw arg in
+        return (CXXDeleteExpr {arg; ty})
+      | RecoveryExpr ty ->
+        return (RecoveryExpr ty)
+      | CharacterLiteral l -> return (CharacterLiteral l)
+      | ArraySubscriptExpr {lhs; rhs; ty; location} ->
+        let* lhs = rw lhs in
+        let* rhs = rw rhs in
+        return (ArraySubscriptExpr {lhs; rhs; ty; location})
+      | BinaryOperator {opcode; lhs; rhs; ty; } ->
+        let* lhs = rw lhs in
+        let* rhs = rw rhs in
+        return (BinaryOperator {opcode; lhs; rhs; ty;})
+      | CallExpr {func; args; ty} ->
+        let* func = rw func in
+        let* args = State.list_map rw args in
+        return (CallExpr {func; args; ty})
+      | ConditionalOperator {cond; then_expr; else_expr; ty} ->
+        let* cond = rw cond in
+        let* then_expr = rw then_expr in
+        let* else_expr = rw else_expr in
+        return (ConditionalOperator {cond; then_expr; else_expr; ty})
+      | CXXConstructExpr {args; ty} ->
+        let* args = State.list_map rw args in
+        return (CXXConstructExpr {args; ty})
+      | CXXBoolLiteralExpr b ->
+        return (CXXBoolLiteralExpr b)
+      | Ident i ->
+        return (Ident i)
+      | CXXOperatorCallExpr {func; args; ty; } ->
+        let* func = rw func in
+        let* args = State.list_map rw args in
+        return (CXXOperatorCallExpr {func; args; ty; })
+      | FloatingLiteral l -> return (FloatingLiteral l)
+      | IntegerLiteral l -> return (IntegerLiteral l)
+      | MemberExpr {name; base; ty} ->
+        let* base = rw base in
+        return (MemberExpr {name; base; ty})
+      | UnaryOperator {opcode; child; ty} ->
+        let* child = rw child in
+        return (UnaryOperator {opcode; child; ty})
+      | UnresolvedLookupExpr {name; tys} ->
+        return (UnresolvedLookupExpr {name; tys})
+    in
+    fun e ->
+    let (st, e) = State.run [] (rw e) in
+    (List.rev st, e)
 end
 
 module Init = struct
@@ -400,6 +478,9 @@ module Stmt = struct
   type cond_stmt = t cond_t
   type for_stmt = t for_t
   type case_stmt = t for_t
+
+  let expr (e:Expr.t) : t =
+    SExpr e
 
   let to_string : t -> Indent.t list
   =
@@ -641,6 +722,114 @@ module Stmt = struct
   let find_all (f: t -> bool) : t -> t Seq.t =
     find_all_map (fun x -> if f x then Some x else None)
 
+  let concat (s1:t) (s2:t) : t =
+    match s1, s2 with
+    | _, CompoundStmt [] -> s1
+    | CompoundStmt [], _ -> s2
+    | CompoundStmt l1, CompoundStmt l2 -> CompoundStmt (l1 @ l2)
+    | CompoundStmt l1, _ -> CompoundStmt (l1 @ [s2])
+    | _, CompoundStmt l2 -> CompoundStmt (s1 :: l2)
+    | _, _ -> CompoundStmt [s1; s2]
+
+  let rewrite_comma : t -> t =
+    let open State.Syntax in
+    let append (l: Expr.t list) : (Expr.t list, unit) State.t =
+      State.write (fun st' -> l @ st')
+    in
+    let rewrite_expr (e: Expr.t) : (Expr.t list, Expr.t) State.t =
+      let (st, e) = Expr.rewrite_comma e in
+      let* () = append st in
+      return e
+    in
+
+    let opt_rewrite_comma (o:Expr.t option) : (Expr.t list * Expr.t option) =
+      match o with
+      | Some e ->
+        let (st, e) = Expr.rewrite_comma e in
+        (st, Some e)
+      | None ->
+        ([], None)
+    in
+    let run (m:(Expr.t list, t) State.t) : t list =
+      let (st, s) = State.run [] m in
+      List.map expr st @ [s]
+    in
+    let rec rw : t -> t list =
+      function
+      | ReturnStmt None ->
+        [ReturnStmt None]
+      | ReturnStmt (Some e) ->
+        run (
+          let* e = rewrite_expr e in
+          return (ReturnStmt (Some e))
+        )
+      | IfStmt {cond; then_stmt; else_stmt} ->
+        run (
+          let* cond = rewrite_expr cond in
+          let then_stmt = rw_s then_stmt in
+          let else_stmt = rw_s else_stmt in
+          return (IfStmt {cond; then_stmt; else_stmt})
+        )
+      | CompoundStmt l ->
+        List.concat_map rw l
+      | WhileStmt {cond; body} ->
+        let (st, cond) = Expr.rewrite_comma cond in
+        if st = [] then
+          (* easy case, no commas in the condition *)
+          [WhileStmt {cond; body=rw_s body}]
+        else
+        (* when there are commas in the condition, we need to
+           append the commas to the end of the loop body, and before
+           the loop too *)
+        let body = CompoundStmt (rw body @ List.map expr st) in
+        run (
+          (* prepend commas before the loop is executed *)
+          let* () = append st in
+          return (WhileStmt {cond; body})
+        )
+      | DoStmt {cond; body} ->
+        let (st, cond) = Expr.rewrite_comma cond in
+        if st = [] then
+          [DoStmt {cond; body=rw_s body}]
+        else
+        let body = CompoundStmt (rw body @ List.map expr st) in
+        [DoStmt {cond; body}]
+      | ForStmt {init; cond; inc; body} ->
+        (* this works as a combination of a while and a do-loop *)
+        let (st_cond, cond) = opt_rewrite_comma cond in
+        let (st_inc, inc) = opt_rewrite_comma inc in
+        if st_cond = [] && st_inc = [] then
+          [ForStmt {init; cond; inc; body=rw_s body}]
+        else
+          (* add commas at the end of the body *)
+          let body = CompoundStmt (rw body @ (List.map expr (st_inc @ st_cond))) in
+          run (
+            (* pre-pend the commas of the condition *)
+            let* () = append st_cond in
+            return (ForStmt {init; cond; inc; body})
+          )
+
+      (* simple propagation *)
+      | CaseStmt {case; body} ->
+        run (
+          let* case = rewrite_expr case in
+          return (CaseStmt {case; body=rw_s body})
+        )
+      | DefaultStmt s ->
+        [DefaultStmt (rw_s s)]
+      | SwitchStmt {cond; body} ->
+        run (
+          let* cond = rewrite_expr cond in
+          return (SwitchStmt {cond; body=rw_s body})
+        )
+      | s -> [s]
+    and rw_s : t -> t =
+      fun s ->
+        match rw s with
+        | [s] -> s
+        | l -> CompoundStmt l
+    in
+    rw_s
 end
 
 module KernelAttr = struct

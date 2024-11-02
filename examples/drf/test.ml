@@ -109,6 +109,10 @@ let tests = [
   "drf-template-index.cu", [], 0;
   (* 2d array *)
   "drf-2d.cu", [], 0;
+  (* add support for side-effects (reads/writes) in the conditions as commas *)
+  "drf-loop-comma-in-cond.cu", [], 0;
+  "racy-loop-comma-in-cond.cu", [], 1;
+
 ]
 
 (* These are kernels that are being documented, but are
