@@ -1,7 +1,7 @@
 open Stage0
 open Protocols
 
-module StackTrace = Common.StackTrace
+module StackTrace = Stack_trace
 
 open Exp
 type json = Yojson.Basic.t
@@ -244,7 +244,7 @@ module Expr = struct
   let rewrite_comma : t -> (t list * t) =
     let open State.Syntax in
     let add (e:t) : (t list, unit) State.t =
-      State.write (fun st -> e :: st)
+      State.update (fun st -> e :: st)
     in
     let rec rw : t -> (t list, t) State.t =
       function
@@ -459,12 +459,12 @@ module Stmt = struct
   type 'a for_t = {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: 'a}
   type 'a case_t = {case: Expr.t; body: 'a}
   type t =
+    | Skip
     | BreakStmt
     | GotoStmt
     | ReturnStmt of Expr.t option
     | ContinueStmt
     | IfStmt of t if_t
-    | CompoundStmt of t list
     | DeclStmt of Decl.t list
     | WhileStmt of t cond_t
     | ForStmt of t for_t
@@ -473,6 +473,7 @@ module Stmt = struct
     | DefaultStmt of t
     | CaseStmt of t case_t
     | SExpr of Expr.t
+    | Seq of t * t
 
   type if_stmt = t if_t
   type cond_stmt = t cond_t
@@ -533,16 +534,15 @@ module Stmt = struct
           [Line ("if (" ^ Expr.to_string b ^ ")")] @
           ret s1 @
           (if s2 = [] then [] else [ Line "else"; ] @ ret s2)
-      | CompoundStmt [] -> []
-      | CompoundStmt l ->
-        let l = List.concat_map stmt_to_s l in
-        if l = [] then [] else ret l
       | DeclStmt [] -> []
       | DeclStmt [d] -> [Line ("decl " ^ Decl.to_string d)]
       | DeclStmt d ->
         let open Indent in
         [Line "decl {"; Block (List.map (fun e -> Line (Decl.to_string e)) d); Line "}"]
       | SExpr e -> [Line (Expr.to_string e)]
+      | Seq (s1, s2) ->
+        stmt_to_s s1 @ stmt_to_s s2
+      | Skip -> [Line ";"]
     in
     stmt_to_s
 
@@ -555,7 +555,6 @@ module Stmt = struct
       | Return of Expr.t option
       | Continue
       | If of 'a if_t
-      | Compound of 'a list
       | Decl of Decl.t list
       | While of 'a cond_t
       | For of 'a for_t
@@ -564,6 +563,8 @@ module Stmt = struct
       | Default of 'a
       | Case of 'a case_t
       | SExpr of Expr.t
+      | Seq of ('a * 'a)
+      | Skip
 
     let rec fold (f: 'a t -> 'a) : c_stmt -> 'a =
       function
@@ -576,7 +577,6 @@ module Stmt = struct
           then_stmt=fold f c.then_stmt;
           else_stmt=fold f c.else_stmt;
         })
-      | CompoundStmt l -> f (Compound (List.map (fold f) l))
       | DeclStmt l -> f (Decl l)
       | WhileStmt w -> f (While {
           cond=w.cond;
@@ -599,6 +599,8 @@ module Stmt = struct
       | DefaultStmt s -> f (Default (fold f s))
       | CaseStmt s -> f (Case {case=s.case; body=fold f s.body})
       | SExpr e -> f (SExpr e)
+      | Seq (s1, s2) -> f (Seq (fold f s1, fold f s2))
+      | Skip -> f Skip
 
     let map (f: c_stmt -> c_stmt) : c_stmt -> c_stmt =
       fold (
@@ -608,7 +610,6 @@ module Stmt = struct
         | Return e -> f (ReturnStmt e)
         | Continue -> f ContinueStmt
         | If c -> f (IfStmt c)
-        | Compound l -> f (CompoundStmt l)
         | Decl l -> f (DeclStmt l)
         | While c -> f (WhileStmt c)
         | For c -> f (ForStmt c)
@@ -617,17 +618,18 @@ module Stmt = struct
         | Default c -> f (DefaultStmt c)
         | Case c -> f (CaseStmt c)
         | SExpr e -> f (SExpr e)
+        | Seq (s1, s2) -> f (Seq (s1, s2))
+        | Skip -> f Skip
       )
 
     let to_expr_seq: c_stmt -> Expr.t Seq.t =
       fold (function
-        | Break | Goto | Return None | Continue -> Seq.empty
+        | Skip | Break | Goto | Return None | Continue -> Seq.empty
         | Return (Some e) -> Seq.return e
         | If {cond=c; then_stmt=s1; else_stmt=s2} ->
           Seq.return c
           |> Seq.append s1
           |> Seq.append s2
-        | Compound l -> List.to_seq l |> Seq.concat
         | Decl d ->
           List.to_seq d
           |> Seq.concat_map (fun d ->
@@ -645,6 +647,8 @@ module Stmt = struct
           |> Seq.concat_map ForInit.to_expr_seq
         | Default s -> s
         | SExpr e -> Seq.return e
+        | Seq (s1, s2) ->
+          Seq.append s1 s2
       )
 
   end
@@ -653,6 +657,7 @@ module Stmt = struct
     if f s then Some s
     else
     match s with
+    | Skip
     | BreakStmt
     | GotoStmt
     | ReturnStmt _
@@ -660,20 +665,11 @@ module Stmt = struct
     | DeclStmt _
     | SExpr _ ->
       None
+    | Seq (s1, s2)
     | IfStmt {then_stmt=s1; else_stmt=s2; _} ->
       (match find f s1 with
       | Some s -> Some s
       | None -> find f s2)
-    | CompoundStmt l ->
-      let rec find_l : t list -> t option =
-        function
-        | [] -> None
-        | s :: l ->
-          if f s
-          then Some s
-          else find_l l
-      in
-      find_l l
     | WhileStmt {body= s; _}
     | DoStmt {body = s; _}
     | SwitchStmt {body= s; _}
@@ -689,6 +685,7 @@ module Stmt = struct
     fun f (s:t) (init:'a) ->
     let init : 'a = f s init in
     match s with
+    | Skip
     | BreakStmt
     | GotoStmt
     | ReturnStmt _
@@ -699,15 +696,16 @@ module Stmt = struct
     | IfStmt {then_stmt=s1; else_stmt=s2; _} ->
       let init : 'a = fold f s1 init in
       fold f s2 init
-    | CompoundStmt l ->
-      List.fold_right (fold f) l init
-    | WhileStmt {body= s; _}
+    | WhileStmt {body = s; _}
     | DoStmt {body = s; _}
-    | SwitchStmt {body= s; _}
-    | CaseStmt {body= s; _}
+    | SwitchStmt {body = s; _}
+    | CaseStmt {body = s; _}
     | DefaultStmt s
-    | ForStmt {body= s; _} ->
+    | ForStmt {body = s; _} ->
       fold f s init
+    | Seq (s1, s2) ->
+      fold f s1 init
+      |> fold f s2
 
   (* Returns all elements that match a given predicate *)
   let find_all_map (f: t -> 'a option) (s: t) : 'a Seq.t =
@@ -718,27 +716,39 @@ module Stmt = struct
     in
     fold g s Seq.empty
 
+  let seq (s1:t) (s2:t) : t =
+    if s1 = Skip then s2
+    else if s2 = Skip then s1
+    else Seq (s1, s2)
 
   let find_all (f: t -> bool) : t -> t Seq.t =
     find_all_map (fun x -> if f x then Some x else None)
 
-  let concat (s1:t) (s2:t) : t =
-    match s1, s2 with
-    | _, CompoundStmt [] -> s1
-    | CompoundStmt [], _ -> s2
-    | CompoundStmt l1, CompoundStmt l2 -> CompoundStmt (l1 @ l2)
-    | CompoundStmt l1, _ -> CompoundStmt (l1 @ [s2])
-    | _, CompoundStmt l2 -> CompoundStmt (s1 :: l2)
-    | _, _ -> CompoundStmt [s1; s2]
+  let from_list (l:t list) : t =
+    List.fold_left seq Skip l
 
   let rewrite_comma : t -> t =
     let open State.Syntax in
-    let append (l: Expr.t list) : (Expr.t list, unit) State.t =
-      State.write (fun st' -> l @ st')
+
+    let to_stmt (l: Expr.t list) : t =
+      match l with
+      | x :: l ->
+        List.fold_left (fun s e ->
+          Seq (SExpr e, s)
+        ) (SExpr x) l
+      | [] -> Skip
     in
-    let rewrite_expr (e: Expr.t) : (Expr.t list, Expr.t) State.t =
+
+    let add (s:t) : (t, unit) State.t =
+      if s = Skip then
+        return ()
+      else
+        State.update (fun s' -> seq s' s)
+    in
+
+    let rewrite_expr (e: Expr.t) : (t, Expr.t) State.t =
       let (st, e) = Expr.rewrite_comma e in
-      let* () = append st in
+      let* () = add (to_stmt st) in
       return e
     in
 
@@ -750,86 +760,87 @@ module Stmt = struct
       | None ->
         ([], None)
     in
-    let run (m:(Expr.t list, t) State.t) : t list =
-      let (st, s) = State.run [] m in
-      List.map expr st @ [s]
+
+    let run (m:(t, unit) State.t) : t =
+      let (s, ()) = State.run Skip m in
+      s
     in
-    let rec rw : t -> t list =
+
+    let rec rw : t -> t =
       function
       | ReturnStmt None ->
-        [ReturnStmt None]
+        ReturnStmt None
+
       | ReturnStmt (Some e) ->
         run (
           let* e = rewrite_expr e in
-          return (ReturnStmt (Some e))
+          add (ReturnStmt (Some e))
         )
+
       | IfStmt {cond; then_stmt; else_stmt} ->
         run (
           let* cond = rewrite_expr cond in
-          let then_stmt = rw_s then_stmt in
-          let else_stmt = rw_s else_stmt in
-          return (IfStmt {cond; then_stmt; else_stmt})
+          let then_stmt = rw then_stmt in
+          let else_stmt = rw else_stmt in
+          add (IfStmt {cond; then_stmt; else_stmt})
         )
-      | CompoundStmt l ->
-        List.concat_map rw l
+
       | WhileStmt {cond; body} ->
         let (st, cond) = Expr.rewrite_comma cond in
         if st = [] then
           (* easy case, no commas in the condition *)
-          [WhileStmt {cond; body=rw_s body}]
+          WhileStmt {cond; body=rw body}
         else
+        let s = to_stmt st in
         (* when there are commas in the condition, we need to
            append the commas to the end of the loop body, and before
            the loop too *)
-        let body = CompoundStmt (rw body @ List.map expr st) in
-        run (
-          (* prepend commas before the loop is executed *)
-          let* () = append st in
-          return (WhileStmt {cond; body})
-        )
+        let body = Seq (rw body, s) in
+        Seq (s, WhileStmt {cond; body})
+
       | DoStmt {cond; body} ->
         let (st, cond) = Expr.rewrite_comma cond in
-        if st = [] then
-          [DoStmt {cond; body=rw_s body}]
-        else
-        let body = CompoundStmt (rw body @ List.map expr st) in
-        [DoStmt {cond; body}]
+        let body = seq (to_stmt st) (rw body) in
+        DoStmt {cond; body}
+
       | ForStmt {init; cond; inc; body} ->
         (* this works as a combination of a while and a do-loop *)
         let (st_cond, cond) = opt_rewrite_comma cond in
         let (st_inc, inc) = opt_rewrite_comma inc in
         if st_cond = [] && st_inc = [] then
-          [ForStmt {init; cond; inc; body=rw_s body}]
+          ForStmt {init; cond; inc; body=rw body}
         else
+          let st_inc = to_stmt st_inc in
+          let st_cond = to_stmt st_cond in
           (* add commas at the end of the body *)
-          let body = CompoundStmt (rw body @ (List.map expr (st_inc @ st_cond))) in
-          run (
+          let body =
+            Seq (
+              rw body,
+              seq st_inc st_cond
+            )
+          in
+          Seq (
             (* pre-pend the commas of the condition *)
-            let* () = append st_cond in
-            return (ForStmt {init; cond; inc; body})
+            st_cond,
+            ForStmt {init; cond; inc; body}
           )
 
       (* simple propagation *)
       | CaseStmt {case; body} ->
         run (
           let* case = rewrite_expr case in
-          return (CaseStmt {case; body=rw_s body})
+          add (CaseStmt {case; body=rw body})
         )
       | DefaultStmt s ->
-        [DefaultStmt (rw_s s)]
+        DefaultStmt (rw s)
       | SwitchStmt {cond; body} ->
         run (
           let* cond = rewrite_expr cond in
-          return (SwitchStmt {cond; body=rw_s body})
+          add (SwitchStmt {cond; body=rw body})
         )
-      | s -> [s]
-    and rw_s : t -> t =
-      fun s ->
-        match rw s with
-        | [s] -> s
-        | l -> CompoundStmt l
+      | s -> s
     in
-    rw_s
+    rw
 end
 
 module KernelAttr = struct
@@ -959,6 +970,7 @@ module Program = struct
         let ret (s: Stmt.t) : Stmt.t = rw_s vars s |> snd in
         let rw_e: Expr.t -> Expr.t = rw_exp vars in
         match s with
+        | Skip
         | BreakStmt
         | GotoStmt
         | ReturnStmt None
@@ -968,10 +980,10 @@ module Program = struct
           (vars, ReturnStmt (Some (rw_e e)))
         | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
           (vars, IfStmt {cond=rw_e c; then_stmt=ret s1; else_stmt=ret s2})
-        | CompoundStmt l ->
-          (* This is one of the interesting cases, since we
-            propagate scoping through the monadic map (rw_list). *)
-          (vars, CompoundStmt (rw_list rw_s vars l |> snd))
+        | Seq (s1, s2) ->
+          let (vars, s1) = rw_s vars s1 in
+          let (vars, s2) = rw_s vars s2 in
+          (vars, Seq (s1, s2))
         | DeclStmt l ->
           (* Variable declaration introduces a scope *)
           let (vars, l) = rw_list rw_decl vars l in
@@ -1466,7 +1478,7 @@ let rec parse_stmt (j:json) : Stmt.t j_result =
       | [cond;then_stmt] ->
         let* cond = wrap parse_exp "cond" cond in
         let* then_stmt = wrap parse_stmt "then_stmt" then_stmt in
-        Ok (cond, then_stmt, CompoundStmt [])
+        Ok (cond, then_stmt, Skip)
       | _ ->
         let g = List.length l |> string_of_int in
         root_cause ("Expecting a list of length 2 or 3, but got a length of list " ^ g) j
@@ -1489,7 +1501,7 @@ let rec parse_stmt (j:json) : Stmt.t j_result =
       in
       Result.value ~default:false has_typedecl
     in
-    if has_typedecl then Ok (CompoundStmt []) else
+    if has_typedecl then Ok Skip else
     let static_assert : Stmt.t option =
       o
       |> with_field "inner" (cast_list_1 (fun j ->
@@ -1533,7 +1545,8 @@ let rec parse_stmt (j:json) : Stmt.t j_result =
       | `Assoc _ -> let* o = parse_stmt i in Ok [o]
       | _ -> parse_stmt_list i
     ) [] o in
-    Ok (CompoundStmt children)
+    let children = List.fold_left seq Skip children in
+    Ok children
   | Some "LabelStmt" ->
     (* TODO: do not parse LabelStmt *) 
     with_field "inner" (cast_list_1 parse_stmt) o
@@ -1589,11 +1602,11 @@ let rec parse_stmt (j:json) : Stmt.t j_result =
     ) o in
     Ok (ForStmt {init=init; cond=cond; inc=inc; body=body})
   | Some "FullComment"
-  | Some "NullStmt" -> Ok (CompoundStmt [])
+  | Some "NullStmt" -> Ok Skip
   | Some _ ->
     let* e = parse_exp j in
     Ok (SExpr e)
-  | None -> Ok (CompoundStmt [])
+  | None -> Ok Skip
 
 and parse_stmt_list = fun inner ->
   let open Rjson in
@@ -1654,10 +1667,7 @@ let parse_kernel (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Kernel.t j_r
        is only invoked when we are able to parse *)
     let m: KernelAttr.t = List.find_map KernelAttr.parse attrs |> Option.get in
     let* body: Stmt.t list = parse_stmt_list (`List body) in
-    let body = match body with
-      | [s] -> s
-      | _ -> CompoundStmt body
-    in
+    let body = List.fold_left Stmt.seq Skip body in
     let* name: string = with_field "name" cast_string o in
     (* Parameters may be faulty, recover: *)
     let ps = List.map parse_param ps |> List.concat_map Result.to_list in
@@ -1780,7 +1790,7 @@ let rec parse_def (j:Yojson.Basic.t) : Def.t list j_result =
   let parse_k (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Def.t list j_result =
     if is_kernel j then (
       let* k = parse_kernel type_params j in
-      (if k.code = CompoundStmt [] then Ok []
+      (if k.code = Skip then Ok []
       else
         Ok [Kernel k])
     ) else Ok []

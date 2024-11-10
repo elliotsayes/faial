@@ -1,3 +1,4 @@
+open Stage0 (* State *)
 open Protocols
 
 let ( let* ) = Option.bind
@@ -196,6 +197,7 @@ module NDAccess = struct
 end
 
 module Expressions = struct
+  open Stage0 (* because of State *)
   open W_lang
   type t =
     | Unsupported
@@ -289,300 +291,294 @@ module Expressions = struct
     | Literal l -> Literals.to_int l
     | _ -> None
 
-  module Context = struct
+  open State.Syntax
 
+  module Read = struct
     type expr = t
+    type t = {
+      target: (Type.t * Variable.t) option;
+      array: Variable.t;
+      index: expr list;
+    }
 
-    module Read = struct
-      type t = {
-        target: (Type.t * Variable.t) option;
-        array: Variable.t;
-        index: expr list;
-      }
+    let read ~array (index:expr list) : t =
+      {target=None; array; index}
 
-      let read ~array (index:expr list) : t =
-        {target=None; array; index}
+    let read_to ~target_var ~target_ty ~array (index:expr list) : t =
+      {target=Some (target_ty, target_var); array; index}
+  end
 
-      let read_to ~target_var ~target_ty ~array (index:expr list) : t =
-        {target=Some (target_ty, target_var); array; index}
-    end
+  type context = {reads: Read.t list; unknowns: Variable.Set.t}
+  type 'a state = (context, 'a) State.t
 
-    type t = Read.t list
+  let counter = ref 1
 
-    type 'a state = t -> (t * 'a)
+  let empty : context = {reads=[]; unknowns=Variable.Set.empty}
 
-    let return (x:'a) : 'a state =
-      fun s -> (s, x)
+  let push_read (r: Read.t) : unit state =
+    State.update (fun s ->
+      { s with reads = r :: s.reads }
+    )
 
-    let bind (m : 'a state) (f: 'a -> 'b state) : 'b state =
-      fun s ->
-        let (s', x) = m s in
-        f x s'
+  let alloc (f: Variable.t -> Read.t) : Variable.t state =
+    let count = !counter in
+    counter := count + 1;
+    let var = "@AccessState" ^ string_of_int count |> Variable.from_name in
+    let* _ = push_read (f var) in
+    return var
 
-    let ( let* ) = bind
-
-    let get : t state =
-      fun s -> (s, s)
-
-    let put (s': t) : unit state =
-      fun _ -> (s', ())
-
-    let rec map (f: 'a -> 'b state) (l:'a list) : 'b list state =
-      match l with
-      | [] -> return []
-      | x :: l ->
-        let* x = f x in
-        let* l = map f l in
-        return (x::l)
-
-    let counter = ref 1
-
-    let empty : t = []
-
-    let push (r: Read.t) : unit state =
-      let* s = get in
-      put (r::s)
-
-    let alloc (f: Variable.t -> Read.t) : Variable.t state =
-      let count = !counter in
-      counter := count + 1;
-      let var = "@AccessState" ^ string_of_int count |> Variable.from_name in
-      let* _ = push (f var) in
-      return var
-
-    (* Add a read to the current state, returns a variable that represents
-       the value being read. *)
-    let add
-      ?(target=None)
-      ~array:(array:Ident.t)
-      ~index:(index:expr list)
-      ()
-    :
-      expr state
-    =
-      match target with
-      | Some target ->
-        let* () = push (Read.read ~array:array.var index) in
-        return (Ident target)
-      | None ->
-        (* Get the type of the value being read *)
-        let target_ty =
-          Type.deref_list (List.map to_int index) array.ty
-          (* Defaults to a non-int and non-bool type so that it short circuits *)
-          |> Option.value ~default:Type.f64
-        in
-        if Type.is_int target_ty || Type.is_bool target_ty then
-          let* var = alloc (fun target_var ->
-              Read.read_to ~target_var ~target_ty ~array:array.var index
-            )
-          in
-          return (Ident {var; ty=target_ty; kind=LocalVariable})
-        else
-          (* Don't generate a variable declaration when reading a non-int *)
-          let* () = push (Read.read ~array:array.var index) in
-          return Unsupported
-
-    let rec rewrite (e: W_lang.Expression.t) : expr state =
-      let unsupported ?(expr=e) () : expr state =
-        let* _ = map rewrite (W_lang.Expression.children expr) in
-        return Unsupported
+  (* Add a read to the current state, returns a variable that represents
+      the value being read. *)
+  let add
+    ?(target=None)
+    ~array:(array:Ident.t)
+    ~index:(index:t list)
+    ()
+  :
+    t state
+  =
+    match target with
+    | Some target ->
+      let* () = push_read (Read.read ~array:array.var index) in
+      return (Ident target)
+    | None ->
+      (* Get the type of the value being read *)
+      let target_ty =
+        Type.deref_list (List.map to_int index) array.ty
+        (* Defaults to a non-int and non-bool type so that it short circuits *)
+        |> Option.value ~default:Type.f64
       in
-      match e with
-      | Literal l ->
-        return (
-          match Literals.parse l with
-          | Some l -> Literal l
-          | None -> Unsupported
-        )
+      if Type.is_int target_ty || Type.is_bool target_ty then
+        let* var = alloc (fun target_var ->
+            Read.read_to ~target_var ~target_ty ~array:array.var index
+          )
+        in
+        return (Ident {var; ty=target_ty; kind=LocalVariable})
+      else
+        (* Don't generate a variable declaration when reading a non-int *)
+        let* () = push_read (Read.read ~array:array.var index) in
+        return Unsupported
 
-      | ZeroValue ty -> return (ZeroValue ty)
-
-      | Compose {ty; components} ->
-        let* components = map rewrite components in
-        return (Compose {ty; components})
-
-      | Load (Access {location; _} as e)
-      | Load (AccessIndex {location; _} as e) ->
-        (* Try to parse the access from the expression using NDAccess *)
-        (match NDAccess.from_expression location e with
-        | Some a ->
-          (* rewrite the inferred list of indices *)
-          let* index = map rewrite a.index in
-          (* try to extract the target variable if there is on *)
-          let target = NDAccess.flatten a in
-          (* emit a read *)
-          add ~target ~array:a.array ~index ()
-        | None ->
-          (* we override the target expression we're passing to unsupported
-             because we want to get the children of the access, not the children
-             of the load (which is what the default is). *)
-          unsupported ~expr:e ())
-
-      (* We need a special case for handling gid, because we do not
-         support GID natively. *)
-      | AccessIndex {base=Ident i; index; _}
-        when IdentKind.is_global_invocation_id i.kind ->
-        return (global_idx index |> Option.value ~default:Unsupported)
-
-      | AccessIndex {base; index; _} ->
-        let* base = rewrite base in
-        return (map_ident (fun (x:W_lang.Ident.t) ->
-          Variables.inline_field index x
-          |> Option.value ~default:x
-        )  base)
-
-      | Splat {size; value} ->
-        let* value = rewrite value in
-        return (Splat {size; value})
-
-      | Ident i ->
-        return (Ident i)
-
-      | Load e ->
-        rewrite e
-
-      | Unary {expr; op} ->
-        let* expr = rewrite expr in
-        return (Unary {expr; op})
-
-      | Binary {op; left; right} ->
-        let* left = rewrite left in
-        let* right = rewrite right in
-        return (Binary {op; left; right})
-
-      | Select {condition; accept; reject;} ->
-        let* condition = rewrite condition in
-        let* accept = rewrite accept in
-        let* reject = rewrite reject in
-        return (Select {condition; accept; reject;})
-
-      | Relational {argument; fun_;} ->
-        let* argument = rewrite argument in
-        return (Relational {fun_; argument;})
-
-      | Math {fun_; args;} ->
-        let* args = map rewrite args in
-        return (Math {fun_; args;})
-
-      | As {expr; kind; convert;} ->
-        let* expr = rewrite expr in
-        return (As {expr; kind; convert;})
-
-      | ArrayLength (Ident i) ->
-        return (Ident (W_lang.Ident.add_suffix ".len" i))
-
-      | ArrayLength _
-      | Derivative _
-      | Access _
-      | Swizzle _
-      | ImageSample _
-      | ImageLoad _
-      | ImageQuery _ ->
-        unsupported ()
-
-    let rec to_i_exp : expr -> Imp.Infer_exp.t =
-      function
-      | Literal l -> Literals.tr l
-      | Ident {var; _} ->
-        NExp (Var var)
-      | Binary {op; left; right} ->
-        let left = to_i_exp left in
-        let right = to_i_exp right in
-        let open N_binary in
-        let open N_rel in
-        let open B_rel in
-        (match op with
-        | Add -> NExp (Binary (Plus, left, right))
-        | Subtract -> NExp (Binary (Minus, left, right))
-        | Multiply -> NExp (Binary (Mult, left, right))
-        | Divide -> NExp (Binary (Div, left, right))
-        | Modulo -> NExp (Binary (Mod, left, right))
-        | Equal -> BExp (NRel (Eq, left, right))
-        | NotEqual -> BExp (NRel (Neq, left, right))
-        | Less -> BExp (NRel (Lt, left, right))
-        | LessEqual -> BExp (NRel (Le, left, right))
-        | Greater -> BExp (NRel (Gt, left, right))
-        | GreaterEqual -> BExp (NRel (Ge, left, right))
-        | And -> NExp (Binary (BitAnd, left, right))
-        | ExclusiveOr -> NExp (Binary (BitXOr, left, right))
-        | InclusiveOr -> NExp (Binary (BitOr, left, right))
-        | LogicalAnd -> BExp (BRel (BAnd, left, right))
-        | LogicalOr -> BExp (BRel (BOr, left, right))
-        | ShiftLeft -> NExp (Binary (LeftShift, left, right))
-        | ShiftRight -> NExp (Binary (RightShift, left, right))
-        )
-      | Select {condition; accept; reject;} ->
-        NExp (NIf (to_i_exp condition, to_i_exp accept, to_i_exp reject))
-      | As {expr; _} ->
-        to_i_exp expr
-      | Unary {op; expr} ->
-        let expr = to_i_exp expr in
-        (match op with
-        | Negate -> NExp (Unary (Negate, expr))
-        | LogicalNot -> BExp (BNot expr)
-        | BitwiseNot -> NExp (Unary (BitNot, expr))
-        )
-      | Splat _ -> Unknown "Splat"
-      | ZeroValue _ -> Unknown "ZeroValue"
-      | Compose _ -> Unknown "Compose"
-      | Math {fun_=Min; args=[arg1; arg2]} ->
-        NExp (Imp.Infer_exp.min (to_i_exp arg1) (to_i_exp arg2))
-      | Math {fun_=Max; args=[arg1; arg2]} ->
-        NExp (Imp.Infer_exp.max (to_i_exp arg1) (to_i_exp arg2))
-      | _ -> Unknown "?"
-  end (* end of Context *)
-
-  let rec n_tr (e: W_lang.Expression.t) : (Imp.Stmt.t list * Exp.nexp) =
-    let (reads, e) = extract_reads e in
-    let (decls, e) =
-      e
-      |> Context.to_i_exp
-      |> Imp.Infer_exp.infer_nexp
+  let rec rewrite (e: W_lang.Expression.t) : t state =
+    let unsupported ?(expr=e) () : t state =
+      let* _ = State.list_map rewrite (W_lang.Expression.children expr) in
+      return Unsupported
     in
-    (reads @ decls, e)
+    match e with
+    | Literal l ->
+      return (
+        match Literals.parse l with
+        | Some l -> Literal l
+        | None -> Unsupported
+      )
 
-  and extract_reads (e:W_lang.Expression.t) : (Imp.Stmt.t list * t) =
-    let (reads, e) = Context.rewrite e [] in
-    (List.concat_map r_tr (List.rev reads), e)
+    | ZeroValue ty -> return (ZeroValue ty)
 
-  and l_extract_reads (l:W_lang.Expression.t list) : (Imp.Stmt.t list * t list) =
-    let (reads, l) = (Context.map Context.rewrite l) [] in
-    (List.concat_map r_tr (List.rev reads), l)
+    | Compose {ty; components} ->
+      let* components = State.list_map rewrite components in
+      return (Compose {ty; components})
 
-  and r_tr (r: Context.Read.t) : Imp.Stmt.t list =
-    (* get base type *)
-    let target = Option.map (fun (ty, x) -> (Types.tr ty, x)) r.target in
-    let array = r.array in
-    let (decls, index) =
-      r.index
-      |> List.map Context.to_i_exp
-      |> Imp.Infer_exp.infer_nexp_list
+    | Load (Access {location; _} as e)
+    | Load (AccessIndex {location; _} as e) ->
+      (* Try to parse the access from the expression using NDAccess *)
+      (match NDAccess.from_expression location e with
+      | Some a ->
+        (* rewrite the inferred list of indices *)
+        let* index = State.list_map rewrite a.index in
+        (* try to extract the target variable if there is on *)
+        let target = NDAccess.flatten a in
+        (* emit a read *)
+        add ~target ~array:a.array ~index ()
+      | None ->
+        (* we override the target expression we're passing to unsupported
+            because we want to get the children of the access, not the children
+            of the load (which is what the default is). *)
+        unsupported ~expr:e ())
+
+    (* We need a special case for handling gid, because we do not
+        support GID natively. *)
+    | AccessIndex {base=Ident i; index; _}
+      when IdentKind.is_global_invocation_id i.kind ->
+      return (global_idx index |> Option.value ~default:Unsupported)
+
+    | AccessIndex {base; index; _} ->
+      let* base = rewrite base in
+      return (map_ident (fun (x:W_lang.Ident.t) ->
+        Variables.inline_field index x
+        |> Option.value ~default:x
+      )  base)
+
+    | Splat {size; value} ->
+      let* value = rewrite value in
+      return (Splat {size; value})
+
+    | Ident i ->
+      return (Ident i)
+
+    | Load e ->
+      rewrite e
+
+    | Unary {expr; op} ->
+      let* expr = rewrite expr in
+      return (Unary {expr; op})
+
+    | Binary {op; left; right} ->
+      let* left = rewrite left in
+      let* right = rewrite right in
+      return (Binary {op; left; right})
+
+    | Select {condition; accept; reject;} ->
+      let* condition = rewrite condition in
+      let* accept = rewrite accept in
+      let* reject = rewrite reject in
+      return (Select {condition; accept; reject;})
+
+    | Relational {argument; fun_;} ->
+      let* argument = rewrite argument in
+      return (Relational {fun_; argument;})
+
+    | Math {fun_; args;} ->
+      let* args = State.list_map rewrite args in
+      return (Math {fun_; args;})
+
+    | As {expr; kind; convert;} ->
+      let* expr = rewrite expr in
+      return (As {expr; kind; convert;})
+
+    | ArrayLength (Ident i) ->
+      return (Ident (W_lang.Ident.add_suffix ".len" i))
+
+    | ArrayLength _
+    | Derivative _
+    | Access _
+    | Swizzle _
+    | ImageSample _
+    | ImageLoad _
+    | ImageQuery _ ->
+      unsupported ()
+
+  let rec to_i_exp : t -> Imp.Infer_exp.t =
+    function
+    | Literal l -> Literals.tr l
+    | Ident {var; _} ->
+      NExp (Var var)
+    | Binary {op; left; right} ->
+      let left = to_i_exp left in
+      let right = to_i_exp right in
+      let open N_binary in
+      let open N_rel in
+      let open B_rel in
+      (match op with
+      | Add -> NExp (Binary (Plus, left, right))
+      | Subtract -> NExp (Binary (Minus, left, right))
+      | Multiply -> NExp (Binary (Mult, left, right))
+      | Divide -> NExp (Binary (Div, left, right))
+      | Modulo -> NExp (Binary (Mod, left, right))
+      | Equal -> BExp (NRel (Eq, left, right))
+      | NotEqual -> BExp (NRel (Neq, left, right))
+      | Less -> BExp (NRel (Lt, left, right))
+      | LessEqual -> BExp (NRel (Le, left, right))
+      | Greater -> BExp (NRel (Gt, left, right))
+      | GreaterEqual -> BExp (NRel (Ge, left, right))
+      | And -> NExp (Binary (BitAnd, left, right))
+      | ExclusiveOr -> NExp (Binary (BitXOr, left, right))
+      | InclusiveOr -> NExp (Binary (BitOr, left, right))
+      | LogicalAnd -> BExp (BRel (BAnd, left, right))
+      | LogicalOr -> BExp (BRel (BOr, left, right))
+      | ShiftLeft -> NExp (Binary (LeftShift, left, right))
+      | ShiftRight -> NExp (Binary (RightShift, left, right))
+      )
+    | Select {condition; accept; reject;} ->
+      NExp (NIf (to_i_exp condition, to_i_exp accept, to_i_exp reject))
+    | As {expr; _} ->
+      to_i_exp expr
+    | Unary {op; expr} ->
+      let expr = to_i_exp expr in
+      (match op with
+      | Negate -> NExp (Unary (Negate, expr))
+      | LogicalNot -> BExp (BNot expr)
+      | BitwiseNot -> NExp (Unary (BitNot, expr))
+      )
+    | Splat _ -> Unknown "Splat"
+    | ZeroValue _ -> Unknown "ZeroValue"
+    | Compose _ -> Unknown "Compose"
+    | Math {fun_=Min; args=[arg1; arg2]} ->
+      NExp (Imp.Infer_exp.min (to_i_exp arg1) (to_i_exp arg2))
+    | Math {fun_=Max; args=[arg1; arg2]} ->
+      NExp (Imp.Infer_exp.max (to_i_exp arg1) (to_i_exp arg2))
+    | _ -> Unknown "?"
+
+  let run_exp
+    (f:Imp.Infer_exp.t -> 'a Imp.Infer_exp.state)
+    (e:W_lang.Expression.t)
+  :
+    'a state
+  =
+    let* e = rewrite e in
+    Stage0.State.update_return (fun ctx ->
+      let e = f (to_i_exp e) in
+      let (vars, e) = Stage0.State.run ctx.unknowns e in
+      ({ ctx with unknowns = vars }, e)
+    )
+
+  let n_tr : W_lang.Expression.t -> Exp.nexp state =
+    run_exp Imp.Infer_exp.to_nexp
+
+  let b_tr : W_lang.Expression.t -> Exp.bexp state =
+    run_exp Imp.Infer_exp.to_bexp
+
+  let run (e:Imp.Stmt.t state) : Imp.Stmt.t =
+    (* given an empty context, output the final statement and context *)
+    let (ctx, post) = State.run empty e in
+    (* convert each read to a statement, and output unknowns *)
+    let (vars, reads) = Imp.Infer_exp.vars ~init:ctx.unknowns (
+      Stage0.State.list_map (fun (r:Read.t) ->
+        let array = r.array in
+        let target = Option.map (fun (ty, x) -> (Types.tr ty, x)) r.target in
+        let l = List.map to_i_exp r.index in
+        let* index = State.list_map Imp.Infer_exp.to_nexp l in
+        return (Imp.Stmt.Read {index; array; target;})
+      ) ctx.reads
+    ) in
+    (* generate all of the statements *)
+    Imp.Stmt.from_list [
+      Imp.Stmt.decl_unset vars;
+      Imp.Stmt.from_list reads;
+      post
+    ]
+
+  let reads (l:W_lang.Expression.t list) : Imp.Stmt.t =
+    run (
+      let* _ = Stage0.State.list_map n_tr l in
+      return Imp.Stmt.Skip
+    )
+
+  let pure (e:W_lang.Expression.t) : Imp.Infer_exp.t option =
+    let (ctx, e) = Stage0.State.run empty (
+      let* e = rewrite e in
+      return (to_i_exp e)
+    )
     in
-    decls
-    @
-    [ Imp.Stmt.Read {index; array; target;} ]
+    match ctx with
+    | {reads=[]; unknowns} when Variable.Set.is_empty unknowns ->
+      Some e
+    | _ -> None
 
-  let b_tr (e: W_lang.Expression.t) : (Imp.Stmt.t list * Exp.bexp) =
-    let (reads, e) = extract_reads e in
-    let (decls, e) =
-      e
-      |> Context.to_i_exp
-      |> Imp.Infer_exp.infer_bexp
-    in
-    (reads @ decls, e)
+  let no_unknowns
+    (f:Imp.Infer_exp.t -> 'a Imp.Infer_exp.state)
+    (e:W_lang.Expression.t)
+  :
+    'a option
+  =
+    match pure e with
+    | Some e -> Imp.Infer_exp.no_unknowns (f e)
+    | None -> None
 
+  let try_nexp (e:W_lang.Expression.t) : Exp.nexp option =
+    no_unknowns Imp.Infer_exp.to_nexp e
 
-  let n_list_tr (l: W_lang.Expression.t list) : (Imp.Stmt.t list * Exp.nexp list) =
-    let (reads, l) = l_extract_reads l in
-    let (decls, l) =
-      l
-      |> List.map Context.to_i_exp
-      |> Imp.Infer_exp.infer_nexp_list
-    in
-    (reads @ decls, l)
-
-  let reads (l:W_lang.Expression.t list) : Imp.Stmt.t list =
-    n_list_tr l |> fst
+  let try_bexp (e:W_lang.Expression.t) : Exp.nexp option =
+    no_unknowns Imp.Infer_exp.to_nexp e
 
 end
 
@@ -634,12 +630,7 @@ module Globals = struct
     | Scalar s when W_lang.Scalar.is_int s ->
       let init =
         match d.init with
-        | Some e ->
-            let (l, e) = Expressions.n_tr e in
-            if l = [] then
-              Some e
-            else
-              None
+        | Some e -> Expressions.try_nexp e
         | None -> None
       in
       [{var=Variable.from_name d.name; ty=Types.tr d.ty; init}]
@@ -740,10 +731,11 @@ module Context = struct
       )
       empty
 
-  let assigns (ctx:t) : Imp.Stmt.t list =
+  let assigns (ctx:t) : Imp.Stmt.t =
     ctx.assigns
     |> List.rev
     |> List.filter_map Const.to_stmt
+    |> Imp.Stmt.from_list
 
   let lookup (name:string) (ctx:t) : Signature.t =
     Typing.lookup name ctx.typing
@@ -751,167 +743,210 @@ module Context = struct
 end
 
 module Statements = struct
-  let tr (ctx:Context.t) : W_lang.Statement.t list -> Imp.Stmt.t list =
-    let rec tr : W_lang.Statement.t -> Imp.Stmt.t list =
-      let open Imp.Stmt in
-      let ret = Option.value ~default:[] in
-      let ret_or (l:W_lang.Expression.t list) (r:Imp.Stmt.t list option) =
-        match r with
-        | Some r -> r
-        | None -> Expressions.reads l
-      in
-      function
-      | Store {pointer=Access {location; _} as e; value; }
-      | Store {pointer=AccessIndex {location; _} as e; value}
-        ->
-        ret_or [e; value] (
+  open Imp
+  open Imp.Stmt
+  open Stage0 (* make the state monad available *)
+
+  let tr (ctx:Context.t) : W_lang.Statement.t list -> Imp.Stmt.t =
+    let rec tr : W_lang.Statement.t -> Imp.Stmt.t =
+      fun s ->
+      let r =
+        match s with
+        | Store {pointer=Access {location; _} as e; value; }
+        | Store {pointer=AccessIndex {location; _} as e; value}
+          ->
           let* a = NDAccess.from_expression location e in
-          let (stmts1, index) = Expressions.n_list_tr a.index in
-          let (stmts2, value) = Expressions.n_tr value in
-          let payload =
-            match value with
-            | Num n -> Some n
-            | _ -> None
-          in
-          Some (stmts1 @ stmts2 @ [Write {array=a.array.var; index; payload}])
-        )
-
-      | Atomic {pointer=e;fun_;value;result; location} ->
-        let args = [e; value] in
-        ret_or args (
-          let stmts1, _ = Expressions.n_list_tr [value] in
-          let* a = NDAccess.from_expression location e in
-          let (stmts2, index) = Expressions.n_list_tr a.index in
-          let fun_ = "atomic" ^ W_lang.AtomicFunction.to_string fun_ in
-          let atomic : Atomic.t = {
-            name = Variable.from_name fun_;
-            (* TODO: what does WGSL defaults to? *)
-            scope = Atomic.Scope.Device;
-          } in
-          let array = Variable.set_location location a.array.var in
-          let default = W_lang.Ident.atomic_result W_lang.Type.u32 in
-          let result = Option.value ~default result in
-          Some (stmts1 @ stmts2 @ [ Atomic {
-            array;
-            index;
-            ty=Types.tr result.ty;
-            atomic;
-            target=result.var;
-          }])
-        )
-
-      | Store {pointer=Ident ({ty; _}) as i; value} when W_lang.Type.is_int ty ->
-        ret (
-          let* (ty, var) = Variables.tr i in
-          let (stmts, data) = Expressions.n_tr value in
-          Some (stmts @ [ Assign {var; data; ty} ])
-        )
-      | Store {value; _} ->
-        ret (
-          let (stmts, _) = Expressions.n_tr value in
-          Some stmts
-        )
-      | Block l ->
-        [tr_block l]
-      | If {condition; accept=[Return None]; reject=[]}
-      | If {condition; accept=[Break]; reject=[]}
-      | If {condition; accept=[Continue]; reject=[]} ->
-        let (stmts, c) = Expressions.b_tr condition in
-        stmts @ [Assert (Imp.Assert.make (Exp.b_not c) Local)]
-      | If {condition; accept; reject} ->
-        let (stmts, c) = Expressions.b_tr condition in
-        stmts @ [
-          If (c, tr_block accept, tr_block reject)
-        ]
-      | Loop {body; continuing=[Store _] as c; break_if=Some condition} ->
-        let (stmts, cond) = Expressions.b_tr condition in
-        let inc = tr_block c in
-        let body = tr_block body in
-        let f : Imp.For.t = {
-          init = None;
-          cond = Some (Exp.b_not cond);
-          inc = Some inc;
-        } in
-        stmts @ [Imp.For.to_stmt f body]
-      | Loop {body=(If {condition; accept=[];reject=[Break]})::body; continuing=[Store _] as c; break_if=None} ->
-        let (stmts, cond) = Expressions.b_tr condition in
-        let inc = tr_block c in
-        let body = tr_block body in
-        let f : Imp.For.t = {
-          init = None;
-          cond = Some cond;
-          inc = Some inc;
-        } in
-        stmts @ [Imp.For.to_stmt f body]
-      | Loop {body=(If {condition; accept=[Break];reject=[]})::body; break_if=None; continuing=[Store _] as c} ->
-        let (stmts, cond) = Expressions.b_tr condition in
-        let inc = tr_block c in
-        let body = tr_block body in
-        let f : Imp.For.t = {
-          init = None;
-          cond = Some (Exp.b_not cond);
-          inc = Some inc;
-        } in
-        stmts @ [Imp.For.to_stmt f body]
-      | Barrier _ -> [Imp.Stmt.Sync None]
-
-      | Call {result; function_=kernel; arguments=args} ->
-        let stmts, args = Expressions.n_list_tr args in
-        let args : (Variable.t * Imp.Arg.t) list =
-          List.map2 (fun arg (name, ty) ->
-            let arg =
-              let open Imp in
-              if W_lang.Type.is_array ty then
-                (match arg with
-                | Exp.Var x -> Arg.Array (Imp.Array_use.make x)
-                | _ -> Unsupported)
-              else if W_lang.Type.is_int ty then
-                (* handle scalar *)
-                Scalar arg
-              else
-                (* unsupported *)
-                Unsupported
+          let open Stage0.State.Syntax in
+          Some (Expressions.run (
+            let* index = State.list_map Expressions.n_tr a.index in
+            let* value = Expressions.n_tr value in
+            let payload =
+              match value with
+              | Num n -> Some n
+              | _ -> None
             in
-            (Variable.from_name name, arg)
-          ) args (Context.lookup kernel ctx)
-        in
-        stmts
-        @
-        (match result with
-          | Some {var; _} ->
-            [Decl [Imp.Decl.unset var]]
-          | None -> []
-        )
-        @
-        [ Imp.Stmt.Call Imp.Call.{ args; kernel; ty=kernel; } ]
+            return (Write {array=a.array.var; index; payload})
+          ))
 
-      | Loop {body; continuing; break_if=Some e} ->
-        let (stmts, cond) = Expressions.b_tr e in
-        let body = tr_block (body @ continuing) in
-        stmts @ [Star (If (Exp.b_not cond, body, Block []))]
+        | Atomic {pointer=e;fun_;value;result; location} ->
+          let* a = NDAccess.from_expression location e in
+          Some (Expressions.run (
+            let open State.Syntax in
+            (* find any reads inside value, but discard the result *)
+            let* _ = Expressions.n_tr value in
+            (* translate the index *)
+            let* index = State.list_map Expressions.n_tr a.index in
+            let fun_ = "atomic" ^ W_lang.AtomicFunction.to_string fun_ in
+            let atomic : Atomic.t = {
+              name = Variable.from_name fun_;
+              (* TODO: what scope does WGSL default to? *)
+              scope = Atomic.Scope.Device;
+            } in
+            let array = Variable.set_location location a.array.var in
+            let default = W_lang.Ident.atomic_result W_lang.Type.u32 in
+            let result = Option.value ~default result in
+            return (
+              Atomic {
+                array;
+                index;
+                ty=Types.tr result.ty;
+                atomic;
+                target=result.var;
+              }
+            )
+          ))
+        | Store {pointer=Ident ({ty; _}) as i; value} when W_lang.Type.is_int ty ->
+          let* (ty, var) = Variables.tr i in
+          Some (Expressions.run (
+            let open State.Syntax in
+            let* data = Expressions.n_tr value in
+            return (Assign {var; data; ty})
+          ))
+          (* TODO: add support for stores *)
+        | Store _ -> None
+        | Block [] ->
+          Some Skip
+        | Block (s::l) ->
+          let s1 = tr s in
+          let s2 = tr (Block l) in
+          Some (Seq (s1, s2))
+        | If {condition; accept=[Return None]; reject=[]}
+        | If {condition; accept=[Break]; reject=[]}
+        | If {condition; accept=[Continue]; reject=[]} ->
+          Some (
+            let open Expressions in
+            run (
+              let open State.Syntax in
+              let* c = b_tr condition in
+              return (Assert (Assert.make (Exp.b_not c) Local))
+            )
+          )
+        | If {condition; accept; reject} ->
+          let accept = tr (Block accept) in
+          let reject = tr (Block reject) in
+          Some (
+            let open Expressions in
+            let open State.Syntax in
+            run (
+              let* c = b_tr condition in
+              return (If (c, accept, reject))
+            )
+          )
+        | Loop {body; continuing=[Store _] as c; break_if=Some condition} ->
+          let inc = tr (Block c) in
+          let body = tr (Block body) in
+          Some (
+            let open State.Syntax in
+            Expressions.run (
+              let* cond = Expressions.b_tr condition in
+              let f : For.t = {
+                init = None;
+                cond = Some (Exp.b_not cond);
+                inc = Some inc;
+              } in
+              return (For.to_stmt f body)
+            )
+          )
+        | Loop {body=(If {condition; accept=[];reject=[Break]})::body; continuing=[Store _] as c; break_if=None} ->
+          let inc = tr (Block c) in
+          let body = tr (Block body) in
+          Some (
+            let open Expressions in
+            let open State.Syntax in
+            Expressions.run (
+              let* cond = b_tr condition in
+              let f : For.t = {
+                init = None;
+                cond = Some cond;
+                inc = Some inc;
+              } in
+              return (For.to_stmt f body)
+            )
+          )
+        | Loop {body=(If {condition; accept=[Break];reject=[]})::body; break_if=None; continuing=[Store _] as c} ->
+          let inc = tr (Block c) in
+          let body = tr (Block body) in
+          Some (
+            let open Expressions in
+            let open State.Syntax in
+            Expressions.run (
+              let* cond = b_tr condition in
+              let f : For.t = {
+                init = None;
+                cond = Some (Exp.b_not cond);
+                inc = Some inc;
+              } in
+              return (For.to_stmt f body)
+            )
+          )
+        | Barrier _ -> Some (Stmt.Sync None)
 
-      | Loop {body; continuing; break_if=None} ->
-        let body = tr_block (body @ continuing) in
-        [Star body]
+        | Call {result; function_=kernel; arguments=args} ->
+          let k = Context.lookup kernel ctx in
+          Some (
+            let open Expressions in
+            let open State.Syntax in
+            Expressions.run (
+              let* args = State.list_map n_tr args in
+              let args : (Variable.t * Imp.Arg.t) list =
+                List.map2 (fun arg (name, ty) ->
+                  let arg =
+                    let open Imp in
+                    if W_lang.Type.is_array ty then
+                      (match arg with
+                      | Exp.Var x -> Arg.Array (Imp.Array_use.make x)
+                      | _ -> Unsupported)
+                    else if W_lang.Type.is_int ty then
+                      (* handle scalar *)
+                      Scalar arg
+                    else
+                      (* unsupported *)
+                      Unsupported
+                  in
+                  (Variable.from_name name, arg)
+                ) args k
+              in
+              Imp.Stmt.seq
+                (match result with
+                  | Some {var; _} ->
+                    Decl [Imp.Decl.unset var]
+                  | None -> Skip
+                )
+                (Call { args; kernel; ty=kernel; })
+              |> return
+            )
+          )
+        | Loop {body; continuing; break_if=Some e} ->
+          let body = tr (Block body) in
+          let continuing = tr (Block continuing) in
+          let body : Stmt.t = Seq (body, continuing) in
+          Some (
+            let open Expressions in
+            let open State.Syntax in
+            Expressions.run (
+              let* cond = b_tr e in
+              return (Star (If (Exp.b_not cond, body, Skip)))
+            )
+          )
 
-      | Return (Some e) ->
-        let (stmts, _) = Expressions.n_tr e in
-        stmts
+        | Loop {body; continuing; break_if=None} ->
+          let body = tr (Block body) in
+          let continuing = tr (Block continuing) in
+          let body : Stmt.t = Seq (body, continuing) in
+          Some (Star body)
 
-      | Return None ->
-        []
+        | Return _ -> None
 
-      | _ ->
-        []
-
-    and tr_list (l:W_lang.Statement.t list) : Imp.Stmt.t list =
-      List.concat_map tr l
-
-    and tr_block (l:W_lang.Statement.t list) : Imp.Stmt.t =
-      Imp.Stmt.Block (tr_list l)
-
+        | _ -> None
+      in
+      match r with
+      | Some r -> r
+      | None ->
+        let l = W_lang.Statement.expressions s in
+        Expressions.reads l
     in
-    tr_list
+    fun l ->
+      tr (Block l)
 
 end
 
@@ -919,28 +954,28 @@ module LocalDeclarations = struct
   let tr_local
     (l:W_lang.LocalDeclaration.t)
   :
-    Imp.Stmt.t list
+    Imp.Stmt.t
   =
-    let stmts, init =
-      match l.init with
-      | Some init ->
-        let (stmts, init) = Expressions.n_tr init in
-        (stmts, Some init)
-      | None -> ([], None)
-    in
-    stmts
-    @
-    if W_lang.Type.is_int l.ty then
-    [
-      Imp.Stmt.Decl [{
-        var=l.var;
-        ty=Types.tr l.ty;
-        init;
-      }]
-    ]
-    else []
-  let tr : W_lang.LocalDeclaration.t list -> Imp.Stmt.t list =
-    List.concat_map tr_local
+    let open Expressions in
+    let open State.Syntax in
+    Expressions.run (
+      let* init = State.option_map n_tr l.init in
+      return (
+        if W_lang.Type.is_int l.ty then
+          Imp.Stmt.Decl [{
+            var=l.var;
+            ty=Types.tr l.ty;
+            init;
+          }]
+        else
+          Skip
+      )
+    )
+  let tr : W_lang.LocalDeclaration.t list -> Imp.Stmt.t =
+    List.fold_left (fun s d ->
+        Imp.Stmt.seq s (tr_local d)
+      )
+      Imp.Stmt.Skip
 end
 
 module Functions = struct
@@ -950,17 +985,20 @@ module Functions = struct
   :
     Imp.Kernel.t
   =
+    let open Imp in
     {
       name = e.name;
       ty = e.name;
       global_arrays = ctx.arrays;
       global_variables = ctx.params;
       parameters = Imp.Kernel.ParameterList.empty;
-      code =
-        Block (
-        Context.assigns ctx
-        @ LocalDeclarations.tr e.locals
-        @ Statements.tr ctx e.body);
+      code = (
+        Stmt.seq
+          (Context.assigns ctx)
+          (Stmt.seq
+            (LocalDeclarations.tr e.locals)
+            (Statements.tr ctx e.body))
+      );
       visibility = Device;
       grid_dim = None;
       block_dim = None;

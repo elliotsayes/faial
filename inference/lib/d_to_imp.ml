@@ -3,7 +3,7 @@ open Protocols
 open Logger
 open Imp
 
-module StackTrace = Common.StackTrace
+module StackTrace = Stack_trace
 module KernelAttr = C_lang.KernelAttr
 module StringMap = Common.StringMap
 
@@ -28,6 +28,11 @@ let error_to_buffer (e: d_error) : Buffer.t =
 
 type 'a d_result = ('a, d_error) Result.t
 
+let unwrap : 'a d_result -> 'a =
+  function
+  | Ok a -> a
+  | Error e -> failwith (error_to_buffer e |> Buffer.contents)
+
 let root_cause (msg:string) : 'a d_result =
   Error (RootCause msg)
 
@@ -44,10 +49,10 @@ let with_msg (msg:string) (f:'a -> 'b d_result) (c:'a): 'b d_result =
 let with_exp (msg:string) (e: D_lang.Expr.t) : (D_lang.Expr.t -> 'a d_result) -> D_lang.Expr.t -> 'a d_result =
   with_msg (msg ^ ": " ^ D_lang.Expr.to_string e)
 
-let parse_var: D_lang.Expr.t -> Variable.t d_result =
+let parse_var: D_lang.Expr.t -> Variable.t =
   function
-  | Ident v -> Ok v.name
-  | e -> root_cause ("parse_var: unexpected expression: " ^ D_lang.Expr.to_string e)
+  | Ident v -> v.name
+  | e -> failwith ("parse_var: unexpected expression: " ^ D_lang.Expr.to_string e)
 
 type d_access = {location: Variable.t; mode: Access.Mode.t; index: D_lang.Expr.t list }
 
@@ -105,89 +110,84 @@ let parse_bin (op:string) (l:Imp.Infer_exp.t) (r:Infer_exp.t) : Infer_exp.t =
     "(" ^ Infer_exp.to_string r ^ ")" in
     Unknown lbl
 
-let rec parse_exp (e: D_lang.Expr.t) : Infer_exp.t d_result =
-  let parse_e m e = with_exp m e parse_exp e in
-  let ret_n (n:Infer_exp.n) : Infer_exp.t d_result = Ok (NExp n) in
-  let ret_b (b:Infer_exp.b) : Infer_exp.t d_result = Ok (BExp b) in
-
-
+let rec parse_exp (e:D_lang.Expr.t) : Infer_exp.t =
   match e with
   (* ---------------- CUDA SPECIFIC ----------- *)
   | MemberExpr {base=Ident base; name=field; _} ->
     let v = base.name |> Variable.update_name (fun n -> n ^ "." ^ field) in
-    ret_n (Var v)
+    NExp (Var v)
 
   (* ------------------ nexp ------------------------ *)
   | Ident d ->
-    ret_n (Var d.name)
+    NExp (Var d.name)
 
   | SizeOfExpr ty ->
     (match J_type.to_c_type_res ty with
     | Ok ty ->
       let size = C_type.sizeof ty |> Option.value ~default:4 in
       L.warning ("sizeof(" ^ C_type.to_string ty ^ ") = " ^ string_of_int size);
-      ret_n (Num size)
+      NExp (Num size)
     | Error _ ->
       let lbl = "sizeof(" ^ J_type.to_string ty ^ ")" in
       L.warning ("could not parse type: " ^ lbl ^ " = ?");
-      Ok (Unknown lbl))
+      Unknown lbl)
 
   | IntegerLiteral n
 
-  | CharacterLiteral n -> ret_n (Num n)
+  | CharacterLiteral n -> NExp (Num n)
 
   | FloatingLiteral n -> 
     L.warning ("parse_nexp: converting float '" ^ Float.to_string n ^ "' to integer");
-    ret_n (Num (Float.to_int n))
+    NExp (Num (Float.to_int n))
 
   | ConditionalOperator o ->
-    let* b = parse_e "cond" o.cond in
-    let* n1 = parse_e "then_expr" o.then_expr in
-    let* n2 = parse_e "else_expr" o.else_expr in
-    ret_n (NIf (b, n1, n2))
+    let b = parse_exp o.cond in
+    let n1 = parse_exp o.then_expr in
+    let n2 = parse_exp o.else_expr in
+    NExp (NIf (b, n1, n2))
 
   | UnaryOperator {opcode="~"; child=e; _} ->
-    let* n = parse_e "child" e in
-    ret_n (Unary (BitNot, n))
+    let n = parse_exp e in
+    NExp (Unary (BitNot, n))
 
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _}
     when Variable.name n = "divUp" ->
-    let* n1 = parse_e "lhs" n1 in
-    let* n2 = parse_e "rhs" n2 in
+    let n1 = parse_exp n1 in
+    let n2 = parse_exp n2 in
     (*  (n1 + n2 - 1)/n2 *)
     let n2_minus_1 : Infer_exp.n = Binary (Minus, n2, NExp (Num 1)) in
     let n1_plus_n2_minus_1 : Infer_exp.n = Binary (Plus, n1, NExp n2_minus_1) in
-    ret_n (Binary (Div, NExp n1_plus_n2_minus_1, n2))
+    NExp (Binary (Div, NExp n1_plus_n2_minus_1, n2))
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__other_int" ->
-    let* n = parse_e "arg" n in
-    ret_n (Other n)
+    let n = parse_exp n in
+    NExp (Other n)
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__uniform_int" ->
-    let* n = parse_e "arg" n in
-    ret_b (Infer_exp.thread_equal n)
+    let n = parse_exp n in
+    BExp (Infer_exp.thread_equal n)
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__distinct_int" ->
-    let* n = parse_e "arg" n in
-    ret_b (Infer_exp.thread_distinct n)
+    let n = parse_exp n in
+    BExp (Infer_exp.thread_distinct n)
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__is_pow2" ->
-    let* n = parse_e "arg" n in
-    ret_b (Pred ("pow2", n))
+    let n = parse_exp n in
+    BExp (Pred ("pow2", n))
 
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _} when Variable.name n = "min" ->
-    let* n1 = parse_e "lhs" n1 in
-    let* n2 = parse_e "rhs" n2 in
-    ret_n (NIf (BExp (NRel (Lt, n1, n2)), n1, n2))
+    let n1 = parse_exp n1 in
+    let n2 = parse_exp n2 in
+    NExp (NIf (BExp (NRel (Lt, n1, n2)), n1, n2))
 
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _} when Variable.name n = "max" ->
-    let* n1 = parse_e "lhs" n1 in
-    let* n2 = parse_e "rhs" n2 in
-    ret_n (NIf (BExp (NRel (Gt, n1, n2)), n1, n2))
+    let n1 = parse_exp n1 in
+    let n2 = parse_exp n2 in
+    NExp (NIf (BExp (NRel (Gt, n1, n2)), n1, n2))
 
   | BinaryOperator {lhs=l; opcode="&"; rhs=IntegerLiteral 1; _} ->
-    let* n = parse_exp l in
-    ret_b (NRel (Eq, NExp (Binary (Mod, n, NExp (Num 2))), NExp (Num 0)))
+    let n = parse_exp l in
+    BExp (NRel (Eq, NExp (Binary (Mod, n, NExp (Num 2))), NExp (Num 0)))
 
   | BinaryOperator {
       opcode="==";
@@ -203,23 +203,24 @@ let rec parse_exp (e: D_lang.Expr.t) : Infer_exp.t d_result =
       rhs=IntegerLiteral 0;
       _
     } when Decl_expr.equal n1 n2 ->
-    let* n = parse_e "arg" e in
-    ret_b (Infer_exp.or_ (BExp (Pred ("pow2", n))) (BExp (Infer_exp.n_eq n (NExp (Num 0)))))
+    let n = parse_exp e in
+    BExp (Infer_exp.or_ (BExp (Pred ("pow2", n))) (BExp (Infer_exp.n_eq n (NExp (Num 0)))))
 
-  | BinaryOperator {opcode=","; lhs=_; rhs=n; _} ->
-    parse_e "comma-operator" n
+  | BinaryOperator {opcode=","; lhs=_; rhs=e; _} ->
+    print_endline "!!!!!!";
+    parse_exp e
 
   | BinaryOperator {opcode=o; lhs=n1; rhs=n2; _} ->
-    let* n1 = parse_e "lhs" n1 in
-    let* n2 = parse_e "rhs" n2 in
-    Ok (parse_bin o n1 n2)
+    let n1 = parse_exp n1 in
+    let n2 = parse_exp n2 in
+    parse_bin o n1 n2
 
   | CXXBoolLiteralExpr b ->
-    ret_b (Bool b)
+    BExp (Bool b)
 
   | UnaryOperator u when u.opcode = "!" ->
-    let* b = parse_e "not" u.child in
-    ret_b (BNot b)
+    let b = parse_exp u.child in
+    BExp (BNot b)
 
   | RecoveryExpr _
   | CXXConstructExpr _
@@ -229,96 +230,83 @@ let rec parse_exp (e: D_lang.Expr.t) : Infer_exp.t d_result =
   | CXXOperatorCallExpr _ ->
     let lbl = D_lang.Expr.to_string e in
     L.warning ("parse_exp: rewriting to unknown: " ^ lbl);
-    Ok (Unknown lbl)
+    Unknown lbl
 
   | _ ->
-    root_cause ("WARNING: parse_nexp: unsupported expression " ^ D_lang.Expr.name e ^ " : " ^ D_lang.Expr.to_string e)
+    failwith ("WARNING: parse_nexp: unsupported expression " ^ D_lang.Expr.name e ^ " : " ^ D_lang.Expr.to_string e)
 
-let parse_type (e:J_type.t) : C_type.t d_result =
+let to_nexp (e:D_lang.Expr.t) : Exp.nexp Infer_exp.state =
+  Infer_exp.to_nexp (parse_exp e)
+
+let to_bexp (e:D_lang.Expr.t) : Exp.bexp Infer_exp.state =
+  Infer_exp.to_bexp (parse_exp e)
+
+let try_to_nexp (e:D_lang.Expr.t) : Exp.nexp option =
+  e
+  |> parse_exp
+  |> Infer_exp.to_nexp
+  |> Infer_exp.no_unknowns
+
+let try_to_bexp (e:D_lang.Expr.t) : Exp.bexp option =
+  e
+  |> parse_exp
+  |> Infer_exp.to_bexp
+  |> Infer_exp.no_unknowns
+
+let parse_type (e:J_type.t) : C_type.t =
   e
   |> J_type.to_c_type_res
   |> Result.map_error (fun e ->
-    Common.StackTrace.RootCause (Rjson.error_to_string e)
+    Stack_trace.RootCause (Rjson.error_to_string e)
   )
+  |> unwrap
+
 
 module Arg = struct
-  type i_array = {address: Variable.t; offset: Infer_exp.t}
+  open Imp
+  open Stage0.State.Syntax
 
-  type t =
-  | Scalar of Infer_exp.t
-  | Array of i_array
-  | Unsupported
-
-  let rec parse_loc : D_lang.Expr.t -> i_array d_result =
+  let rec parse_array : D_lang.Expr.t -> Array_use.t option Infer_exp.state =
     function
-    | Ident v -> Ok {address=v.name; offset=NExp (Num 0)}
+    | Ident v ->
+      return (Some (Array_use.make v.name))
     | UnaryOperator {opcode; child=Ident _ as v; _} when opcode = "&" ->
-      parse_loc v
+      parse_array v
     | BinaryOperator o when o.opcode = "+" ->
-      let* lhs_ty = D_lang.Expr.to_type o.lhs |> parse_type in
+      let lhs_ty = D_lang.Expr.to_type o.lhs |> parse_type in
       let address, offset =
         if C_type.is_array lhs_ty
         then o.lhs, o.rhs
         else o.rhs, o.lhs
       in
-      let* l = with_msg "parse_loc.address" parse_loc address in
-      let* offset = with_msg "parse_loc.offset"parse_exp offset in
-      Ok {l with offset = NExp (Binary (Plus, offset, l.offset))}
-    | e ->
-      root_cause (
-        "WARNING: parse_loc: unsupported expression: " ^ D_lang.Expr.to_string e
-      )
+      let* arr = parse_array address in
+      (match arr with
+      | Some arr ->
+        let* offset = to_nexp offset in
+        let arr : Imp.Array_use.t = {
+          arr with offset = Exp.n_plus offset arr.offset
+        } in
+        return (Some arr)
+      | None -> return None)
+    | _ ->
+      return None
 
-  let parse (e: D_lang.Expr.t) : t d_result =
-    let* ty = D_lang.Expr.to_type e |> parse_type in
+  let parse (e: D_lang.Expr.t) : Arg.t Infer_exp.state =
+    let open Imp.Arg in
+    let ty = D_lang.Expr.to_type e |> parse_type in
     if C_type.is_array ty then (
-      match parse_loc e with
-      | Ok l -> Ok (Array l)
-      | Error _ -> Ok Unsupported
+      let* a = parse_array e in
+      return (
+        match a with
+        | Some l -> Array l
+        | None -> Unsupported
+      )
     ) else if C_type.is_int ty then (
       (* Handle integer *)
-      let* e = with_msg "Arg.parse" parse_exp e in
-      Ok (Scalar e)
-    ) else Ok Unsupported
-end
-
-module InferExp = struct
-  let handle_arg (u:Infer_exp.Context.t) : Arg.t -> (Infer_exp.Context.t * Imp.Arg.t) =
-    function
-    | Scalar e ->
-      let (u, e) = Infer_exp.handle_n u e in
-      (u, Scalar e)
-    | Array {offset; address} ->
-      let (u, offset) = Infer_exp.handle_n u offset in
-      (u, Array {address; offset})
-    | Unsupported ->
-      (u, Unsupported)
-
-  let to_arg : Arg.t -> Variable.Set.t * Imp.Arg.t =
-    Infer_exp.Context.convert handle_arg
-
-  let to_arg_list : Arg.t list -> Variable.Set.t * Imp.Arg.t list =
-    Infer_exp.Context.convert (Infer_exp.Context.mmap handle_arg)
-
-  let ret_u (vars:Variable.Set.t) (s:Imp.Stmt.t) : Imp.Stmt.t list d_result =
-    Ok (Infer_exp.decl_unknown vars @ [s])
-
-  let ret_f ?(extra_vars=Variable.Set.empty) (f:'a -> Variable.Set.t * 'b) (handler:'b -> Imp.Stmt.t) (n:'a) : Imp.Stmt.t list d_result =
-    let vars, n = f n in
-    let vars = Variable.Set.union extra_vars vars in
-    ret_u vars (handler n)
-
-  let ret_n ?(extra_vars=Variable.Set.empty): (nexp -> Imp.Stmt.t) -> Infer_exp.t -> Imp.Stmt.t list d_result =
-    ret_f ~extra_vars Infer_exp.to_nexp
-
-  let ret_ns ?(extra_vars=Variable.Set.empty): (nexp list -> Imp.Stmt.t) -> Infer_exp.t list -> Imp.Stmt.t list d_result =
-    ret_f ~extra_vars Infer_exp.to_nexp_list
-
-  let ret_args ?(extra_vars=Variable.Set.empty): (Imp.Arg.t list -> Imp.Stmt.t) -> Arg.t list -> Imp.Stmt.t list d_result =
-    ret_f ~extra_vars to_arg_list
-
-  let ret_b ?(extra_vars=Variable.Set.empty): (bexp -> Imp.Stmt.t) -> Infer_exp.t -> Imp.Stmt.t list d_result =
-    ret_f ~extra_vars Infer_exp.to_bexp
+      let* e = to_nexp e in
+      return (Scalar e)
+    ) else
+      return Unsupported
 end
 
 (* -------------------------------------------------------------- *)
@@ -389,23 +377,22 @@ module Context = struct
     { b with assigns; enums = Variable.Map.add e.var e b.enums;}
 
   (* Generate the preamble *)
-  let gen_preamble (c:t) : Imp.Stmt.t list =
+  let gen_preamble (c:t) : Imp.Stmt.t =
     let open Imp.Stmt in
     [Decl (List.map (fun (k,v) -> Imp.Decl.set k v) c.assigns)]
+    |> Stmt.from_list
 end
 
-let cast_map f = Rjson.map_all f (fun idx _ e ->
-  StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
+open Stage0.State.Syntax
 
 let parse_decl
   (ctx:Context.t)
   (d:D_lang.Decl.t)
 :
-  Imp.Decl.t list d_result
+  Imp.Decl.t option Imp.Infer_exp.state
 =
-  let parse_e m b = with_msg (m ^ ": " ^ D_lang.Decl.to_string d) parse_exp b in
   let x = d.var in
-  let ty =
+  match
     D_lang.Decl.types d
     |> List.map (fun ty ->
         Context.resolve (J_type.to_c_type ty) ctx
@@ -413,23 +400,21 @@ let parse_decl
     |> List.find_opt (fun ty ->
         Context.is_int ty ctx
       )
-  in
-  match ty with
+  with
   | Some ty ->
-    let* ((vars, init):(Variable.Set.t * (nexp option))) =
+    let* init : nexp option =
       match d.init with
       | Some (IExpr n) ->
-        let* n = parse_e "init" n in
-        let (vars, n) = Infer_exp.to_nexp n in
-        Ok (vars, Some n)
-      | _ -> Ok (Variable.Set.empty, None)
+        let* n = to_nexp n in
+        return (Some n)
+      | _ -> return None
     in
     let d =
       match init with
       | Some n -> Imp.Decl.set ~ty x n
       | None -> Imp.Decl.unset ~ty x
     in
-    Ok (Infer_exp.as_decls vars @ [d])
+    return (Some d)
   | None ->
     let x = Variable.name x in
     let ty = J_type.to_string d.ty in
@@ -437,47 +422,64 @@ let parse_decl
       "parse_decl: skipping non-int local variable '" ^ x ^ "' "^
       "type: " ^ ty
     );
-    Ok []
+    return None
 
-let rec parse_load_expr (target:D_lang.Expr.t) (exp:D_lang.Expr.t)
-  : (d_location_alias, D_lang.Expr.t) Either.t =
-  let open Either in
+let parse_decl_stmt
+  (ctx:Context.t)
+  (d:D_lang.Decl.t)
+:
+  Imp.Stmt.t
+=
+  Infer_exp.unknowns (
+    let* d = parse_decl ctx d in
+    return (
+      match d with
+      | Some d -> Stmt.Decl [d]
+      | None -> Stmt.Skip
+    )
+  )
+
+let rec parse_load_expr
+  (target:D_lang.Expr.t)
+  (exp:D_lang.Expr.t)
+:
+  d_location_alias option
+=
+  let ( let* ) = Option.bind in
   match exp with
   | Ident {ty; _} when J_type.matches C_type.is_pointer ty || J_type.matches C_type.is_array ty->
-    Left {target=target; source=exp; offset=IntegerLiteral 0}
+    Some {target=target; source=exp; offset=IntegerLiteral 0}
   | CXXOperatorCallExpr {func=UnresolvedLookupExpr {name=n; _}; args=[lhs;rhs]; ty}
   | CXXOperatorCallExpr {func=Ident {name=n; _}; args=[lhs;rhs]; ty}
     when Variable.name n = "operator+" ->
-    (match parse_load_expr target lhs with
-    | Left l ->
-      let offset : D_lang.Expr.t = BinaryOperator {
-        opcode = "+";
-        lhs = l.offset;
-        rhs = rhs;
-        ty;
-      } in
-      Left {l with offset}
-    | Right _ -> Right exp)
+    let* l = parse_load_expr target lhs in
+    let offset : D_lang.Expr.t = BinaryOperator {
+      opcode = "+";
+      lhs = l.offset;
+      rhs = rhs;
+      ty;
+    } in
+    Some {l with offset}
   | CXXOperatorCallExpr _ ->
-    Right exp
+    None
   | BinaryOperator ({lhs=l; _} as b) ->
-    (match parse_load_expr target l with
-    | Left l ->
-      let offset : D_lang.Expr.t = BinaryOperator {b with lhs=l.offset} in
-      Left {l with offset}
-    | Right _ -> Right exp)
+    let* l = parse_load_expr target l in
+    let offset : D_lang.Expr.t = BinaryOperator {b with lhs=l.offset} in
+    Some {l with offset}
   | _ ->
-    Right exp
+    None
 
-
-
-let parse_location_alias (s:d_location_alias) : Imp.Stmt.t list d_result =
-  let* source = with_msg "location_alias.source" parse_var s.source in
-  let* target = with_msg "location_alias.target" parse_var s.target in
-  let* offset = with_msg "location_alias.offset" parse_exp s.offset in
-  offset |> InferExp.ret_n (fun offset ->
-    LocationAlias { target; source; offset; }
+let parse_location_alias (s:d_location_alias) : Imp.Stmt.t =
+  Infer_exp.unknowns (
+    let source = parse_var s.source in
+    let target = parse_var s.target in
+    let* offset = to_nexp s.offset in
+    return (Imp.Stmt.LocationAlias { target; source; offset; })
   )
+
+
+let cast_map f = Rjson.map_all f (fun idx _ e ->
+  StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
 
 type 'a unop =
   {op: 'a; arg: nexp}
@@ -522,7 +524,7 @@ module ForRange = struct
     | _ -> None
 
   let to_range (r:t) : Range.t option =
-    let (let*) = Option.bind in
+    let ( let* ) = Option.bind in
     let (lb, ub, d) = infer_bounds r in
     let* step = infer_step r in
     Some Range.{
@@ -534,49 +536,44 @@ module ForRange = struct
       ty=C_type.int;
     }
 
-  let parse_unop (u:'a Loop_infer.unop) : 'a unop option d_result =
-    let* arg = parse_exp u.arg in
-    Ok (match Infer_exp.try_to_nexp arg with
-      | Some arg -> Some {op=u.op; arg=arg}
-      | None -> None)
+  let parse_unop (u:'a Loop_infer.unop) : 'a unop option =
+    let arg = parse_exp u.arg in
+    match Infer_exp.(no_unknowns (to_nexp arg)) with
+    | Some arg -> Some {op=u.op; arg=arg}
+    | None -> None
 
-  let from_loop_infer (r:Loop_infer.t) : t option d_result =
-    let* init = parse_exp r.init in
-    let* cond = parse_unop r.cond in
-    let* inc = parse_unop r.inc in
-    Ok (match Infer_exp.try_to_nexp init, cond, inc with
+  let from_loop_infer (r:Loop_infer.t) : t option =
+    let init = parse_exp r.init in
+    let cond = parse_unop r.cond in
+    let inc = parse_unop r.inc in
+    match Infer_exp.(no_unknowns (to_nexp init)), cond, inc with
     | Some init, Some cond, Some inc ->
       Some {name = r.name; init=init; cond=cond; inc=inc}
-    | _, _, _ -> None)
+    | _, _, _ -> None
 
 end
 
-let infer_for (r:D_lang.Stmt.d_for) : Range.t option d_result =
+let infer_for (r:D_lang.Stmt.d_for) : Range.t option =
   match Loop_infer.from_for r with
   | Some r ->
-    let* r = ForRange.from_loop_infer r in
-    Ok (Option.bind r ForRange.to_range)
-  | None -> Ok None
+    let r = ForRange.from_loop_infer r in
+    Option.bind r ForRange.to_range
+  | None -> None
 
-let infer_while (r:D_lang.Stmt.d_cond) : (Range.t * D_lang.Stmt.t) option d_result =
+let infer_while (r:D_lang.Stmt.d_cond) : (Range.t * D_lang.Stmt.t) option =
   match Loop_infer.from_while r with
   | Some (r, b) ->
-    let* r = ForRange.from_loop_infer r in
-    Ok (Option.bind r ForRange.to_range |> Option.map (fun r -> (r, b)))
-  | None -> Ok None
+    let r = ForRange.from_loop_infer r in
+    Option.bind r ForRange.to_range |> Option.map (fun r -> (r, b))
+  | None -> None
 
-let ret_loop (b:Imp.Stmt.t list) : Imp.Stmt.t list d_result =
-  Ok [Imp.Stmt.Star (Block b)]
 
-let ret (s:Imp.Stmt.t) : Imp.Stmt.t list d_result = Ok [s]
-
-let ret_skip : Imp.Stmt.t list d_result = Ok []
-
-let ret_assert (b:D_lang.Expr.t) (v:Imp.Assert.Visibility.t) : Imp.Stmt.t list d_result =
-  let* b = with_msg "cond" parse_exp b in
-  match Infer_exp.try_to_bexp b with
-  | Some b -> ret (Assert (Imp.Assert.make b v))
-  | None -> ret_skip
+let ret_assert (b:D_lang.Expr.t) (v:Imp.Assert.Visibility.t) : Imp.Stmt.t =
+  let b = parse_exp b in
+  let open Imp.Stmt in
+  match Infer_exp.(no_unknowns (to_bexp b)) with
+  | Some b -> Assert (Imp.Assert.make b v)
+  | None -> Skip
 
 let asserts : Variable.Set.t =
   Variable.Set.of_list [
@@ -591,26 +588,21 @@ let rec parse_stmt
   (ctx:Context.t)
   (c:D_lang.Stmt.t)
 :
-  Imp.Stmt.t list d_result
+  Imp.Stmt.t
 =
   let parse_stmt = parse_stmt ctx in
-  let parse_decl = parse_decl ctx in
-  let with_msg (m:string) f b = with_msg_ex (fun _ -> "parse_stmt: " ^ m ^ ": " ^ D_lang.Stmt.summarize c) f b in
-  let ret_n = InferExp.ret_n in
-  let ret_b = InferExp.ret_b in
-  let ret_ns = InferExp.ret_ns in
-  let ret_args = InferExp.ret_args in
   let resolve ty = Context.resolve ty ctx in
 
   match c with
+  | Skip -> Skip
 
   | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args=[]; _})
     when Variable.name n = "__syncthreads" ->
-    ret (Sync n.location)
+    Sync n.location
 
   | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args=[_]; _})
     when Variable.name n = "sync" ->
-    ret (Sync n.location)
+    Sync n.location
 
     (* Static assert may have a message as second argument *)
   | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = b :: _; _})
@@ -621,179 +613,156 @@ let rec parse_stmt
     let arg_count = List.length args in
     (match Context.lookup_sig f arg_count ctx with
     | Some s ->
-      if List.length s.params = arg_count then (
-        let* args = with_msg "call.args" (cast_map Arg.parse) args in
-        args |> ret_args (fun args ->
-          let args = List.map2 (fun x y -> (x, y)) s.params args in
-          Imp.Stmt.Call {kernel=s.kernel; ty=s.ty; args}
-        )
+      if List.length s.params <> arg_count then (
+        failwith ("parse_stmt: CallExpr args mismatch: " ^ D_lang.Stmt.summarize e)
       ) else
-        root_cause ("parse_stmt: CallExpr args mismatch: " ^ D_lang.Stmt.summarize e)
-    | None ->
-      Ok []
-    )
-
-  | DeclStmt ([{init=Some (IExpr (CallExpr {func = f; args; _ }) ); _}] as l) as d ->
-    let arg_count = List.length args in
-    (match Context.lookup_sig f arg_count ctx with
-    | Some s ->
-      if List.length s.params = arg_count then (
-        let* args = with_msg "call.args" (cast_map Arg.parse) args in
-        let r =
-          args
-          |> ret_args (fun args ->
-            let args = List.map2 (fun x y -> (x, y)) s.params args in
-            Imp.Stmt.Call {kernel=s.kernel; ty=s.ty; args}
-          )
-        in
-        let* l = cast_map parse_decl l |> Result.map List.concat in
-        r
-        |> Result.map (fun s ->
-          Imp.Stmt.Decl l :: s
-        )
-      ) else (
-        let expecting = List.length s.params |> string_of_int in
-        let given = List.length args |> string_of_int in
-        root_cause (
-          "parse_stmt: function call argument mismatch: " ^
-          "signature has " ^ expecting ^ " parameters " ^
-          D_lang.SignatureDB.Signature.to_string s ^ " " ^
-          "but got " ^ given ^ " arguments: " ^ D_lang.Stmt.summarize d
-        )
+      Infer_exp.unknowns (
+        let* args = State.list_map Arg.parse args in
+        let args = List.map2 (fun x y -> (x, y)) s.params args in
+        let open Imp.Stmt in
+        return (Call {kernel=s.kernel; ty=s.ty; args})
       )
     | None ->
-      let* l = cast_map parse_decl l |> Result.map List.concat in
-      ret (Decl l)
+      Skip
     )
 
   | WriteAccessStmt w ->
-    let x = w.target.name |> Variable.set_location w.target.location in
-    let* idx = with_msg "write.idx" (cast_map parse_exp) w.target.index in
-    idx |> ret_ns (fun idx ->
-      Write {array=x; index=idx; payload=w.payload}
+    let array =
+      w.target.name |> Variable.set_location w.target.location
+    in
+    Infer_exp.unknowns (
+      let* index = State.list_map to_nexp w.target.index in
+      return (Stmt.Write {array; index; payload=w.payload})
     )
 
   | ReadAccessStmt r ->
     let array = r.source.name |> Variable.set_location r.source.location in
-    let* idx = with_msg "read.idx" (cast_map parse_exp) r.source.index in
-    let ty = r.ty |> resolve |> C_type.strip_array in
-    idx
-    |> ret_ns (fun index ->
-      Read {target=Some (ty, r.target); array; index}
+    Infer_exp.unknowns (
+      let* index = State.list_map to_nexp r.source.index in
+      let ty = r.ty |> resolve |> C_type.strip_array in
+      return (Stmt.Read {target=Some (ty, r.target); array; index})
     )
 
   | AtomicAccessStmt r ->
-    let x = r.source.name |> Variable.set_location r.source.location in
-    let* idx = with_msg "atomic.idx" (cast_map parse_exp) r.source.index in
-    let ty = r.ty |> resolve |> C_type.strip_array in
-    idx
-    |> ret_ns (fun index ->
-      Atomic {
-        target=r.target;
-        array=x;
-        index;
-        atomic=r.atomic;
-        ty
-      }
+
+    let array = r.source.name |> Variable.set_location r.source.location in
+    Infer_exp.unknowns (
+      let* index = State.list_map to_nexp r.source.index in
+      let ty = r.ty |> resolve |> C_type.strip_array in
+      return (Stmt.Atomic {
+          target=r.target;
+          atomic=r.atomic;
+          array;
+          index;
+          ty
+        }
+      )
     )
 
-  | IfStmt {cond=b;then_stmt=CompoundStmt[ReturnStmt None];else_stmt=CompoundStmt[]}
-  | IfStmt {cond=b;then_stmt=ReturnStmt None;else_stmt=CompoundStmt[]} ->
+  | IfStmt {cond=b;then_stmt=ReturnStmt None;else_stmt=Skip} ->
     let ty = D_lang.Expr.to_type b in
     ret_assert (UnaryOperator {opcode="!"; child=b; ty}) Local
 
-  | IfStmt {cond=b;then_stmt=CompoundStmt[BreakStmt];else_stmt=CompoundStmt[]}
-  | IfStmt {cond=b;then_stmt=BreakStmt;else_stmt=CompoundStmt[]} ->
+  | IfStmt {cond=b;then_stmt=BreakStmt;else_stmt=Skip} ->
     let ty = D_lang.Expr.to_type b in
     ret_assert (UnaryOperator {opcode="!"; child=b; ty}) Local
 
   | IfStmt c ->
-    let* b = with_msg "if.cond" parse_exp c.cond in
-    let* t = with_msg "if.then" parse_stmt c.then_stmt in
-    let* e = with_msg "if.else" parse_stmt c.else_stmt in
-    b |> ret_b (fun b -> Imp.Stmt.s_if b (Block t) (Block e))
-
-  | CompoundStmt l ->
-    let* l = with_msg "block" (cast_map parse_stmt) l in
-    ret (Block (List.flatten l))
-
-  (* Support for location aliasing that declares a new variable *)
-  | DeclStmt ([{ty; init=Some (IExpr rhs); _} as d] as l)
-    (* either a pointer or an auto because templates *)
-    when J_type.matches (fun x -> C_type.is_pointer x || C_type.is_auto x) ty
-    ->
-    let d_ty =
-      d.ty
-      |> J_type.to_c_type ~default:C_type.int
-      |> resolve
-      |> J_type.from_c_type
-    in
-    let lhs : D_lang.Expr.t = Ident (Decl_expr.from_name ~ty:d_ty d.var) in
-    (match parse_load_expr lhs rhs with
-    | Left a ->
-      parse_location_alias a
-    | Right _ ->
-      (* fall back to the default parsing of decls *)
-      let* l = cast_map parse_decl l |> Result.map List.concat in
-      ret (Decl l)
+    Infer_exp.unknowns (
+      let* b = to_bexp c.cond in
+      let t = parse_stmt c.then_stmt in
+      let e = parse_stmt c.else_stmt in
+      return (Imp.Stmt.if_ b t e)
     )
 
-  | DeclStmt l ->
-    let* l = cast_map parse_decl l |> Result.map List.concat in
-    ret (Decl l)
+  (* Support for location aliasing that declares a new variable *)
+  | DeclStmt [d] ->
+    let ( let* ) = Option.bind in
+    (* Detect non-standard declarations: *)
+    let s =
+      match d with
+      (* Detect kernel-calls: *)
+      | {init=Some (IExpr rhs); _} when D_lang.Expr.is_call rhs ->
+        (* Found a call, so extract the call and parse the rest
+          of the declaration yet unsetting the first decl *)
+        Some (
+          Stmt.seq
+            (parse_stmt (SExpr rhs))
+            (parse_stmt (DeclStmt [{d with init = None}]))
+        )
+      (* Detect array alias: *)
+      | {ty; init=Some (IExpr rhs); _} when
+        J_type.matches (fun x -> C_type.is_pointer x || C_type.is_auto x) ty
+      ->
+        let d_ty =
+          d.ty
+          |> J_type.to_c_type ~default:C_type.int
+          |> resolve
+          |> J_type.from_c_type
+        in
+        let lhs : D_lang.Expr.t = Ident (Decl_expr.from_name ~ty:d_ty d.var) in
+        let* a = parse_load_expr lhs rhs in
+        Some (parse_location_alias a)
+      (* Otherwise, nothing found *)
+      | _ ->
+        None
+    in
+    (match s with
+    | Some s -> s
+    | None ->
+      (* fall back to the default parsing of decls *)
+      parse_decl_stmt ctx d)
+  | DeclStmt (d :: l) ->
+    Stmt.seq (parse_stmt (DeclStmt [d])) (parse_stmt (DeclStmt l))
+  | DeclStmt [] -> Skip
 
   | SExpr ((BinaryOperator {opcode="="; lhs=Ident {ty; _} as lhs; rhs=rhs; _}))
     when J_type.matches C_type.is_pointer ty
-    ->
-    (match parse_load_expr lhs rhs with
-    | Left a ->
-      parse_location_alias a
-    | Right _ -> Ok [])
+  ->
+    parse_load_expr lhs rhs
+    |> Option.map parse_location_alias
+    |> Option.value ~default:Stmt.Skip
 
   | SExpr (BinaryOperator {opcode="="; lhs=Ident {name=v; _}; rhs=rhs; ty; _})
     ->
-    let* rhs = with_msg "assign.rhs" parse_exp rhs in
-    let ty = J_type.to_c_type ~default:C_type.int ty |> resolve in
-    rhs |> ret_n (fun rhs ->
-      Imp.Stmt.assign ty v rhs
+    Infer_exp.unknowns (
+      let* rhs = to_nexp rhs in
+      let ty = J_type.to_c_type ~default:C_type.int ty |> resolve in
+      return (Stmt.assign ty v rhs)
     )
 
   | ContinueStmt
   | BreakStmt
   | GotoStmt
   | ReturnStmt _
-  | SExpr _ -> Ok []
+  | SExpr _ -> Stmt.Skip
 
   | ForStmt s ->
-    let* r = infer_for s in
-    let* b = with_msg "for.body" parse_stmt s.body in
-    (match r with
-    | Some r -> ret (For (r, Block b))
-    | None -> ret_loop b)
+    let b = parse_stmt s.body in
+    (match infer_for s with
+    | Some r -> For (r, b)
+    | None -> Stmt.Star b)
 
   | DoStmt {body=body; _} ->
-    let* body = with_msg "do.body" parse_stmt body in
-    ret_loop body
+    let body = parse_stmt body in
+    Stmt.Star body
 
   | WhileStmt w ->
-    let* o = infer_while w in
-    (match o with
+    (match infer_while w with
     | Some (r, b) ->
-      let* b = with_msg "while.body" parse_stmt b in
-      ret (For (r, Block b))
+      let b = parse_stmt b in
+      For (r, b)
     | None ->
-      let* b = with_msg "while.body" parse_stmt w.body in
-      ret_loop b
+      let b = parse_stmt w.body in
+      Stmt.Star b
     )
 
-  | SwitchStmt s ->
-    with_msg "switch.body" parse_stmt s.body
-
-  | CaseStmt s ->
-    with_msg "case.body" parse_stmt s.body
-
+  | SwitchStmt {body=s; _}
+  | CaseStmt {body=s; _}
   | DefaultStmt s ->
-    with_msg "default.body" parse_stmt s
+    parse_stmt s
+  | Seq (s1, s2) ->
+    Seq (parse_stmt s1, parse_stmt s2)
 
 type param = (Variable.t * C_type.t, Variable.t * Memory.t) Either.t
 
@@ -805,7 +774,7 @@ let parse_param
   (ctx:Context.t)
   (p:Param.t)
 :
-  Kernel.Parameter.t d_result
+  Kernel.Parameter.t
 =
   let mk_array (h:Mem_hierarchy.t) (ty:C_type.t) : Memory.t =
     {
@@ -814,17 +783,18 @@ let parse_param
       data_type = C_type.get_array_type ty;
     }
   in
-  let* ty =
+  let ty =
     p.ty_var.ty
     |> J_type.to_c_type_res
     |> Result.map_error from_j_error
     |> Result.map (fun x -> Context.resolve x ctx)
+    |> unwrap
   in
   let x = p.ty_var.name in
   if Context.is_enum ty ctx then
-    Ok (Kernel.Parameter.enum x (Context.get_enum ty ctx))
+    Kernel.Parameter.enum x (Context.get_enum ty ctx)
   else if Context.is_int ty ctx then
-    Ok (Kernel.Parameter.scalar x ty)
+    Kernel.Parameter.scalar x ty
   else if C_type.is_array ty then (
     let h =
       if p.is_shared then
@@ -832,19 +802,9 @@ let parse_param
       else
         Mem_hierarchy.GlobalMemory
     in
-    Ok (Kernel.Parameter.array x (mk_array h ty))
-  ) else Ok (Kernel.Parameter.unsupported x)
-
-let parse_params
-  (ctx:Context.t)
-  (ps:Param.t list)
-:
-  Kernel.Parameter.t list d_result
-=
-  Rjson.map_all
-    (parse_param ctx)
-    (fun i _ e -> StackTrace.Because ("Error in index #" ^ string_of_int i, e))
-    ps
+    Kernel.Parameter.array x (mk_array h ty)
+  ) else
+    Kernel.Parameter.unsupported x
 
 let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
   let open D_lang in
@@ -870,12 +830,12 @@ let parse_shared (s:D_lang.Stmt.t) : (Variable.t * Memory.t) list =
     | ContinueStmt
     | BreakStmt
     | SExpr _
+    | Skip
       -> arrays
+    | Seq (s1, s2)
     | IfStmt {then_stmt=s1; else_stmt=s2; _} ->
       let arrays = find_shared arrays s1 in
       find_shared arrays s2
-    | CompoundStmt l ->
-      List.fold_left find_shared arrays l
     | ForStmt {body=d; _}
     | WhileStmt {body=d; _}
     | DoStmt {body=d; _}
@@ -890,9 +850,9 @@ let parse_kernel
   (ctx:Context.t)
   (k:D_lang.Kernel.t)
 :
-  (Context.t * Imp.Kernel.t) d_result
+  (Context.t * Imp.Kernel.t)
 =
-  let* code = parse_stmt ctx k.code in
+  let code = parse_stmt ctx k.code in
   (* Add inferred shared arrays to global context *)
   let ctx =
     List.fold_left (fun ctx (x, m) ->
@@ -900,7 +860,7 @@ let parse_kernel
     ) ctx (parse_shared k.code)
   in
   (* Parse kernel parameters *)
-  let* parameters = parse_params ctx k.params in
+  let parameters = List.map (parse_param ctx) k.params in
   (* type parameters become global variables because c-t-j doesn't represent
      type instantiations.
     *)
@@ -919,9 +879,9 @@ let parse_kernel
   in
   let global_variables = add_type_params ctx.globals k.type_params in
   let open Imp.Stmt in
-  let code = Block (Context.gen_preamble ctx @ code) in
+  let code = Seq (Context.gen_preamble ctx, code) in
   let open Imp.Kernel in
-  Ok (ctx, {
+  (ctx, {
     name = k.name;
     ty = k.ty;
     code;
@@ -937,12 +897,12 @@ let parse_kernel
     grid_dim = None;
   })
 
-let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
+let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list =
   let rec parse_p
     (ctx:Context.t)
     (p:D_lang.Program.t)
   :
-    Imp.Kernel.t list d_result
+    Imp.Kernel.t list
   =
     match p with
     | Declaration v :: l ->
@@ -958,10 +918,7 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
             Context.add_array v.var (Memory.from_type GlobalMemory ty) ctx
           else if Context.is_int ty ctx then
             let g = match v.init with
-            | Some (IExpr n) ->
-              (match parse_exp n with
-              | Ok n -> Infer_exp.try_to_nexp n
-              | Error _ -> None)
+            | Some (IExpr n) -> try_to_nexp n
             | _ -> None
             in
             match g with
@@ -973,14 +930,14 @@ let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list d_result =
       in
       parse_p b l
     | Kernel k :: l ->
-      let* (ctx, k) = parse_kernel ctx k in
-      let* ks = parse_p ctx l in
-      Ok (k::ks)
+      let (ctx, k) = parse_kernel ctx k in
+      let ks = parse_p ctx l in
+      k::ks
     | Typedef d :: l ->
       parse_p (Context.add_typedef d ctx) l
     | Enum e :: l ->
       parse_p (Context.add_enum e ctx) l
-    | [] -> Ok []
+    | [] -> []
   in
   let sigs = D_lang.SignatureDB.from_program p in
   parse_p (Context.from_signature_db sigs) p

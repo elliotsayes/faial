@@ -11,13 +11,21 @@ let bind (m : ('s, 'a) t) (f : 'a -> ('s, 'b) t) : ('s, 'b) t =
     let (s', a) = m s in
     f a s'
 
+(** Most general constructor, which sets the current state and returns
+    a value *)
+let update_return (f: 's -> 's * 'a) : ('s, 'a) t = f
+
 (** Update the current state *)
-let write (f: 's -> 's) : ('s, unit) t =
+let update (f: 's -> 's) : ('s, unit) t =
   fun s ->
     (f s, ())
 
+(** Update the current state *)
+let put (s: 's) : ('s, unit) t =
+  update (fun _ -> s)
+
 (** Read the current state *)
-let read : ('s, 's) t =
+let get : ('s, 's) t =
   fun s ->
     (s, s)
 

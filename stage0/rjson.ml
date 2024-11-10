@@ -1,4 +1,4 @@
-module StackTrace = Common.StackTrace
+module StackTrace = Stack_trace
 type j_object = (string * Yojson.Basic.t) list
 type j_list = Yojson.Basic.t list
 

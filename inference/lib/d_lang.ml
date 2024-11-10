@@ -1,7 +1,7 @@
 open Stage0
 open Protocols
 
-module StackTrace = Common.StackTrace
+module StackTrace = Stack_trace
 module KernelAttr = C_lang.KernelAttr
 module StringMap = Common.StringMap
 module StringMapUtil = Common.StringMapUtil
@@ -43,6 +43,11 @@ module Expr = struct
     (name:Variable.t)
   =
     Ident (Decl_expr.from_name ~ty ~kind name)
+
+  let is_call : t -> bool =
+    function
+    | CallExpr _ -> true
+    | _ -> false
 
   let name =
     function
@@ -302,6 +307,8 @@ type d_atomic = {target: Variable.t; source: d_subscript; atomic: Atomic.t; ty: 
 
 module Stmt = struct
   type t =
+    | Skip
+    | Seq of t * t
     | WriteAccessStmt of d_write
     | ReadAccessStmt of d_read
     | AtomicAccessStmt of d_atomic
@@ -310,7 +317,6 @@ module Stmt = struct
     | ReturnStmt of Expr.t option
     | ContinueStmt
     | IfStmt of {cond: Expr.t; then_stmt: t; else_stmt: t}
-    | CompoundStmt of t list
     | DeclStmt of Decl.t list
     | WhileStmt of d_cond
     | ForStmt of d_for
@@ -322,14 +328,29 @@ module Stmt = struct
   and d_cond = {cond: Expr.t; body: t}
   and d_for = {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: t}
 
-  let last: t -> t * t =
+  let seq (s1:t) (s2:t) : t =
+    match s1, s2 with
+    | Skip, s | s, Skip -> s
+    | _, _ -> Seq (s1, s2)
+
+  let from_list (l:t list) : t =
+    List.fold_left seq Skip l
+
+  let rec first : t -> t =
     function
-    | CompoundStmt l ->
-      (match Common.last l with
-      | Some (l, x) -> CompoundStmt l, x
-      | None -> CompoundStmt [], CompoundStmt []
-      )
-    | i -> CompoundStmt [], i
+    | Seq (s, _) -> first s
+    | s -> s
+
+  let rec last : t -> t =
+    function
+    | Seq (_, s) -> last s
+    | s -> s
+
+  let rec skip_last : t -> t =
+    function
+    | Seq (s1, s2) ->
+      seq s1 (skip_last s2)
+    | _ -> Skip
 
   let read_access (target:Variable.t) (source:d_subscript) : t =
     let ty =
@@ -366,6 +387,8 @@ module Stmt = struct
       in
       let block (s:t) : Indent.t list = ret (stmt_to_s s) in
       function
+      | Skip -> [Line "skip;"]
+      | Seq (s1, s2) -> stmt_to_s s1 @ stmt_to_s s2
       | WriteAccessStmt w -> [Line ("wr " ^ subscript_to_s w.target ^ " = " ^ Expr.to_string w.source)]
       | ReadAccessStmt r -> [Line ("rd " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
       | AtomicAccessStmt r -> [Line ("atomic " ^ C_type.to_string r.ty ^ " " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
@@ -404,9 +427,6 @@ module Stmt = struct
           [Line ("if (" ^ Expr.to_string b ^ ")")] @
           ret s1 @
           (if s2 = [] then [] else [ Line "else"; ] @ ret s2)
-      | CompoundStmt l ->
-        let l = List.concat_map stmt_to_s l in
-        if l = [] then [] else ret l
       | DeclStmt [] -> []
       | DeclStmt [d] -> [Line ("decl " ^ Decl.to_string d)]
       | DeclStmt d ->
@@ -417,7 +437,7 @@ module Stmt = struct
     stmt_to_s
 
   let summarize: t -> string =
-    let stmt_to_s : t -> string =
+    let rec stmt_to_s : t -> string =
       function
       | WriteAccessStmt w ->
         "wr " ^
@@ -444,12 +464,12 @@ module Stmt = struct
       | DefaultStmt _ -> "default: {...}"
       | IfStmt {cond=b; _} ->
         "if (" ^ Expr.to_string b ^ ") {...} else {...}"
-      | CompoundStmt l ->
-        let c = List.length l |> string_of_int in
-        "{ " ^ c ^ " stmts... }"
       | DeclStmt d ->
         "decl {" ^ String.concat ", " (List.map Decl.to_string d) ^ "}"
       | SExpr e -> Expr.to_string e
+      | Skip -> ";"
+      | Seq _ as s ->
+        stmt_to_s (first s) ^ "; ..."
     in
     stmt_to_s
 end
@@ -591,7 +611,7 @@ module SignatureDB = struct
     |> Option.join
 
   let lookup (e: Expr.t) (arg_count:int) (db:t) : Signature.t option =
-    let (let*) = Option.bind in
+    let ( let* ) = Option.bind in
     let* (kernel, ty) =
       match e with
       | UnresolvedLookupExpr {name=n; _} ->
@@ -617,38 +637,43 @@ end
 
 (* ------------------------------------- *)
 
-(* Monadic let *)
-let ( let* ) = State.bind
-(* Monadic pipe *)
-let (>>=) = State.bind
 let (@) = Common.append_tr
 
+type 'a state = (Stmt.t, 'a) State.t
+
+open State.Syntax
+
+
 module AccessState = struct
-  type t = Stmt.t list
 
   let counter = ref 1
 
-  let make_empty = []
+  (*let make *)
 
-  let add_var (lbl:string) (f:Variable.t -> Stmt.t list) (st:t) : (t * Variable.t) =
+  let add (s:Stmt.t) : unit state =
+    State.update (fun s' -> Stmt.seq s' s)
+
+  let add_var (lbl:string) (f:Variable.t -> Stmt.t) : Variable.t state =
     let count = !counter in
     counter := count + 1;
     let name : string = "@AccessState" ^ string_of_int count in
-    let x = {Variable.name=name; Variable.label=Some lbl;Variable.location=None} in
-    (f x @ st, x)
+    let x:Variable.t = {name=name; label=Some lbl; location=None} in
+    let* () = add (f x) in
+    return x
 
-  let add_stmt (s: Stmt.t) (st:t) : t = s :: st
-
-  let add_expr (expr:Expr.t) (ty:J_type.t) (st:t) : t * Variable.t =
+  let add_expr (expr:Expr.t) (ty:J_type.t) : Variable.t state =
     add_var (Expr.to_string expr) (fun name ->
-      [
-        let ty_var = Ty_variable.make ~ty ~name in
-        DeclStmt [Decl.from_expr ty_var expr]
-      ]
-    ) st
+      let ty_var = Ty_variable.make ~ty ~name in
+      DeclStmt [Decl.from_expr ty_var expr]
+    )
 
-
-  let add_write (a:d_subscript) (source:Expr.t) (payload:int option) (st:t) : (t * Variable.t) =
+  let add_write
+    (a:d_subscript)
+    (source:Expr.t)
+    (payload:int option)
+  :
+    Variable.t state
+  =
     let wr x = Stmt.WriteAccessStmt {
       target=a;
       source=Ident {x with ty=a.ty};
@@ -656,7 +681,8 @@ module AccessState = struct
     } in
     match source with
     | Ident x ->
-      (add_stmt (wr x) st, Decl_expr.name x)
+      let* () = add (wr x) in
+      return (Decl_expr.name x)
     | _ ->
       add_var (subscript_to_s a) (fun x ->
         let ty =
@@ -666,31 +692,27 @@ module AccessState = struct
           |> C_type.strip_array
           |> J_type.from_c_type
         in
-        [
-          wr (Decl_expr.from_name x);
-          let ty_var = Ty_variable.make ~name:x ~ty in
-          DeclStmt [Decl.from_expr ty_var source];
-        ]
-      ) st
+        let ty_var = Ty_variable.make ~name:x ~ty in
+        Seq (
+          wr (Decl_expr.from_name x),
+          DeclStmt [Decl.from_expr ty_var source]
+        )
+      )
 
-  let add_read (a:d_subscript) (st:t) : (t * Variable.t) =
-    add_var (subscript_to_s a) (fun x -> [Stmt.read_access x a]) st
+  let add_read (a:d_subscript) : Variable.t state =
+    add_var (subscript_to_s a) (fun x -> Stmt.read_access x a)
 
-  let add_atomic (atomic:Atomic.t) (source:d_subscript) (st:t) : (t * Variable.t) =
+  let add_atomic (atomic:Atomic.t) (source:d_subscript) : Variable.t state =
     add_var (subscript_to_s source) (fun target ->
-      [
-        Stmt.atomic_access target source atomic;
-      ]
-    ) st
+      Stmt.atomic_access target source atomic;
+    )
 
-  let add_call (c:Expr.d_call) (st:t) : (t * Variable.t) =
+  let add_call (c:Expr.d_call) : Variable.t state =
     let e = Expr.CallExpr c in
     add_var (Expr.to_string e) (fun x ->
-      [
-        let ty = Ty_variable.make ~name:x ~ty:(Expr.to_type e) in
-        DeclStmt [Decl.from_expr ty e]
-      ]
-    ) st
+      let ty = Ty_variable.make ~name:x ~ty:(Expr.to_type e) in
+      DeclStmt [Decl.from_expr ty e]
+    )
 end
 
 let curand_read : Variable.Set.t =
@@ -711,9 +733,6 @@ let curand_read : Variable.Set.t =
   |> List.map Variable.from_name
   |> Variable.Set.of_list
 
-type 'a state = (AccessState.t, 'a) State.t
-
-open State.Syntax
 
 let rec rewrite_exp (c:C_lang.Expr.t) : Expr.t state =
   let open Expr in
@@ -912,7 +931,7 @@ and rewrite_subscript (c:C_lang.Expr.c_array_subscript) : d_subscript state =
   in
   rewrite_subscript c [] None
 
-and rewrite_write (a:C_lang.Expr.c_array_subscript) (src:C_lang.Expr.t) : (AccessState.t, Expr.t) State.t =
+and rewrite_write (a:C_lang.Expr.c_array_subscript) (src:C_lang.Expr.t) : Expr.t state =
   let* src' = rewrite_exp src in
   let* a = rewrite_subscript a in
   let payload = match src with
@@ -922,7 +941,7 @@ and rewrite_write (a:C_lang.Expr.c_array_subscript) (src:C_lang.Expr.t) : (Acces
   let* x = AccessState.add_write a src' payload in
   return (Expr.ident ~ty:(C_lang.Expr.to_type src) x)
 
-and rewrite_read (a:C_lang.Expr.c_array_subscript): (AccessState.t, Expr.t) State.t =
+and rewrite_read (a:C_lang.Expr.c_array_subscript): Expr.t state =
   let* a = rewrite_subscript a in
   let* x = AccessState.add_read a in
   return (Expr.ident ~ty:a.ty x)
@@ -957,51 +976,43 @@ let rewrite_for_init (f:C_lang.ForInit.t) : ForInit.t state =
     let* e = rewrite_exp e in
     return (ForInit.Expr e)
 
-let append (l:Stmt.t list) : unit state =
-  State.write (fun s -> l @ s)
+let add : Stmt.t -> unit state = AccessState.add
 
-let add (s:Stmt.t) : unit state =
-  State.write (fun l -> s :: l)
+let run0 (m: 'a state) : (Stmt.t * 'a) =
+  let (st, a) = State.run Stmt.Skip m in
+  (st, a)
 
-let run0 (m: 'a state) : (Stmt.t list * 'a) =
-  let (st, a) = State.run AccessState.make_empty m in
-  (st |> List.rev, a)
-
-let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t list =
+let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t =
   let run (m:unit state) =
     let (code, ()) = run0 m in
     code
   in
-  let rewrite_s (s:C_lang.Stmt.t) : Stmt.t =
-    match rewrite_stmt s with
-    | [s] -> s
-    | l -> CompoundStmt l
-  in
   match s with
-  | BreakStmt -> [BreakStmt]
-  | GotoStmt -> [GotoStmt]
-  | ReturnStmt None -> [ReturnStmt None]
+  | Skip -> Skip
+  | Seq (s1, s2) -> Seq (rewrite_stmt s1, rewrite_stmt s2)
+  | BreakStmt -> BreakStmt
+  | GotoStmt -> GotoStmt
+  | ReturnStmt None -> ReturnStmt None
   | ReturnStmt (Some e) ->
     run (
       let* e = rewrite_exp e in
       add (ReturnStmt (Some e))
     )
-  | ContinueStmt -> [ContinueStmt]
+  | ContinueStmt -> ContinueStmt
   | IfStmt {cond; then_stmt; else_stmt} ->
     run (
       let* cond = rewrite_exp cond in
       add (IfStmt {
         cond;
-        then_stmt=rewrite_s then_stmt;
-        else_stmt=rewrite_s else_stmt;
+        then_stmt = rewrite_stmt then_stmt;
+        else_stmt = rewrite_stmt else_stmt;
       })
     )
-  | CompoundStmt l -> [CompoundStmt (List.concat_map rewrite_stmt l)]
 
   | DeclStmt ({var; init=Some (IExpr (ArraySubscriptExpr a)); _}::d) ->
     run (
       let* a = rewrite_subscript a in
-      append (Stmt.read_access var a :: rewrite_stmt (DeclStmt d))
+      add (Stmt.seq (Stmt.read_access var a) (rewrite_stmt (DeclStmt d)))
     )
 
   | DeclStmt d ->
@@ -1012,56 +1023,39 @@ let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t list =
 
   | WhileStmt {cond; body} ->
     let (s, cond) = run0 (rewrite_exp cond) in
-    if s = [] then
-      [WhileStmt {cond; body=rewrite_s body}]
-    else
-      (* we unroll the side effects, before the loop runs, and
-         at the end of each iteration *)
-      let body : Stmt.t = CompoundStmt (rewrite_stmt body @ s) in
-      run (
-        let* () = append s in
-        add (WhileStmt {cond; body})
-      )
+    (* we unroll the side effects, before the loop runs, and
+       at the end of each iteration *)
+    let body = Stmt.seq (rewrite_stmt body) s in
+    Stmt.seq s (WhileStmt {cond; body})
 
   | ForStmt {init; cond; inc; body} ->
     let (s1, cond) = run0 (State.option_map rewrite_exp cond) in
     let (s2, inc) = run0 (State.option_map rewrite_exp inc) in
-    if s1 = [] && s2 = [] then
-      run (
-        let* init = State.option_map rewrite_for_init init in
-        add (ForStmt {init; cond; inc; body=rewrite_s body})
-      )
-    else
     (* we unroll the side effects, before the loop runs, and
         at the end of each iteration *)
-    let body : Stmt.t = CompoundStmt (rewrite_stmt body @ s2 @ s1) in
+    let body : Stmt.t = Stmt.seq (rewrite_stmt body) (Stmt.seq s2 s1) in
     run (
       let* init = State.option_map rewrite_for_init init in
-      let* () = append s1 in
-      add (ForStmt {init; cond; inc; body})
+      add (Stmt.seq s1 (ForStmt {init; cond; inc; body}))
     )
 
   | DoStmt {cond; body} ->
     let (s, cond) = run0 (rewrite_exp cond) in
-    if s = [] then
-      [DoStmt {cond; body=rewrite_s body}]
-    else
-      let body : Stmt.t = CompoundStmt (rewrite_stmt body @ s) in
-      [DoStmt {cond; body}]
+    DoStmt {cond; body=Stmt.seq (rewrite_stmt body) s}
 
   | SwitchStmt {cond; body} ->
     run (
       let* cond = rewrite_exp cond in
-      add (SwitchStmt {cond; body=rewrite_s body})
+      add (SwitchStmt {cond; body=rewrite_stmt body})
     )
 
   | CaseStmt {case; body} ->
     run (
       let* case = rewrite_exp case in
-      add (CaseStmt {case; body=rewrite_s body})
+      add (CaseStmt {case; body=rewrite_stmt body})
     )
   | DefaultStmt s ->
-    [DefaultStmt (rewrite_s s)]
+    DefaultStmt (rewrite_stmt s)
   | SExpr e ->
     run (
       let* e = rewrite_exp e in
@@ -1069,15 +1063,15 @@ let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t list =
     )
 
 let rewrite_kernel (k:C_lang.Kernel.t) : Kernel.t =
-  let rewrite_s (s:C_lang.Stmt.t) : Stmt.t =
-    match rewrite_stmt s with
-    | [s] -> s
-    | l -> CompoundStmt l
+  let code =
+    k.code
+    |> C_lang.Stmt.rewrite_comma
+    |> rewrite_stmt
   in
   {
     ty = k.ty;
     name = k.name;
-    code = rewrite_s (C_lang.Stmt.rewrite_comma k.code);
+    code;
     params = k.params;
     type_params = k.type_params;
     attribute = k.attribute;

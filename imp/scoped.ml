@@ -28,11 +28,8 @@ let to_string: t -> string =
         Line "}";
       ]
     | Decl (d, p) ->
-      [
-        Line ("decl " ^ Decl.to_string d ^ " {");
-        Block (to_s p);
-        Line "}";
-      ]
+      Line ("decl " ^ Decl.to_string d ^ ";") ::
+      to_s p
 
     | If (b, s1, s2) -> [
         Line ("if (" ^ Exp.b_to_string b ^ ") {");
@@ -235,7 +232,7 @@ let fix_assigns : t -> t =
     |> snd
 
 
-type stateful = (int * Params.t) -> int * Params.t * t
+type 'a state = (int * Params.t, 'a) State.t
 
 let unknown_range (x:Variable.t) : Range.t =
   Range.{
@@ -248,86 +245,79 @@ let unknown_range (x:Variable.t) : Range.t =
   }
 
 let from_stmt : Params.t * Stmt.t -> Params.t * t =
-  let unknown (x:int) : Variable.t =
-    Variable.from_name ("__loop_" ^ string_of_int x)
+  let open State.Syntax in
+  let unknown curr_id : Variable.t =
+    Variable.from_name ("@loop_" ^ string_of_int curr_id)
   in
-  let ret (p:t) : stateful =
-    fun (curr_id, globals) ->
-      (curr_id, globals, p)
+  let add_global (x:Variable.t) ?(ty=C_type.char) () : unit state =
+    State.update (fun (curr_id, params) ->
+      (curr_id + 1, Params.add x ty params)
+    )
   in
-  let bind (f:stateful) (g:t -> stateful) : stateful =
-    fun (curr_id, globals) ->
-    let (curr_id, globals, s1) = f (curr_id, globals) in
-    g s1 (curr_id, globals)
+  let curr_unknown : Variable.t state =
+    let* (curr_id, _) = State.get in
+    return (unknown curr_id)
   in
-  let rec imp_to_scoped_s : Stmt.t -> (int * Params.t) -> int * Params.t * t =
+  let rec imp_to_scoped : Stmt.t -> t state =
     function
-    | Sync l -> ret (Sync l)
-    | Write e -> ret (Acc (e.array, {index=e.index; mode=Write e.payload}))
-    | Assert b -> ret (Assert b)
-    | Call _ -> imp_to_scoped_p []
-    | Block p -> imp_to_scoped_p p
-    | If (b, s1, s2) ->
-      bind (imp_to_scoped_p [s1]) (fun s1 ->
-        bind (imp_to_scoped_p [s2]) (fun s2 ->
-          ret (If (b, s1, s2))
-        )
+    | Skip -> return Skip
+      (* normalize sequences so that they are sorted to the right-most *)
+    | Seq (Seq (s1, s2), s3) ->
+      imp_to_scoped (Seq (s1, Seq (s2, s3)))
+    | Seq (LocationAlias e, s) ->
+      let* s = imp_to_scoped s in
+      return (loc_subst e s)
+    | Seq (Decl [], p) ->
+      imp_to_scoped p
+    | Seq (Decl (d::l), p) ->
+      let* s = imp_to_scoped (Seq (Decl l, p)) in
+      return (Decl (d, s))
+    | Seq (Assign {var; data; ty;}, p) ->
+      let* body = imp_to_scoped p in
+      return (Assign {var; data; ty; body})
+    | Seq (Read e, s) ->
+      let* s = imp_to_scoped s in
+      let rd = Acc (e.array, {index=e.index; mode=Read}) in
+      return (match e.target with
+      | Some (ty, x) ->
+        Seq (rd, Decl (Decl.unset ~ty x, s))
+      | None ->
+        Seq (rd, s)
       )
+    | Seq (Atomic e, s) ->
+      let* s = imp_to_scoped s in
+      let a = Acc (e.array, {index=e.index; mode=Atomic e.atomic}) in
+      return (Seq (a, Decl (Decl.unset ~ty:e.ty e.target, s)))
+    | Seq (s1, s2) ->
+      let* s1 = imp_to_scoped s1 in
+      let* s2 = imp_to_scoped s2 in
+      return (Seq (s1, s2))
+    | Sync l -> return (Sync l)
+    | Write e -> return (Acc (e.array, {index=e.index; mode=Write e.payload}))
+    | Assert b -> return (Assert b)
+    | Call _ -> return Skip
+    | If (b, s1, s2) ->
+      let* s1 = imp_to_scoped s1 in
+      let* s2 = imp_to_scoped s2 in
+      return (If (b, s1, s2))
     | For (r, s) ->
-      bind (imp_to_scoped_p [s]) (fun s -> ret (For (r, s)))
+      let* s = imp_to_scoped s in
+      return (For (r, s))
     | Star s ->
       let synchronized = Stmt.has_sync s in
-      bind (imp_to_scoped_p [s]) (fun s (curr_id, globals) ->
-        let x = unknown curr_id in
-        let r = unknown_range x in
-        let s : t = For (r, s) in
-        if synchronized then
-          (curr_id + 1, Params.add x C_type.char globals, s)
-        else
-          (curr_id, globals, Decl (Decl.unset x, s))
-      )
+      let* s = imp_to_scoped s in
+      let* x = curr_unknown in
+      let r = unknown_range x in
+      let s : t = For (r, s) in
+      if synchronized then
+        let* () = add_global x () in
+        return s
+      else
+        return (Decl (Decl.unset x, s))
     (* Handled in the context of a prog *)
-    | LocationAlias _ | Decl _ | Assign _ | Read _ | Atomic _ ->
-      failwith "unsupported"
-
-  and imp_to_scoped_p : Stmt.prog -> int*Params.t -> int * Params.t * t =
-    function
-    | [] -> ret Skip
-    | LocationAlias e :: p ->
-      bind (imp_to_scoped_p p) (fun p ->
-       ret (loc_subst e p)
-      )
-    | Decl [] :: p -> imp_to_scoped_p p
-    | Assign {var; data; ty;} :: p ->
-      bind (imp_to_scoped_p p) (fun s ->
-        ret (Assign {var; data; ty; body=s})
-      )
-    | Decl (d::l) :: p ->
-      bind (imp_to_scoped_p (Decl l :: p)) (fun s ->
-        ret (Decl (d, s))
-      )
-    | Read e :: p ->
-      bind (imp_to_scoped_p p) (fun s ->
-        let rd = Acc (e.array, {index=e.index; mode=Read}) in
-        ret (match e.target with
-        | Some (ty, x) ->
-          Seq (rd, Decl (Decl.unset ~ty x, s))
-        | None ->
-          Seq (rd, s)
-        )
-      )
-    | Atomic e :: p ->
-      bind (imp_to_scoped_p p) (fun s ->
-        let a = Acc (e.array, {index=e.index; mode=Atomic e.atomic}) in
-        ret (Seq (a, Decl (Decl.unset ~ty:e.ty e.target, s)))
-      )
-    | s :: p ->
-      bind (imp_to_scoped_s s) (fun s ->
-        bind (imp_to_scoped_p p) (fun p ->
-          ret (Seq (s, p))
-        )
-      )
+    | (LocationAlias _ | Decl _ | Assign _ | Read _ | Atomic _) as s ->
+      imp_to_scoped (Seq (s, Skip))
   in
   fun (globals, s) ->
-    let (_, globals, p) = imp_to_scoped_s s (1, globals) in
+    let ((_, globals), p) = State.run (1, globals) (imp_to_scoped s) in
     (globals, p)

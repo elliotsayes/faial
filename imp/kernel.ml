@@ -234,7 +234,7 @@ let apply (args : (Variable.t * Arg.t) list) (k:t) : Stmt.t =
           offset = u.offset;
         }
     in
-    Stmt.Block [i; s]
+    Stmt.Seq (i, s)
   ) k.code args
 
 let inline (funcs:t StringMap.t) (k:t) : t =
@@ -248,7 +248,8 @@ let inline (funcs:t StringMap.t) (k:t) : t =
     | Sync _ | Assert _ | Read _ | Write _ | Atomic _ | Decl _
     | LocationAlias _ | Assign _ ->
       s
-    | Block l -> Block (List.map inline l)
+    | Skip -> Skip
+    | Seq (p, q) -> Seq (inline p, inline q)
     | If (b, s1, s2) -> If (b, inline s1, inline s2)
     | For (r, s) -> For (r, inline s)
     | Star s -> Star (inline s)

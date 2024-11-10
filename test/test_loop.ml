@@ -109,9 +109,9 @@ let tests = "loops" >::: [
                    }
                });
         (*while(x < 100){x = x + 1}*)
-        let cond = (make_operation_int "<" "x" 100) in
-        let last = (make_operation "=" "x" (make_operation_int "+" "x" 1)) in
-        let compound = Stmt.CompoundStmt([Stmt.SExpr(last)]) in
+        let cond = make_operation_int "<" "x" 100 in
+        let last = make_operation "=" "x" (make_operation_int "+" "x" 1) in
+        let compound = Stmt.from_list [Stmt.SExpr last] in
         let while_loop = while_from_parts cond compound in
         let expected = Some({
             name = Variable.from_name "x";
@@ -124,16 +124,19 @@ let tests = "loops" >::: [
               op = Plus;
               arg = Expr.IntegerLiteral 1;
             };
-          },Stmt.CompoundStmt([])) in
-        assert(from_while(while_loop) = expected);
+          }, Stmt.Skip) in
+        assert_equal (from_while while_loop) expected;
 
         (*while(x < 100) {my_sum = x + 30; x = x + 1;}*)
         let cond = (make_operation_int "<" "x" 100) in
         let last = (make_operation "=" "x" (make_operation_int "+" "x" 1)) in
         let stmt1 = (make_operation "=" "my_sum" (make_operation_int "+" "x" 30)) in
-        let compound = Stmt.CompoundStmt([Stmt.SExpr(stmt1);Stmt.SExpr(last)]) in
+        let compound = Stmt.from_list [
+          Stmt.SExpr stmt1;
+          Stmt.SExpr last
+        ] in
         let while_loop = while_from_parts cond compound in
-        let expected = Some({
+        let expected = Some ({
             name = Variable.from_name "x";
             init = mk_var "x";
             cond = {
@@ -144,7 +147,7 @@ let tests = "loops" >::: [
               op = Plus;
               arg = Expr.IntegerLiteral 1;
             };
-          },Stmt.CompoundStmt([Stmt.SExpr(stmt1)])) in
+          }, Stmt.SExpr stmt1) in
         assert(from_while(while_loop) = expected);
 
         (*while(x < 100) {my_sum = x + 30.0; x = x + 2.5;}*)
@@ -155,7 +158,10 @@ let tests = "loops" >::: [
                       (Expr.FloatingLiteral(100.0))) in
         let last = (make_operation "=" "x" (make_op "+" cond_arg (Expr.FloatingLiteral(2.5))))  in
         let stmt1 = (make_operation "=" "my_sum" (make_op "+" cond_arg (Expr.FloatingLiteral(30.0)))) in
-        let compound = Stmt.CompoundStmt([Stmt.SExpr(stmt1);Stmt.SExpr(last)]) in
+        let compound = Stmt.from_list [
+          Stmt.SExpr stmt1;
+          Stmt.SExpr last
+        ] in
         let while_loop = while_from_parts cond compound in
         let expected = Some({
             name = Variable.from_name "x";
@@ -168,7 +174,7 @@ let tests = "loops" >::: [
               op = Plus;
               arg = Expr.FloatingLiteral 2.5;
             };
-          },Stmt.CompoundStmt([Stmt.SExpr(stmt1)])) in
+          }, Stmt.SExpr stmt1) in
         assert(from_while(while_loop) = expected);
         
         (*

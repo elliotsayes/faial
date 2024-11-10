@@ -100,8 +100,8 @@ let from_for (loop: D_lang.Stmt.d_for) : t option =
 
 let from_while (loop: D_lang.Stmt.d_cond) : (t * D_lang.Stmt.t) option =
   let ( let* ) = Option.bind in
-  let (body, inc) = D_lang.Stmt.last loop.body in
-  let inc = match inc with
+  let body = D_lang.Stmt.skip_last loop.body in
+  let inc = match D_lang.Stmt.last loop.body with
     | SExpr inc ->
       Some inc
     | _ -> None

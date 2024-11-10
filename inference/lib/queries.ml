@@ -133,6 +133,7 @@ module Declarations = struct
 
       | Decl l -> List.to_seq l
 
+      | Skip
       | Break
       | Goto
       | Return _
@@ -140,8 +141,7 @@ module Declarations = struct
       | SExpr _
         -> Seq.empty
 
-      | Compound l -> List.to_seq l |> Seq.concat
-
+      | Seq (s1, s2)
       | If {then_stmt=s1; else_stmt=s2; _} -> Seq.append s1 s2
 
       | Do {body=s; _}
@@ -366,11 +366,11 @@ module NestedLoops = struct
       | ContinueStmt
       | DeclStmt _
       | SExpr _
+      | Skip
       -> []
-      | IfStmt s ->
-        to_seq s.then_stmt @ to_seq s.else_stmt
-      | CompoundStmt l ->
-        List.concat_map to_seq l
+      | Seq (s1, s2)
+      | IfStmt {then_stmt=s1; else_stmt=s2; _} ->
+        to_seq s1 @ to_seq s2
       | DefaultStmt s
       | SwitchStmt {body=s; _}
       | CaseStmt {body=s; _}
@@ -614,12 +614,17 @@ module MutatedVar = struct
           in
           (env, vars)
 
+        | Skip
         | BreakStmt
         | GotoStmt
         | ReturnStmt None
         | ContinueStmt
         -> (env, VarSet.empty)
 
+        | Seq (s1, s2) ->
+          let (env, vars1) = typecheck scope env s1 in
+          let (env, vars2) = typecheck scope env s2 in
+          (env, VarSet.union vars1 vars2)
         | IfStmt s ->
           let (_, vars1) = typecheck (scope + 1) env s.else_stmt in
           let (_, vars2) = typecheck (scope + 1) env s.then_stmt in
@@ -628,12 +633,6 @@ module MutatedVar = struct
             |> VarSet.union (typecheck_e s.cond)
           in
           (env, vars)
-
-        | CompoundStmt l ->
-          List.fold_left (fun (env, vars1) s ->
-            let (env, vars2) = typecheck scope env s in
-            (env, VarSet.union vars1 vars2)
-          ) (env, VarSet.empty) l
 
         | DefaultStmt s
         | SwitchStmt {body=s; _}
@@ -709,7 +708,7 @@ module Loops = struct
       function
       | DoStmt _
       | ForStmt _
-      | WhileStmt _ -> CompoundStmt []
+      | WhileStmt _ -> Skip
       | s -> s
     )
     |> Stmt.member (
@@ -789,31 +788,28 @@ module ForEach = struct
     | ReturnStmt _
     | DeclStmt _
     | SExpr _
+    | Skip
       -> Seq.empty
+    | Seq (s1, s2)
     | IfStmt {then_stmt=s1; else_stmt=s2; _}
       -> to_seq s1 |> Seq.append (to_seq s2)
     | SwitchStmt {body=s; _}
     | DefaultStmt s
-    | CaseStmt {body=s; _}
-      -> to_seq s
-    | CompoundStmt l ->
-      List.to_seq l
-      |> Seq.concat_map to_seq
+    | CaseStmt {body=s; _} ->
+      to_seq s
 
   let infer (s: Stmt.t) : (t * Range.t option) Seq.t =
     to_seq s
     |> Seq.map (function
       | For r ->
-        let o = match D_to_imp.Default.infer_for r with
-          | Ok (Some r) -> Some r
-          | _ -> None
-        in
+        let o = D_to_imp.Default.infer_for r  in
         (For r, o)
       | Do _ as l -> (l, None)
       | While {cond;body} as r  ->
-       let o = match D_to_imp.Default.infer_while {cond;body} with
-          |Ok (Some(r,_)) -> Some r
-          |_ -> None
+        let o =
+          {cond;body}
+          |> D_to_imp.Default.infer_while
+          |> Option.map fst
         in
         (r, o)
     )
@@ -846,6 +842,7 @@ module Accesses = struct
   let cond_accesses (s: Stmt.t) : t Seq.t =
     let rec cond_accesses (in_cond:bool) (s: Stmt.t) : t Seq.t =
       match s with
+      | Skip
       | Call _
       | Decl _
       | Assign _
@@ -859,8 +856,7 @@ module Accesses = struct
         if in_cond then (Seq.return (Imp.Read.to_acc r)) else Seq.empty
       | Write w ->
         if in_cond then (Seq.return (Imp.Write.to_acc w)) else Seq.empty
-      | Block l ->
-        Seq.concat_map (cond_accesses in_cond) (List.to_seq l)
+      | Seq (s1, s2)
       | If (_, s1, s2) ->
         Seq.append (cond_accesses true s1) (cond_accesses true s2)
       | Star s | For (_, s) ->

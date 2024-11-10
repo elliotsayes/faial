@@ -96,9 +96,8 @@ module Infer = struct
       Some (d, {op=RelMinus; arg=r})
     | _ -> None
 
-  let rec parse_inc : Stmt.t option -> (Variable.t * Increment.t unop) option =
-    function
-    | Some (Block [i]) -> parse_inc (Some i)
+  let parse_inc (s:Stmt.t option) : (Variable.t * Increment.t unop) option =
+    match Option.map Stmt.first s with
     | Some (Assign {var=l; data=Binary (o, r, Var l'); _})
     | Some (Assign {var=l; data=Binary (o, Var l', r); _}) ->
       begin

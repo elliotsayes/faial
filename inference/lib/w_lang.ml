@@ -1,7 +1,7 @@
 open Stage0
 open Protocols
 
-module StackTrace = Common.StackTrace
+module StackTrace = Stack_trace
 type json = Yojson.Basic.t
 type j_object = Rjson.j_object
 type 'a j_result = 'a Rjson.j_result
@@ -3797,6 +3797,26 @@ module Statement = struct
     fall_through: bool;    (** Whether control should proceed to the next case. *)
   }
 
+  (** Returns the child expressions of the current statement.
+      Does not recurse to child statetements. *)
+  let expressions : t -> Expression.t list =
+    function
+    | Call {arguments=l; _} -> l
+    | ImageStore {image=e1; coordinate=e2; array_index=o3; value=e4} ->
+      [e1; e2] @ Option.to_list o3 @ [e4]
+    | Store {pointer=e1; value=e2} -> [e1; e2]
+    | SubgroupBallot {predicate=o; _}
+    | Return o
+    | Loop {break_if=o; _} ->
+      Option.to_list o
+    | SubgroupCollectiveOperation {argument=e; _}
+    | SubgroupGather {argument=e; _}
+    | WorkGroupUniformLoad {pointer=e; _}
+    | Atomic {pointer=e; _}
+    | Switch{selector=e; _}
+    | If {condition=e; _} ->
+      [e]
+    | Continue | Break | Block _ | Kill | Barrier _ -> []
 
   (** Update every expression that occurs in a statement *)
   let map (f:Expression.t -> Expression.t) : t -> t =

@@ -1,4 +1,5 @@
 open Protocols
+open Stage0 (* State monad *)
 
 type n =
   | Var of Variable.t
@@ -93,23 +94,10 @@ let bool (b:bool) : t =
 let unknown (lbl:string) : t =
   Unknown lbl
 
-(*
-   Parsing expressions requires a global state
-   which is a set of unknowns. Whenever we parse a
-   statement we may create certain unknowns. Such variables
-   are defined within the scope of that statement alone.
-   The state UnknownSt is global to parsing numerical
-   and boolean expressions.
- *)
-module Context = struct
-  type t = Variable.Set.t
+type 'a state = (Variable.Set.t, 'a) State.t
 
-  let make : t = Variable.Set.empty
-
-  let is_empty : t -> bool =
-    Variable.Set.is_empty
-
-  let create (label:string) (st:t) : t * Variable.t =
+let make_unknown (label:string) : Variable.t state =
+  State.update_return (fun st ->
     let count = Variable.Set.cardinal st in
     let v =
       ("@Unknown" ^ string_of_int count)
@@ -117,126 +105,83 @@ module Context = struct
       |> Variable.set_label label
     in
     Variable.Set.add v st, v
+  )
 
-  let get (st:t) : Variable.Set.t =
-    st
+open State.Syntax
 
-  let convert (handler:t -> 'a -> t * 'b) (n:'a) : Variable.Set.t * 'b =
-    let (u, n) = handler make n in
-    (get u, n)
-
-  let rec mmap (f:t -> 'a -> t * 'b) (st:t) : 'a list -> (t * 'b list) =
-    function
-    | [] -> (st, [])
-    | x :: l ->
-      let (st, x) = f st x in
-      let (st, l) = mmap f st l in
-      (st, x :: l)
-
-end
-
-let rec handle_n (u:Context.t) (e:t) : (Context.t * Exp.nexp) =
+let rec to_nexp (e:t) : Exp.nexp state =
   match e with
   | NExp n ->
     (match n with
-    | Var x -> (u, Exp.Var x)
-    | Num x -> (u, Exp.Num x)
+    | Var x -> return (Exp.Var x)
+    | Num x -> return (Exp.Num x)
     | Binary (o, n1, n2) ->
-      let (u, n1) = handle_n u n1 in
-      let (u, n2) = handle_n u n2 in
-      (u, Exp.Binary (o, n1, n2))
+      let* n1 = to_nexp n1 in
+      let* n2 = to_nexp n2 in
+      return (Exp.Binary (o, n1, n2))
     | Other n ->
-      let (u, n) = handle_n u n in
-      (u, Exp.Other n)
+      let* n = to_nexp n in
+      return (Exp.Other n)
     | Unary (o, n) ->
-      let (u, n) = handle_n u n in
-      (u, Exp.Unary (o, n))
+      let* n = to_nexp n in
+      return (Exp.Unary (o, n))
     | NCall (x, n) ->
-      let (u, n) = handle_n u n in
-      (u, Exp.NCall (x, n))
+      let* n = to_nexp n in
+      return (Exp.NCall (x, n))
     | NIf (b, n1, n2) ->
-      let (u, b) = handle_b u b in
-      let (u, n1) = handle_n u n1 in
-      let (u, n2) = handle_n u n2 in
-      (u, Exp.NIf (b, n1, n2)))
+      let* b = to_bexp b in
+      let* n1 = to_nexp n1 in
+      let* n2 = to_nexp n2 in
+      return (Exp.NIf (b, n1, n2)))
   | BExp _ ->
-    let (u, b) = handle_b u e in
-    (u, Exp.cast_int b)
+    let* b = to_bexp e in
+    return (Exp.cast_int b)
   | Unknown lbl ->
-    let (u, x) = Context.create lbl u in
-    (u, Exp.Var x)
+    let* x = make_unknown lbl in
+    return (Exp.Var x)
 
-and handle_b (u:Context.t) (e:t) : (Context.t * Exp.bexp) =
+and to_bexp (e:t) : Exp.bexp state =
   match e with
   | BExp b ->
     (match b with
-    | Bool x -> (u, Exp.Bool x)
+    | Bool x -> return (Exp.Bool x)
     | NRel (o, n1, n2) ->
-      let (u, n1) = handle_n u n1 in
-      let (u, n2) = handle_n u n2 in
-      (u, NRel (o, n1, n2))
+      let* n1 = to_nexp n1 in
+      let* n2 = to_nexp n2 in
+      return (Exp.NRel (o, n1, n2))
     | BRel (o, b1, b2) ->
-      let (u, b1) = handle_b u b1 in
-      let (u, b2) = handle_b u b2 in
-      (u, BRel (o, b1, b2))
+      let* b1 = to_bexp b1 in
+      let* b2 = to_bexp b2 in
+      return (Exp.BRel (o, b1, b2))
     | BNot b ->
-      let (u, b) = handle_b u b in
-      (u, BNot b)
+      let* b = to_bexp b in
+      return (Exp.BNot b)
     | Pred (x, n) ->
-      let (u, n) = handle_n u n in
-      (u, Pred (x, n)))
+      let* n = to_nexp n in
+      return (Exp.Pred (x, n)))
   | NExp _ ->
-    let (u, n) = handle_n u e in
-    (u, Exp.cast_bool n)
+    let* n = to_nexp e in
+    return (Exp.cast_bool n)
   | Unknown lbl ->
-    let (u, x) = Context.create lbl u in
-    (u, Exp.cast_bool (Var x))
+    let* x = make_unknown lbl in
+    return (Exp.cast_bool (Var x))
 
-(* Convert a d_nexp into an nexp and get the set of unknowns *)
-let to_nexp: t -> Variable.Set.t * Exp.nexp =
-  Context.convert handle_n
+(** Runs a state monad and returns the set of unknown variables *)
+let vars ?(init=Variable.Set.empty) (m:'a state) : (Variable.Set.t * 'a) =
+  State.run init m
 
-(* Convert a d_bexp into an bexp and get the set of unknowns *)
-let to_bexp: t -> Variable.Set.t * Exp.bexp =
-  Context.convert handle_b
+let unknowns ?(init=Variable.Set.empty) (m:Stmt.t state) : Stmt.t =
+  let (vs, a) = vars ~init m in
+  Stmt.seq
+    (Stmt.decl_unset vs)
+    a
 
-
-let to_nexp_list: t list -> Variable.Set.t * Exp.nexp list =
-  Context.convert (Context.mmap handle_n)
-
-(* Convert a d_nexp into an nexp only if there are no unknowns *)
-let try_to_nexp (n:t) : Exp.nexp option =
-  let (u, n) = handle_n Context.make n in
-  if Context.is_empty u
-  then Some n
-  else None
-
-(* Convert a d_bexp into an bexp only if there are no unknowns *)
-let try_to_bexp (b:t) : Exp.bexp option =
-  let (u, b) = handle_b Context.make b in
-  if Context.is_empty u
-  then Some b
-  else None
-
-let as_decls (xs:Variable.Set.t) : Decl.t list =
-  Variable.Set.elements xs |> List.map Decl.unset
-
-let decl_unknown (vars:Variable.Set.t) : Stmt.t list =
-  if Variable.Set.is_empty vars then []
+(** Run the state monad only and returns something only when
+   there are no unknowns *)
+let no_unknowns (m:'a state) : 'a option =
+  let (vs, a) = vars m in
+  if Variable.Set.is_empty vs then
+    Some a
   else
-    [Decl (as_decls vars)]
+    None
 
-let infer_nexp (e:t) : (Stmt.t list * Exp.nexp) =
-  let (decls, e) = to_nexp e in
-  let decls = decl_unknown decls in
-  (decls, e)
-
-let infer_nexp_list (l:t list) : (Stmt.t list * Exp.nexp list) =
-  let (decls, l) = to_nexp_list l in
-  let decls = decl_unknown decls in
-  (decls, l)
-
-let infer_bexp (e:t) : (Stmt.t list * Exp.bexp) =
-  let (decls, e) = to_bexp e in
-  let decls = decl_unknown decls in
-  (decls, e)

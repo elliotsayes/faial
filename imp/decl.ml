@@ -11,6 +11,11 @@ let unset ?(ty=C_type.int) (var: Variable.t) : t =
 let map (f:Exp.nexp -> Exp.nexp) (d:t) : t =
   { d with init = Option.map f d.init }
 
+let from_set (vs:Variable.Set.t) : t list =
+  vs
+  |> Variable.Set.elements
+  |> List.map unset
+
 let to_string (d:t) : string =
   let ty = C_type.to_string d.ty in
   let x = Variable.name d.var in

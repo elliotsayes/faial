@@ -51,25 +51,19 @@ module Make (L:Logger.Logger) = struct
     in
     match C_lang.parse_program j with
     | Ok k1 ->
-      let k2 = D_lang.rewrite_program k1 in
-        (match D.parse_program k2 with
-        | Ok kernels ->
-          let kernels =
-            if ignore_asserts then
-              List.map Imp.Kernel.remove_global_asserts kernels
-            else
-              kernels
-          in
-          Stdlib.flush_all ();
-          {options; kernels}
-        | Error e ->
-          C_lang.Program.print k1;
-          print_endline "------";
-          D_lang.Program.print k2;
-          print_endline "-------";
-          D_to_imp.print_error e;
-          exit(exit_status)
-        )
+      let kernels =
+        k1
+        |> D_lang.rewrite_program
+        |> D.parse_program
+      in
+      let kernels =
+        if ignore_asserts then
+          List.map Imp.Kernel.remove_global_asserts kernels
+        else
+          kernels
+      in
+      Stdlib.flush_all ();
+      {options; kernels}
 
     | Error e ->
       Rjson.print_error e;

@@ -6,21 +6,12 @@ let analyze (j:Yojson.Basic.t) : C_lang.Program.t * D_lang.Program.t * (Imp.Kern
   match C_lang.parse_program j with
   | Ok k1 ->
     let k2 = D_lang.rewrite_program k1 in
-      (match D_to_imp.Default.parse_program k2 with
-      | Ok k3 -> (k1, k2, k3)
-      | Error e ->
-        C_lang.Program.print k1;
-        print_endline "------";
-        D_lang.Program.print k2;
-        print_endline "-------";
-        D_to_imp.print_error e;
-        exit(-1)
-      )
+    let k3 = D_to_imp.Default.parse_program k2 in
+    (k1, k2, k3)
 
   | Error e ->
     Rjson.print_error e;
     exit(-1)
-
 
 let main
   (fname: string)

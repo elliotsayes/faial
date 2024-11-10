@@ -60,14 +60,14 @@ let tests = "tests" >::: [
       init=None;
       cond=Some (IntegerLiteral idx);
       inc=None;
-      body=CompoundStmt body
+      body=Stmt.from_list body
     } in
     let e_for ?(body=[]) ?(data=[]) idx =
       For {
         init=None;
         cond=Some (IntegerLiteral idx);
         inc=None;
-        data=CompoundStmt data;
+        data=Stmt.from_list data;
         body=body
       }
     in

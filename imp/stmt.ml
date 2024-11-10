@@ -6,12 +6,13 @@ module StringMapUtil = Common.StringMapUtil
 module StringSet = Common.StringSet
 
 type t =
+  | Skip
+  | Seq of t * t
   | Sync of Location.t option
   | Assert of Assert.t
   | Read of Read.t
   | Atomic of Atomic_write.t
   | Write of Write.t
-  | Block of (t list)
   | LocationAlias of Alias.t
   | Decl of Decl.t list
   | Assign of {var: Variable.t; data: Exp.nexp; ty: C_type.t}
@@ -22,14 +23,14 @@ type t =
 
 let filter (f:t -> bool) : t -> t =
   let rec filter (s:t) : t =
-    if not (f s) then Block [] else
+    if not (f s) then Skip else
     match s with
-    | Block l -> Block (List.map filter l)
+    | Seq (p, q) -> Seq (filter p, filter q)
     | If (b, p, q) -> If (b, filter p, filter q)
     | For (r, p) -> For (r, filter p)
     | Star p -> Star (filter p)
     | Sync _ | Read _ | Atomic _ | Write _  | LocationAlias _
-    | Decl _ | Assign _ | Call _ | Assert _ -> s
+    | Decl _ | Assign _ | Call _ | Assert _ | Skip -> s
   in
   filter
 
@@ -50,25 +51,21 @@ let is_if : t -> bool =
   | If _ -> true
   | _ -> false
 
-type prog = t list
-
 let rec has_sync : t -> bool =
   function
   | Sync _ -> true
-  | If (_, p, q) -> has_sync p || has_sync q
+  | Seq (p, q) | If (_, p, q) -> has_sync p || has_sync q
   | Atomic _ | Read _ | Write _ | Assert _ | LocationAlias _
-  | Decl _ | Call _ | Assign _ -> false
-  | Block l -> List.exists has_sync l
+  | Decl _ | Call _ | Assign _ | Skip -> false
   | For (_, p) | Star p -> has_sync p
 
 let calls : t -> StringSet.t =
   let rec calls (cs:StringSet.t) : t -> StringSet.t =
     function
-    | Decl _ | LocationAlias _ | Sync _ | Assert _
+    | Skip | Decl _ | LocationAlias _ | Sync _ | Assert _
     | Read _ | Write _ | Atomic _ | Assign _ ->
       cs
-    | Block l -> List.fold_left calls cs l
-    | If (_, s1, s2) -> calls (calls cs s1) s2
+    | If (_, s1, s2) | Seq (s1, s2) -> calls (calls cs s1) s2
     | For (_, s) | Star s -> calls cs s
     | Call c -> StringSet.add (Call.unique_id c) cs
   in
@@ -80,6 +77,7 @@ let fold : 'a. (t -> 'a -> 'a) -> t -> 'a -> 'a =
     let rec fold_i (s:t) (init:'a) : 'a =
       let init : 'a = f s init in
       match s with
+      | Skip
       | Sync _
       | Assert _
       | Read _
@@ -90,17 +88,12 @@ let fold : 'a. (t -> 'a -> 'a) -> t -> 'a -> 'a =
       | LocationAlias _
       | Call _ ->
         init
-      | Block l ->
-        fold_p l init
-      | If (_, s1, s2) ->
+      | Seq (s1, s2) | If (_, s1, s2) ->
         let init = fold_i s1 init in
         fold_i s2 init
       | For (_, s)
       | Star s ->
         fold_i s init
-
-    and fold_p (l:prog) (init:'a) : 'a =
-      List.fold_right fold_i l init
     in
     fold_i p init
 
@@ -115,31 +108,45 @@ let find_all_map (f: t -> 'a option) (s: t) : 'a Seq.t =
 let find_all (f: t -> bool) : t -> t Seq.t =
   find_all_map (fun x -> if f x then Some x else None)
 
-let s_block (l:t list) : t =
-  Block (
-    List.filter (function
-      | Block [] -> false
-      | Decl [] -> false
-      | _ -> true
-    ) l
-  )
+let rec first : t -> t =
+  function
+  | Seq (p, _) -> first p
+  | s -> s
 
-let s_for (r:Range.t) (s:t) : t =
+let for_ (r:Range.t) (s:t) : t =
   match s with
-  | Block [] -> Block []
-  | Decl [] -> Decl []
+  | Skip | Decl [] -> Skip
   | _ -> For (r, s)
 
-let s_if (b:Exp.bexp) (p1:t) (p2:t) : t =
+let if_ (b:Exp.bexp) (p1:t) (p2:t) : t =
   match b, p1, p2 with
   | (Bool false, _, p)
   | (Bool true, p, _)
     -> p
-  | (_, Block [], Block []) -> Block []
+  | (_, Skip, Skip) -> Skip
   | _ -> If (b, p1, p2)
+
+let seq (s1:t) (s2:t) : t =
+  match s1, s2 with
+  | Skip, s | s, Skip -> s
+  | _, _ -> Seq (s1, s2)
+
+let from_list : t list -> t =
+  List.fold_left seq Skip
 
 let assign (ty:C_type.t) (var:Variable.t) (data:Exp.nexp) : t =
   Assign {ty; var; data}
+
+let decl_unset (vs:Variable.Set.t) : t =
+  if Variable.Set.is_empty vs then
+    Skip
+  else
+    let vs =
+      vs
+      |> Variable.Set.elements
+      |> List.map Decl.unset
+    in
+    Decl vs
 
 let to_s: t -> Indent.t list =
   let rec stmt_to_s : t -> Indent.t list =
@@ -169,8 +176,7 @@ let to_s: t -> Indent.t list =
         | Some x -> " = " ^ string_of_int x
       in
       [Line ("wr " ^ Variable.name w.array ^ Access.index_to_string w.index ^ payload ^ ";")]
-    | Block [] -> []
-    | Block l -> [Line "{"; Block (List.map stmt_to_s l |> List.flatten); Line "}"]
+    | Skip -> [Line ";"]
     | Assign a -> [Line (Variable.name a.var ^ " = " ^ Exp.n_to_string a.data ^ ";")]
     | LocationAlias l ->
       [Line ("alias " ^ Alias.to_string l)]
@@ -179,11 +185,14 @@ let to_s: t -> Indent.t list =
       let entries = String.concat ", " (List.map Decl.to_string l) in
       [Line ("decl " ^ entries ^ ";")]
 
-    | If (b, s1, Block []) -> [
+    | If (b, s1, Skip) -> [
         Line ("if (" ^ Exp.b_to_string b ^ ") {");
         Block (stmt_to_s s1);
         Line "}";
       ]
+
+    | Seq (s1, s2) ->
+      stmt_to_s s1 @ stmt_to_s s2
 
     | If (b, s1, s2) -> [
         Line ("if (" ^ Exp.b_to_string b ^ ") {");
@@ -206,3 +215,19 @@ let to_s: t -> Indent.t list =
 
 let to_string (s: t) : string =
   Indent.to_string (to_s s)
+
+module State = struct
+  type 'a state = (t, 'a) Stage0.State.t
+
+  let add (s:t) : unit state =
+    Stage0.State.update (fun s' -> seq s' s)
+
+  let run (m:unit state) : t =
+    Stage0.State.run Skip m
+    |> fst
+
+  let try_run (m:'a state) : 'a option =
+    match Stage0.State.run Skip m with
+    | (Skip, a) -> Some a
+    | _ -> None
+end

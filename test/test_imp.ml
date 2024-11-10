@@ -36,7 +36,7 @@ let tests = "test_predicates" >::: [
     let sq = Variable.from_name "s_Q" in
     let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
     let inc (x:Variable.t) = Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))] in
-    let p = Imp.Stmt.Block [
+    let p : Stmt.t = Stmt.from_list [
       inc id;
       wr;
     ] in
@@ -46,7 +46,7 @@ let tests = "test_predicates" >::: [
     let open Imp.Scoped in
     (match p with
     | Decl ({init=Some e1; _}, (* local id = 32 + id; *)
-        Seq (Acc (_, {index=[e2]; _}), Skip) (* rw s_Q[id]; *)
+        Acc (_, {index=[e2]; _}) (* rw s_Q[id]; *)
       )
       ->
       assert_nexp (n_plus (Num 32) (Var id)) e1;
@@ -92,7 +92,7 @@ let tests = "test_predicates" >::: [
     let inc (x:Variable.t) =
       Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))]
     in
-    let p = Imp.Stmt.(Block [
+    let p = Stmt.(from_list [
       Decl [Decl.unset tid];
       Decl [Decl.set id (Var tid)];
       wr;
@@ -109,10 +109,7 @@ let tests = "test_predicates" >::: [
             Seq (
               Acc (_, {index=[e1]; _}), (* rw s_Q[id]; *)
               Decl ({var=v3; init=Some v3_e; _}, (* local id = 32 + id; *)
-                Seq (
-                  Acc (_, {index=[e2]; _}), (* rw s_Q[id]; *)
-                  Skip
-                )
+                Acc (_, {index=[e2]; _}) (* rw s_Q[id]; *)
               )
             )
           )
@@ -148,7 +145,7 @@ let tests = "test_predicates" >::: [
     let inc (x:Variable.t) =
       Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))]
     in
-    let p = Imp.Stmt.(Block [
+    let p = Imp.Stmt.(from_list [
       Decl [Decl.unset tid];
       Decl [Decl.set id (Var tid)];
       wr;
@@ -166,7 +163,7 @@ let tests = "test_predicates" >::: [
       match p with
       | Decl {body=Seq (
           Acc (_, {index=[e1]; _}),
-          Seq (Acc (_, {index=[e2]; _}), Skip) ); _} ->
+          Acc (_, {index=[e2]; _}) ); _} ->
         let inc e = n_plus (Num 32) e in
         let tid = Var tid in
         assert_nexp tid e1;
@@ -200,7 +197,7 @@ let tests = "test_predicates" >::: [
     let inc (x:Variable.t) =
       Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))]
     in
-    let p = Imp.Stmt.(Block [
+    let p = Imp.Stmt.(from_list [
       Decl [Decl.unset (Variable.from_name "threadIdx.x")];
       Decl [Decl.set n (Var (Variable.from_name "threadIdx.x"))];
       Decl [Decl.set k (Var (Variable.from_name "blockIdx.x"))];
@@ -252,7 +249,7 @@ let tests = "test_predicates" >::: [
       array=Variable.from_name "A";
       index=[Var a; Var b]; payload=None}
     ) in
-    let p = Imp.Stmt.(Block [
+    let p = Imp.Stmt.(from_list [
       Decl [
         Decl.unset x;
         Decl.set a (Var x);
@@ -261,7 +258,7 @@ let tests = "test_predicates" >::: [
         Decl.unset x;
         Decl.set b (Var x);
       ];
-      wr
+      wr;
     ]) in
     let p1 : Scoped.t =
       let open Scoped in
@@ -270,14 +267,14 @@ let tests = "test_predicates" >::: [
           Decl (Decl.set a (Var x),
             Decl (Decl.unset x,
               Decl (Decl.set b (Var x),
-                Seq (Acc (Variable.from_name "A", Access.write [Var a; Var b] None), Skip)
+                Acc (Variable.from_name "A", Access.write [Var a; Var b] None)
               )
             )
           )
         )
       )
     in
-    assert_post (Scoped.from_stmt (Params.empty, p) |> snd) p1;
+    assert_post p1 (Scoped.from_stmt (Params.empty, p) |> snd);
     let p2 : Scoped.t =
       let open Scoped in
       (*
@@ -317,7 +314,7 @@ let tests = "test_predicates" >::: [
     | Decl {var=y1;
         body=Decl {
           var=y2;
-          body=Seq (Acc (_, {index=[x1; x2]; _}), Skip) ;
+          body=Acc (_, {index=[x1; x2]; _}) ;
         _};
         _
       }
