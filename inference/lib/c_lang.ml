@@ -995,9 +995,13 @@ module Def = struct
 end
 
 module Program = struct
+  open Stage0
   type t = Def.t list
 
+  type 'a state = (Variable.Set.t, 'a) State.t
+
   let rewrite_shared_arrays: t -> t =
+    let open Stage0.State.Syntax in
     (* Rewrites expressions: when it finds a variable that has been defined as
       a shared variable, we replace that by an array subscript:
       x becomes x[0] *)
@@ -1018,76 +1022,117 @@ module Program = struct
     in
     (* When rewriting a variable declaration, we must return as the side-effect
       the shadowing of the available variables when it makes sense *)
-    let rw_decl (vars:Variable.Set.t) (d:Decl.t) : Variable.Set.t * Decl.t =
-      let vars =
-        let name = d |> Decl.var in
-        if Decl.is_shared d && not (Decl.matches C_type.is_array d) then
-          Variable.Set.add name vars
-        else
-          Variable.Set.remove name vars
-      in
-      (vars, Decl.map_expr (rw_exp vars) d)
+    let rw_decl (d:Decl.t) : Decl.t state =
+      State.update_return (fun vars ->
+        let vars =
+          let name = Decl.var d in
+          if Decl.is_shared d && not (Decl.matches C_type.is_array d) then
+            Variable.Set.add name vars
+          else
+            Variable.Set.remove name vars
+        in
+        (vars, Decl.map_expr (rw_exp vars) d)
+      )
     in
-    (* This is just a monadic map *)
-    let rec rw_list: 'a. (Variable.Set.t -> 'a -> Variable.Set.t * 'a) -> Variable.Set.t -> 'a list -> Variable.Set.t * 'a list =
-      fun f vars l ->
-          match l with
-          | [] -> (vars, [])
-          | x :: l ->
-            let (vars, x) = f vars x in
-            let (vars, l) = rw_list f vars l in
-            (vars, x::l)
+
+    (* We declare a scope where side effects (variable declarations) are
+       contained *)
+    let scope (m:'a state) : 'a state =
+      State.update_return (fun s ->
+        (s, State.run s m |> snd)
+      )
     in
+
     (* We now rewrite statements *)
-    let rw_stmt (vars:Variable.Set.t) (s:Stmt.t) : Stmt.t =
-      let rec rw_s (vars:Variable.Set.t) (s: Stmt.t) : Variable.Set.t * Stmt.t =
-        let ret (s: Stmt.t) : Stmt.t = rw_s vars s |> snd in
-        let rw_e: Expr.t -> Expr.t = rw_exp vars in
-        match s with
-        | Skip
-        | BreakStmt
-        | GotoStmt
-        | ReturnStmt None
-        | ContinueStmt ->
-          (vars, s)
+    let rw_stmt (vars:Variable.Set.t) : Stmt.t -> Stmt.t =
+      let rw_e (e:Expr.t) : Expr.t state =
+        State.get_return (fun vars ->
+          rw_exp vars e
+        )
+      in
+      let rec rw_s : Stmt.t -> Stmt.t state =
+        let open Stmt in
+        function
+        | (Skip
+          | BreakStmt
+          | GotoStmt
+          | ReturnStmt None
+          | ContinueStmt) as s ->
+          State.return s
         | ReturnStmt (Some e) ->
-          (vars, ReturnStmt (Some (rw_e e)))
-        | IfStmt {cond=c; then_stmt=s1; else_stmt=s2} ->
-          (vars, IfStmt {cond=rw_e c; then_stmt=ret s1; else_stmt=ret s2})
+          let* e = rw_e e in
+          return (ReturnStmt (Some e))
+        | IfStmt {cond; then_stmt; else_stmt} ->
+          let* cond = rw_e cond in
+          let* then_stmt = scope (rw_s then_stmt) in
+          let* else_stmt = scope (rw_s else_stmt) in
+          return (IfStmt {cond; then_stmt; else_stmt})
         | Seq (s1, s2) ->
-          let (vars, s1) = rw_s vars s1 in
-          let (vars, s2) = rw_s vars s2 in
-          (vars, Seq (s1, s2))
+          let* s1 = rw_s s1 in
+          let* s2 = rw_s s2 in
+          return (Seq (s1, s2))
         | DeclStmt l ->
           (* Variable declaration introduces a scope *)
-          let (vars, l) = rw_list rw_decl vars l in
-          (vars, DeclStmt l)
-        | WhileStmt {cond=e; body=s} ->
-          (vars, WhileStmt {cond=rw_e e; body=ret s})
-        | ForStmt {init=e1; cond=e2; inc=e3; body=s} ->
-          (* The init may create a scope *)
-          let (vars_body, e1) = match e1 with
-          | None -> (vars, None)
-          | Some (ForInit.Decls l) ->
-            let (vars, l) = rw_list rw_decl vars l in
-            (vars, Some (ForInit.Decls l))
-          | Some (ForInit.Expr e) -> (vars, Some (ForInit.Expr (rw_e e)))
-          in
-          let e2 = Option.map (rw_exp vars_body) e2 in
-          let e3 = Option.map (rw_exp vars_body) e3 in
-          (vars, ForStmt {init=e1; cond=e2; inc=e3; body=rw_s vars_body s |> snd})
-        | DoStmt {cond=e; body=s} ->
-          (vars, DoStmt {cond=rw_e e; body=ret s})
-        | SwitchStmt {cond=e; body=s} ->
-          (vars, SwitchStmt {cond=rw_e e; body=ret s})
+          let* l = State.list_map rw_decl l in
+          return (DeclStmt l)
+        | WhileStmt {cond; body} ->
+          let* cond = rw_e cond in
+          let* body = scope (rw_s body) in
+          return (WhileStmt {cond; body})
+        | ForStmt {init; cond; inc; body} ->
+          (* Since the init may declare a scope, we must contain
+             the side-effects *)
+          scope (
+            let* init =
+              match init with
+              | None -> return None
+              | Some d ->
+                let* d =
+                  match d with
+                  | ForInit.Decls l ->
+                    let* l = State.list_map rw_decl l in
+                    return (ForInit.Decls l)
+                  | ForInit.Expr e ->
+                    let* e = rw_e e in
+                    return (ForInit.Expr e)
+                in
+                return (Some d)
+            in
+            let* cond = State.option_map rw_e cond in
+            let* inc = State.option_map rw_e inc in
+            let* body = rw_s body in
+            return (ForStmt {init; cond; inc; body})
+          )
+        | DoStmt {cond; body} ->
+          scope (
+            let* cond = rw_e cond in
+            let* body = rw_s body in
+            return (DoStmt {cond; body})
+          )
+        | SwitchStmt {cond; body} ->
+          scope (
+            let* cond = rw_e cond in
+            let* body = rw_s body in
+            return (SwitchStmt {cond; body})
+          )
         | DefaultStmt s ->
-          (vars, DefaultStmt (ret s))
-        | CaseStmt  {case=e; body=s} ->
-          (vars, CaseStmt {case=rw_e e; body=ret s})
+          scope (
+            let* s = rw_s s in
+            return (DefaultStmt s)
+          )
+        | CaseStmt {case; body} ->
+          let* case = rw_e case in
+          let* body = rw_s body in
+          return (CaseStmt {case; body})
         | SExpr e ->
-          (vars, SExpr (rw_e e))
+          let* e = rw_e e in
+          return (SExpr e)
       in
-      rw_s vars s |> snd
+      fun s ->
+        s
+        |> rw_s
+        |> State.run vars
+        |> snd
     in
     let rec rw_p (vars:Variable.Set.t): t -> t =
       function
@@ -1120,7 +1165,7 @@ end
 (* ------------------------------------------------------------------- *)
 
 (* Monadic let *)
-let (let*) = Result.bind
+let ( let* ) = Result.bind
 (* Monadic pipe *)
 let (>>=) = Result.bind
 

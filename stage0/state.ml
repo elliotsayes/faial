@@ -15,6 +15,11 @@ let bind (m : ('s, 'a) t) (f : 'a -> ('s, 'b) t) : ('s, 'b) t =
     a value *)
 let update_return (f: 's -> 's * 'a) : ('s, 'a) t = f
 
+(** Get and return *)
+let get_return (f: 's -> 'a) : ('s, 'a) t =
+  fun s ->
+    (s, f s)
+
 (** Update the current state *)
 let update (f: 's -> 's) : ('s, unit) t =
   fun s ->
