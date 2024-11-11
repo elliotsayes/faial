@@ -230,6 +230,70 @@ module Expr = struct
 
   end
 
+  (** Remove comma operator *)
+  let rec remove_comma : t -> t =
+    function
+    (* the main case is handling the comma operator *)
+    | BinaryOperator {opcode=","; rhs; _} ->
+      (* we discard the previous elements *)
+      rhs
+    | CXXNewExpr {arg; ty} ->
+      CXXNewExpr {arg=remove_comma arg; ty}
+    | CXXDeleteExpr {arg; ty} ->
+      CXXDeleteExpr {arg=remove_comma arg; ty}
+    | ArraySubscriptExpr {lhs; rhs; ty; location} ->
+      ArraySubscriptExpr {
+        lhs = remove_comma lhs;
+        rhs = remove_comma rhs;
+        ty; location;
+      }
+    | BinaryOperator {opcode; lhs; rhs; ty; } ->
+      BinaryOperator {
+        lhs = remove_comma lhs;
+        rhs = remove_comma rhs;
+        opcode; ty;
+      }
+    | CallExpr {func; args; ty} ->
+      CallExpr {
+        func = remove_comma func;
+        args = List.map remove_comma args;
+        ty;
+      }
+    | ConditionalOperator {cond; then_expr; else_expr; ty} ->
+      ConditionalOperator {
+        cond = remove_comma cond;
+        then_expr = remove_comma then_expr;
+        else_expr = remove_comma else_expr;
+        ty;
+      }
+    | CXXConstructExpr {args; ty} ->
+      CXXConstructExpr {
+        args = List.map remove_comma args;
+        ty;
+      }
+    | CXXOperatorCallExpr {func; args; ty; } ->
+      CXXOperatorCallExpr {
+        func = remove_comma func;
+        args = List.map remove_comma args;
+        ty;
+      }
+    | MemberExpr {name; base; ty} ->
+      MemberExpr {
+        base = remove_comma base;
+        ty; name;
+      }
+    | UnaryOperator {opcode; child; ty} ->
+      UnaryOperator {opcode; child=remove_comma child; ty}
+    | (
+        SizeOfExpr _
+      | FloatingLiteral _
+      | CXXBoolLiteralExpr _
+      | UnresolvedLookupExpr _
+      | RecoveryExpr _
+      | CharacterLiteral _
+      | Ident _
+      | IntegerLiteral _
+      ) as e -> e
 
   (** Rewrites a comma operator, by returning the last expression and a list
       of side-effects.
@@ -838,6 +902,8 @@ module Stmt = struct
           let* cond = rewrite_expr cond in
           add (SwitchStmt {cond; body=rw body})
         )
+      | Seq (s1, s2) ->
+        Seq (rw s1, rw s2)
       | s -> s
     in
     rw
@@ -889,6 +955,9 @@ module Kernel = struct
   let type_params (x:t) : Ty_param.t list = x.type_params
   let attribute (x:t) : KernelAttr.t = x.attribute
 
+  let rewrite_comma (k:t) : t =
+    { k with code = Stmt.rewrite_comma k.code }
+
   let to_s (k:t) : Indent.t list =
     let tps = if k.type_params <> [] then "[" ^
         list_to_s Ty_param.to_string k.type_params ^
@@ -911,6 +980,11 @@ module Def = struct
     | Typedef of Typedef.t
     | Enum of Imp.Enum.t
 
+  let remove_comma : t -> t =
+    function
+    | Kernel k -> Kernel (Kernel.rewrite_comma k)
+    | Declaration d -> Declaration (Decl.map_expr Expr.remove_comma d)
+    | (Typedef _ | Enum _ ) as d -> d
 
   let to_s (d:t) : Indent.t list =
     match d with
@@ -1031,6 +1105,9 @@ module Program = struct
       | [] -> []
     in
     rw_p Variable.Set.empty
+
+  let remove_comma : t -> t =
+    List.map Def.remove_comma
 
   let to_s (p:t) : Indent.t list =
     List.concat_map (fun k -> Def.to_s k @ [Line ""]) p
@@ -1846,12 +1923,18 @@ let rec parse_def (j:Yojson.Basic.t) : Def.t list j_result =
 (* ------------------------------------------------- *)
 
 
-let parse_program ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : Program.t j_result =
+let parse_program ?(remove_comma=true) ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : Program.t j_result =
   let open Rjson in
   let* o = cast_object j in
   let* inner = with_field "inner" (cast_map parse_def) o in
   let p = List.concat inner in
-  Ok (if rewrite_shared_variables then Program.rewrite_shared_arrays p else p)
+  let p =
+    if rewrite_shared_variables then Program.rewrite_shared_arrays p else p
+  in
+  let p =
+    if remove_comma then Program.remove_comma p else p
+  in
+  Ok p
 
 (* ------------------------------------------------------------------------ *)
 

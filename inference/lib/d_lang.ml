@@ -1063,15 +1063,10 @@ let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t =
     )
 
 let rewrite_kernel (k:C_lang.Kernel.t) : Kernel.t =
-  let code =
-    k.code
-    |> C_lang.Stmt.rewrite_comma
-    |> rewrite_stmt
-  in
   {
     ty = k.ty;
     name = k.name;
-    code;
+    code = rewrite_stmt k.code;
     params = k.params;
     type_params = k.type_params;
     attribute = k.attribute;
