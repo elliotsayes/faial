@@ -1695,6 +1695,155 @@ module Def = struct
     | Kernel k -> Kernel.to_s k
     | Typedef d -> Typedef.to_s d
     | Enum e -> Imp.Enum.to_s e
+
+
+
+(* Function that checks if a variable is of type array and is being used *)
+let has_array_type (j:Yojson.Basic.t) : bool =
+  let open Rjson in
+  let is_array =
+    let* o = cast_object j in
+    let* ty = get_field "type" o |> Result.map J_type.from_json in
+    Ok (J_type.matches C_type.is_array ty)
+  in
+  is_array |> Result.value ~default:false
+
+
+let is_kernel (j:Yojson.Basic.t) : bool =
+  let open Rjson in
+  let is_kernel =
+    let* o = cast_object j in
+    let* k = get_kind o in
+    if k = "FunctionDecl" then (
+      let* inner = with_field "inner" cast_list o in
+      let attrs, inner =
+        inner
+        |> List.partition (j_filter_kind (String.ends_with ~suffix:"Attr"))
+      in
+      (* Try to parse attrs *)
+      let attrs = attrs
+        |> List.filter_map (fun j ->
+          parse_attr j >>= (fun a -> Ok (Some a))
+          |> Result.value ~default:None
+        )
+      in
+      let params, _ =
+        inner
+        |> List.partition (j_filter_kind (fun k -> k = "ParmVarDecl"))
+      in
+      Ok (match List.find_map KernelAttr.parse attrs with
+      | Some KernelAttr.Default -> true
+      | None -> false
+      | Some KernelAttr.Auxiliary ->
+        (* We only care about __device__ functions that manipulate arrays *)
+        List.exists has_array_type params
+      )
+    ) else Ok false
+  in
+  is_kernel |> Result.value ~default:false
+
+  let parse_constant (j:Yojson.Basic.t) : Imp.Enum.Constant.t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* _ = expect_kind "EnumConstantDecl" o in
+    let* var = parse_variable j in
+    let* init = with_field_or "inner"
+      (cast_list_1
+        (fun j ->
+          let* e = Expr.parse j in
+          match e with
+          | IntegerLiteral n -> Ok (Some n)
+          | _ -> root_cause ("Expecting an integer, but got something else") j
+        )
+      ) None o
+    in
+    let open Imp.Enum.Constant in
+    Ok {var; init}
+
+  let parse_enum (j:Yojson.Basic.t) : Imp.Enum.t j_result =
+    let open Rjson in
+    let open Imp.Enum in
+    let* o = cast_object j in
+    let* var =
+      match parse_variable j with
+      | Ok v -> Ok v
+      | Error _ ->
+        let* location = with_field "range" parse_location o in
+        let ty =
+          let open Yojson.Basic.Util in
+          j
+          |> member "inner"
+          |> index 0
+          |> member "type"
+          |> member "qualType"
+          |> to_string_option
+        in
+        (match ty with
+        | Some name -> Ok (Variable.make ~name ~location)
+        | None -> root_cause "Could not find enum name." j)
+    in
+    let* constants = with_field_or "inner" (cast_map parse_constant) [] o in
+    Ok {var; constants}
+
+  let rec parse (j:Yojson.Basic.t) : t list j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* k = get_kind o in
+    let parse_k (type_params:Ty_param.t list) (j:Yojson.Basic.t) : t list j_result =
+      if is_kernel j then (
+        let* k = Kernel.parse type_params j in
+        (if k.code = Skip then Ok []
+        else
+          Ok [Kernel k])
+      ) else Ok []
+    in
+    match k with
+    | "FunctionTemplateDecl" ->
+      (* Given a list of inners, we parse from left-to-right the
+        template parameters first.
+        If we cannot find parse a template parameter, then
+        we try to parse a function declaration. In some cases we
+        might even have some more parameters after the function
+        declaration, but those are discarded, as I did not understand
+        what they are for. *)
+      let rec handle (type_params:Ty_param.t list): Yojson.Basic.t list -> t list j_result =
+        function
+        | [] -> root_cause "Error parsing FunctionTemplateDecl: no FunctionDecl found" j
+        | j :: l ->
+          let* p = Ty_param.parse j in
+          (match p with
+          | Some p -> handle (p::type_params) l
+          | None ->
+            parse_k (List.rev type_params) j)
+      in
+      let* inner = with_field "inner" cast_list o in
+      handle [] inner
+    | "FunctionDecl" -> parse_k [] j
+    | "VarDecl" ->
+      (match Decl.parse j with
+      | Ok (Some d) ->
+        Ok ([Declaration d])
+      | _ -> Ok [])
+    | "LinkageSpecDecl"
+    | "NamespaceDecl" ->
+      let* defs = with_field_or "inner" (cast_map parse) [] o in
+      Ok (List.concat defs)
+    | "TypedefDecl" ->
+      let* name = with_field "name" cast_string o in
+      let* ty = get_field "type" o |> Result.map J_type.from_json in
+
+      (match J_type.to_c_type_res ty with
+      | Ok ty ->
+        if C_type.is_struct ty || C_type.is_array ty || C_type.is_function ty then
+          Ok []
+        else Ok [Typedef {name; ty;}]
+      | Error _ -> Ok [])
+    | "EnumDecl" ->
+      let* e = parse_enum j in
+      Ok [Enum e]
+    | _ ->
+      Ok []
+
 end
 
 module Program = struct
@@ -1863,173 +2012,30 @@ module Program = struct
   let print (p:t) : unit =
     Indent.print (to_s p)
 
+
+
+  let parse
+    ?(remove_commas=true)
+    ?(rewrite_shared_variables=true)
+    (j:Yojson.Basic.t)
+  :
+    t j_result
+  =
+    let open Rjson in
+    let* o = cast_object j in
+    let* inner = with_field "inner" (cast_map Def.parse) o in
+    let p = List.concat inner in
+    let p =
+      if rewrite_shared_variables then rewrite_shared_arrays p else p
+    in
+    let p =
+      if remove_commas then remove_comma p else p
+    in
+    Ok p
+
 end
 
-(* ------------------------------------------------------------------- *)
-
-(* Function that checks if a variable is of type array and is being used *)
-let has_array_type (j:Yojson.Basic.t) : bool =
-  let open Rjson in
-  let is_array =
-    let* o = cast_object j in
-    let* ty = get_field "type" o |> Result.map J_type.from_json in
-    Ok (J_type.matches C_type.is_array ty)
-  in
-  is_array |> Result.value ~default:false
-
-
-let is_kernel (j:Yojson.Basic.t) : bool =
-  let open Rjson in
-  let is_kernel =
-    let* o = cast_object j in
-    let* k = get_kind o in
-    if k = "FunctionDecl" then (
-      let* inner = with_field "inner" cast_list o in
-      let attrs, inner =
-        inner
-        |> List.partition (j_filter_kind (String.ends_with ~suffix:"Attr"))
-      in
-      (* Try to parse attrs *)
-      let attrs = attrs
-        |> List.filter_map (fun j ->
-          parse_attr j >>= (fun a -> Ok (Some a))
-          |> Result.value ~default:None
-        )
-      in
-      let params, _ =
-        inner
-        |> List.partition (j_filter_kind (fun k -> k = "ParmVarDecl"))
-      in
-      Ok (match List.find_map KernelAttr.parse attrs with
-      | Some KernelAttr.Default -> true
-      | None -> false
-      | Some KernelAttr.Auxiliary ->
-        (* We only care about __device__ functions that manipulate arrays *)
-        List.exists has_array_type params
-      )
-    ) else Ok false
-  in
-  is_kernel |> Result.value ~default:false
-
-let parse_constant (j:Yojson.Basic.t) : Imp.Enum.Constant.t j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* _ = expect_kind "EnumConstantDecl" o in
-  let* var = parse_variable j in
-  let* init = with_field_or "inner"
-    (cast_list_1
-      (fun j ->
-        let* e = Expr.parse j in
-        match e with
-        | IntegerLiteral n -> Ok (Some n)
-        | _ -> root_cause ("Expecting an integer, but got something else") j
-      )
-    ) None o
-  in
-  let open Imp.Enum.Constant in
-  Ok {var; init}
-
-let parse_enum (j:Yojson.Basic.t) : Imp.Enum.t j_result =
-  let open Rjson in
-  let open Imp.Enum in
-  let* o = cast_object j in
-  let* var =
-    match parse_variable j with
-    | Ok v -> Ok v
-    | Error _ ->
-      let* location = with_field "range" parse_location o in
-      let ty =
-        let open Yojson.Basic.Util in
-        j
-        |> member "inner"
-        |> index 0
-        |> member "type"
-        |> member "qualType"
-        |> to_string_option
-      in
-      (match ty with
-      | Some name -> Ok (Variable.make ~name ~location)
-      | None -> root_cause "Could not find enum name." j)
-  in
-  let* constants = with_field_or "inner" (cast_map parse_constant) [] o in
-  Ok {var; constants}
-
-let rec parse_def (j:Yojson.Basic.t) : Def.t list j_result =
-  let open Rjson in
-  let open Def in
-  let* o = cast_object j in
-  let* k = get_kind o in
-  let parse_k (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Def.t list j_result =
-    if is_kernel j then (
-      let* k = Kernel.parse type_params j in
-      (if k.code = Skip then Ok []
-      else
-        Ok [Kernel k])
-    ) else Ok []
-  in
-  match k with
-  | "FunctionTemplateDecl" ->
-    (* Given a list of inners, we parse from left-to-right the
-       template parameters first.
-       If we cannot find parse a template parameter, then
-       we try to parse a function declaration. In some cases we
-       might even have some more parameters after the function
-       declaration, but those are discarded, as I did not understand
-       what they are for. *)
-    let rec handle (type_params:Ty_param.t list): Yojson.Basic.t list -> Def.t list j_result =
-      function
-      | [] -> root_cause "Error parsing FunctionTemplateDecl: no FunctionDecl found" j
-      | j :: l ->
-        let* p = Ty_param.parse j in
-        (match p with
-        | Some p -> handle (p::type_params) l
-        | None ->
-          parse_k (List.rev type_params) j)
-    in
-    let* inner = with_field "inner" cast_list o in
-    handle [] inner
-  | "FunctionDecl" -> parse_k [] j
-  | "VarDecl" ->
-    (match Decl.parse j with
-    | Ok (Some d) ->
-      Ok ([Declaration d])
-    | _ -> Ok [])
-  | "LinkageSpecDecl"
-  | "NamespaceDecl" ->
-    let* defs = with_field_or "inner" (cast_map parse_def) [] o in
-    Ok (List.concat defs)
-  | "TypedefDecl" ->
-    let* name = with_field "name" cast_string o in
-    let* ty = get_field "type" o |> Result.map J_type.from_json in
-
-    (match J_type.to_c_type_res ty with
-    | Ok ty ->
-      if C_type.is_struct ty || C_type.is_array ty || C_type.is_function ty then
-        Ok []
-      else Ok [Typedef {name; ty;}]
-    | Error _ -> Ok [])
-  | "EnumDecl" ->
-    let* e = parse_enum j in
-    Ok [Enum e]
-  | _ ->
-    Ok []
-
-
 (* ------------------------------------------------- *)
-
-
-let parse_program ?(remove_comma=true) ?(rewrite_shared_variables=true) (j:Yojson.Basic.t) : Program.t j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* inner = with_field "inner" (cast_map parse_def) o in
-  let p = List.concat inner in
-  let p =
-    if rewrite_shared_variables then Program.rewrite_shared_arrays p else p
-  in
-  let p =
-    if remove_comma then Program.remove_comma p else p
-  in
-  Ok p
 
 (* ------------------------------------------------------------------------ *)
 

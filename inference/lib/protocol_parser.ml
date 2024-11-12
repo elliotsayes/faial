@@ -49,7 +49,7 @@ module Make (L:Logger.Logger) = struct
       );
     }
     in
-    match C_lang.parse_program j with
+    match C_lang.Program.parse j with
     | Ok k1 ->
       let kernels =
         k1

@@ -3,7 +3,7 @@ open Inference
 open Queries
 module Decl = C_lang.Decl
 let analyze (j:Yojson.Basic.t) : C_lang.Program.t * D_lang.Program.t * (Imp.Kernel.t list) =
-  match C_lang.parse_program j with
+  match C_lang.Program.parse j with
   | Ok k1 ->
     let k2 = D_lang.rewrite_program k1 in
     let k3 = D_to_imp.Default.parse_program k2 in
