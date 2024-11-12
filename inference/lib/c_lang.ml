@@ -1556,6 +1556,41 @@ module KernelAttr = struct
 
 end
 
+module Ty_param = struct
+
+  type t =
+    | TemplateType of Variable.t
+    | NonTypeTemplate of {name: Variable.t; ty: J_type.t}
+
+  let to_string (p:t) : string =
+    let name = match p with
+    | TemplateType x -> x
+    | NonTypeTemplate x -> x.name
+    in
+    Variable.name name
+
+  let name : t -> Variable.t =
+    function
+    | TemplateType x -> x
+    | NonTypeTemplate x -> x.name
+
+
+  let parse (j:Yojson.Basic.t) : t option j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* k = get_kind o in
+    match k with
+    | "TemplateTypeParmDecl" ->
+      let* name = parse_variable j in
+      Ok (Some (TemplateType name))
+    | "NonTypeTemplateParmDecl" ->
+      let* name = parse_variable j in
+      let* ty = get_field "type" o in
+      Ok (Some (NonTypeTemplate {name; ty=J_type.from_json ty}))
+    | _ -> Ok None
+
+end
+
 module Kernel = struct
   type t = {
     name: string;
@@ -1875,20 +1910,6 @@ let is_kernel (j:Yojson.Basic.t) : bool =
   in
   is_kernel |> Result.value ~default:false
 
-let parse_type_param (j:Yojson.Basic.t) : Ty_param.t option j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* k = get_kind o in
-  match k with
-  | "TemplateTypeParmDecl" ->
-    let* name = parse_variable j in
-    Ok (Some (Ty_param.TemplateType name))
-  | "NonTypeTemplateParmDecl" ->
-    let* name = parse_variable j in
-    let* ty = get_field "type" o in
-    Ok (Some (Ty_param.NonTypeTemplate {name=name; ty=J_type.from_json ty}))
-  | _ -> Ok None
-
 let parse_constant (j:Yojson.Basic.t) : Imp.Enum.Constant.t j_result =
   let open Rjson in
   let* o = cast_object j in
@@ -1958,7 +1979,7 @@ let rec parse_def (j:Yojson.Basic.t) : Def.t list j_result =
       function
       | [] -> root_cause "Error parsing FunctionTemplateDecl: no FunctionDecl found" j
       | j :: l ->
-        let* p = parse_type_param j in
+        let* p = Ty_param.parse j in
         (match p with
         | Some p -> handle (p::type_params) l
         | None ->

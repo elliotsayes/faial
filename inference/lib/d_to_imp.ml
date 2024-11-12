@@ -7,6 +7,7 @@ module StackTrace = Stack_trace
 module KernelAttr = C_lang.KernelAttr
 module StringMap = Common.StringMap
 module Param = C_lang.Param
+module Ty_param = C_lang.Ty_param
 
 let (@) = Common.append_tr
 
