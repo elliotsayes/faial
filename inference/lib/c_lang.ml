@@ -83,6 +83,51 @@ let expect_kind (k:string) (o:j_object) : unit j_result =
   else
     root_cause ("Expecting kind '"^ k ^"' but got '" ^ obtained ^ "'") (`Assoc o)
 
+let parse_attr (j:Yojson.Basic.t) : string j_result =
+  let open Rjson in
+  let* o = cast_object j in
+  with_field "value" cast_string o
+
+module Param = struct
+  type t = {
+    ty_var : Ty_variable.t;
+    is_used: bool;
+    is_shared: bool;
+  }
+
+  let make ~ty_var ~is_used ~is_shared : t =
+    {ty_var; is_used; is_shared}
+
+  let ty_var (x:t) : Ty_variable.t = x.ty_var
+
+  let name (x:t) : Variable.t = x.ty_var.name
+
+  let matches (type_of:C_type.t -> bool) (x:t) : bool =
+    Ty_variable.matches type_of x.ty_var
+
+  let to_string (p:t) : string =
+    let used = if p.is_used then "" else " unsed" in
+    let shared = if p.is_shared then "shared " else "" in
+    used ^ shared ^ Ty_variable.to_string p.ty_var
+
+
+  let parse (j:Yojson.Basic.t) : t Rjson.j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* name = parse_variable j in
+    let* ty = get_field "type" o in
+    let* is_refed = with_field_or "isReferenced" cast_bool false o in
+    let* is_used =  with_field_or "isUsed" cast_bool false o in
+    let* is_shared = with_field_or "shared" cast_bool false o in
+
+    let ty_var : Ty_variable.t = Ty_variable.make ~ty:(J_type.from_json ty) ~name in
+    Ok (make
+      ~is_used:(is_refed || is_used)
+      ~ty_var:ty_var
+      ~is_shared
+    )
+end
+
 module Expr = struct
   type t =
     | SizeOfExpr of J_type.t
@@ -736,6 +781,21 @@ module Init = struct
     function
     | InitListExpr i -> list_to_s Expr.to_string i.args
     | IExpr i -> Expr.to_string i
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "ParenListExpr"
+    | "InitListExpr" ->
+      let* ty = get_field "type" o in
+      let* args = with_field_or "inner" (cast_map Expr.parse) [] o in
+      Ok (InitListExpr {ty=J_type.from_json ty; args=args})
+
+    | _ ->
+      let* e = Expr.parse j in
+      Ok (IExpr e)
 end
 
 let c_attr (k:string) : string =
@@ -774,6 +834,7 @@ module Decl : sig
   val var: t -> Variable.t
   val ty: t -> J_type.t
   val to_s :  t -> Indent.t list
+  val parse : Yojson.Basic.t -> t option j_result
 
 end = struct
   type t = {
@@ -820,6 +881,52 @@ end = struct
 
   let to_s (d:t) : Indent.t list =
     [Line (to_string d ^ ";")]
+
+  let is_valid_j : json -> bool =
+    function
+    | `Assoc o ->
+      (match Rjson.get_kind o with
+        | Error _ | Ok "FullComment" -> false
+        | Ok _ -> true)
+    | _ -> false
+
+  let parse (j:json) : t option j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    if is_invalid o then Ok None
+    else (
+      let* name = parse_variable j in
+      let* ty = get_field "type" o in
+      let inner = List.assoc_opt "inner" o |> Option.value ~default:(`List []) in
+      let* inner = cast_list inner in
+      let inner = List.filter is_valid_j inner in
+      let attrs, inits = List.partition (fun j ->
+        (
+          let* o = cast_object j in
+          let* k = get_kind o in
+          Ok (match k with
+            | "CUDASharedAttr" | "CUDADeviceAttr" -> true
+            | _ -> false
+          )
+        ) |> (Result.value ~default:false)
+      ) inner in
+      let* attrs = map parse_attr attrs in
+      let* inits = map Init.parse inits in
+      (* Further enforce that there is _at most_ one init expression. *)
+      let* init = match inits with
+      | [init] -> Ok (Some init)
+      | [] -> Ok None
+      | _ ->
+        (* Print out a nice error message with provenance. *)
+        let i = List.length inits |> string_of_int in
+        let msg = "Expecting at most one expression, but got " ^ i in
+        let open StackTrace in
+        Error (Because (("Field 'init'", j), RootCause (msg, `List inner)))
+      in
+      let ty_var = Ty_variable.make ~name ~ty:(J_type.from_json ty) in
+      Ok (Some (make ~ty_var ~init ~attrs))
+    )
+
 end
 
 module ForInit = struct
@@ -856,6 +963,18 @@ module ForInit = struct
     function
     | Some o -> to_string o
     | None -> ""
+
+  let parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    let* kind = get_kind o in
+    match kind with
+    | "DeclStmt" ->
+      let* ds = with_field "inner" (cast_map Decl.parse) o in
+      Ok (Decls (Common.flatten_opt ds))
+    | _ ->
+      let* e = Expr.parse j in
+      Ok (Expr e)
 
 end
 
@@ -1249,6 +1368,162 @@ module Stmt = struct
       | s -> s
     in
     rw
+
+  let rec parse (j:json) : t j_result =
+    let open Rjson in
+    let* o = cast_object j in
+    match get_kind o |> Result.to_option with
+    | Some "IfStmt" ->
+      with_field "inner" (fun j ->
+        let* l = cast_list j in
+        let wrap (m:string) handle_ok =
+          wrap handle_ok (fun _ -> (m, j))
+        in
+        match l with
+        | [cond;then_stmt;else_stmt] ->
+          let* cond : Expr.t = wrap "cond" Expr.parse cond in
+          let* then_stmt : t = wrap "then_stmt" parse then_stmt in
+          let* else_stmt : t = wrap "else_stmt" parse else_stmt in
+          Ok (IfStmt {cond; then_stmt; else_stmt})
+        | [cond;then_stmt] ->
+          let* cond : Expr.t = wrap "cond" Expr.parse cond in
+          let* then_stmt : t = wrap "then_stmt" parse then_stmt in
+          Ok (IfStmt {cond; then_stmt; else_stmt=Skip})
+        | _ ->
+          let g = List.length l |> string_of_int in
+          root_cause ("Expecting a list of length 2 or 3, but got a length of list " ^ g) j
+      ) o
+    | Some "WhileStmt" ->
+      let* (cond, body) = with_field "inner"
+        (cast_list_2 Expr.parse parse) o
+      in
+      Ok (WhileStmt {cond=cond; body=body})
+    | Some "DeclStmt" ->
+      let has_typedecl : bool =
+        let has_typedecl : bool j_result =
+          let* children = get_field "inner" o in
+          let* l = cast_list children in
+          let* o = get_index 0 l >>= cast_object in
+          let* k = get_kind o in
+          Ok (k = "TypedefDecl" || k = "EnumDecl" || k = "TypeAliasDecl")
+        in
+        Result.value ~default:false has_typedecl
+      in
+      if has_typedecl then Ok Skip else
+      let static_assert : t option =
+        o
+        |> with_field "inner" (cast_list_1 (fun j ->
+            (* Ensure the expected kind *)
+            let* o = cast_object j in
+            let* _ = expect_kind "StaticAssertDecl" o in
+            let* args = with_field "inner" (cast_map Expr.parse) o in
+            let static_assert : Decl_expr.t = {
+              name = Variable.from_name "static_assert";
+              ty=J_type.void;
+              kind=Decl_expr.Kind.Function
+            } in
+            let func = Expr.Ident static_assert in
+            Ok (SExpr (CallExpr {func;args;ty=J_type.void}))
+          )
+        )
+        |> Result.to_option
+      in
+        (match static_assert with
+          | Some e -> Ok e
+          | None ->
+            let* children = with_field "inner" (cast_map Decl.parse) o in
+            Ok (DeclStmt (children |> Common.flatten_opt))
+        )
+    | Some "DefaultStmt" ->
+      let* c = with_field "inner" (cast_list_1 parse) o in
+      Ok (DefaultStmt c)
+    | Some "CaseStmt" ->
+      let* (c, b) = with_field "inner"
+        (cast_list_2 Expr.parse parse) o
+      in
+      Ok (CaseStmt {case=c; body=b})
+    | Some "SwitchStmt" ->
+      let* (cond, body) = with_field "inner"
+        (cast_list_2 Expr.parse parse) o
+      in
+      Ok (SwitchStmt {cond; body})
+    | Some "CompoundStmt" ->
+      let* children : t = with_field_or "inner" (fun (i:json) ->
+        match i with
+        | `Assoc _ -> let* o = parse i in Ok o
+        | _ -> parse_list i
+      ) Skip o in
+      Ok children
+    | Some "LabelStmt" ->
+      (* TODO: do not parse LabelStmt *)
+      with_field "inner" (cast_list_1 parse) o
+    | Some "ReturnStmt" ->
+      let* e = with_field_or "inner" (
+        cast_list_1 (fun j -> Expr.parse j |> Result.map Option.some)
+        ) None o
+      in
+      Ok (ReturnStmt e)
+    | Some "GotoStmt" ->
+      Ok GotoStmt
+    | Some "BreakStmt" ->
+      Ok BreakStmt
+    | Some "ContinueStmt" ->
+      Ok ContinueStmt
+    | Some "DoStmt" ->
+      let* inner = with_field "inner" cast_list o in
+      let* b, c = match inner with
+      | [b; c] ->
+        let* b = parse b in
+        let* c = Expr.parse c in
+        Ok (b, c)
+      | [b] ->
+        let* b = parse b in
+        Ok (b, Expr.CXXBoolLiteralExpr true)
+      | _ -> root_cause "Error parsing DoStmt" j
+      in
+      Ok (DoStmt {cond=c; body=b})
+    | Some "AttributedStmt" ->
+      let* (_, stmt) = with_field "inner" (cast_list_2 Result.ok parse) o in
+      Ok stmt
+    | Some "ForStmt" ->
+      let* (init, cond, inc, body) = with_field "inner" (fun j ->
+        let* l = cast_list j in
+        let wrap handle_ok (m:string) = wrap handle_ok (fun _ -> (m, j)) in
+        let wrap_opt handle_ok (m:string) (j:Yojson.Basic.t) =
+          match j with
+          | `Assoc [] -> Ok None
+          | _ ->
+            let* r = wrap handle_ok m j in
+            Ok (Some r)
+        in
+        match l with
+        | [init; _; cond; inc; body] ->
+          let* init = wrap_opt ForInit.parse "init" init in
+          let* cond = wrap_opt Expr.parse "cond" cond in
+          let* inc = wrap_opt Expr.parse "inc" inc in
+          let* body = wrap parse "body" body in
+          Ok (init, cond, inc, body)
+        | _ ->
+          let g = List.length l |> string_of_int in
+          root_cause ("Expecting a list of length 5, but got a length of list " ^ g) j
+      ) o in
+      Ok (ForStmt {init=init; cond=cond; inc=inc; body=body})
+    | Some "FullComment"
+    | Some "NullStmt" -> Ok Skip
+    | Some _ ->
+      let* e = Expr.parse j in
+      Ok (SExpr e)
+    | None -> Ok Skip
+
+  and parse_list (j:json) : t j_result =
+    let open Rjson in
+    let* l = cast_list j in
+    let* l =
+      map_all parse
+      (fun idx s e -> StackTrace.Because (("error parsing statement #" ^ string_of_int (idx + 1), s), e))
+      l
+    in
+    Ok (from_list l)
 end
 
 module KernelAttr = struct
@@ -1506,256 +1781,6 @@ end
 
 (* ------------------------------------------------------------------- *)
 
-let parse_init (j:json) : Init.t j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* kind = get_kind o in
-  match kind with
-  | "ParenListExpr"
-  | "InitListExpr" ->
-    let* ty = get_field "type" o in
-    let* args = with_field_or "inner" (cast_map Expr.parse) [] o in
-    let open Init in
-    Ok (InitListExpr {ty=J_type.from_json ty; args=args})
-
-  | _ ->
-    let* e = Expr.parse j in
-    let open Init in
-    Ok (IExpr e)
-
-let parse_attr (j:Yojson.Basic.t) : string j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  with_field "value" cast_string o
-
-let is_valid_j : json -> bool =
-  function
-  | `Assoc o ->
-    (match Rjson.get_kind o with
-      | Error _ | Ok "FullComment" -> false
-      | Ok _ -> true)
-  | _ -> false
-
-let parse_decl (j:json) : Decl.t option j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  if is_invalid o then Ok None
-  else (
-    let* name = parse_variable j in
-    let* ty = get_field "type" o in
-    let inner = List.assoc_opt "inner" o |> Option.value ~default:(`List []) in
-    let* inner = cast_list inner in
-    let inner = List.filter is_valid_j inner in
-    let attrs, inits = List.partition (fun j ->
-      (
-        let* o = cast_object j in
-        let* k = get_kind o in
-        Ok (match k with
-          | "CUDASharedAttr" | "CUDADeviceAttr" -> true
-          | _ -> false
-        )
-      ) |> (Result.value ~default:false)
-    ) inner in
-    let* attrs = map parse_attr attrs in
-    let* inits = map parse_init inits in
-    (* Further enforce that there is _at most_ one init expression. *)
-    let* init = match inits with
-    | [init] -> Ok (Some init)
-    | [] -> Ok None
-    | _ ->
-      (* Print out a nice error message with provenance. *)
-      let i = List.length inits |> string_of_int in
-      let msg = "Expecting at most one expression, but got " ^ i in
-      let open StackTrace in
-      Error (Because (("Field 'init'", j), RootCause (msg, `List inner)))
-    in
-    let ty_var = Ty_variable.make ~name ~ty:(J_type.from_json ty) in
-    Ok (Some (Decl.make ~ty_var ~init ~attrs))
-  )
-
-let parse_for_init (j:json) : ForInit.t j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* kind = get_kind o in
-  match kind with
-  | "DeclStmt" ->
-    let* ds = with_field "inner" (cast_map parse_decl) o in
-    Ok (ForInit.Decls (Common.flatten_opt ds))
-  | _ ->
-    let* e = Expr.parse j in
-    Ok (ForInit.Expr e)
-
-let rec parse_stmt (j:json) : Stmt.t j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let open Expr in
-  let open Stmt in
-  match get_kind o |> Result.to_option with
-  | Some "IfStmt" ->
-    let* (cond, then_stmt, else_stmt) = with_field "inner" (fun j ->
-      let* l = cast_list j in
-      let wrap handle_ok (m:string) = wrap handle_ok (fun _ -> (m, j)) in
-      match l with
-      | [cond;then_stmt;else_stmt] ->
-        let* cond = wrap Expr.parse "cond" cond in
-        let* then_stmt = wrap parse_stmt "then_stmt" then_stmt in
-        let* else_stmt = wrap parse_stmt "else_stmt" else_stmt in
-        Ok (cond, then_stmt, else_stmt)
-      | [cond;then_stmt] ->
-        let* cond = wrap Expr.parse "cond" cond in
-        let* then_stmt = wrap parse_stmt "then_stmt" then_stmt in
-        Ok (cond, then_stmt, Skip)
-      | _ ->
-        let g = List.length l |> string_of_int in
-        root_cause ("Expecting a list of length 2 or 3, but got a length of list " ^ g) j
-    ) o
-    in
-    Ok (IfStmt {cond=cond; then_stmt=then_stmt; else_stmt=else_stmt})
-  | Some "WhileStmt" ->
-    let* (cond, body) = with_field "inner"
-      (cast_list_2 Expr.parse parse_stmt) o
-    in
-    Ok (WhileStmt {cond=cond; body=body})
-  | Some "DeclStmt" ->
-    let has_typedecl : bool =
-      let has_typedecl : bool j_result =
-        let* children = get_field "inner" o in
-        let* l = cast_list children in
-        let* o = get_index 0 l >>= cast_object in
-        let* k = get_kind o in
-        Ok (k = "TypedefDecl" || k = "EnumDecl" || k = "TypeAliasDecl")
-      in
-      Result.value ~default:false has_typedecl
-    in
-    if has_typedecl then Ok Skip else
-    let static_assert : Stmt.t option =
-      o
-      |> with_field "inner" (cast_list_1 (fun j ->
-          (* Ensure the expected kind *)
-          let* o = cast_object j in
-          let* _ = expect_kind "StaticAssertDecl" o in
-          let* args = with_field "inner" (cast_map Expr.parse) o in
-          let static_assert : Decl_expr.t = {
-            name = Variable.from_name "static_assert";
-            ty=J_type.void;
-            kind=Decl_expr.Kind.Function
-          } in
-          let func = Ident static_assert in
-          Ok (SExpr (CallExpr {func;args;ty=J_type.void}))
-        )
-      )
-      |> Result.to_option
-    in
-      (match static_assert with
-        | Some e -> Ok e
-        | None ->
-          let* children = with_field "inner" (cast_map parse_decl) o in
-          Ok (DeclStmt (children |> Common.flatten_opt))
-      )
-  | Some "DefaultStmt" ->
-    let* c = with_field "inner" (cast_list_1 parse_stmt) o in
-    Ok (DefaultStmt c)
-  | Some "CaseStmt" ->
-    let* (c, b) = with_field "inner"
-      (cast_list_2 Expr.parse parse_stmt) o
-    in
-    Ok (CaseStmt {case=c; body=b})
-  | Some "SwitchStmt" ->
-    let* (c, b) = with_field "inner"
-      (cast_list_2 Expr.parse parse_stmt) o
-    in
-    Ok (SwitchStmt {cond=c; body=b})
-  | Some "CompoundStmt" ->
-    let* children : Stmt.t list = with_field_or "inner" (fun (i:json) ->
-      match i with
-      | `Assoc _ -> let* o = parse_stmt i in Ok [o]
-      | _ -> parse_stmt_list i
-    ) [] o in
-    let children = List.fold_left seq Skip children in
-    Ok children
-  | Some "LabelStmt" ->
-    (* TODO: do not parse LabelStmt *) 
-    with_field "inner" (cast_list_1 parse_stmt) o
-  | Some "ReturnStmt" ->
-    let* e = with_field_or "inner" (
-      cast_list_1 (fun j -> Expr.parse j |> Result.map Option.some)
-      ) None o
-    in
-    Ok (ReturnStmt e)
-  | Some "GotoStmt" ->
-    Ok GotoStmt
-  | Some "BreakStmt" ->
-    Ok BreakStmt
-  | Some "ContinueStmt" ->
-    Ok ContinueStmt
-  | Some "DoStmt" ->
-    let* inner = with_field "inner" cast_list o in
-    let* b, c = match inner with
-    | [b; c] ->
-      let* b = parse_stmt b in
-      let* c = Expr.parse c in
-      Ok (b, c)
-    | [b] ->
-      let* b = parse_stmt b in
-      Ok (b, CXXBoolLiteralExpr true)
-    | _ -> root_cause "Error parsing DoStmt" j
-    in
-    Ok (DoStmt {cond=c; body=b})
-  | Some "AttributedStmt" ->
-    let* (_, stmt) = with_field "inner" (cast_list_2 Result.ok parse_stmt) o in
-    Ok stmt
-  | Some "ForStmt" ->
-    let* (init, cond, inc, body) = with_field "inner" (fun j ->
-      let* l = cast_list j in
-      let wrap handle_ok (m:string) = wrap handle_ok (fun _ -> (m, j)) in
-      let wrap_opt handle_ok (m:string) (j:Yojson.Basic.t) =
-        match j with
-        | `Assoc [] -> Ok None
-        | _ ->
-          let* r = wrap handle_ok m j in
-          Ok (Some r)
-      in
-      match l with
-      | [init; _; cond; inc; body] ->
-        let* init = wrap_opt parse_for_init "init" init in
-        let* cond = wrap_opt Expr.parse "cond" cond in
-        let* inc = wrap_opt Expr.parse "inc" inc in
-        let* body = wrap parse_stmt "body" body in
-        Ok (init, cond, inc, body)
-      | _ ->
-        let g = List.length l |> string_of_int in
-        root_cause ("Expecting a list of length 5, but got a length of list " ^ g) j
-    ) o in
-    Ok (ForStmt {init=init; cond=cond; inc=inc; body=body})
-  | Some "FullComment"
-  | Some "NullStmt" -> Ok Skip
-  | Some _ ->
-    let* e = Expr.parse j in
-    Ok (SExpr e)
-  | None -> Ok Skip
-
-and parse_stmt_list = fun inner ->
-  let open Rjson in
-  cast_list inner
-  >>= map_all parse_stmt
-    (fun idx s e -> StackTrace.Because (("error parsing statement #" ^ string_of_int (idx + 1), s), e))
-
-let parse_param (j:json) : Param.t j_result =
-  let open Rjson in
-  let* o = cast_object j in
-  let* name = parse_variable j in
-  let* ty = get_field "type" o in
-  let* is_refed = with_field_or "isReferenced" cast_bool false o in
-  let* is_used =  with_field_or "isUsed" cast_bool false o in
-  let* is_shared = with_field_or "shared" cast_bool false o in
-
-  let ty_var : Ty_variable.t = Ty_variable.make ~ty:(J_type.from_json ty) ~name in
-  Ok (Param.make
-    ~is_used:(is_refed || is_used)
-    ~ty_var:ty_var
-    ~is_shared
-  )
-
 let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
   let open Rjson in
   let res =
@@ -1792,11 +1817,10 @@ let parse_kernel (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Kernel.t j_r
     (* we can safely convert the option with Option.get because parse_kernel
        is only invoked when we are able to parse *)
     let m: KernelAttr.t = List.find_map KernelAttr.parse attrs |> Option.get in
-    let* body: Stmt.t list = parse_stmt_list (`List body) in
-    let body = List.fold_left Stmt.seq Skip body in
+    let* body: Stmt.t = Stmt.parse_list (`List body) in
     let* name: string = with_field "name" cast_string o in
     (* Parameters may be faulty, recover: *)
-    let ps = List.map parse_param ps |> List.concat_map Result.to_list in
+    let ps = List.map Param.parse ps |> List.concat_map Result.to_list in
     Ok (Kernel.make
       ~ty
       ~name
@@ -1944,7 +1968,7 @@ let rec parse_def (j:Yojson.Basic.t) : Def.t list j_result =
     handle [] inner
   | "FunctionDecl" -> parse_k [] j
   | "VarDecl" ->
-    (match parse_decl j with
+    (match Decl.parse j with
     | Ok (Some d) ->
       Ok ([Declaration d])
     | _ -> Ok [])

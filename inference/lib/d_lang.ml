@@ -5,6 +5,7 @@ module StackTrace = Stack_trace
 module KernelAttr = C_lang.KernelAttr
 module StringMap = Common.StringMap
 module StringMapUtil = Common.StringMapUtil
+module Param = C_lang.Param
 
 type json = Yojson.Basic.t
 type j_object = Rjson.j_object

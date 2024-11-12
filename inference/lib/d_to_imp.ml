@@ -6,6 +6,7 @@ open Imp
 module StackTrace = Stack_trace
 module KernelAttr = C_lang.KernelAttr
 module StringMap = Common.StringMap
+module Param = C_lang.Param
 
 let (@) = Common.append_tr
 
