@@ -88,6 +88,15 @@ let parse_attr (j:Yojson.Basic.t) : string j_result =
   let* o = cast_object j in
   with_field "value" cast_string o
 
+let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
+  let open Rjson in
+  let res =
+    let* o = cast_object j in
+    let* k = get_kind o in
+    Ok (f k)
+  in
+  res |> Result.value ~default:false
+
 module Param = struct
   type t = {
     ty_var : Ty_variable.t;
@@ -1623,6 +1632,48 @@ module Kernel = struct
     @
     Stmt.to_string k.code
 
+
+  let wrap_error (msg:string) (j:Yojson.Basic.t): 'a j_result -> 'a j_result =
+      function
+      | Ok e -> Ok e
+      | Error e -> Rjson.because msg j e
+
+
+  let parse (type_params:Ty_param.t list) (j:Yojson.Basic.t) : t j_result =
+    let open Rjson in
+    (
+      let* o = cast_object j in
+      let* ty = get_field "type" o |> Result.map J_type.from_json in
+      let ty = J_type.to_string ty in
+      let* inner = with_field "inner" cast_list o in
+      let attrs, inner =
+        inner
+        |> List.partition
+          (j_filter_kind (String.ends_with ~suffix:"Attr"))
+      in
+      let ps, body =
+        inner
+        |> List.partition
+          (j_filter_kind (fun k -> k = "ParmVarDecl" || k = "TemplateArgument"))
+      in
+      let* attrs = map parse_attr attrs in
+      (* we can safely convert the option with Option.get because parse_kernel
+        is only invoked when we are able to parse *)
+      let m: KernelAttr.t = List.find_map KernelAttr.parse attrs |> Option.get in
+      let* body: Stmt.t = Stmt.parse_list (`List body) in
+      let* name: string = with_field "name" cast_string o in
+      (* Parameters may be faulty, recover: *)
+      let ps = List.map Param.parse ps |> List.concat_map Result.to_list in
+      Ok (make
+        ~ty
+        ~name
+        ~code:body
+        ~params:ps
+        ~type_params:type_params
+        ~attribute:m
+      )
+    ) |> wrap_error "Kernel" j
+
 end
 
 module Def = struct
@@ -1816,56 +1867,6 @@ end
 
 (* ------------------------------------------------------------------- *)
 
-let j_filter_kind (f:string -> bool) (j:Yojson.Basic.t) : bool =
-  let open Rjson in
-  let res =
-    let* o = cast_object j in
-    let* k = get_kind o in
-    Ok (f k)
-  in
-  res |> Result.value ~default:false
-
-let wrap_error (msg:string) (j:Yojson.Basic.t): 'a j_result -> 'a j_result =
-    function
-    | Ok e -> Ok e
-    | Error e -> Rjson.because msg j e
-
-
-let parse_kernel (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Kernel.t j_result =
-  let open Rjson in
-  (
-    let* o = cast_object j in
-    let* ty = get_field "type" o |> Result.map J_type.from_json in
-    let ty = J_type.to_string ty in
-    let* inner = with_field "inner" cast_list o in
-    let attrs, inner =
-      inner
-      |> List.partition
-        (j_filter_kind (String.ends_with ~suffix:"Attr"))
-    in
-    let ps, body =
-      inner
-      |> List.partition
-        (j_filter_kind (fun k -> k = "ParmVarDecl" || k = "TemplateArgument"))
-    in
-    let* attrs = map parse_attr attrs in
-    (* we can safely convert the option with Option.get because parse_kernel
-       is only invoked when we are able to parse *)
-    let m: KernelAttr.t = List.find_map KernelAttr.parse attrs |> Option.get in
-    let* body: Stmt.t = Stmt.parse_list (`List body) in
-    let* name: string = with_field "name" cast_string o in
-    (* Parameters may be faulty, recover: *)
-    let ps = List.map Param.parse ps |> List.concat_map Result.to_list in
-    Ok (Kernel.make
-      ~ty
-      ~name
-      ~code:body
-      ~params:ps
-      ~type_params:type_params
-      ~attribute:m
-    )
-  ) |> wrap_error "Kernel" j
-
 (* Function that checks if a variable is of type array and is being used *)
 let has_array_type (j:Yojson.Basic.t) : bool =
   let open Rjson in
@@ -1960,7 +1961,7 @@ let rec parse_def (j:Yojson.Basic.t) : Def.t list j_result =
   let* k = get_kind o in
   let parse_k (type_params:Ty_param.t list) (j:Yojson.Basic.t) : Def.t list j_result =
     if is_kernel j then (
-      let* k = parse_kernel type_params j in
+      let* k = Kernel.parse type_params j in
       (if k.code = Skip then Ok []
       else
         Ok [Kernel k])
