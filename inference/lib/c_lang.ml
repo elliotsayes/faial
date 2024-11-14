@@ -1340,11 +1340,35 @@ module Stmt = struct
       | ForStmt {init; cond; inc; body} ->
         (* this works as a combination of a while and a do-loop *)
         let (st_cond, cond) = opt_rewrite_comma cond in
-        let (st_inc, inc) = opt_rewrite_comma inc in
-        if st_cond = [] && st_inc = [] then
+        (* TODO: we want to have something simpler like the line
+           below, however, that will not work with matrixMul.cu,
+           which has a loop increment as follows:
+
+          (int a = aBegin, b = bBegin; a <= aEnd; b += bStep, a += aStep)
+
+          So, for now we have a more intricate algorithm that picks
+          the _last_ increment and uses that instead. Ideally, we just
+          need a smarter loop-inference algorithm.
+        *)
+        (* let (st_inc, inc) = opt_rewrite_comma inc in *)
+        let (st_inc, inc) =
+          match inc with
+          | None -> (Skip, None)
+          | Some inc ->
+            (* iterate over all elements and return the _last_ *)
+            let rec loop (accum:t) : Expr.t list -> t * (Expr.t option) =
+              function
+              | [e] -> (accum, Some e)
+              | [] -> failwith "impossible"
+              | h :: l ->
+                loop (seq accum (SExpr h)) l
+            in
+            let (l, h) = Expr.rewrite_comma inc in
+            loop Skip (h :: l)
+        in
+        if st_cond = [] && st_inc = Skip then
           ForStmt {init; cond; inc; body=rw body}
         else
-          let st_inc = to_stmt st_inc in
           let st_cond = to_stmt st_cond in
           (* add commas at the end of the body *)
           let body =
