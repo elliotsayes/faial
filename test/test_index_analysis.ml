@@ -9,11 +9,20 @@ let assert_offset ~expected ~given : unit =
   in
   assert_equal expected given ~msg
 
+let cfg =
+  let block_dim = Dim3.make ~x:32 () in
+  let grid_dim = Dim3.one in
+  Config.make ~block_dim ~grid_dim ()
+
 let assert_index ~expected ~given : unit =
-  assert_offset ~expected:(Index expected) ~given:(Offset_analysis.from_nexp Variable.Set.empty given)
+  let given =
+    Offset_analysis.from_nexp cfg Variable.Set.empty given
+  in
+  assert_offset ~expected:(Index expected) ~given
 
 let assert_offset ~expected ~given : unit =
-  assert_offset ~expected:(Offset expected) ~given:(Offset_analysis.from_nexp Variable.Set.empty given)
+  assert_offset ~expected:(Offset expected)
+    ~given:(Offset_analysis.from_nexp cfg Variable.Set.empty given)
 
 let tests = "test_predicates" >::: [
   "imp_to_post_1" >:: (fun _ ->
