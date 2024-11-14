@@ -176,7 +176,7 @@ let to_s: t -> Indent.t list =
         | Some x -> " = " ^ string_of_int x
       in
       [Line ("wr " ^ Variable.name w.array ^ Access.index_to_string w.index ^ payload ^ ";")]
-    | Skip -> [Line ";"]
+    | Skip -> [Line "skip;"]
     | Assign a -> [Line (Variable.name a.var ^ " = " ^ Exp.n_to_string a.data ^ ";")]
     | LocationAlias l ->
       [Line ("alias " ^ Alias.to_string l)]

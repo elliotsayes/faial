@@ -209,7 +209,6 @@ let rec parse_exp (e:D_lang.Expr.t) : Infer_exp.t =
     BExp (Infer_exp.or_ (BExp (Pred ("pow2", n))) (BExp (Infer_exp.n_eq n (NExp (Num 0)))))
 
   | BinaryOperator {opcode=","; lhs=_; rhs=e; _} ->
-    print_endline "!!!!!!";
     parse_exp e
 
   | BinaryOperator {opcode=o; lhs=n1; rhs=n2; _} ->
@@ -555,6 +554,7 @@ module ForRange = struct
 
 end
 
+
 let infer_for (r:D_lang.Stmt.d_for) : Range.t option =
   match Loop_infer.from_for r with
   | Some r ->
@@ -740,10 +740,23 @@ let rec parse_stmt
   | SExpr _ -> Stmt.Skip
 
   | ForStmt s ->
-    let b = parse_stmt s.body in
-    (match infer_for s with
-    | Some r -> For (r, b)
-    | None -> Stmt.Star b)
+    Infer_exp.unknowns (
+      let init : Stmt.t option =
+        s.init
+        |> Option.map (fun (f:D_lang.ForInit.t) : Stmt.t ->
+          let s: D_lang.Stmt.t =
+            match f with
+            | Decls d -> D_lang.Stmt.DeclStmt d
+            | Expr e -> SExpr e
+          in
+          parse_stmt s
+        )
+      in
+      let* cond = State.option_map to_bexp s.cond in
+      let body = parse_stmt s.body in
+      let inc = Option.map (fun e -> parse_stmt (SExpr e)) s.inc in
+      return (For.to_stmt For.{init; cond; inc;} body)
+    )
 
   | DoStmt {body=body; _} ->
     let body = parse_stmt body in
@@ -765,6 +778,7 @@ let rec parse_stmt
     parse_stmt s
   | Seq (s1, s2) ->
     Seq (parse_stmt s1, parse_stmt s2)
+
 
 type param = (Variable.t * C_type.t, Variable.t * Memory.t) Either.t
 

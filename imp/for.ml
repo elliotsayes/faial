@@ -86,8 +86,8 @@ module Infer = struct
       Some (var, data)
     | _ -> None
 
-  let parse_cond (c:Exp.bexp option) : (Variable.t * Comparator.t unop) option =
-    match c with
+  let parse_cond : Exp.bexp option -> (Variable.t * Comparator.t unop) option =
+    function
     | Some (NRel (o, Var d, r)) ->
       (match Comparator.parse o with
       | Some o -> Some (d, {op=o; arg=r})
@@ -97,17 +97,30 @@ module Infer = struct
     | _ -> None
 
   let parse_inc (s:Stmt.t option) : (Variable.t * Increment.t unop) option =
+    let parse_inc (var:Variable.t) (o:N_binary.t) (arg:Exp.nexp) : (Variable.t * Increment.t unop) option =
+      o
+      |> Increment.parse
+      |> Option.map (fun op ->
+          (var, {op; arg})
+        )
+    in
     match Option.map Stmt.first s with
-    | Some (Assign {var=l; data=Binary (o, r, Var l'); _})
-    | Some (Assign {var=l; data=Binary (o, Var l', r); _}) ->
-      begin
-        match
-          Increment.parse o
-        with
-        | Some o when Variable.equal l l' ->
-          Some (l, {op=o; arg=r})
-        | _ -> None
-      end
+    | Some (Assign {var=l; data=Binary (o, Var l1, Var l2); _}) ->
+      if Variable.equal l l1 then
+        parse_inc l o (Var l2)
+      else if Variable.equal l l2 then
+        parse_inc l o (Var l1)
+      else
+        None
+    | Some (Assign {
+        var=l;
+        data=(Binary (o, r, Var l') | Binary (o, Var l', r));
+      _})
+    ->
+      if Variable.equal l l' then
+        parse_inc l o r
+      else
+        None
     | _ -> None
 
   let parse (loop: for_) : t option =
