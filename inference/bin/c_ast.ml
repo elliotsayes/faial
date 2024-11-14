@@ -48,13 +48,13 @@ let main
     function
     | Kernel k ->
       (try
-        let k2 = Hashtbl.find k2_ht k.name in
+(*         let k2 = Hashtbl.find k2_ht k.name in *)
         let k3 = Hashtbl.find k3_ht k.name in
         (decls, `Assoc [
           "function calls", Calls.summarize decls k;
           "nested loops", NestedLoops.summarize k.code;
           "loops", Loops.summarize k.code;
-          "loop inference", ForEach.summarize k2.code;
+(*           "loop inference", ForEach.summarize k2.code; *)
           "mutated vars", MutatedVar.summarize k.code;
           "declarations", Declarations.summarize k.code;
           "conditionals", Conditionals.summarize k.code;

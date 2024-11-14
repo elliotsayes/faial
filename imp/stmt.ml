@@ -131,6 +131,17 @@ let seq (s1:t) (s2:t) : t =
   | Skip, s | s, Skip -> s
   | _, _ -> Seq (s1, s2)
 
+let rec last : t -> t =
+  function
+  | Seq (_, s) -> last s
+  | s -> s
+
+let rec skip_last : t -> t =
+  function
+  | Seq (s1, s2) ->
+    seq s1 (skip_last s2)
+  | _ -> Skip
+
 let from_list : t list -> t =
   List.fold_left seq Skip
 

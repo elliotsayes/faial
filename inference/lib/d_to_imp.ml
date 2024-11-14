@@ -485,91 +485,6 @@ let cast_map f = Rjson.map_all f (fun idx _ e ->
 type 'a unop =
   {op: 'a; arg: nexp}
 
-module ForRange = struct
-  type t = {
-    name: Variable.t;
-    init: nexp;
-    cond: Loop_infer.comparator unop;
-    inc: Loop_infer.increment unop;
-  }
-
-  let infer_bounds : t -> nexp * nexp * Range.direction =
-    function
-    (* (int i = 0; i < 4; i++) *)
-    | {init=lb; cond={op=Lt; arg=ub; _}; _} ->
-      (lb, Binary (Minus, ub, Num 1), Range.Increase)
-    (* (int i = 0; i <= 4; i++) *)
-    | {init=lb; cond={op=LtEq; arg=ub; _}; _} ->
-      (lb, ub, Increase)
-    (* (int i = 4; i - k; i++) *)
-    | {init=lb; cond={op=RelMinus; arg=ub; _}; _} ->
-      (lb, ub, Range.Increase)
-    (* (int i = 4; i >= 0; i--) *)
-    | {init=ub; cond={op=GtEq; arg=lb; _}; _} ->
-      (lb, ub, Decrease)
-    (* (int i = 4; i > 0; i--) *)
-    | {init=ub; cond={op=Gt; arg=lb; _}; _} ->
-      (Binary (Plus, Num 1, lb), ub, Decrease)
-
-
-  let infer_step (r:t) : Range.Step.t option =
-    match r.inc with
-    | {op=Plus; arg=a}
-    | {op=Minus; arg=a} -> Some (Range.Step.Plus a)
-    | {op=Mult; arg=a}
-    | {op=Div; arg=a} ->
-      Some (Range.Step.Mult a)
-    | {op=LShift; arg=Num a}
-    | {op=RShift; arg=Num a} ->
-      Some (Range.Step.Mult (Num (Common.pow ~base:2 a)))
-    | _ -> None
-
-  let to_range (r:t) : Range.t option =
-    let ( let* ) = Option.bind in
-    let (lb, ub, d) = infer_bounds r in
-    let* step = infer_step r in
-    Some Range.{
-      var=r.name;
-      lower_bound=lb;
-      upper_bound=ub;
-      step=step;
-      dir=d;
-      ty=C_type.int;
-    }
-
-  let parse_unop (u:'a Loop_infer.unop) : 'a unop option =
-    let arg = parse_exp u.arg in
-    match Infer_exp.(no_unknowns (to_nexp arg)) with
-    | Some arg -> Some {op=u.op; arg=arg}
-    | None -> None
-
-  let from_loop_infer (r:Loop_infer.t) : t option =
-    let init = parse_exp r.init in
-    let cond = parse_unop r.cond in
-    let inc = parse_unop r.inc in
-    match Infer_exp.(no_unknowns (to_nexp init)), cond, inc with
-    | Some init, Some cond, Some inc ->
-      Some {name = r.name; init=init; cond=cond; inc=inc}
-    | _, _, _ -> None
-
-end
-
-
-let infer_for (r:D_lang.Stmt.d_for) : Range.t option =
-  match Loop_infer.from_for r with
-  | Some r ->
-    let r = ForRange.from_loop_infer r in
-    Option.bind r ForRange.to_range
-  | None -> None
-
-let infer_while (r:D_lang.Stmt.d_cond) : (Range.t * D_lang.Stmt.t) option =
-  match Loop_infer.from_while r with
-  | Some (r, b) ->
-    let r = ForRange.from_loop_infer r in
-    Option.bind r ForRange.to_range |> Option.map (fun r -> (r, b))
-  | None -> None
-
-
 let ret_assert (b:D_lang.Expr.t) (v:Imp.Assert.Visibility.t) : Imp.Stmt.t =
   let b = parse_exp b in
   let open Imp.Stmt in
@@ -758,18 +673,17 @@ let rec parse_stmt
       return (For.to_stmt For.{init; cond; inc;} body)
     )
 
-  | DoStmt {body=body; _} ->
-    let body = parse_stmt body in
-    Stmt.Star body
+  | DoStmt w ->
+    Infer_exp.unknowns (
+      let body = parse_stmt w.body in
+      let* cond = to_bexp w.cond in
+      return (Stmt.Seq (body, For.infer_while cond body))
+    )
 
   | WhileStmt w ->
-    (match infer_while w with
-    | Some (r, b) ->
-      let b = parse_stmt b in
-      For (r, b)
-    | None ->
-      let b = parse_stmt w.body in
-      Stmt.Star b
+    Infer_exp.unknowns (
+      let* cond = to_bexp w.cond in
+      return (For.infer_while cond (parse_stmt w.body))
     )
 
   | SwitchStmt {body=s; _}

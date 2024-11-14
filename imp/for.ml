@@ -192,3 +192,11 @@ let to_stmt (l:t) (body:Stmt.t) : Stmt.t =
   match to_range l with
   | Some r -> For (r, body)
   | None -> Star body
+
+let infer_while (cond:Exp.bexp) (body:Stmt.t) : Stmt.t =
+  let f = {
+    init = None;
+    inc = Some (Stmt.last body);
+    cond = Some cond
+  } in
+  to_stmt f (Stmt.skip_last body)

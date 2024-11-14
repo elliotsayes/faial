@@ -749,7 +749,7 @@ module Loops = struct
       "# of loops with early return", `Int (l |> List.filter has_early_exit |> List.length);
     ]
 end
-
+(*
 module ForEach = struct
   (* Loop inference *)
   open D_lang
@@ -832,7 +832,7 @@ module ForEach = struct
       "missing", `List missing;
     ]
 end
-
+*)
 
 module Accesses = struct
   open Imp
