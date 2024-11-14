@@ -17,6 +17,9 @@ let total_threads (cfg:t) : int =
 let total_warps (cfg:t) : int =
   total_threads cfg / cfg.threads_per_warp
 
+let is_warp_local (_x:Variable.t) (_cfg:t) : bool =
+  false
+
 let make
   ?(bank_count=32)
   ?(threads_per_warp=32)

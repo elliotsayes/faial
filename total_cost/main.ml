@@ -115,8 +115,8 @@ module Solver = struct
   :
     int
   =
-    let e = Offset_analysis.Default.remove_offset s e in
     let ctx = Vectorized.from_config app.config in
+    let e = Offset_analysis.Default.remove_offset app.config s e in
     match Vectorized.to_cost app.metric e ctx with
     | Ok e -> e.value
     | Error e ->

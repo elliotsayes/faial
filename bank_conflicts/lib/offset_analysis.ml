@@ -34,11 +34,12 @@ let index_and (f:Exp.nexp -> Exp.nexp -> Exp.nexp) (e1: t) (e2: t) : t =
   | Index e1, Index e2 -> Index (f e1 e2)
   | Offset e1, Offset e2 -> Offset (f e1 e2)
 
-let from_nexp (locals:Variable.Set.t) : Exp.nexp -> t =
+let from_nexp (cfg:Config.t) (locals:Variable.Set.t) : Exp.nexp -> t =
   let locals = Variable.Set.union locals Variable.tid_set in
   let rec from_nexp : Exp.nexp -> t =
     function
     | Num n -> Offset (Num n)
+    | Var x when Config.is_warp_local x cfg -> Offset (Var x)
     | Var x when Variable.Set.mem x locals -> Index (Var x)
     | Var x -> Offset (Var x)
     | Unary (o, e) ->
@@ -70,9 +71,9 @@ let to_string : t -> string =
 module Make (L:Logger.Logger) = struct
   open Exp
 
-  let remove_offset (locals:Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
+  let remove_offset (cfg:Config.t) (locals:Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
     let after =
-      match from_nexp locals n with
+      match from_nexp cfg locals n with
       | Offset _ -> Num 0
       | Index e -> e
     in

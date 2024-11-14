@@ -237,7 +237,7 @@ module Code = struct
           l
           |> lin x
           |> Option.map (fun e ->
-              let e = O.remove_offset locals e in
+              let e = O.remove_offset cfg locals e in
               Seq.return (x, Index e)
             )
           |> Option.value ~default:Seq.empty
