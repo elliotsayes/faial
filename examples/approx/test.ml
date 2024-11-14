@@ -22,8 +22,13 @@ let run ~data_dep ~faial_drf (f:Fpath.t) : string option =
   let exe = faial_drf f in
   let given = exe |> Subprocess.run_split in
   let output = given.stdout |> Common.string_split_lines in
+  let idx = List.nth_opt output 4 in
+  if Option.is_none idx then
+    Some ("Unable to parse output: expecting at least 4 lines got:\n" ^ given.stdout)
+  else
   let output =
-    List.nth output 4
+    idx
+    |> Option.get
     (* approx locals: _unknown_1; *)
     |> Common.split ':'
     |> Option.get
