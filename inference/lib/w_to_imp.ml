@@ -840,9 +840,9 @@ module Statements = struct
             Expressions.run (
               let* cond = Expressions.b_tr condition in
               let f : For.t = {
-                init = None;
-                cond = Some (Exp.b_not cond);
-                inc = Some inc;
+                init = Skip;
+                cond = Exp.b_not cond;
+                inc = inc;
               } in
               return (For.to_stmt f body)
             )
@@ -856,9 +856,9 @@ module Statements = struct
             Expressions.run (
               let* cond = b_tr condition in
               let f : For.t = {
-                init = None;
-                cond = Some cond;
-                inc = Some inc;
+                init = Skip;
+                cond = cond;
+                inc = inc;
               } in
               return (For.to_stmt f body)
             )
@@ -872,9 +872,9 @@ module Statements = struct
             Expressions.run (
               let* cond = b_tr condition in
               let f : For.t = {
-                init = None;
-                cond = Some (Exp.b_not cond);
-                inc = Some inc;
+                init = Skip;
+                cond = Exp.b_not cond;
+                inc = inc;
               } in
               return (For.to_stmt f body)
             )

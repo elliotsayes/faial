@@ -656,20 +656,26 @@ let rec parse_stmt
 
   | ForStmt s ->
     Infer_exp.unknowns (
-      let init : Stmt.t option =
+      let init : Stmt.t =
         s.init
         |> Option.map (fun (f:D_lang.ForInit.t) : Stmt.t ->
-          let s: D_lang.Stmt.t =
-            match f with
-            | Decls d -> D_lang.Stmt.DeclStmt d
-            | Expr e -> SExpr e
-          in
-          parse_stmt s
-        )
+            let s: D_lang.Stmt.t =
+              match f with
+              | Decls d -> D_lang.Stmt.DeclStmt d
+              | Expr e -> SExpr e
+            in
+            parse_stmt s
+          )
+        |> Option.value ~default:Stmt.Skip
       in
       let* cond = State.option_map to_bexp s.cond in
+      let cond = Option.value ~default:(Bool true) cond in
       let body = parse_stmt s.body in
-      let inc = Option.map (fun e -> parse_stmt (SExpr e)) s.inc in
+      let inc =
+        s.inc
+        |> Option.map (fun e -> parse_stmt (SExpr e))
+        |> Option.value ~default:Stmt.Skip
+      in
       return (For.to_stmt For.{init; cond; inc;} body)
     )
 

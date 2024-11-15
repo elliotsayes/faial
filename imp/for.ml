@@ -3,30 +3,24 @@ open Protocols
 let ( let* ) = Option.bind
 
 type t = {
-  init: Stmt.t option;
-  cond: Exp.bexp option;
-  inc: Stmt.t option;
+  init: Stmt.t;
+  cond: Exp.bexp;
+  inc: Stmt.t;
 }
 
 let to_string : t -> string =
   function
   | {init; cond; inc} ->
-    let init =
-      init
-      |> Option.map Stmt.to_string
-      |> Option.value ~default:""
+    let stmt (s:Stmt.t) : string =
+      s
+      |> Stmt.to_string
+      |> Stage0.Common.replace ~substring:"\n" ~by:" "
+      |> String.trim
     in
-    let cond =
-      cond
-      |> Option.map Exp.b_to_string
-      |> Option.value ~default:""
-    in
-    let inc =
-      inc
-      |> Option.map Stmt.to_string
-      |> Option.value ~default:""
-    in
-    "(" ^ init ^ "; " ^ cond ^ "; " ^ inc ^ ")"
+    Printf.sprintf "(%s; %s; %s)"
+      (stmt init)
+      (Exp.b_to_string cond)
+      (stmt inc)
 
 module Increment = struct
   type t =
@@ -79,25 +73,25 @@ module Infer = struct
     inc: Increment.t unop;
   }
 
-  let parse_init: Stmt.t option -> (Variable.t * Exp.nexp) option =
+  let parse_init: Stmt.t -> (Variable.t * Exp.nexp) option =
     function
-    | Some (Decl ({var; init=Some data; _}::_))
-    | Some (Seq (Decl [{var; init=Some data; _}], _))
-    | Some (Assign {var; data; _}) ->
+    | Decl ({var; init=Some data; _}::_)
+    | Seq (Decl [{var; init=Some data; _}], _)
+    | Assign {var; data; _} ->
       Some (var, data)
     | _ -> None
 
-  let parse_cond : Exp.bexp option -> (Variable.t * Comparator.t unop) option =
+  let parse_cond : Exp.bexp -> (Variable.t * Comparator.t unop) option =
     function
-    | Some (NRel (o, Var d, r)) ->
+    | NRel (o, Var d, r) ->
       (match Comparator.parse o with
       | Some o -> Some (d, {op=o; arg=r})
       | _ -> None)
-    | Some (CastBool (Binary (Minus, Var d, r))) ->
+    | CastBool (Binary (Minus, Var d, r)) ->
       Some (d, {op=RelMinus; arg=r})
     | _ -> None
 
-  let parse_inc (s:Stmt.t option) : (Variable.t * Increment.t unop) option =
+  let parse_inc (s:Stmt.t) : (Variable.t * Increment.t unop) option =
     let parse_inc (var:Variable.t) (o:N_binary.t) (arg:Exp.nexp) : (Variable.t * Increment.t unop) option =
       o
       |> Increment.parse
@@ -105,18 +99,18 @@ module Infer = struct
           (var, {op; arg})
         )
     in
-    match Option.map Stmt.first s with
-    | Some (Assign {var=l; data=Binary (o, Var l1, Var l2); _}) ->
+    match Stmt.first s with
+    | Assign {var=l; data=Binary (o, Var l1, Var l2); _} ->
       if Variable.equal l l1 then
         parse_inc l o (Var l2)
       else if Variable.equal l l2 then
         parse_inc l o (Var l1)
       else
         None
-    | Some (Assign {
+    | Assign {
         var=l;
         data=(Binary (o, r, Var l') | Binary (o, Var l', r));
-      _})
+      _}
     ->
       if Variable.equal l l' then
         parse_inc l o r
@@ -197,8 +191,8 @@ let to_stmt (l:t) (body:Stmt.t) : Stmt.t =
 
 let infer_while (cond:Exp.bexp) (body:Stmt.t) : Stmt.t =
   let f = {
-    init = None;
-    inc = Some (Stmt.last body);
-    cond = Some cond
+    init = Skip;
+    inc = Stmt.last body;
+    cond = cond
   } in
   to_stmt f (Stmt.skip_last body)
