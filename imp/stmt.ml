@@ -218,9 +218,11 @@ let to_s: t -> Indent.t list =
         Line ("}")
       ]
     | For (r, s) ->
-        Line ("foreach (" ^ Range.to_string r ^ ")")
-        ::
-        stmt_to_s s
+        [
+          Line ("foreach (" ^ Range.to_string r ^ ") {");
+          Block (stmt_to_s s);
+          Line ("}");
+        ]
   in
   stmt_to_s
 
