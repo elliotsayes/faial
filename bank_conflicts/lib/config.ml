@@ -17,8 +17,21 @@ let total_threads (cfg:t) : int =
 let total_warps (cfg:t) : int =
   total_threads cfg / cfg.threads_per_warp
 
-let is_warp_local (_x:Variable.t) (_cfg:t) : bool =
-  false
+let is_warp_local (x:Variable.t) (cfg:t) : bool =
+  (* threadIdx.x is warp-local *)
+  (Variable.equal x Variable.tid_x && cfg.block_dim.x = 1)
+  (* threadIdx.y is warp-local *)
+  || (Variable.equal x Variable.tid_y && (
+        cfg.block_dim.y = 1
+      || (cfg.block_dim.x >= cfg.threads_per_warp)
+      )
+    )
+  (* threadIdx.z is warp-local *)
+  || (Variable.equal x Variable.tid_z && (
+      cfg.block_dim.z = 1
+      || (cfg.block_dim.x * cfg.block_dim.y >= cfg.threads_per_warp)
+      ))
+
 
 let make
   ?(bank_count=32)
