@@ -82,6 +82,7 @@ module Infer = struct
   let parse_init: Stmt.t option -> (Variable.t * Exp.nexp) option =
     function
     | Some (Decl ({var; init=Some data; _}::_))
+    | Some (Seq (Decl [{var; init=Some data; _}], _))
     | Some (Assign {var; data; _}) ->
       Some (var, data)
     | _ -> None
@@ -127,7 +128,8 @@ module Infer = struct
     let* (x1, inc) = parse_inc loop.inc in
     let* init : Exp.nexp =
       match parse_init loop.init with
-      | Some (x2, init) -> if Variable.equal x1 x2 then Some init else None
+      | Some (x2, init) ->
+        if Variable.equal x1 x2 then Some init else None
       | None -> Some (Var x1)
     in
     let* (_, cond) = parse_cond loop.cond in
