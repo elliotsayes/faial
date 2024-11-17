@@ -62,17 +62,55 @@ end
 
 module Infer = struct
 
-  type 'a unop = {op: 'a; arg: Exp.nexp}
+  type 'a unop = {var: Variable.t; op: 'a; arg: Exp.nexp}
 
   type for_ = t
 
   type t = {
-    pre: Stmt.t;
     name: Variable.t;
-    init: Exp.nexp;
     cond: Comparator.t unop;
     inc: Increment.t unop;
+    other_incs: Increment.t unop list;
+    post_body: Stmt.t;
   }
+
+  let extract_incs (r:Range.t) (l:Increment.t unop list) : Stmt.t =
+    let l : Decl.t list =
+      match r.step with
+      | Plus step ->
+        l
+        |> List.map (fun i ->
+            let open Increment in
+            match i.op with
+            | Plus | Minus ->
+              let iters =
+                Exp.n_div (Exp.n_minus (Var r.var) r.lower_bound)
+                  step
+              in
+              let d =
+                (* i = i.inc * ((r.var - r.init) / r.inc) + i.init *)
+                let i_inc =
+                  if i.op = Plus then i.arg else Exp.n_uminus i.arg
+                in
+                Decl.set r.var
+                  (Exp.n_plus
+                    (Exp.n_mult i_inc iters)
+                    (Var i.var)
+                  )
+              in
+              d
+            | _ ->
+              Decl.unset i.var
+          )
+      | Mult _ ->
+        l
+        |> List.map (fun i -> Decl.unset i.var)
+    in
+    if l = [] then
+      Skip
+    else
+      Decl l
+
 
   let parse_init: Stmt.t -> (Variable.t * Exp.nexp * Stmt.t) option =
     function
@@ -84,104 +122,153 @@ module Infer = struct
       Some (var, data, Skip)
     | _ -> None
 
-  let parse_cond : Exp.bexp -> (Variable.t * Comparator.t unop) option =
+  let parse_cond : Exp.bexp -> Comparator.t unop option =
     function
-    | NRel (o, Var d, r) ->
+    | NRel (o, Var var, arg) ->
       (match Comparator.parse o with
-      | Some o -> Some (d, {op=o; arg=r})
+      | Some op -> Some {var; op; arg}
       | _ -> None)
-    | CastBool (Binary (Minus, Var d, r)) ->
-      Some (d, {op=RelMinus; arg=r})
+    | CastBool (Binary (Minus, Var var, arg)) ->
+      Some {var; op=RelMinus; arg}
     | _ -> None
 
-  let parse_inc (s:Stmt.t) : (Variable.t * Increment.t unop) option =
-    let parse_inc (var:Variable.t) (o:N_binary.t) (arg:Exp.nexp) : (Variable.t * Increment.t unop) option =
+  (**
+    Find every increment that is possible to find.
+    The remainding statements should be kept in order.
+   *)
+  let parse_inc : Stmt.t -> Increment.t unop list * Stmt.t =
+    let parse (var:Variable.t) (o:N_binary.t) (arg:Exp.nexp) : Increment.t unop option =
       o
       |> Increment.parse
-      |> Option.map (fun op ->
-          (var, {op; arg})
-        )
+      |> Option.map (fun op -> {var; op; arg})
     in
-    match Stmt.first s with
-    | Assign {var=l; data=Binary (o, Var l1, Var l2); _} ->
-      if Variable.equal l l1 then
-        parse_inc l o (Var l2)
-      else if Variable.equal l l2 then
-        parse_inc l o (Var l1)
-      else
-        None
-    | Assign {
-        var=l;
-        data=(Binary (o, r, Var l') | Binary (o, Var l', r));
-      _}
-    ->
-      if Variable.equal l l' then
-        parse_inc l o r
-      else
-        None
-    | _ -> None
+    let rec loop (accum:Increment.t unop list) (s:Stmt.t) : Stmt.t list -> Increment.t unop list * Stmt.t =
+      function
+      | [] -> (accum, s)
+      | s1 :: l ->
+        let inc : Increment.t unop option =
+          match s1 with
+          | Assign {var=l; data=Binary (o, Var l1, Var l2); _} ->
+            if Variable.equal l l1 then
+              parse l o (Var l2)
+            else if Variable.equal l l2 then
+              parse l o (Var l1)
+            else
+              None
+          | Assign {
+              var=l;
+              data=(Binary (o, r, Var l') | Binary (o, Var l', r));
+            _}
+          ->
+            if Variable.equal l l' then
+              parse l o r
+            else
+              None
+          | _ -> None
+        in
+        let (s, accum) =
+          match inc with
+          | Some o -> (s, o :: accum)
+          | None -> (Stmt.seq s1 s, accum)
+        in
+        loop accum s l
+    in
+    fun s ->
+    loop [] Skip (Stmt.to_list s)
+
 
   let parse (loop: for_) : t option =
-    let* (name, inc) = parse_inc loop.inc in
-    let* (init, pre) : Exp.nexp * Stmt.t =
-      match parse_init loop.init with
-      | Some (x2, init, pre) ->
-        if Variable.equal name x2 then Some (init, pre) else None
-      | None -> Some (Var name, Stmt.Skip)
+    let (incs, inc_stmt) = parse_inc loop.inc in
+    let rec iter (skipped:Increment.t unop list) : Increment.t unop list -> t option =
+      function
+      | inc :: todo ->
+        let name = inc.var in
+        (* Try to find a range from this increment: *)
+        (match
+          let* cond = parse_cond loop.cond in
+          Some {
+            other_incs=skipped @ todo;
+            post_body=Stmt.Skip;
+            name; cond; inc;
+          }
+        with
+        | Some _ as o ->
+          (* This increment worked, return it *)
+          o
+        | None ->
+          (* This increment didn't work, try again *)
+          iter (inc::skipped) todo)
+      | [] -> None (* Failed inference *)
     in
-    let* (_, cond) = parse_cond loop.cond in
-    Some {pre; name; init; cond; inc;}
+    incs
+    (* Infer a range *)
+    |> iter []
+    (* And if we find it, add the non-increments to post_body *)
+    |> Option.map (fun x ->
+      {x with post_body=Stmt.seq x.post_body inc_stmt}
+    )
 
   let infer_bounds : t -> Exp.nexp * Exp.nexp * Range.direction =
     function
     (* (int i = 0; i < 4; i++) *)
-    | {init=lb; cond={op=Lt; arg=ub; _}; _} ->
-      (lb, Binary (Minus, ub, Num 1), Range.Increase)
+    | {name; cond={op=Lt; arg=ub; _}; _} ->
+      (Var name, Binary (Minus, ub, Num 1), Range.Increase)
     (* (int i = 0; i <= 4; i++) *)
-    | {init=lb; cond={op=Le; arg=ub; _}; _} ->
-      (lb, ub, Increase)
+    | {name; cond={op=Le; arg=ub; _}; _} ->
+      (Var name, ub, Increase)
     (* (int i = 4; i - k; i++) *)
-    | {init=lb; cond={op=RelMinus; arg=ub; _}; _} ->
-      (lb, ub, Range.Increase)
+    | {name; cond={op=RelMinus; arg=ub; _}; _} ->
+      (Var name, ub, Range.Increase)
     (* (int i = 4; i >= 0; i--) *)
-    | {init=ub; cond={op=Ge; arg=lb; _}; _} ->
-      (lb, ub, Decrease)
+    | {name; cond={op=Ge; arg=lb; _}; _} ->
+      (lb, Var name, Decrease)
     (* (int i = 4; i > 0; i--) *)
-    | {init=ub; cond={op=Gt; arg=lb; _}; _} ->
-      (Binary (Plus, Num 1, lb), ub, Decrease)
+    | {name; cond={op=Gt; arg=lb; _}; _} ->
+      (Binary (Plus, Num 1, lb), Var name, Decrease)
 
 
   let infer_step (r:t) : Range.Step.t option =
     match r.inc with
-    | {op=Plus; arg=a}
-    | {op=Minus; arg=a} -> Some (Range.Step.Plus a)
-    | {op=Mult; arg=a}
-    | {op=Div; arg=a} ->
+    | {op=Plus; arg=a; _}
+    | {op=Minus; arg=a; _} -> Some (Range.Step.Plus a)
+    | {op=Mult; arg=a; _}
+    | {op=Div; arg=a; _} ->
       Some (Range.Step.Mult a)
-    | {op=LeftShift; arg=Num a}
-    | {op=RightShift; arg=Num a} ->
+    | {op=LeftShift; arg=Num a; _}
+    | {op=RightShift; arg=Num a; _} ->
       Some (Range.Step.Mult (Num (Stage0.Common.pow ~base:2 a)))
     | _ -> None
 
 
-  let to_range (r:t) : (Stmt.t * Range.t) option =
+  let to_range (r:t) : Range.t option =
     let (lower_bound, upper_bound, dir) = infer_bounds r in
     let* step = infer_step r in
     let dst = Range.{
       var=r.name; lower_bound; upper_bound; step; dir; ty=C_type.int;
     } in
-    Some (r.pre, dst)
+    Some dst
 end
 
-(* Given a for-loop range, output a protocol Range *)
-let to_range (loop:t) : (Stmt.t * Range.t) option =
-  let* inf = Infer.parse loop in
-  Infer.to_range inf
-
 let to_stmt (l:t) (body:Stmt.t) : Stmt.t =
-  match to_range l with
-  | Some (s, r) -> Stmt.seq s (For (r, body))
-  | None -> Star body
+  match
+    let* inf = Infer.parse l in
+    let* r = Infer.to_range inf in
+    Some (inf, r)
+  with
+  | Some (inf, r) ->
+    let body =
+      Stmt.from_list [
+        Infer.extract_incs r inf.other_incs;
+        body;
+        inf.post_body
+      ]
+    in
+    Stmt.seq l.init (For (r, body))
+  | None ->
+    let body =
+      Stmt.If (l.cond, Stmt.seq body l.init, Skip)
+    in
+    Stmt.seq l.init (Star body)
 
 let infer_while (cond:Exp.bexp) (body:Stmt.t) : Stmt.t =
   let f = {

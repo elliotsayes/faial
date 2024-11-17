@@ -8,6 +8,16 @@ module Step = struct
 
   let mult (e:nexp) : t = Mult e
 
+  let is_plus : t -> bool =
+    function
+    | Plus _ -> true
+    | _ -> false
+
+  let is_mult : t -> bool =
+    function
+    | Mult _ -> true
+    | _ -> false
+
   let to_string : t -> string =
     function
     | Plus x -> "+= " ^ n_to_string x

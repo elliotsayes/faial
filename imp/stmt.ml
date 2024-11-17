@@ -145,6 +145,19 @@ let rec skip_last : t -> t =
 let from_list : t list -> t =
   List.fold_left seq Skip
 
+let to_list ?(rev=true) : t -> t list =
+  let rec loop (accum:t list) : t -> t list =
+    function
+    | Skip -> accum
+    | Seq (s1, s2) -> loop (loop accum s1) s2
+    | (
+      Sync _ | Assert _ | Read _ | Write _ | LocationAlias _ | Atomic _
+      | Decl _ | Assign _ | If _ | For _ | Star _ | Call _ ) as s ->
+      s :: accum
+  in
+  fun s ->
+  loop [] s |> (if rev then List.rev else Fun.id)
+
 let assign (ty:C_type.t) (var:Variable.t) (data:Exp.nexp) : t =
   Assign {ty; var; data}
 
