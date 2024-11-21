@@ -328,7 +328,7 @@ module Stmt = struct
     | CaseStmt of {case: Expr.t; body: t}
     | SExpr of Expr.t
   and d_cond = {cond: Expr.t; body: t}
-  and d_for = {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: t}
+  and d_for = {init: ForInit.t option; cond: Expr.t option; inc: t; body: t}
 
   let seq (s1:t) (s2:t) : t =
     match s1, s2 with
@@ -378,65 +378,82 @@ module Stmt = struct
     in
     AtomicAccessStmt {target; source; atomic; ty}
 
-  let to_string: t -> Indent.t list =
-    let rec stmt_to_s : t -> Indent.t list =
-      let ret l : Indent.t list =
+  let rec to_s: t -> Indent.t list =
+    function
+    | Skip -> [Line "skip;"]
+    | Seq (s1, s2) -> to_s s1 @ to_s s2
+    | WriteAccessStmt w -> [Line ("wr " ^ subscript_to_s w.target ^ " = " ^ Expr.to_string w.source)]
+    | ReadAccessStmt r -> [Line ("rd " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
+    | AtomicAccessStmt r -> [Line ("atomic " ^ C_type.to_string r.ty ^ " " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
+    | ReturnStmt None -> [Line "return"]
+    | ReturnStmt (Some e)-> [Line ("return " ^ Expr.to_string e)]
+    | GotoStmt -> [Line "goto"]
+    | ContinueStmt -> [Line "continue"]
+    | BreakStmt -> [Line "break"]
+    | ForStmt f ->
+      let inc = to_string ~inline:true f.inc in
+      let open Indent in
+      [
+        Line ("for (" ^ ForInit.opt_to_string f.init ^ "; " ^ Expr.opt_to_string f.cond ^ "; " ^ inc ^ ") {");
+        Block (to_s f.body);
+        Line "}";
+      ]
+    | WhileStmt {cond=b; body=s} -> [
+        Line ("while (" ^ Expr.to_string b ^ ") {");
+        Block (to_s s);
+        Line "}"
+      ]
+    | DoStmt {cond=b; body=s} -> [
+        Line "}";
+        Block (to_s s);
+        Line ("do (" ^ Expr.to_string b ^ ") {");
+      ]
+    | SwitchStmt {cond=b; body=s} -> [
+        Line ("switch " ^ Expr.to_string b ^ " {");
+        Block (to_s s);
+        Line ("}");
+      ]
+    | CaseStmt c ->
+      [ Line ("case " ^ Expr.to_string c.case ^ ":"); Block(to_s c.body) ]
+    | DefaultStmt d ->
+      [ Line ("default:"); Block(to_s d) ]
+    | IfStmt {then_stmt=Skip; else_stmt=Skip; _} ->
+      [Line (";")]
+    | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
+      let s1 = to_s s1 in
+      let s2 =
         let open Indent in
-        match l with
-        | [] -> [Line ";"]
-        | [Line "{"; Block l; Line "}"]
-        | l -> [Line "{"; Block l; Line "}"]
+        if s2 = Skip then []
+        else [Line "} else {"; Block (to_s s2)]
       in
-      let block (s:t) : Indent.t list = ret (stmt_to_s s) in
-      function
-      | Skip -> [Line "skip;"]
-      | Seq (s1, s2) -> stmt_to_s s1 @ stmt_to_s s2
-      | WriteAccessStmt w -> [Line ("wr " ^ subscript_to_s w.target ^ " = " ^ Expr.to_string w.source)]
-      | ReadAccessStmt r -> [Line ("rd " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
-      | AtomicAccessStmt r -> [Line ("atomic " ^ C_type.to_string r.ty ^ " " ^ Variable.name r.target ^ " = " ^ subscript_to_s r.source)]
-      | ReturnStmt None -> [Line "return"]
-      | ReturnStmt (Some e)-> [Line ("return " ^ Expr.to_string e)]
-      | GotoStmt -> [Line "goto"]
-      | ContinueStmt -> [Line "continue"]
-      | BreakStmt -> [Line "break"]
-      | ForStmt f ->
-        let open Indent in
-        [
-          Line ("for (" ^ ForInit.opt_to_string f.init ^ "; " ^ Expr.opt_to_string f.cond ^ "; " ^ Expr.opt_to_string f.inc ^ ")");
-        ]
-        @ block (f.body)
-      | WhileStmt {cond=b; body=s} ->
-        let open Indent in
-        [ Line ("while (" ^ Expr.to_string b ^ ")"); ] @
-        block s
-      | DoStmt {cond=b; body=s} ->
-        block s @ [ Line ("do (" ^ Expr.to_string b ^ ")"); ]
-      | SwitchStmt {cond=b; body=s} -> [
-          Line ("switch " ^ Expr.to_string b ^ " {");
-          Block (stmt_to_s s);
-          Line ("}");
-        ]
-      | CaseStmt c ->
-        [ Line ("case " ^ Expr.to_string c.case ^ ":"); Block(stmt_to_s c.body) ]
-      | DefaultStmt d ->
-        [ Line ("default:"); Block(stmt_to_s d) ]
-      | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
-        let s1 = stmt_to_s s1 in
-        let s2 = stmt_to_s s2 in
-        let open Indent in
-        if s1 = [] && s2 = [] then []
+      let open Indent in
+      [
+        Line ("if (" ^ Expr.to_string b ^ ") {");
+        Block (s1);
+      ]
+      @
+      s2
+      @
+      [ Line "}"]
+    | DeclStmt [] -> []
+    | DeclStmt [d] -> [Line ("decl " ^ Decl.to_string d)]
+    | DeclStmt d ->
+      let open Indent in
+      [Line "decl {"; Block (List.map (fun e -> Line (Decl.to_string e)) d); Line "}"]
+    | SExpr e -> [Line (Expr.to_string e)]
+
+  and to_string ?(inline=false) (s:t) : string =
+    s
+    |> to_s
+    |> Indent.to_string
+    |> (fun s ->
+        if inline then
+          s
+          |> Common.replace ~substring:"\n" ~by:" "
+          |> String.trim
         else
-          [Line ("if (" ^ Expr.to_string b ^ ")")] @
-          ret s1 @
-          (if s2 = [] then [] else [ Line "else"; ] @ ret s2)
-      | DeclStmt [] -> []
-      | DeclStmt [d] -> [Line ("decl " ^ Decl.to_string d)]
-      | DeclStmt d ->
-        let open Indent in
-        [Line "decl {"; Block (List.map (fun e -> Line (Decl.to_string e)) d); Line "}"]
-      | SExpr e -> [Line (Expr.to_string e)]
-    in
-    stmt_to_s
+          s
+      )
 
   let summarize: t -> string =
     let rec stmt_to_s : t -> string =
@@ -457,7 +474,7 @@ module Stmt = struct
           "for (" ^
           ForInit.opt_to_string f.init ^ "; " ^
           Expr.opt_to_string f.cond ^ "; " ^
-          Expr.opt_to_string f.inc ^
+          to_string ~inline:true f.inc ^
           ") {...}"
       | WhileStmt {cond=b; _} -> "while (" ^ Expr.to_string b ^ ") {...}"
       | DoStmt {cond=b; _} -> "{...} do (" ^ Expr.to_string b ^ ")";
@@ -475,7 +492,7 @@ module Stmt = struct
     in
     stmt_to_s
 end
-
+(*
 let for_to_expr (f:Stmt.d_for) : Expr.t list =
   let l1 = f.init |> Option.map ForInit.to_exp |> Option.value ~default:[] in
   let l2 = f.cond |> Option.map (fun x -> [x]) |> Option.value ~default:[] in
@@ -483,7 +500,7 @@ let for_to_expr (f:Stmt.d_for) : Expr.t list =
   l1
   |> Common.append_rev1 l2
   |> Common.append_rev1 l3
-
+*)
 let for_loop_vars (f:Stmt.d_for) : Variable.t list =
   f.init
   |> Option.map ForInit.loop_vars
@@ -514,7 +531,7 @@ module Kernel = struct
       "(" ^ list_to_s Param.to_string k.params ^ ")");
     ]
     @
-    Stmt.to_string k.code
+    Stmt.to_s k.code
 
 end
 
@@ -1032,10 +1049,10 @@ let rec rewrite_stmt (s:C_lang.Stmt.t) : Stmt.t =
 
   | ForStmt {init; cond; inc; body} ->
     let (s1, cond) = run0 (State.option_map rewrite_exp cond) in
-    let (s2, inc) = run0 (State.option_map rewrite_exp inc) in
+    let inc = rewrite_stmt inc in
     (* we unroll the side effects, before the loop runs, and
         at the end of each iteration *)
-    let body : Stmt.t = Stmt.seq (rewrite_stmt body) (Stmt.seq s2 s1) in
+    let body : Stmt.t = Stmt.seq (rewrite_stmt body) s1 in
     run (
       let* init = State.option_map rewrite_for_init init in
       add (Stmt.seq s1 (ForStmt {init; cond; inc; body}))

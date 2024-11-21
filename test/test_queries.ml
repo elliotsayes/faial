@@ -59,14 +59,14 @@ let tests = "tests" >::: [
     let g_for ?(body=[]) idx = Stmt.ForStmt {
       init=None;
       cond=Some (IntegerLiteral idx);
-      inc=None;
+      inc=Skip;
       body=Stmt.from_list body
     } in
     let e_for ?(body=[]) ?(data=[]) idx =
       For {
         init=None;
         cond=Some (IntegerLiteral idx);
-        inc=None;
+        inc=Skip;
         data=Stmt.from_list data;
         body=body
       }
@@ -92,7 +92,7 @@ let tests = "tests" >::: [
       For {
         init=None;
         cond=None;
-        inc=None;
+        inc=Skip;
         data=ReturnStmt None;
         body=[]
       }

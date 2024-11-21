@@ -68,6 +68,8 @@ module Infer = struct
 
   type t = {
     name: Variable.t;
+    init: Exp.nexp option;
+    pre_loop: Stmt.t;
     cond: Comparator.t unop;
     inc: Increment.t unop;
     other_incs: Increment.t unop list;
@@ -92,7 +94,7 @@ module Infer = struct
                 let i_inc =
                   if i.op = Plus then i.arg else Exp.n_uminus i.arg
                 in
-                Decl.set r.var
+                Decl.set i.var
                   (Exp.n_plus
                     (Exp.n_mult i_inc iters)
                     (Var i.var)
@@ -111,20 +113,44 @@ module Infer = struct
     else
       Decl l
 
+  (** Find the first init and return an alterated statement without the
+      init found. *)
+  let parse_init (x:Variable.t) : Stmt.t -> Exp.nexp option * Stmt.t =
+    (* Search for a decl that is initialized *)
+    let rec parse_decl : Decl.t list -> Exp.nexp option * Decl.t list =
+      function
+      | {var; init; _} :: l when Variable.equal x var->
+        (init, l)
+      | d :: l ->
+        let (d', l) = parse_decl l in
+        (d', d :: l)
+      | [] ->
+        None, []
+    in
+    let rec parse_init : Stmt.t -> Exp.nexp option * Stmt.t =
+      function
+      | Decl l ->
+        let (d, l) = parse_decl l in
+        let s : Stmt.t = if l = [] then Skip else Decl l in
+        (d, s)
+      | Assign {var; data; _} when Variable.equal x var ->
+        (Some data, Skip)
+      | Seq (s1, s2) ->
+        let (d, s1) = parse_init s1 in
+        if Option.is_some d then
+          (* Don't recurse to s2 *)
+          (d, Stmt.seq s1 s2)
+        else
+          (* Not in s1, so recurse to s2 *)
+          let (d, s2) = parse_init s2 in
+          (d, Stmt.seq s1 s2)
+      | s -> (None, s)
+    in
+    parse_init
 
-  let parse_init: Stmt.t -> (Variable.t * Exp.nexp * Stmt.t) option =
+  let parse_cond (x:Variable.t) : Exp.bexp -> Comparator.t unop option =
     function
-    | Decl ({var; init=Some data; _}::l) ->
-      Some (var, data, Decl l)
-    | Seq (Decl [{var; init=Some data; _}], s) ->
-      Some (var, data, s)
-    | Assign {var; data; _} ->
-      Some (var, data, Skip)
-    | _ -> None
-
-  let parse_cond : Exp.bexp -> Comparator.t unop option =
-    function
-    | NRel (o, Var var, arg) ->
+    | NRel (o, Var var, arg) when Variable.equal var x ->
       (match Comparator.parse o with
       | Some op -> Some {var; op; arg}
       | _ -> None)
@@ -185,11 +211,12 @@ module Infer = struct
         let name = inc.var in
         (* Try to find a range from this increment: *)
         (match
-          let* cond = parse_cond loop.cond in
+          let* cond = parse_cond name loop.cond in
+          let (init, pre_loop) = parse_init name loop.init in
           Some {
             other_incs=skipped @ todo;
             post_body=Stmt.Skip;
-            name; cond; inc;
+            init; pre_loop; name; cond; inc;
           }
         with
         | Some _ as o ->
@@ -208,24 +235,24 @@ module Infer = struct
       {x with post_body=Stmt.seq x.post_body inc_stmt}
     )
 
-  let infer_bounds : t -> Exp.nexp * Exp.nexp * Range.direction =
-    function
+  let infer_bounds (l:t) : Exp.nexp * Exp.nexp * Range.direction =
+    let init = Option.value ~default:(Var l.name) l.init in
+    match l.cond with
     (* (int i = 0; i < 4; i++) *)
-    | {name; cond={op=Lt; arg=ub; _}; _} ->
-      (Var name, Binary (Minus, ub, Num 1), Range.Increase)
+    | {op=Lt; arg=ub; _} ->
+      (init, Binary (Minus, ub, Num 1), Range.Increase)
     (* (int i = 0; i <= 4; i++) *)
-    | {name; cond={op=Le; arg=ub; _}; _} ->
-      (Var name, ub, Increase)
+    | {op=Le; arg=ub; _} ->
+      (init, ub, Increase)
     (* (int i = 4; i - k; i++) *)
-    | {name; cond={op=RelMinus; arg=ub; _}; _} ->
-      (Var name, ub, Range.Increase)
+    | {op=RelMinus; arg=ub; _} ->
+      (init, ub, Range.Increase)
     (* (int i = 4; i >= 0; i--) *)
-    | {name; cond={op=Ge; arg=lb; _}; _} ->
-      (lb, Var name, Decrease)
+    | {op=Ge; arg=lb; _} ->
+      (lb, init, Decrease)
     (* (int i = 4; i > 0; i--) *)
-    | {name; cond={op=Gt; arg=lb; _}; _} ->
-      (Binary (Plus, Num 1, lb), Var name, Decrease)
-
+    | {op=Gt; arg=lb; _} ->
+      (Binary (Plus, Num 1, lb), init, Decrease)
 
   let infer_step (r:t) : Range.Step.t option =
     match r.inc with
@@ -263,10 +290,10 @@ let to_stmt (l:t) (body:Stmt.t) : Stmt.t =
         inf.post_body
       ]
     in
-    Stmt.seq l.init (For (r, body))
+    Stmt.seq inf.pre_loop (For (r, body))
   | None ->
     let body =
-      Stmt.If (l.cond, Stmt.seq body l.init, Skip)
+      Stmt.If (l.cond, Stmt.seq body l.inc, Skip)
     in
     Stmt.seq l.init (Star body)
 

@@ -671,11 +671,7 @@ let rec parse_stmt
       let* cond = State.option_map to_bexp s.cond in
       let cond = Option.value ~default:(Bool true) cond in
       let body = parse_stmt s.body in
-      let inc =
-        s.inc
-        |> Option.map (fun e -> parse_stmt (SExpr e))
-        |> Option.value ~default:Stmt.Skip
-      in
+      let inc = parse_stmt s.inc in
       return (For.to_stmt For.{init; cond; inc;} body)
     )
 

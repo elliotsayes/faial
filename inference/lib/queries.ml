@@ -334,7 +334,7 @@ module NestedLoops = struct
     | For of {
         init: ForInit.t option;
         cond: Expr.t option;
-        inc: Expr.t option;
+        inc: Stmt.t;
         body: loop list;
         data: Stmt.t;
       }
@@ -381,11 +381,15 @@ module NestedLoops = struct
   let to_string (s: t) : string =
     let rec stmt_to_s : loop -> Indent.t list =
       function
-      | For f -> [
+      | For f ->
+        let inc =
+          C_lang.Stmt.to_string ~inline:true f.inc
+        in
+        [
           Line ("@for (" ^
               C_lang.ForInit.opt_to_string f.init ^ "; " ^
               Expr.opt_to_string f.cond ^ "; " ^
-              Expr.opt_to_string f.inc ^ ") {"
+              inc ^ ") {"
           );
           Block(List.concat_map stmt_to_s f.body);
           Line ("}");
@@ -606,11 +610,12 @@ module MutatedVar = struct
 
         | ForStmt w ->
           let (env, vars) = typecheck (scope + 1) env w.body in
+          let (env, vars1) = typecheck (scope + 1) env w.inc in
           let vars =
             vars
+            |> VarSet.union vars1
             |> VarSet.union (typecheck_f ~scope:(scope + 1) w.init)
             |> VarSet.union (typecheck_o ~scope:(scope + 1) w.cond)
-            |> VarSet.union (typecheck_o ~scope:(scope + 1) w.inc)
           in
           (env, vars)
 

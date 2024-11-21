@@ -990,7 +990,7 @@ end
 module Stmt = struct
   type 'a if_t = {cond: Expr.t; then_stmt: 'a; else_stmt: 'a}
   type 'a cond_t = {cond: Expr.t; body: 'a}
-  type 'a for_t = {init: ForInit.t option; cond: Expr.t option; inc: Expr.t option; body: 'a}
+  type 'a for_t = {init: ForInit.t option; cond: Expr.t option; inc: 'a; body: 'a}
   type 'a case_t = {case: Expr.t; body: 'a}
   type t =
     | Skip
@@ -1017,68 +1017,79 @@ module Stmt = struct
   let expr (e:Expr.t) : t =
     SExpr e
 
-  let to_string : t -> Indent.t list
-  =
-    let ret l : Indent.t list =
+  let rec to_s : t -> Indent.t list =
+    function
+    | ReturnStmt None -> [Line "return;"]
+    | ReturnStmt (Some e) -> [Line ("return " ^ Expr.to_string e^ ";")]
+    | GotoStmt -> [Line "goto"]
+    | BreakStmt -> [Line "break"]
+    | ContinueStmt -> [Line "continue"]
+    | ForStmt f ->
+      let inc = to_string ~inline:true f.inc in
       let open Indent in
-      match l with
-      | [] -> [Line ";"]
-      | [Line "{"; Block l; Line "}"]
-      | l -> [Line "{"; Block l; Line "}"]
-    in
-    let rec stmt_to_s : t -> Indent.t list =
-      let block (s:t) : Indent.t list = ret (stmt_to_s s) in
-      function
-      | ReturnStmt None -> [Line "return;"]
-      | ReturnStmt (Some e) -> [Line ("return " ^ Expr.to_string e^ ";")]
-      | GotoStmt -> [Line "goto"]
-      | BreakStmt -> [Line "break"]
-      | ContinueStmt -> [Line "continue"]
-      | ForStmt f ->
+      [
+        Line ("for (" ^ ForInit.opt_to_string f.init ^ "; " ^ Expr.opt_to_string f.cond ^ "; " ^ inc ^ ") {");
+        Block (to_s f.body);
+        Line "}";
+      ]
+    | WhileStmt {cond=b; body=s} -> [
+        Line ("while (" ^ Expr.to_string b ^ ") {");
+        Block (to_s s);
+        Line "}"
+      ]
+    | DoStmt {cond=b; body=s} -> [
+        Line "}";
+        Block (to_s s);
+        Line ("do (" ^ Expr.to_string b ^ ") {");
+      ]
+    | SwitchStmt {cond=b; body=s} -> [
+        Line ("switch " ^ Expr.to_string b ^ " {");
+        Block (to_s s);
+        Line ("}");
+      ]
+    | CaseStmt c ->
+      [ Line ("case " ^ Expr.to_string c.case ^ ":"); Block(to_s c.body) ]
+    | DefaultStmt d ->
+      [ Line ("default:"); Block(to_s d) ]
+    | IfStmt {then_stmt=Skip; else_stmt=Skip; _} ->
+      [Line (";")]
+    | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
+      let s1 = to_s s1 in
+      let s2 =
         let open Indent in
-        [
-          Line ("for (" ^ ForInit.opt_to_string f.init ^ "; " ^ Expr.opt_to_string f.cond ^ "; " ^ Expr.opt_to_string f.inc ^ ")");
-        ]
-        @ block (f.body)
-      | WhileStmt {cond=b; body=s} -> [
-          Line ("while (" ^ Expr.to_string b ^ ") {");
-          Block (stmt_to_s s);
-          Line "}"
-        ]
-      | DoStmt {cond=b; body=s} -> [
-          Line "}";
-          Block (stmt_to_s s);
-          Line ("do (" ^ Expr.to_string b ^ ") {");
-        ]
-      | SwitchStmt {cond=b; body=s} -> [
-          Line ("switch " ^ Expr.to_string b ^ " {");
-          Block (stmt_to_s s);
-          Line ("}");
-        ]
-      | CaseStmt c ->
-        [ Line ("case " ^ Expr.to_string c.case ^ ":"); Block(stmt_to_s c.body) ]
-      | DefaultStmt d ->
-        [ Line ("default:"); Block(stmt_to_s d) ]
-      | IfStmt {cond=b; then_stmt=s1; else_stmt=s2} ->
-        let s1 = stmt_to_s s1 in
-        let s2 = stmt_to_s s2 in
-        let open Indent in
-        if s1 = [] && s2 = [] then []
+        if s2 = Skip then []
+        else [Line "} else {"; Block (to_s s2)]
+      in
+      let open Indent in
+      [
+        Line ("if (" ^ Expr.to_string b ^ ") {");
+        Block (s1);
+      ]
+      @
+      s2
+      @
+      [ Line "}"]
+    | DeclStmt [] -> []
+    | DeclStmt [d] -> [Line ("decl " ^ Decl.to_string d)]
+    | DeclStmt d ->
+      let open Indent in
+      [Line "decl {"; Block (List.map (fun e -> Line (Decl.to_string e)) d); Line "}"]
+    | SExpr e -> [Line (Expr.to_string e ^ ";")]
+    | Seq (s1, s2) ->
+      to_s s1 @ to_s s2
+    | Skip -> [Line ";"]
+  and to_string ?(inline=false) (s:t) : string =
+    s
+    |> to_s
+    |> Indent.to_string
+    |> (fun s ->
+        if inline then
+          s
+          |> Common.replace ~substring:"\n" ~by:" "
+          |> String.trim
         else
-          [Line ("if (" ^ Expr.to_string b ^ ")")] @
-          ret s1 @
-          (if s2 = [] then [] else [ Line "else"; ] @ ret s2)
-      | DeclStmt [] -> []
-      | DeclStmt [d] -> [Line ("decl " ^ Decl.to_string d)]
-      | DeclStmt d ->
-        let open Indent in
-        [Line "decl {"; Block (List.map (fun e -> Line (Decl.to_string e)) d); Line "}"]
-      | SExpr e -> [Line (Expr.to_string e)]
-      | Seq (s1, s2) ->
-        stmt_to_s s1 @ stmt_to_s s2
-      | Skip -> [Line ";"]
-    in
-    stmt_to_s
+          s
+      )
 
   module Visit = struct
     type c_stmt = t
@@ -1119,7 +1130,7 @@ module Stmt = struct
       | ForStmt s -> f (For {
           init=s.init;
           cond=s.cond;
-          inc=s.inc;
+          inc=fold f s.inc;
           body=fold f s.body;
         })
       | DoStmt s -> f (Do {
@@ -1340,43 +1351,13 @@ module Stmt = struct
       | ForStmt {init; cond; inc; body} ->
         (* this works as a combination of a while and a do-loop *)
         let (st_cond, cond) = opt_rewrite_comma cond in
-        (* TODO: we want to have something simpler like the line
-           below, however, that will not work with matrixMul.cu,
-           which has a loop increment as follows:
-
-          (int a = aBegin, b = bBegin; a <= aEnd; b += bStep, a += aStep)
-
-          So, for now we have a more intricate algorithm that picks
-          the _last_ increment and uses that instead. Ideally, we just
-          need a smarter loop-inference algorithm.
-        *)
-        (* let (st_inc, inc) = opt_rewrite_comma inc in *)
-        let (st_inc, inc) =
-          match inc with
-          | None -> (Skip, None)
-          | Some inc ->
-            (* iterate over all elements and return the _last_ *)
-            let rec loop (accum:t) : Expr.t list -> t * (Expr.t option) =
-              function
-              | [e] -> (accum, Some e)
-              | [] -> failwith "impossible"
-              | h :: l ->
-                loop (seq accum (SExpr h)) l
-            in
-            let (l, h) = Expr.rewrite_comma inc in
-            loop Skip (h :: l)
-        in
-        if st_cond = [] && st_inc = Skip then
+        let inc = rw inc in
+        if st_cond = [] then
           ForStmt {init; cond; inc; body=rw body}
         else
           let st_cond = to_stmt st_cond in
           (* add commas at the end of the body *)
-          let body =
-            Seq (
-              rw body,
-              seq st_inc st_cond
-            )
-          in
+          let body = Seq (rw body, st_cond) in
           Seq (
             (* pre-pend the commas of the condition *)
             st_cond,
@@ -1398,6 +1379,11 @@ module Stmt = struct
         )
       | Seq (s1, s2) ->
         Seq (rw s1, rw s2)
+      | SExpr e ->
+        run (
+          let* e = rewrite_expr e in
+          add (SExpr e)
+        )
       | s -> s
     in
     rw
@@ -1519,7 +1505,7 @@ module Stmt = struct
       let* (_, stmt) = with_field "inner" (cast_list_2 Result.ok parse) o in
       Ok stmt
     | Some "ForStmt" ->
-      let* (init, cond, inc, body) = with_field "inner" (fun j ->
+      with_field "inner" (fun j ->
         let* l = cast_list j in
         let wrap handle_ok (m:string) = wrap handle_ok (fun _ -> (m, j)) in
         let wrap_opt handle_ok (m:string) (j:Yojson.Basic.t) =
@@ -1534,13 +1520,17 @@ module Stmt = struct
           let* init = wrap_opt ForInit.parse "init" init in
           let* cond = wrap_opt Expr.parse "cond" cond in
           let* inc = wrap_opt Expr.parse "inc" inc in
+          let inc =
+            inc
+            |> Option.map (fun e -> SExpr e)
+            |> Option.value ~default:Skip
+          in
           let* body = wrap parse "body" body in
-          Ok (init, cond, inc, body)
+          Ok (ForStmt {init; cond; inc; body})
         | _ ->
           let g = List.length l |> string_of_int in
           root_cause ("Expecting a list of length 5, but got a length of list " ^ g) j
-      ) o in
-      Ok (ForStmt {init=init; cond=cond; inc=inc; body=body})
+      ) o
     | Some "FullComment"
     | Some "NullStmt" -> Ok Skip
     | Some _ ->
@@ -1654,7 +1644,7 @@ module Kernel = struct
         " " ^ tps ^ "(" ^ list_to_s Param.to_string k.params ^ ")");
     ]
     @
-    Stmt.to_string k.code
+    Stmt.to_s k.code
 
 
   let wrap_error (msg:string) (j:Yojson.Basic.t): 'a j_result -> 'a j_result =
@@ -1975,7 +1965,7 @@ module Program = struct
                 return (Some d)
             in
             let* cond = State.option_map rw_e cond in
-            let* inc = State.option_map rw_e inc in
+            let* inc = rw_s inc in
             let* body = rw_s body in
             return (ForStmt {init; cond; inc; body})
           )
