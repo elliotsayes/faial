@@ -70,6 +70,7 @@ bundle-lin:
 
 
 bundle-mac:
+  when: never
   stage: deploy
   image: macos-14-xcode-15
   variables:
