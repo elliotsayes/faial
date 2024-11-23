@@ -6,6 +6,6 @@ type t = {
   payload: int option
 }
 
-let to_acc (w:t) : Variable.t * Access.t =
-  (w.array, Access.{index=w.index; mode=Write w.payload})
+let to_access (w:t) : Access.t =
+  Access.write w.array w.index w.payload
 

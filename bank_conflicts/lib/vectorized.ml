@@ -357,7 +357,7 @@ let eval ?(verbose=false) (m:Metric.t) : Protocols.Code.t -> t -> int =
     match p with
     | Sync _
     | Skip -> cost
-    | Access {array=x; access={index=[n]; _}} ->
+    | Access {array=x; index=[n]; _} ->
       if ctx.use_array x then
         let c = to_cost ~verbose m n ctx |> Result.get_ok |> Cost.value in
         cost + c

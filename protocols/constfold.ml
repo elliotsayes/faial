@@ -80,7 +80,4 @@ let r_opt (r:Range.t) : Range.t =
   }
 
 let a_opt (a:Access.t) : Access.t =
-  {
-    mode = a.mode;
-    index = List.map n_opt a.index;
-  }
+  { a with index = List.map n_opt a.index; }

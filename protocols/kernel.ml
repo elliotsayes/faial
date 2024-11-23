@@ -86,7 +86,7 @@ let filter_access (f: Access.t -> bool) (k:t) : t =
   { k with
     code = Code.filter (
     function
-    | Access {access=a; _} -> f a
+    | Access a -> f a
     | _ -> true
     ) k.code
   }

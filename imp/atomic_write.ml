@@ -8,6 +8,6 @@ type t = {
   index: Exp.nexp list
 }
 
-let to_acc (a:t) : Variable.t * Access.t =
-  (a.array, Access.{index=a.index; mode=Atomic a.atomic})
+let to_access (a:t) : Access.t =
+  Access.{array=a.array; index=a.index; mode=Atomic a.atomic}
 

@@ -39,7 +39,16 @@ module Mode = struct
 end
 
 (* An access pairs the index-expression with the access mode (R/W) *)
-type t = {index: Exp.nexp list; mode: Mode.t}
+type t = {
+  array: Variable.t;
+  index: Exp.nexp list;
+  mode: Mode.t;
+}
+
+let array (x:t) : Variable.t = x.array
+
+let location (e:t) : Stage0.Location.t =
+  Variable.location e.array
 
 let mode (x:t) : Mode.t = x.mode
 
@@ -60,22 +69,22 @@ let index_to_string (ns:Exp.nexp list) : string =
   in
     "[" ^ idx ^ "]"
 
-let to_string ?(name="") (a:t) : string =
-  Mode.to_string a.mode ^ " " ^ name ^ index_to_string a.index
+let to_string (a:t) : string =
+  Mode.to_string a.mode ^ " " ^ (Variable.name a.array) ^ index_to_string a.index
 
-let write (index:Exp.nexp list) (v:int option) : t =
-  { index = index; mode = Write v}
+let write (array: Variable.t) (index:Exp.nexp list) (v:int option) : t =
+  { array; index; mode = Write v}
 
-let read (index:Exp.nexp list) : t =
-  { index = index; mode = Read }
+let read (array: Variable.t) (index:Exp.nexp list) : t =
+  { array; index; mode = Read }
 
-let atomic (name:Variable.t) (index:Exp.nexp list) : t option =
-  Atomic.from_name name
+let atomic ~array ~atomic (index:Exp.nexp list) : t option =
+  Atomic.from_name atomic
   |> Option.map (fun a ->
-    { index; mode = Atomic a }
+    { array; index; mode = Atomic a }
   )
 
-let intersects (s:Variable.Set.t) (a:t) : bool =
+let index_intersects (s:Variable.Set.t) (a:t) : bool =
   List.exists (Exp.n_intersects s) a.index
 
 let can_conflict (a1:t) (a2:t) =

@@ -162,7 +162,7 @@ module Code = struct
   let to_approx (x:Variable.t) : t -> Approx.Code.t =
     let rec to_approx : t -> Approx.Code.t =
       function
-      | Index a -> Access {array=x; access=Access.read [a]}
+      | Index a -> Access (Access.read x [a])
       | Loop (r, a) -> Loop (r, to_approx a)
       | Cond (b, a) -> Cond (b, to_approx a)
       | Decl (x, a) -> Approx.Code.decl x (to_approx a)
@@ -233,7 +233,7 @@ module Code = struct
       let lin = L.linearize cfg arrays in
       let rec on_p (locals:Variable.Set.t) : Code.t -> (Variable.t * t) Seq.t =
         function
-        | Access {array=x; access={index=l; _}} ->
+        | Access {array=x; index=l; _} ->
           l
           |> lin x
           |> Option.map (fun e ->

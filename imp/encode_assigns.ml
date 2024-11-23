@@ -2,7 +2,7 @@ open Protocols
 open Stage0
 
 type t =
-  | Acc of Variable.t * Access.t
+  | Access of Access.t
   | Assert of Assert.t
   | Sync of Location.t option
   | If of Exp.bexp * t * t
@@ -23,7 +23,7 @@ let to_string: t -> string =
       [
         Line (Assert.to_string b ^ ";");
       ]
-    | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
+    | Access e -> [Line (Access.to_string e)]
     | Decl d ->
       [
         Line (C_type.to_string d.ty ^ " " ^ Variable.name d.var ^ " {");
@@ -62,7 +62,7 @@ module SubstMake(S:Subst.SUBST) = struct
     function
     | Sync l -> Sync l
     | Skip -> Skip
-    | Acc (x, a) -> Acc (x, M.a_subst st a)
+    | Access a -> Access (M.a_subst st a)
     | Assert b -> Assert (Assert.map (M.b_subst st) b)
     | Decl d ->
       Decl {d with body = M.add st d.var (function
@@ -121,7 +121,7 @@ let from_scoped (known:Variable.Set.t) : Scoped.t -> t =
     match i with
     | Sync l -> Sync l
     | Assert b -> Assert (Assert.map (b_subst st) b)
-    | Acc (x,e) -> Acc (x, a_subst st e)
+    | Access e -> Access (a_subst st e)
     | Skip -> Skip
     | If (b, p1, p2) ->
       let b = b_subst st b in

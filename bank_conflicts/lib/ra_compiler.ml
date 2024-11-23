@@ -43,7 +43,7 @@ module Make (L:Logger.Logger) = struct
       function
       | Skip -> Skip
       | Seq (p, q) -> Seq (from_p locals p, from_p locals q)
-      | Access {array=x; access={index=l; _}} ->
+      | Access {array=x; index=l; _} ->
         l
         |> lin x
         |> Option.map (fun e ->

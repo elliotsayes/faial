@@ -138,7 +138,7 @@ let project_access (locals:Variable.Set.t) (t:Task.t) (ca:CondAccess.t) : CondAc
     | NRel (o, n1, n2) -> NRel (o, inline_proj_n t n1, inline_proj_n t n2)
   in
   let inline_acc (a:Access.t) = Access.map (inline_proj_n t) a in
-  {ca with
+  {
     access = inline_acc ca.access;
     cond = inline_proj_b t ca.cond;
   }
@@ -208,7 +208,6 @@ let cond_access_to_bexp (locals:Variable.Set.t) (t:Task.t) (a:CondAccess.t) : be
 
 module AccessSummary = struct
   type t = {
-    location: Location.t;
     access: Access.t;
     variables: Variable.Set.t;
     globals: Variable.Set.t;
@@ -399,7 +398,6 @@ module Proof = struct
       let ctrl_fns = Variable.Set.union pre_fns cond_fns in
       let all_fns = Variable.Set.union data_fns ctrl_fns in
       {
-        location = a.location;
         access = a.access;
         variables = all_fns;
         globals = Variable.Set.diff all_fns locals;

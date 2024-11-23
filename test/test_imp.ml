@@ -46,7 +46,7 @@ let tests = "test_predicates" >::: [
     let open Imp.Scoped in
     (match p with
     | Decl ({init=Some e1; _}, (* local id = 32 + id; *)
-        Acc (_, {index=[e2]; _}) (* rw s_Q[id]; *)
+        Access {index=[e2]; _} (* rw s_Q[id]; *)
       )
       ->
       assert_nexp (n_plus (Num 32) (Var id)) e1;
@@ -65,13 +65,13 @@ let tests = "test_predicates" >::: [
     let sq = Variable.from_name "s_Q" in
     let p : Scoped.t =
       Decl (Decl.set id (n_plus (Num 32) (Var id)), (* local id = 32 + id; *)
-        Acc (sq, {index=[Var id]; mode = Write None}) (* rw s_Q[id]; *)
+        Access {array=sq; index=[Var id]; mode = Write None} (* rw s_Q[id]; *)
       )
     in
     let p =
       Encode_assigns.from_scoped Variable.Set.empty p in
     match p with
-    | Acc (_, {index=[e]; mode = Write None}) (* rw s_Q[32 + id]; *)
+    | Access {index=[e]; mode = Write None; _} (* rw s_Q[32 + id]; *)
       ->
       assert_nexp (n_plus (Num 32) (Var id)) e;
       ()
@@ -107,9 +107,9 @@ let tests = "test_predicates" >::: [
         Decl ({var=v1; init=None; _}, (*  local threadIdx.x; *)
           Decl ({var=v2; init=Some v2_e; _}, (* local id = threadIdx.x; *)
             Seq (
-              Acc (_, {index=[e1]; _}), (* rw s_Q[id]; *)
+              Access {index=[e1]; _}, (* rw s_Q[id]; *)
               Decl ({var=v3; init=Some v3_e; _}, (* local id = 32 + id; *)
-                Acc (_, {index=[e2]; _}) (* rw s_Q[id]; *)
+                Access {index=[e2]; _} (* rw s_Q[id]; *)
               )
             )
           )
@@ -162,8 +162,8 @@ let tests = "test_predicates" >::: [
     begin
       match p with
       | Decl {body=Seq (
-          Access {access={index=[e1]; _}; _},
-          Access {access={index=[e2]; _}; _} ); _} ->
+          Access {index=[e1]; _},
+          Access {index=[e2]; _} ); _} ->
         let inc e = n_plus (Num 32) e in
         let tid = Var tid in
         assert_nexp tid e1;
@@ -222,11 +222,11 @@ let tests = "test_predicates" >::: [
     begin
       match p with
       | Decl {var=y; body=Seq (
-          Access {access={index=[e1]; _}; _},
+          Access {index=[e1]; _},
           Seq (
-            Access {access={index=[e2]; _}; _},
+            Access {index=[e2]; _},
             Seq (
-              Access {access={index=[e3]; _}; _},
+              Access {index=[e3]; _},
               Skip)
             )
         ); _} when Variable.name y = "threadIdx.x" ->
@@ -267,7 +267,7 @@ let tests = "test_predicates" >::: [
           Decl (Decl.set a (Var x),
             Decl (Decl.unset x,
               Decl (Decl.set b (Var x),
-                Acc (Variable.from_name "A", Access.write [Var a; Var b] None)
+                Access (Access.write (Variable.from_name "A") [Var a; Var b] None)
               )
             )
           )
@@ -288,7 +288,7 @@ let tests = "test_predicates" >::: [
         Decl (Decl.set a (Var x),
           Decl (Decl.unset x,
             Decl (Decl.set b (Var x),
-              Acc (Variable.from_name "A", Access.write [Var a; Var b] None)
+              Access (Access.write (Variable.from_name "A") [Var a; Var b] None)
             )
           )
         )
@@ -299,7 +299,7 @@ let tests = "test_predicates" >::: [
       let open Encode_assigns in
       decl x (
         decl x1 (
-          Acc (Variable.from_name "A", Access.write [Var x; Var x1] None)
+          Access (Access.write (Variable.from_name "A") [Var x; Var x1] None)
         )
       )
     in
@@ -314,7 +314,7 @@ let tests = "test_predicates" >::: [
     | Decl {var=y1;
         body=Decl {
           var=y2;
-          body=Access {access={index=[x1; x2]; _}; _} ;
+          body=Access {index=[x1; x2]; _};
         _};
         _
       }

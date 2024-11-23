@@ -842,10 +842,8 @@ end
 module Accesses = struct
   open Imp
 
-  type t = Variable.t * Access.t
-
-  let cond_accesses (s: Stmt.t) : t Seq.t =
-    let rec cond_accesses (in_cond:bool) (s: Stmt.t) : t Seq.t =
+  let cond_accesses (s: Stmt.t) : Access.t Seq.t =
+    let rec cond_accesses (in_cond:bool) (s: Stmt.t) : Access.t Seq.t =
       match s with
       | Skip
       | Call _
@@ -856,11 +854,11 @@ module Accesses = struct
       | LocationAlias _ ->
         Seq.empty
       | Atomic a ->
-        if in_cond then (Seq.return (Imp.Atomic_write.to_acc a)) else Seq.empty
+        if in_cond then (Seq.return (Imp.Atomic_write.to_access a)) else Seq.empty
       | Read r ->
-        if in_cond then (Seq.return (Imp.Read.to_acc r)) else Seq.empty
+        if in_cond then (Seq.return (Imp.Read.to_access r)) else Seq.empty
       | Write w ->
-        if in_cond then (Seq.return (Imp.Write.to_acc w)) else Seq.empty
+        if in_cond then (Seq.return (Imp.Write.to_access w)) else Seq.empty
       | Seq (s1, s2)
       | If (_, s1, s2) ->
         Seq.append (cond_accesses true s1) (cond_accesses true s2)
@@ -870,28 +868,27 @@ module Accesses = struct
     cond_accesses false s
 
   (* Search for all loops available *)
-  let all_accesses: Stmt.t -> t Seq.t =
-    let f (s:Stmt.t) =
-      match s with
-      | Read r -> Some (Imp.Read.to_acc r)
-      | Write w -> Some (Imp.Write.to_acc w)
-      | Atomic w -> Some (Imp.Atomic_write.to_acc w)
+  let all_accesses: Stmt.t -> Access.t Seq.t =
+    Stmt.find_all_map (
+      function
+      | Read r -> Some (Imp.Read.to_access r)
+      | Write w -> Some (Imp.Write.to_access w)
+      | Atomic w -> Some (Imp.Atomic_write.to_access w)
       | _ -> None
-    in
-    Stmt.find_all_map f
+    )
 
   let summarize (s:Stmt.t) : json =
     let elems = all_accesses s |> List.of_seq in
     let cond_elems = cond_accesses s |> List.of_seq in
-    let get_vars (x, y) = List.map fst x, List.map fst y in
+    let get_vars (x, y) = List.map Access.array x, List.map Access.array y in
     let reads, writes =
       elems
-      |> List.partition (fun (_, a) -> Access.is_read a)
+      |> List.partition Access.is_read
       |> get_vars
     in
     let c_reads, c_writes =
       cond_elems
-      |> List.partition (fun (_, a) -> Access.is_read a)
+      |> List.partition Access.is_read
       |> get_vars
     in
     `Assoc [

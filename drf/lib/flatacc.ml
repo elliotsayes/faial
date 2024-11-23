@@ -12,7 +12,6 @@ open Exp
 
 module CondAccess = struct
   type t = {
-    location: Location.t;
     access: Access.t;
     cond: bexp;
   }
@@ -22,12 +21,19 @@ module CondAccess = struct
 
   let dim (a:t) : int = List.length a.access.index
 
-  let location (x:t) : Location.t = x.location
+  let location (x:t) : Location.t = Access.location x.access
 
   let access (x:t) : Access.t = x.access
 
   let to_s (a:t) : Indent.t list =
-    let lineno = (Location.line a.location |> Index.to_base1 |> string_of_int) ^ ": " in
+    let lineno =
+      a
+      |> location
+      |> Location.line
+      |> Index.to_base1
+      |> string_of_int
+    in
+    let lineno = lineno ^ ": " in
     [
       Line (lineno ^ Access.to_string a.access ^ " if");
       Block (b_to_s a.cond);
@@ -55,7 +61,7 @@ module Code = struct
       function
       | Skip -> accum
       | Assert _ -> failwith "Internall error: call Unsync.inline_asserts first!"
-      | Access {array=x; access=e} -> {location = Variable.location x; access = e; cond = b} :: accum
+      | Access e -> {access = e; cond = b} :: accum
       | Cond (b', p) -> flatten accum (b_and b' b) p
       | Loop (r, p) -> flatten accum (b_and (Range.to_cond r) b) p
       | Seq (p, q) ->

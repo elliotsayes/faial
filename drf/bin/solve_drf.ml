@@ -154,7 +154,6 @@ module TaskState = struct
   type t = {
     locals: Environ.t;
     access: Access.t;
-    location: Location.t option;
   }
 
   let can_conflict (x1:t) (x2:t) : bool =
@@ -167,10 +166,7 @@ module TaskState = struct
     `Assoc [
       "locals", Environ.to_json x.locals;
       "mode", `String (Access.Mode.to_string x.access.mode);
-      "location",
-        match x.location; with
-        | Some l -> Location.to_json l
-        | None -> `Null
+      "location", (Access.location x.access |> Location.to_json);
     ]
 
   let to_string (v:t) : string =
@@ -334,12 +330,10 @@ module Witness = struct
     let t1 = TaskState.{
       locals = {variables=t1_locals;labels=t1_labels};
       access = a1.access;
-      location = Some a1.location;
     } in
     let t2 = TaskState.{
       locals = {variables=t2_locals;labels=t2_labels};
       access = a2.access;
-      location = Some a2.location;
     }
     in
     {

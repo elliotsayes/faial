@@ -6,6 +6,6 @@ type t = {
   index: Exp.nexp list
 }
 
-let to_acc (r:t) : Variable.t * Access.t =
-  (r.array, Access.{index=r.index; mode=Read})
+let to_access (r:t) : Access.t =
+  Access.read r.array r.index
 

@@ -105,7 +105,7 @@ let from_encode_assigns : Encode_assigns.t -> Code.t =
   let rec from : Encode_assigns.t -> Code.t * AssertionTree.t =
     function
     | Skip -> Skip, AssertionTree.true_
-    | Acc (x, e) -> Access {array=x; access=e}, AssertionTree.true_
+    | Access a -> Access a, AssertionTree.true_
     | Seq (Assert {cond=e; visibility=Local}, p) ->
       let p, a = from p in
       let a = AssertionTree.implies e a in

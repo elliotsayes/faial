@@ -4,8 +4,8 @@ open Drf
 open OUnit2
 open Exp
 
-let x = (Variable.from_name "x")
-let y = (Variable.from_name "y")
+let x = Variable.from_name "x"
+let y = Variable.from_name "y"
 let b = Bool true
 let r = Range.{
   var = Variable.from_name "z";
@@ -15,12 +15,13 @@ let r = Range.{
   dir = Increase;
   ty = C_type.int;
 }
-let write = Access.{
+let write a = Access.{
+  array=a;
   index = [];
   mode = Mode.Write None;
 }
-let x_acc = Unsync.Access {array=x; access=write}
-let y_acc = Unsync.Access {array=y; access=write}
+let x_acc = Unsync.Access (write x)
+let y_acc = Unsync.Access (write y)
 
 let assert_filter i (expected:Unsync.t option) =
   let given = Unsync.filter_by_location x i in

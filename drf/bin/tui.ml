@@ -258,11 +258,10 @@ let render (output: Analysis.t list) : unit =
         T.print_string [T.Bold; T.Foreground T.Blue] ("\n~~~~ Data-race " ^ string_of_int (i + 1) ^ lbl ^ " ~~~~\n\n");
         let (t1, t2) = w.tasks in
         let locs =
-          let l = [t1.location; t2.location] |> Common.flatten_opt in
-          match l with
-          | [x1; x2] when x1 = x2 -> [x1]
-          | [x1; x2] when x2 < x1 -> [x2; x1]
-          | _ -> l
+          match (Access.location t1.access, Access.location t2.access) with
+          | (x1, x2) when x1 = x2 -> [x1]
+          | (x1, x2) when x2 < x1 -> [x2; x1]
+          | (x1, x2) -> [x1; x2]
         in
         (match locs with
         | [x] -> Tui_helper.LocationUI.print x

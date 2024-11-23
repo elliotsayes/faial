@@ -6,7 +6,7 @@ open Subst
 type t =
   | Skip
   | Assert of bexp
-  | Access of {array: Variable.t; access: Access.t}
+  | Access of Access.t
   | Cond of bexp * t
   | Loop of Range.t * t
   | Seq of t * t
@@ -28,8 +28,8 @@ let rec to_s : t -> Indent.t list =
   function
   | Skip -> [Line "skip;"]
   | Assert b -> [Line ("assert " ^ Exp.b_to_string b ^ ";")]
-  | Access {array=x; access=e} ->
-    [Line (Access.to_string ~name:(Variable.name x) e)]
+  | Access e ->
+    [Line (Access.to_string e)]
   | Cond (b, p1) -> [
       Line ("if (" ^ Exp.b_to_string b ^ ") {");
       Block (to_s p1);
@@ -60,7 +60,7 @@ module Make (S:SUBST) = struct
     function
     | Skip -> Skip
     | Assert b -> Assert (M.b_subst s b)
-    | Access {array; access=e} -> Access {array; access=M.a_subst s e}
+    | Access e -> Access (M.a_subst s e)
     | Cond (b, p) -> Cond (
         M.b_subst s b,
         subst s p
@@ -86,8 +86,11 @@ let rec write_locations (p:t) (known:Variable.Set.t) =
   match p with
   | Skip | Assert _ -> known
   | Seq (p, q) -> write_locations p known |> write_locations q
-  | Access {array=x; access=a} ->
-    if not (Access.is_read a) then Variable.Set.add x known else known
+  | Access a ->
+    if not (Access.is_read a) then
+      Variable.Set.add a.array known
+    else
+      known
   | Loop (_, p) | Cond (_, p) -> write_locations p known
 
 
@@ -95,7 +98,7 @@ let rec free_names (p:t) (fns: Variable.Set.t) : Variable.Set.t =
   match p with
   | Skip -> fns
   | Assert b -> Exp.b_free_names b fns
-  | Access {access=e; _} -> Access.free_names e fns
+  | Access e -> Access.free_names e fns
   | Loop (r, l) ->
     free_names l fns
     |> Variable.Set.remove (Range.var r)

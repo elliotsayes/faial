@@ -5,7 +5,7 @@ type t =
   | Skip
   | Sync of Location.t option
   | Assert of Assert.t
-  | Acc of (Variable.t * Access.t)
+  | Access of Access.t
   | If of (Exp.bexp * t * t)
   | For of (Range.t * t)
   | Assign of {var: Variable.t; ty: C_type.t; data: Exp.nexp; body: t}
@@ -21,7 +21,7 @@ let to_string: t -> string =
       [
         Line (Assert.to_string b ^ ";");
       ]
-    | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
+    | Access e -> [Line (Access.to_string e)]
     | Assign a -> [
         Line (Variable.name a.var ^ " = " ^ Exp.n_to_string a.data ^ " {");
         Block (to_s a.body);
@@ -52,9 +52,11 @@ let to_string: t -> string =
 let loc_subst (alias:Alias.t) : t -> t =
   let rec loc_subst : t -> t =
     function
-    | Acc (x, a) as i ->
-      if Variable.equal x alias.target then (
-        let new_x = { alias.source with location = x.location } in
+    | Access a as i ->
+      if Variable.equal a.array alias.target then (
+        (* Update the name of the resolved array,
+           but keep the original location *)
+        let new_x = { alias.source with location = a.array.location } in
         let new_a =
           if alias.offset = Num 0 then
             (* No offset, so same index *)
@@ -68,7 +70,7 @@ let loc_subst (alias:Alias.t) : t -> t =
             | [] ->
               failwith ("Impossible to have 0 elements.")
         in
-        Acc (new_x, new_a)
+        Access {new_a with array=new_x}
       ) else i
     | Assert _ as i -> i
     | Decl (d, l) -> Decl (d, loc_subst l)
@@ -98,7 +100,7 @@ module SubstMake(S:Subst.SUBST) = struct
     function
     | Sync l -> Sync l
     | Skip -> Skip
-    | Acc (x, a) -> Acc (x, M.a_subst st a)
+    | Access a -> Access (M.a_subst st a)
     | Assert b -> Assert (Assert.map (M.b_subst st) b)
     | Decl (d, p) ->
       let d = Decl.map (M.n_subst st) d in
@@ -134,7 +136,7 @@ let subst = ReplacePair.subst
 let filter_locs (locs:Memory.t Variable.Map.t) : t -> t =
   let rec filter : t -> t =
     function
-    | Acc (x, _) as i ->
+    | Access {array=x; _} as i ->
       if Variable.Map.mem x locs then i else Skip
     | Assert _ as i -> i
     | Skip -> Skip
@@ -150,7 +152,7 @@ let filter_locs (locs:Memory.t Variable.Map.t) : t -> t =
 let vars_distinct : t -> t =
   let rec distinct (vars:Variable.Set.t) (p: t) : Variable.Set.t * t =
     match p with
-    | Acc _ | Skip | Sync _ | Assert _ -> vars, p
+    | Access _ | Skip | Sync _ | Assert _ -> vars, p
     | Seq (p, q) ->
       let (vars, p) = distinct vars p in
       let (vars, q) = distinct vars q in
@@ -196,7 +198,7 @@ let fix_assigns : t -> t =
   in
   let rec fix_assigns (defined:Params.t) (i:t) : Params.t * t =
     match i with
-    | Skip | Sync _ | Acc _ | Assert _ -> (Params.empty, i)
+    | Skip | Sync _ | Access _ | Assert _ -> (Params.empty, i)
     | If (b, p, q) ->
       let (assigns_1, p) = fix_assigns Params.empty p in
       let (assigns_2, q) = fix_assigns Params.empty q in
@@ -277,7 +279,7 @@ let from_stmt : Params.t * Stmt.t -> Params.t * t =
       return (Assign {var; data; ty; body})
     | Seq (Read e, s) ->
       let* s = imp_to_scoped s in
-      let rd = Acc (e.array, {index=e.index; mode=Read}) in
+      let rd = Access {array=e.array; index=e.index; mode=Read} in
       return (match e.target with
       | Some (ty, x) ->
         Seq (rd, Decl (Decl.unset ~ty x, s))
@@ -286,14 +288,14 @@ let from_stmt : Params.t * Stmt.t -> Params.t * t =
       )
     | Seq (Atomic e, s) ->
       let* s = imp_to_scoped s in
-      let a = Acc (e.array, {index=e.index; mode=Atomic e.atomic}) in
+      let a = Access {array=e.array; index=e.index; mode=Atomic e.atomic} in
       return (Seq (a, Decl (Decl.unset ~ty:e.ty e.target, s)))
     | Seq (s1, s2) ->
       let* s1 = imp_to_scoped s1 in
       let* s2 = imp_to_scoped s2 in
       return (Seq (s1, s2))
     | Sync l -> return (Sync l)
-    | Write e -> return (Acc (e.array, {index=e.index; mode=Write e.payload}))
+    | Write e -> return (Access {array=e.array; index=e.index; mode=Write e.payload})
     | Assert b -> return (Assert b)
     | Call _ -> return Skip
     | If (b, s1, s2) ->
