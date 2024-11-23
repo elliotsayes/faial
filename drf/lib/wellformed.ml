@@ -42,7 +42,8 @@ module Code = struct
     let rec infer : Protocols.Code.t -> t Streamutil.stream =
       function
       | Skip -> UInst Skip |> one
-      | Acc e -> UInst (Acc e) |> one
+      | Access {access; array} ->
+        UInst (Access {access; array}) |> one
       | Sync _ -> SInst Sync.skip |> one
       | Decl _ -> failwith "Invoke Proto.hoist_decls first."
       | If (b, p, q) ->

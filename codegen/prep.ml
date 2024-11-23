@@ -19,7 +19,7 @@ let rec inst_to_vars : Code.t -> Variable.t list =
   function
   | Skip -> []
   | Decl {body=p;_} -> inst_to_vars p
-  | Acc (_, e) -> List.map n_to_vars e.index |> List.flatten
+  | Access {access=e; _} -> List.map n_to_vars e.index |> List.flatten
   | Sync _ -> []
   | Seq (p, q) ->
     inst_to_vars p @ inst_to_vars q

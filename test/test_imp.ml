@@ -162,8 +162,8 @@ let tests = "test_predicates" >::: [
     begin
       match p with
       | Decl {body=Seq (
-          Acc (_, {index=[e1]; _}),
-          Acc (_, {index=[e2]; _}) ); _} ->
+          Access {access={index=[e1]; _}; _},
+          Access {access={index=[e2]; _}; _} ); _} ->
         let inc e = n_plus (Num 32) e in
         let tid = Var tid in
         assert_nexp tid e1;
@@ -222,11 +222,11 @@ let tests = "test_predicates" >::: [
     begin
       match p with
       | Decl {var=y; body=Seq (
-          Acc (_, {index=[e1]; _}),
+          Access {access={index=[e1]; _}; _},
           Seq (
-            Acc (_, {index=[e2]; _}),
+            Access {access={index=[e2]; _}; _},
             Seq (
-              Acc (_, {index=[e3]; _}),
+              Access {access={index=[e3]; _}; _},
               Skip)
             )
         ); _} when Variable.name y = "threadIdx.x" ->
@@ -314,7 +314,7 @@ let tests = "test_predicates" >::: [
     | Decl {var=y1;
         body=Decl {
           var=y2;
-          body=Acc (_, {index=[x1; x2]; _}) ;
+          body=Access {access={index=[x1; x2]; _}; _} ;
         _};
         _
       }

@@ -25,7 +25,7 @@ type t =
   | Cond of Exp.bexp * t
   | Decl of {var: Variable.t; ty: C_type.t; body: t}
   | Loop of Range.t * t
-  | Acc of Variable.t * Access.t
+  | Access of {array: Variable.t; access: Access.t}
 
 let decl ?(ty=C_type.int) (var:Variable.t) (body:t) : t =
   Decl {ty; var; body}
@@ -34,12 +34,12 @@ let rec location : t -> Location.t =
   function
   | Cond (_, l) | Decl {body=l; _} | Loop (_, l) ->
     location l
-  | Acc (x, _) ->
+  | Access {array=x; _} ->
     Variable.location x
 
 let rec from_code : Protocols.Code.t -> t Seq.t =
   function
-  | Acc (x, y) -> Seq.return (Acc (x, y))
+  | Access {array=x; access=y} -> Seq.return (Access {array=x; access=y})
   | Sync _ | Skip -> Seq.empty
   | If (b, p, q) ->
     Seq.append
@@ -66,7 +66,7 @@ let rec is_control_independent (env:Variable.Set.t) : t -> bool =
   | Loop (r, p) ->
     typecheck_r env r &&
     is_control_independent (Variable.Set.add (Range.var r) env) p
-  | Acc _ -> true
+  | Access _ -> true
 
 let rec is_data_independent (env:Variable.Set.t) : t -> bool =
   function
@@ -83,5 +83,5 @@ let rec is_data_independent (env:Variable.Set.t) : t -> bool =
         env
     in
     is_data_independent env p
-  | Acc (_, a) ->
+  | Access {access=a; _} ->
     typecheck_a env a

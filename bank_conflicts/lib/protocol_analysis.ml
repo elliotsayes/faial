@@ -38,15 +38,15 @@ module Make (L:Logger.Logger) = struct
     let lin = L.linearize cfg k.arrays in
     let rec simpl : Protocols.Code.t -> Protocols.Code.t =
       function
-      | Acc (x, ({index=l; _} as a)) ->
+      | Access {array; access} ->
         (* Flatten n-dimensional array and apply word size *)
-        let a =
-          l
-          |> lin x
-          |> Option.map (fun e -> { a with index=[e] })
-          |> Option.value ~default:a
+        let access =
+          access.index
+          |> lin array
+          |> Option.map (fun e -> { access with index=[e] })
+          |> Option.value ~default:access
         in
-        Acc (x, a)
+        Access {array; access}
       | Skip -> Skip
       | If (b, p, q) -> If (b, simpl p, simpl q)
       | Decl d -> Decl {d with body= simpl d.body}

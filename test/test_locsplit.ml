@@ -19,8 +19,8 @@ let write = Access.{
   index = [];
   mode = Mode.Write None;
 }
-let x_acc = Unsync.Acc (x, write)
-let y_acc = Unsync.Acc (y, write)
+let x_acc = Unsync.Access {array=x; access=write}
+let y_acc = Unsync.Access {array=y; access=write}
 
 let assert_filter i (expected:Unsync.t option) =
   let given = Unsync.filter_by_location x i in

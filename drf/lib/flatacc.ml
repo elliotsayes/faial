@@ -55,7 +55,7 @@ module Code = struct
       function
       | Skip -> accum
       | Assert _ -> failwith "Internall error: call Unsync.inline_asserts first!"
-      | Acc (x, e) -> {location = Variable.location x; access = e; cond = b} :: accum
+      | Access {array=x; access=e} -> {location = Variable.location x; access = e; cond = b} :: accum
       | Cond (b', p) -> flatten accum (b_and b' b) p
       | Loop (r, p) -> flatten accum (b_and (Range.to_cond r) b) p
       | Seq (p, q) ->

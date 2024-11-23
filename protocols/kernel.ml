@@ -86,7 +86,7 @@ let filter_access (f: Access.t -> bool) (k:t) : t =
   { k with
     code = Code.filter (
     function
-    | Acc (_, a) -> f a
+    | Access {access=a; _} -> f a
     | _ -> true
     ) k.code
   }
@@ -97,7 +97,7 @@ let filter_array (to_keep: Variable.t -> bool) (k:t) : t =
     arrays = Variable.Map.filter (fun v _ -> to_keep v) k.arrays;
     code = Code.filter (
     function
-    | Acc (v, _) -> to_keep v
+    | Access {array=v; _} -> to_keep v
     | _ -> true
     ) k.code
   }
@@ -176,7 +176,7 @@ let hoist_decls : t -> t =
   =
     match p with
     | Decl {var=x; body=p; ty;} -> inline (Params.add x ty vars) p
-    | Acc _ | Skip | Sync _ -> (vars, p)
+    | Access _ | Skip | Sync _ -> (vars, p)
     | If (b, p, q) ->
       let (vars, p) = inline vars p in
       let (vars, q) = inline vars q in

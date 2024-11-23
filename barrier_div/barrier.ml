@@ -11,7 +11,7 @@ module Code = struct
   let rec from_proto : Protocols.Code.t -> t Seq.t =
     function
     | Skip
-    | Acc _ -> Seq.empty
+    | Access _ -> Seq.empty
     | Sync l -> Seq.return (Barrier l)
     | Decl {ty; var; body=s} ->
       from_proto s |> Seq.map (fun body -> Decl {ty; body; var})

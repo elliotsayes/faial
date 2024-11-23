@@ -6,7 +6,7 @@ open Subst
 type t =
   | Skip
   | Assert of bexp
-  | Acc of (Variable.t * Access.t)
+  | Access of {array: Variable.t; access: Access.t}
   | Cond of bexp * t
   | Loop of Range.t * t
   | Seq of t * t
@@ -28,7 +28,8 @@ let rec to_s : t -> Indent.t list =
   function
   | Skip -> [Line "skip;"]
   | Assert b -> [Line ("assert " ^ Exp.b_to_string b ^ ";")]
-  | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
+  | Access {array=x; access=e} ->
+    [Line (Access.to_string ~name:(Variable.name x) e)]
   | Cond (b, p1) -> [
       Line ("if (" ^ Exp.b_to_string b ^ ") {");
       Block (to_s p1);
@@ -59,7 +60,7 @@ module Make (S:SUBST) = struct
     function
     | Skip -> Skip
     | Assert b -> Assert (M.b_subst s b)
-    | Acc (x, e) -> Acc (x, M.a_subst s e)
+    | Access {array; access=e} -> Access {array; access=M.a_subst s e}
     | Cond (b, p) -> Cond (
         M.b_subst s b,
         subst s p
@@ -85,7 +86,8 @@ let rec write_locations (p:t) (known:Variable.Set.t) =
   match p with
   | Skip | Assert _ -> known
   | Seq (p, q) -> write_locations p known |> write_locations q
-  | Acc (x,a) -> if not (Access.is_read a) then Variable.Set.add x known else known
+  | Access {array=x; access=a} ->
+    if not (Access.is_read a) then Variable.Set.add x known else known
   | Loop (_, p) | Cond (_, p) -> write_locations p known
 
 
@@ -93,7 +95,7 @@ let rec free_names (p:t) (fns: Variable.Set.t) : Variable.Set.t =
   match p with
   | Skip -> fns
   | Assert b -> Exp.b_free_names b fns
-  | Acc (_,e) -> Access.free_names e fns
+  | Access {access=e; _} -> Access.free_names e fns
   | Loop (r, l) ->
     free_names l fns
     |> Variable.Set.remove (Range.var r)
@@ -103,7 +105,7 @@ let rec free_names (p:t) (fns: Variable.Set.t) : Variable.Set.t =
 
 let rec unsafe_binders (i:t) (vars:Variable.Set.t) : Variable.Set.t =
   match i with
-  | Skip | Assert _ | Acc _ -> vars
+  | Skip | Assert _ | Access _ -> vars
   | Cond (_, p) -> unsafe_binders p vars
   | Loop (r, p) ->
     let vars =
@@ -118,7 +120,7 @@ let rec unsafe_binders (i:t) (vars:Variable.Set.t) : Variable.Set.t =
 
 let rec binders (i:t) (vars:Variable.Set.t) : Variable.Set.t =
   match i with
-  | Skip | Assert _ | Acc _ -> vars
+  | Skip | Assert _ | Access _ -> vars
   | Cond (_, p) -> binders p vars
   | Loop (r, p) -> binders p (Variable.Set.add r.var vars)
   | Seq (p, q) -> binders p vars |> binders q
@@ -126,7 +128,7 @@ let rec binders (i:t) (vars:Variable.Set.t) : Variable.Set.t =
 let inline_asserts : t -> t =
   let rec has_asserts : t -> bool =
     function
-    | Skip | Acc _ -> false
+    | Skip | Access _ -> false
     | Assert _ -> true
     | Cond (_, p)
     | Loop (_, p)
@@ -135,7 +137,7 @@ let inline_asserts : t -> t =
   in
   let rec conditions (p:t) (b:bexp) : bexp =
     match p with
-    | Skip | Acc _ | Cond (_, _) | Loop (_, _) -> b
+    | Skip | Access _ | Cond (_, _) | Loop (_, _) -> b
     | Assert b' -> b_and b b'
     | Seq (p, q) -> conditions p b |> conditions q
   in
@@ -143,7 +145,7 @@ let inline_asserts : t -> t =
     function
     | Skip -> Skip
     | Assert _ -> Skip
-    | Acc a -> Acc a
+    | Access a -> Access a
     | Cond (b, p) ->
       cond (conditions p b) (remove_asserts p)
     | Loop (r, p) ->
@@ -190,7 +192,7 @@ let filter_by_location (x:Variable.t) : t -> t option =
     function
     | Skip -> Might Skip
     | Assert b -> Might (Assert b)
-    | Acc (y, _) as i -> if Variable.equal x y then Has i else Might Skip
+    | Access {array=y; _} as i -> if Variable.equal x y then Has i else Might Skip
     | Cond (b, p) ->
       filter p |> Perhaps.map (fun p -> (Cond (b, p)))
     | Loop (r, p) ->

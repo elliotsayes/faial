@@ -51,7 +51,7 @@ let is_dummy_var (v : Variable.t) : bool =
   String.starts_with ~prefix:"__dummy" (Variable.name v)
 
 (* Gives the dummy instruction for any array read/write *)
-let acc_expr_to_dummy (x, a : Variable.t * Access.t) : Indent.t list =
+let acc_expr_to_dummy (x: Variable.t) (a: Access.t) : Indent.t list =
   let var = Variable.name x ^ idx_to_s n_to_string a.Access.index in
   let open Access in
   match a.mode with
@@ -78,7 +78,7 @@ let inc_to_s (r : Range.t) : string =
 (* Converts source instruction to a valid CUDA operation *)
 let rec inst_to_s (g : Generator.t) : Code.t -> Indent.t list =
   function
-  | Acc e -> acc_expr_to_dummy e
+  | Access {array=x; access=e} -> acc_expr_to_dummy x e
   | Sync _ -> [Line "__syncthreads();"]
   | If (b, p, q) ->
     [

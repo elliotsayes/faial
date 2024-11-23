@@ -6,7 +6,7 @@ open Exp
 
 (* The source instruction uses the base defined above *)
 type t =
-  | Acc of (Variable.t * Access.t)
+  | Access of {array: Variable.t; access: Access.t}
   | Sync of Location.t option
   | If of bexp * t * t
   | Loop of Range.t * t
@@ -19,7 +19,7 @@ let rec filter (f:t -> bool) (p:t) : t =
   match p with
   | Sync _
   | Skip
-  | Acc _ -> p
+  | Access _ -> p
   | Seq (p, q) -> Seq (filter f p, filter f q)
   | If (b, p, q) -> If (b, filter f p, filter f q)
   | Decl d -> Decl { d with body = filter f d.body }
@@ -28,7 +28,7 @@ let rec filter (f:t -> bool) (p:t) : t =
 let rec exists (f:t -> bool) (i: t) : bool =
   f i ||
   match i with
-  | Acc _ | Sync _ | Skip -> false
+  | Access _ | Sync _ | Skip -> false
   | Loop (_, p) | Decl {body=p; _} -> exists f p
   | If (_, p, q) | Seq (p, q) -> exists f p || exists f q
 
@@ -40,7 +40,7 @@ module Make (S:Subst.SUBST) = struct
     match i with
     | Skip -> Skip
     | Seq (p, q) -> Seq (subst s p, subst s q)
-    | Acc (x, e) -> Acc (x, M.a_subst s e)
+    | Access {array; access} -> Access {array; access=M.a_subst s access}
     | Sync l -> Sync l
     | If (b, p, q) -> If (
         M.b_subst s b,
@@ -66,7 +66,7 @@ let apply_arch (arrays:Variable.Set.t) : Architecture.t -> t -> t =
     filter (
       function
       | Sync _ -> false
-      | Acc (x, _) -> Variable.Set.mem x arrays
+      | Access {array; _} -> Variable.Set.mem array arrays
       | _ -> true
     )
   | Block -> fun s -> s
@@ -107,7 +107,7 @@ let rec opt : t -> t =
   | Skip -> Skip
   | Decl d -> Decl { d with body = opt d.body }
   | Seq (p, q) -> seq (opt p) (opt q)
-  | Acc (x, e) -> Acc (x, Constfold.a_opt e)
+  | Access {array; access} -> Access {array; access=Constfold.a_opt access}
   | Sync l -> Sync l
   | If (b, p, q) -> if_ (Constfold.b_opt b) (opt p) (opt q)
   | Loop (r, p) -> loop (Constfold.r_opt r) (opt p)
@@ -134,7 +134,7 @@ let vars_distinct : t -> Variable.Set.t -> t =
   let rec uniq (i:t) (xs:Variable.Set.t) : t * Variable.Set.t =
     match i with
     | Skip
-    | Acc _
+    | Access _
     | Sync _
       -> (i, xs)
     | If (b, p, q) ->
@@ -178,7 +178,7 @@ let vars_distinct : t -> Variable.Set.t -> t =
 let rec free_names (i:t) (fns:Variable.Set.t) : Variable.Set.t =
   match i with
   | Skip | Sync _ -> fns
-  | Acc (_, a) -> Access.free_names a fns
+  | Access {access=a; _} -> Access.free_names a fns
   | If (b, p, q) ->
     b_free_names b fns
     |> free_names p
@@ -207,11 +207,11 @@ let rec to_ci_di (approx:Variable.Set.t) : t -> t =
     (* the loop variable is CIDI, hence remove any existing CIDI *)
     let approx = Variable.Set.remove (Range.var r) approx in
     Loop (r, to_ci_di approx p)
-  | Acc (x, a) ->
+  | Access {array; access=a} ->
     if Access.intersects approx a then
       Skip
     else
-      Acc (x, a)
+      Access {array; access=a}
   | Decl {var=x; body=p; _} ->
     (* In this scope x is approximate *)
     to_ci_di (Variable.Set.add x approx) p
@@ -222,7 +222,7 @@ let rec to_ci_di (approx:Variable.Set.t) : t -> t =
 let rec used_arrays (i:t) (fns:Variable.Set.t) : Variable.Set.t =
   match i with
   | Skip | Sync _ -> fns
-  | Acc (x, _) -> Variable.Set.add x fns
+  | Access {array=x; _} -> Variable.Set.add x fns
   | Decl {body=p; _} | Loop (_, p) ->
     used_arrays p fns
   | If (_, p, q) | Seq (p, q) ->
@@ -233,7 +233,8 @@ let rec to_s : t -> Indent.t list =
   function
   | Skip -> [Line "skip;"]
   | Sync _ -> [Line "sync;"]
-  | Acc (x, e) -> [Line (Access.to_string ~name:(Variable.name x) e)]
+  | Access {array=x; access=e} ->
+    [Line (Access.to_string ~name:(Variable.name x) e)]
   | If (b, p, Skip) -> [
       Line ("if (" ^ b_to_string b ^ ") {");
       Block (to_s p);
