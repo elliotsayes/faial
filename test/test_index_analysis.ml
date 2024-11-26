@@ -32,8 +32,11 @@ let tests = "test_predicates" >::: [
     assert_uniform ~expected:(Num 10) ~given:(Num 10);
     assert_uniform ~expected:(Binary (Plus, Num 10, Num 20)) ~given:(Binary (Plus, Num 10, Num 20));
     assert_any
-      ~expected:(Var Variable.tid_x)
-      ~given:(Binary (Plus, Var Variable.tid_x, Num 20));
+      ~expected:tidx
+      ~given:(Binary (Plus, tidx, Num 20));
+    assert_any
+      ~expected:tidx
+      ~given:(Binary (Minus, tidx, Num 20));
     assert_any ~expected:tidx ~given:(Binary (Plus, tidx, Num 20));
     assert_any ~expected:(Binary (Mult, tidx, Num 20)) ~given:(Binary (Mult, tidx, Num 20));
     assert_any ~expected:(Binary (Mult, tidx, Num 20)) ~given:(Binary (Mult, Binary (Plus, tidx, Num 5), Num 20));
