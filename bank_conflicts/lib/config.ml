@@ -17,7 +17,9 @@ let total_threads (cfg:t) : int =
 let total_warps (cfg:t) : int =
   total_threads cfg / cfg.threads_per_warp
 
-let is_warp_local (x:Variable.t) (cfg:t) : bool =
+(** Returns true if a threadIdx variable is warp-uniform (same value for every
+    warp). *)
+let is_warp_uniform (x:Variable.t) (cfg:t) : bool =
   (* threadIdx.x is warp-local *)
   (Variable.equal x Variable.tid_x && cfg.block_dim.x = 1)
   (* threadIdx.y is warp-local *)
@@ -31,7 +33,6 @@ let is_warp_local (x:Variable.t) (cfg:t) : bool =
       cfg.block_dim.z = 1
       || (cfg.block_dim.x * cfg.block_dim.y >= cfg.threads_per_warp)
       ))
-
 
 let make
   ?(bank_count=32)

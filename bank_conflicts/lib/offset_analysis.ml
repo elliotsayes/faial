@@ -12,36 +12,36 @@ open Protocols
 *)
 
 type t =
-  | Offset of Exp.nexp
-  | Index of Exp.nexp
+  | Uniform of Exp.nexp
+  | Any of Exp.nexp
 
 let map (f:Exp.nexp -> Exp.nexp) : t -> t =
   function
-  | Offset e -> Offset (f e)
-  | Index e -> Index (f e)
+  | Uniform e -> Uniform (f e)
+  | Any e -> Any (f e)
 
 let index_or (f:Exp.nexp -> Exp.nexp -> Exp.nexp) (e1: t) (e2: t) : t =
   match e1, e2 with
-  | Index e, Offset _
-  | Offset _, Index e -> Index e
-  | Offset e1, Offset e2 -> Offset (f e1 e2)
-  | Index e1, Index e2 -> Index (f e1 e2)
+  | Any e, Uniform _
+  | Uniform _, Any e -> Any e
+  | Uniform e1, Uniform e2 -> Uniform (f e1 e2)
+  | Any e1, Any e2 -> Any (f e1 e2)
 
 let index_and (f:Exp.nexp -> Exp.nexp -> Exp.nexp) (e1: t) (e2: t) : t =
   match e1, e2 with
-  | Index e1, Offset e2
-  | Offset e1, Index e2
-  | Index e1, Index e2 -> Index (f e1 e2)
-  | Offset e1, Offset e2 -> Offset (f e1 e2)
+  | Any e1, Uniform e2
+  | Uniform e1, Any e2
+  | Any e1, Any e2 -> Any (f e1 e2)
+  | Uniform e1, Uniform e2 -> Uniform (f e1 e2)
 
 let from_nexp (cfg:Config.t) (locals:Variable.Set.t) : Exp.nexp -> t =
   let locals = Variable.Set.union locals Variable.tid_set in
   let rec from_nexp : Exp.nexp -> t =
     function
-    | Num n -> Offset (Num n)
-    | Var x when Config.is_warp_local x cfg -> Offset (Var x)
-    | Var x when Variable.Set.mem x locals -> Index (Var x)
-    | Var x -> Offset (Var x)
+    | Num n -> Uniform (Num n)
+    | Var x when Config.is_warp_uniform x cfg -> Uniform (Var x)
+    | Var x when Variable.Set.mem x locals -> Any (Var x)
+    | Var x -> Uniform (Var x)
     | Unary (o, e) ->
       map (fun e -> Unary (o, e)) (from_nexp e)
     | Binary (o, e1, e2) when o = Plus || o = Minus ->
@@ -52,12 +52,12 @@ let from_nexp (cfg:Config.t) (locals:Variable.Set.t) : Exp.nexp -> t =
     | Other e -> map (fun e -> Other e) (from_nexp e)
     | CastInt e ->
       if Exp.b_exists (fun x -> Variable.Set.mem x locals) e then
-        Index (CastInt e)
+        Any (CastInt e)
       else
-        Offset (CastInt e)
+        Uniform (CastInt e)
     | NIf (c, n1, n2) ->
       if Exp.b_exists (fun x -> Variable.Set.mem x locals) c then
-        Index (NIf (c, n1, n2))
+        Any (NIf (c, n1, n2))
       else
         index_and (fun n1 n2 -> NIf (c, n1, n2)) (from_nexp n1) (from_nexp n2)
   in
@@ -65,8 +65,8 @@ let from_nexp (cfg:Config.t) (locals:Variable.Set.t) : Exp.nexp -> t =
 
 let to_string : t -> string =
   function
-  | Index e -> "index " ^ Exp.n_to_string e
-  | Offset e -> "offset " ^ Exp.n_to_string e
+  | Any e -> "index " ^ Exp.n_to_string e
+  | Uniform e -> "unif " ^ Exp.n_to_string e
 
 module Make (L:Logger.Logger) = struct
   open Exp
@@ -74,8 +74,8 @@ module Make (L:Logger.Logger) = struct
   let remove_offset (cfg:Config.t) (locals:Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
     let after =
       match from_nexp cfg locals n with
-      | Offset _ -> Num 0
-      | Index e -> e
+      | Uniform _ -> Num 0
+      | Any e -> e
     in
     (if n <> after then
       L.info ("Simplification: removed offset: " ^ Exp.n_to_string n ^ " 🡆 " ^ Exp.n_to_string after)
