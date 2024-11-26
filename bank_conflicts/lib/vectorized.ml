@@ -369,12 +369,12 @@ let eval ?(verbose=false) (m:Metric.t) : Protocols.Code.t -> t -> int =
     | If (b, p, q) ->
       let cost = restrict b ctx |> eval cost p in
       restrict (Exp.b_not b) ctx |> eval cost q
-    | Loop (r, body) ->
+    | Loop {range=r; body} ->
       (match iter r ctx with
       | Next (r, ctx') ->
         let cost = eval cost body ctx' in
         (* run the rest of the loop *)
-        eval cost (Loop (r, body)) ctx
+        eval cost (Loop {range=r; body}) ctx
       | End ->
         (* Loop is done *)
         cost

@@ -129,7 +129,7 @@ let from_encode_assigns : Encode_assigns.t -> Code.t =
       let guard = AssertionTree.retain (Range.var r) a in
       let a = AssertionTree.remove (Range.var r) a in
       (
-        Loop (r, if_ guard p),
+        Loop {range=r; body=if_ guard p},
         AssertionTree.implies (Range.has_next r) a
       )
     | Sync e -> Sync e, AssertionTree.true_

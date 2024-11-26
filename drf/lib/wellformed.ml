@@ -70,7 +70,7 @@ module Code = struct
         |> flat_map (fun p ->
           branch (Exp.b_not b) q |> map (seq p)
         )
-      | Loop (r, p) ->
+      | Loop {range=r; body=p} ->
         infer p
         |> map (
           function

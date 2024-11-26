@@ -95,7 +95,7 @@ let rec inst_to_s (g : Generator.t) : Code.t -> Indent.t list =
     inst_to_s g p
   | Seq (p, q) ->
     inst_to_s g p @ inst_to_s g q
-  | Loop (r, p) ->
+  | Loop {range=r; body=p} ->
     let x = Variable.name r.var in
     let r = if g.div_to_mult then div_to_mult r else r in
     let lb, ub, op = match r.dir with

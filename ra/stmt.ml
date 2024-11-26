@@ -4,7 +4,7 @@ open Protocols
 type t =
   | Skip
   | Tick of int
-  | Loop of Range.t * t
+  | Loop of {range: Range.t; body: t}
   | Seq of t * t
   | If of Exp.bexp * t * t
   | Choice of t * t
@@ -14,7 +14,7 @@ let rec is_zero : t -> bool =
   | Skip
   | Tick 0 -> true
   | Tick _ -> false
-  | Loop (_, r) -> is_zero r
+  | Loop {body=r; _} -> is_zero r
   | Seq (p, q) | Choice (p, q) -> is_zero p && is_zero q
   | If (_, p, q) -> is_zero p && is_zero q
 
@@ -23,7 +23,7 @@ let to_environ (s:t) : Environ.t =
     match s with
     | Skip
     | Tick _ -> env
-    | Loop (r, p) ->
+    | Loop {range=r; body=p} ->
       env
       |> fvs p
       |> Environ.Fvs.add_r r
@@ -50,11 +50,11 @@ module MakeSubst (S:Subst.SUBST) = struct
     | Seq (p, q) -> Seq (subst s p, subst s q)
     | Choice (p, q) -> Choice (subst s p, subst s q)
     | If (b, p, q) -> If (M.b_subst s b, subst s p, subst s q)
-    | Loop (r, p) ->
+    | Loop {range=r; body=p} ->
       let r = M.r_subst s r in
       M.add s r.var (function
-        | Some s -> Loop (r, subst s p)
-        | None -> Loop (r, p)
+        | Some s -> Loop {range=r; body=subst s p}
+        | None -> Loop {range=r; body=p}
       )
 end
 
@@ -85,7 +85,7 @@ let rec indent : t -> Indent.t list =
       Block (indent q);
       Line ("}")
     ]
-  | Loop (r, p) ->
+  | Loop {range=r; body=p} ->
     [
       Line ("foreach (" ^ Range.to_string r ^ ") {");
       Block (indent p);
@@ -115,7 +115,7 @@ module Opt = struct
     if p = Skip || Range.eval_is_empty r then
       Skip
     else
-      Loop (r, p)
+      Loop {range=r; body=p}
 
   let choice (p:t) (q:t) : t =
     Choice (p, q)
@@ -128,7 +128,7 @@ let rec simplify : t -> t =
   | If (b, p, q) ->
     Opt.if_ (Constfold.b_opt b) (simplify p) (simplify q)
   | Choice (p, q) -> Opt.choice (simplify p) (simplify q)
-  | Loop (r,p) ->
+  | Loop {range=r; body=p} ->
     Opt.loop (Constfold.r_opt r) (simplify p)
   | Seq (p, q) ->
     Opt.seq (simplify p) (simplify q)

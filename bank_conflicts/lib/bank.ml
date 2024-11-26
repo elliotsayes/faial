@@ -6,7 +6,7 @@ open Protocols
 module Code = struct
   type t =
     | Index of Exp.nexp
-    | Loop of Range.t * t
+    | Loop of {range: Range.t; body: t}
     | Cond of Exp.bexp * t
     | Decl of Variable.t * t
 
@@ -15,7 +15,8 @@ module Code = struct
 
     let rec subst (s:S.t) : t -> t =
       function
-      | Loop (r, acc) -> Loop (M.r_subst s r, subst s acc)
+      | Loop {range=r; body=acc} ->
+        Loop {range=M.r_subst s r; body=subst s acc}
       | Cond (b, acc) -> Cond (M.b_subst s b, subst s acc)
       | Index a -> Index (M.n_subst s a)
       | Decl (x, acc) ->
@@ -33,7 +34,7 @@ module Code = struct
 
   let rec to_string ?(array="") : t -> string =
     function
-    | Loop (r, acc) ->
+    | Loop {range=r; body=acc} ->
         "for (" ^ Range.to_string r ^ ")\n" ^ to_string acc
     | Cond (b, acc) ->
         "if (" ^ Exp.b_to_string b ^ ")\n" ^ to_string acc
@@ -45,14 +46,14 @@ module Code = struct
   let rec map_index (f:Exp.nexp -> Exp.nexp) : t -> t =
     function
     | Index a -> Index (f a)
-    | Loop (r, p) -> Loop (r, map_index f p)
+    | Loop {range=r; body=p} -> Loop {range=r; body=map_index f p}
     | Cond (e, p) -> Cond (e, map_index f p)
     | Decl (x, p) -> Decl (x, map_index f p)
 
   let rec index : t -> Exp.nexp =
     function
     | Index a -> a
-    | Loop (_, p)
+    | Loop {body=p; _}
     | Cond (_, p)
     | Decl (_, p) -> index p
 
@@ -65,9 +66,9 @@ module Code = struct
       | Index e ->
         Exp.n_free_names e Variable.Set.empty,
         Index e
-      | Loop (r, a) ->
+      | Loop {range=r; body=a} ->
         let fns, a = opt a in
-        Range.free_names r fns, Loop (r, a)
+        Range.free_names r fns, Loop {range=r; body=a}
       | Cond (e, a) ->
         let fns, a = opt a in
         Exp.b_free_names e fns, Cond (e, a)
@@ -91,7 +92,7 @@ module Code = struct
         [],
         Exp.n_free_names e Variable.Set.empty,
         Index e
-      | Loop (r, a) ->
+      | Loop {range=r; body=a} ->
         let l, fns, a = min a in
         if Variable.Set.mem r.var fns then
           let r_fns = Range.free_names r Variable.Set.empty in
@@ -105,7 +106,7 @@ module Code = struct
               else
                 Cond (Exp.b_and_ex loop_l, a)
             in
-            l, Variable.Set.union r_fns (Variable.Set.add r.var fns), Loop (r, a)
+            l, Variable.Set.union r_fns (Variable.Set.add r.var fns), Loop {range=r; body=a}
         else
           l, fns, a
       | Cond (e, a) ->
@@ -163,7 +164,7 @@ module Code = struct
     let rec to_approx : t -> Approx.Code.t =
       function
       | Index a -> Access (Access.read x [a])
-      | Loop (r, a) -> Loop (r, to_approx a)
+      | Loop {range=r; body=a} -> Loop {range=r; body=to_approx a}
       | Cond (b, a) -> Cond (b, to_approx a)
       | Decl (x, a) -> Approx.Code.decl x (to_approx a)
     in
@@ -206,7 +207,7 @@ module Code = struct
           eval c (Vectorized.restrict e ctx) a
         else
           Ok c
-      | Loop (r, a) ->
+      | Loop {range=r; body=a} ->
         let* l = Vectorized.iter_res r ctx in
         (match l with
           | Next (r, ctx') ->
@@ -214,7 +215,7 @@ module Code = struct
             if Cost.(c >= max_cost) then
               Ok c
             else
-              eval c ctx (Loop (r, a))
+              eval c ctx (Loop {range=r; body=a})
           | End -> Ok c
         )
     in
@@ -251,7 +252,7 @@ module Code = struct
           Seq.append
             (on_p locals p |> Seq.map (fun (x,p) -> x, Cond (b, p)))
             (on_p locals q |> Seq.map (fun (x,q) -> x, Cond (Exp.b_not b, q)))
-        | Loop (r, p) ->
+        | Loop {range=r; body=p} ->
           let locals =
             let r_locals = Range.free_names r Variable.Set.empty in
             if Variable.Set.inter locals r_locals |> Variable.Set.is_empty then
@@ -260,7 +261,7 @@ module Code = struct
               Variable.Set.add (Range.var r) locals
           in
           on_p locals p
-          |> Seq.map (fun (x,i) -> x, Loop (r, i))
+          |> Seq.map (fun (x,i) -> x, Loop {range=r; body=i})
         | Skip -> Seq.empty
         | Seq (p, q) ->
           Seq.append (on_p locals p) (on_p locals q)

@@ -9,7 +9,7 @@ type t =
   | Access of Access.t
   | Sync of Location.t option
   | If of bexp * t * t
-  | Loop of Range.t * t
+  | Loop of {range: Range.t; body: t}
   | Seq of t * t
   | Skip
   | Decl of {var: Variable.t; ty:C_type.t; body: t}
@@ -23,13 +23,13 @@ let rec filter (f:t -> bool) (p:t) : t =
   | Seq (p, q) -> Seq (filter f p, filter f q)
   | If (b, p, q) -> If (b, filter f p, filter f q)
   | Decl d -> Decl { d with body = filter f d.body }
-  | Loop (r, p) -> Loop (r, filter f p)
+  | Loop {range; body=p} -> Loop {range; body=filter f p}
 
 let rec exists (f:t -> bool) (i: t) : bool =
   f i ||
   match i with
   | Access _ | Sync _ | Skip -> false
-  | Loop (_, p) | Decl {body=p; _} -> exists f p
+  | Loop {body=p; _} | Decl {body=p; _} -> exists f p
   | If (_, p, q) | Seq (p, q) -> exists f p || exists f q
 
 (** Replace variables by constants. *)
@@ -52,11 +52,11 @@ module Make (S:Subst.SUBST) = struct
         | Some s -> Decl { d with body = subst s d.body }
         | None -> Decl d
       )
-    | Loop (r, p) ->
-      let r = M.r_subst s r in
-      M.add s r.var (function
-        | Some s -> Loop (r, subst s p)
-        | None -> Loop (r, p)
+    | Loop {range; body} ->
+      let range = M.r_subst s range in
+      M.add s range.var (function
+        | Some s -> Loop {range; body=subst s body}
+        | None -> Loop {range; body}
       )
 end
 
@@ -95,7 +95,7 @@ let loop (r:Range.t) (p:t) : t =
     |> Result.value ~default:false
   in
   if is_empty then Skip else
-  Loop (r, p)
+  Loop {range=r; body=p}
 
 let decl ?(ty=C_type.int) (var:Variable.t) : t -> t =
   function
@@ -110,7 +110,7 @@ let rec opt : t -> t =
   | Access a -> Access (Constfold.a_opt a)
   | Sync l -> Sync l
   | If (b, p, q) -> if_ (Constfold.b_opt b) (opt p) (opt q)
-  | Loop (r, p) -> loop (Constfold.r_opt r) (opt p)
+  | Loop {range=r; body=p} -> loop (Constfold.r_opt r) (opt p)
 
 let subst_block_dim (block_dim:Dim3.t) (p:t) : t =
   let subst x n p =
@@ -155,7 +155,7 @@ let vars_distinct : t -> Variable.Set.t -> t =
         let (p, new_xs) = uniq p (Variable.Set.add x xs) in
         Decl {var=x; body=p; ty=d.ty}, new_xs
       )
-    | Loop (r, p) ->
+    | Loop {range=r; body=p} ->
       let x = r.var in
       if Variable.Set.mem x xs then (
         let new_x : Variable.t = Variable.fresh xs x in
@@ -163,10 +163,10 @@ let vars_distinct : t -> Variable.Set.t -> t =
         let s = Subst.SubstPair.make (x, Var new_x) in
         let new_p = PSubstPair.subst s p in
         let (p, new_xs) = uniq new_p new_xs in
-        Loop ({ r with var = new_x }, p), new_xs
+        Loop {range={ r with var = new_x }; body=p}, new_xs
       ) else (
         let (p, new_xs) = uniq p (Variable.Set.add x xs) in
-        Loop (r, p), new_xs
+        Loop {range=r; body=p}, new_xs
       )
     | Seq (i, p) ->
       let (i, xs) = uniq i xs in
@@ -186,7 +186,7 @@ let rec free_names (i:t) (fns:Variable.Set.t) : Variable.Set.t =
   | Decl {var=x; body=p; _} ->
     free_names p fns
     |> Variable.Set.remove x
-  | Loop (r, p) ->
+  | Loop {range=r; body=p} ->
     free_names p fns
     |> Variable.Set.remove r.var
     |> Range.free_names r
@@ -202,11 +202,11 @@ let rec to_ci_di (approx:Variable.Set.t) : t -> t =
       Skip
     else
       If (b, to_ci_di approx p, to_ci_di approx q)
-  | Loop (r, p) ->
+  | Loop {range=r; body=p} ->
     if Range.intersects approx r then Skip else
     (* the loop variable is CIDI, hence remove any existing CIDI *)
     let approx = Variable.Set.remove (Range.var r) approx in
-    Loop (r, to_ci_di approx p)
+    Loop {range=r; body=to_ci_di approx p}
   | Access a ->
     if Access.index_intersects approx a then
       Skip
@@ -223,7 +223,7 @@ let rec used_arrays (i:t) (fns:Variable.Set.t) : Variable.Set.t =
   match i with
   | Skip | Sync _ -> fns
   | Access {array=x; _} -> Variable.Set.add x fns
-  | Decl {body=p; _} | Loop (_, p) ->
+  | Decl {body=p; _} | Loop {body=p; _} ->
     used_arrays p fns
   | If (_, p, q) | Seq (p, q) ->
     used_arrays p fns
@@ -252,7 +252,7 @@ let rec to_s : t -> Indent.t list =
     let ty = C_type.to_string d.ty in
     (Line (ty ^ " " ^ var ^ ";"))
     :: to_s d.body
-  | Loop (r, p) ->
+  | Loop {range=r; body=p} ->
     [
       Line ("foreach (" ^ Range.to_string r ^ ") {");
       Block (to_s p);

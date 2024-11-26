@@ -19,7 +19,7 @@ module Make (L:Logger.Logger) = struct
       | Index a -> Tick (idx_analysis locals a)
       | Cond (_, p) -> from locals p
       | Decl (x, p) -> from (Variable.Set.add x locals) p
-      | Loop (r, p) -> Loop (r, from locals p)
+      | Loop {range; body} -> Loop {range; body=from locals body}
     in
     fun k ->
       from k.local_variables k.code
@@ -65,7 +65,7 @@ module Make (L:Logger.Logger) = struct
           if_ b p q
         else
           Seq (p, q)
-      | Loop (r, p) ->
+      | Loop {range=r; body=p} ->
         let free_locals =
           Range.free_names r Variable.Set.empty
           |> Variable.Set.inter locals
@@ -76,10 +76,10 @@ module Make (L:Logger.Logger) = struct
         in
         if Variable.Set.is_empty free_locals then
           (* Uniform loop *)
-          Loop (r, from_p locals p)
+          Loop {range=r; body=from_p locals p;}
         else if not only_tid_in_locals then
           (* Unsupported loop *)
-          Loop (r, from_p (Variable.Set.add (Range.var r) locals) p)
+          Loop {range=r; body=from_p (Variable.Set.add (Range.var r) locals) p}
         else
         (* get the first number *)
         let f = Range.first r in
@@ -102,7 +102,7 @@ module Make (L:Logger.Logger) = struct
             (r, from_p locals p)
           | None -> (r, from_p locals p)
         in
-        Loop (r, p)
+        Loop {range=r; body=p}
     in
     let locals =
       Params.to_set k.local_variables

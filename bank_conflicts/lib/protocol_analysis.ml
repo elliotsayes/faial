@@ -50,7 +50,7 @@ module Make (L:Logger.Logger) = struct
       | Skip -> Skip
       | If (b, p, q) -> If (b, simpl p, simpl q)
       | Decl d -> Decl {d with body= simpl d.body}
-      | Loop (r, p) ->
+      | Loop {range=r; body=p} ->
         let p = simpl p in
         (match R.uniform k.global_variables cfg.block_dim r with
         | Some r' ->
@@ -60,9 +60,9 @@ module Make (L:Logger.Logger) = struct
               (n_ge (Var r.var) r.lower_bound)
               (n_lt (Var r.var) r.upper_bound)
           in
-          Loop (r', If(cnd, p, Skip))
+          Loop {range=r'; body=If(cnd, p, Skip)}
         | None ->
-          Loop (r, p)
+          Loop {range=r; body=p}
         )
       | Sync l -> Sync l
       | Seq (p, q) -> Seq (simpl p, simpl q)

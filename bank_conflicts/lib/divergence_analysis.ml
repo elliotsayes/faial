@@ -17,7 +17,7 @@ let b_is_uniform (locals:Variable.Set.t) (e:Exp.bexp) : bool =
 let rec c_is_uniform (locals:Variable.Set.t) : Bank.Code.t -> bool =
   function
   | Index _ -> true
-  | Loop (r, p) ->
+  | Loop {range=r; body=p} ->
     r_is_uniform locals r && c_is_uniform locals p
   | Cond (e, p) ->
     b_is_uniform locals e && c_is_uniform locals p
@@ -43,7 +43,7 @@ let b_is_divergent : Exp.bexp -> bool =
 let rec c_is_divergent : Bank.Code.t -> bool =
   function
   | Index _ -> false
-  | Loop (r, p) ->
+  | Loop {range=r; body=p} ->
     r_is_divergent r || c_is_divergent p
   | Cond (e, p) ->
     b_is_divergent e || c_is_divergent p

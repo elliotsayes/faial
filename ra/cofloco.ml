@@ -73,7 +73,7 @@ let from_stmt (s: Stmt.t) : t list =
         jump ~src:idx_l ~dst:(idx_r + 1) ();
         jump ~src:idx_r ~dst:(idx_r + 1) ();
       ] @ l1 @ l2
-    | Loop (r, p) ->
+    | Loop {range=r; body=p} ->
       let (idx', rest) = translate (idx + 2) p in
       let init = Range.while_init r in
       let x = r.var in

@@ -24,7 +24,7 @@ let typecheck_r (env:Variable.Set.t) (r:Range.t) : bool =
 type t =
   | Cond of Exp.bexp * t
   | Decl of {var: Variable.t; ty: C_type.t; body: t}
-  | Loop of Range.t * t
+  | Loop of {range: Range.t; body: t}
   | Access of Access.t
 
 let decl ?(ty=C_type.int) (var:Variable.t) (body:t) : t =
@@ -32,7 +32,7 @@ let decl ?(ty=C_type.int) (var:Variable.t) (body:t) : t =
 
 let rec location : t -> Location.t =
   function
-  | Cond (_, l) | Decl {body=l; _} | Loop (_, l) ->
+  | Cond (_, l) | Decl {body=l; _} | Loop {body=l; _} ->
     location l
   | Access {array=x; _} ->
     Variable.location x
@@ -45,8 +45,8 @@ let rec from_code : Protocols.Code.t -> t Seq.t =
     Seq.append
       (from_code p |> Seq.map (fun p -> Cond (b, p)))
       (from_code q |> Seq.map (fun q -> Cond (Exp.b_not b, q)))
-  | Loop (r, p) ->
-    from_code p |> Seq.map (fun c -> Loop (r, c))
+  | Loop {range=r; body=p} ->
+    from_code p |> Seq.map (fun c -> Loop {range=r; body=c})
   | Seq (p, q) ->
     from_code p |> Seq.append (from_code q)
   | Decl {var; ty; body} ->
@@ -63,7 +63,7 @@ let rec is_control_independent (env:Variable.Set.t) : t -> bool =
     is_control_independent env p
   | Decl {body=p; var=x; _} ->
     is_control_independent (Variable.Set.remove x env) p
-  | Loop (r, p) ->
+  | Loop {range=r; body=p} ->
     typecheck_r env r &&
     is_control_independent (Variable.Set.add (Range.var r) env) p
   | Access _ -> true
@@ -74,7 +74,7 @@ let rec is_data_independent (env:Variable.Set.t) : t -> bool =
     is_data_independent env p
   | Decl {var=x; body=p; _} ->
     is_data_independent (Variable.Set.remove x env) p
-  | Loop (r, p) ->
+  | Loop {range=r; body=p} ->
     let env =
       if typecheck_r env r then
         (* if range is independent, then loop var is independent *)

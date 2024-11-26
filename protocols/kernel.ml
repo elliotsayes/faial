@@ -181,9 +181,9 @@ let hoist_decls : t -> t =
       let (vars, p) = inline vars p in
       let (vars, q) = inline vars q in
       (vars, If (b, p, q))
-    | Loop (r, p) ->
+    | Loop {range=r; body=p} ->
       let (vars, p) = inline vars p in
-      (vars, Loop (r, p))
+      (vars, Loop {range=r; body=p})
     | Seq (p, q) ->
       let (vars, p) = inline vars p in
       let (vars, q) = inline vars q in

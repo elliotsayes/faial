@@ -4,7 +4,7 @@ open Stage0
 module Code = struct
   type t =
     | Decl of {ty:C_type.t; var: Variable.t; body: t}
-    | Loop of Range.t * t
+    | Loop of {range: Range.t; body: t}
     | Cond of Exp.bexp * t
     | Barrier of Location.t option
 
@@ -20,7 +20,7 @@ module Code = struct
         (from_proto p |> Seq.map (fun p -> Cond (b, p)))
         (from_proto q |> Seq.map (fun q -> Cond (Exp.b_not b, q)))
     | Seq (s1, s2) -> from_proto s1 |> Seq.append (from_proto s2)
-    | Loop (r, s) -> from_proto s |> Seq.map (fun s -> Loop (r, s))
+    | Loop {range=r; body=s} -> from_proto s |> Seq.map (fun s -> Loop {range=r; body=s})
 
   let b_is_uniform (thread_locals:Variable.Set.t) (e:Exp.bexp) : bool =
     let fns = Exp.b_free_names e Variable.Set.empty in
@@ -34,13 +34,13 @@ module Code = struct
     function
     | Barrier _ -> true
     | Decl {var=x; body=s; _} -> is_uniform (Variable.Set.add x thread_locals) s
-    | Loop (r, s) -> r_is_uniform thread_locals r && is_uniform thread_locals s
+    | Loop {range=r; body=s} -> r_is_uniform thread_locals r && is_uniform thread_locals s
     | Cond (b, s) -> b_is_uniform thread_locals b && is_uniform thread_locals s
 
   let rec location : t -> Location.t option =
     function
     | Barrier l -> l
-    | Decl {body=s; _} | Cond (_, s) | Loop (_, s) -> location s
+    | Decl {body=s; _} | Cond (_, s) | Loop {body=s; _} -> location s
 
 end
 

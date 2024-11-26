@@ -85,7 +85,7 @@ let from_stmt (env:Environ.t) (s:Stmt.t) : prog =
         jump ~src:idx_l ~dst:(idx_r + 1) ();
         jump ~src:idx_r ~dst:(idx_r + 1) ();
       ] @ l1 @ l2
-    | Loop (r, s) ->
+    | Loop {range=r; body=s} ->
       let (idx', rest) = translate (idx + 2) s in
       let x = r.var in
       idx' + 1,

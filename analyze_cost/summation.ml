@@ -116,7 +116,7 @@ let from_stmt ?(strategy=Strategy.Max) : Ra.Stmt.t -> t =
     | Skip -> Const 0
     | If (b, p, q) -> If (Reals.from_bexp b, from_stmt p, from_stmt q)
     | Seq (p, q) -> plus (from_stmt p) (from_stmt q)
-    | Loop (r, p) -> range_sum r (from_stmt p)
+    | Loop {range=r; body=p} -> range_sum r (from_stmt p)
     | Choice (lhs, rhs) -> Strategy.choice strategy (from_stmt lhs) (from_stmt rhs)
   in
   from_stmt
