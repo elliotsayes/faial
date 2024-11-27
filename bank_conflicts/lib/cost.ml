@@ -26,3 +26,6 @@ let (>=) (lhs:t) (rhs:t) : bool =
   lhs.value >= rhs.value
 
 let zero : t = from_int 0
+
+let to_string (e:t) : string =
+  string_of_int e.value

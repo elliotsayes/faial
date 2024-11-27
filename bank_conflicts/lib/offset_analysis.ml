@@ -193,6 +193,7 @@ module Make (L:Logger.Logger) = struct
     |> Result.map (fun c ->
         if ty = UA.AnyApprox then
           let open Cost in
+          L.info ("UA: incrementing approximated cost: " ^ Cost.to_string c);
           { c with
             value =
               min
