@@ -15,14 +15,6 @@ type t =
   | Uniform
   | Any
 
-let index_and (e1: t) (e2: t) : t =
-  match e1, e2 with
-  | Any, Uniform
-  | Uniform, Any
-  | Any, Any -> Any
-  | Uniform, Uniform -> Uniform
-
-
 let bin : N_binary.t -> (Exp.nexp * t) -> (Exp.nexp * t) -> (Exp.nexp * t) =
   fun o (e1, x1) (e2, x2) ->
     let both : Exp.nexp = Binary (o, e1, e2) in
@@ -73,8 +65,8 @@ let from_nexp (cfg:Config.t) (locals:Variable.Set.t) : Exp.nexp -> Exp.nexp * t 
         let (e1, r1) = from_nexp e1 in
         let (e2, r2) = from_nexp e2 in
         let r =
-          if r1 = Uniform && r2 = Uniform then
-            Uniform
+          if r1 = r2 then
+            r1
           else
             Any
         in
