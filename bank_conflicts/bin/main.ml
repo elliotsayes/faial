@@ -82,10 +82,10 @@ module Solver = struct
         | Mem_hierarchy.SharedMemory -> Metric.BankConflicts
         | GlobalMemory -> UncoalescedAccesses
       in
-      let max_cost = Metric.max_cost a.config m in
+      let max_cost = Metric.max_cost a.config m |> Cost.from_int in
       let r_cost = Bank.index_cost a.config m bank in
       let max_cost = Result.value ~default:max_cost r_cost in
-      let min_cost = Metric.min_cost m in
+      let min_cost = Metric.min_cost m |> Cost.from_int in
       let divergence = Divergence_analysis.from_bank bank in
       let cost = Result.value ~default:max_cost r_cost in
       let sim =

@@ -16,16 +16,20 @@ let choices : (string * t) list =
   values
   |> List.map (fun x -> (to_string x, x))
 
-let max_cost (cfg:Config.t) (m:t) : Cost.t =
-  (match m with
-  | BankConflicts -> (min cfg.threads_per_warp cfg.bank_count) - 1
-  | UncoalescedAccesses -> cfg.threads_per_warp
-  | CountAccesses -> 1)
-  |> Cost.from_int
+let max_uncoalesced_accesses (cfg:Config.t) : int =
+  cfg.threads_per_warp
 
-let min_cost (m:t) : Cost.t =
+let max_bank_conflicts (cfg:Config.t) : int =
+  (min cfg.threads_per_warp cfg.bank_count) - 1
+
+let max_cost (cfg:Config.t) (m:t) : int =
+  (match m with
+  | BankConflicts -> max_bank_conflicts cfg
+  | UncoalescedAccesses -> max_uncoalesced_accesses cfg
+  | CountAccesses -> 1)
+
+let min_cost (m:t) : int =
   (match m with
   | BankConflicts -> 0
-  | UncoalescedAccesses -> 4
+  | UncoalescedAccesses -> 1
   | CountAccesses -> 1)
-  |> Cost.from_int

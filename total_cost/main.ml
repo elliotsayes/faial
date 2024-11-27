@@ -115,19 +115,19 @@ module Solver = struct
   :
     int
   =
-    let ctx = Vectorized.from_config app.config in
-    let e = Offset_analysis.Default.remove_offset app.config s e in
-    match Vectorized.to_cost app.metric e ctx with
+    match
+      Offset_analysis.Default.run app.metric app.config s e
+    with
     | Ok e -> e.value
     | Error e ->
       Logger.Colors.warning e;
       default
 
   let min_cost (app:t) : Variable.Set.t -> Exp.nexp -> int =
-    gen_cost app (Metric.min_cost app.metric |> Cost.value)
+    gen_cost app (Metric.min_cost app.metric)
 
   let max_cost (app:t) : Variable.Set.t -> Exp.nexp -> int =
-    gen_cost app (Metric.max_cost app.config app.metric |> Cost.value)
+    gen_cost app (Metric.max_cost app.config app.metric)
 
   type cost = {
     amount: string;

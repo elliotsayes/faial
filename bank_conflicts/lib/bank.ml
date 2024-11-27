@@ -138,28 +138,7 @@ module Code = struct
     let idx = index a in
     let ctx = Vectorized.from_config params in
     Vectorized.to_cost m idx ctx
-(*
-  let static_cost (params:Config.t) (m:Metric.t) : Variable.Set.t -> t -> (int, string) Result.t =
-    let rec transaction_count (locals:Variable.Set.t) : t -> (int, string) Result.t =
-      function
-      | Index a ->
-        a
-        |> Index_analysis.cost params m locals
-      | Loop (r, a) ->
-        let locals =
-          if Range.exists (fun x -> Variable.Set.mem x locals) r then
-            Variable.Set.add r.var locals
-          else
-            locals
-        in
-        transaction_count locals a
-      | Cond (_, a) ->
-        transaction_count locals a
-      | Decl (x, a) ->
-        transaction_count (Variable.Set.add x locals) a
-    in
-    transaction_count
-*)
+
   let to_approx (x:Variable.t) : t -> Approx.Code.t =
     let rec to_approx : t -> Approx.Code.t =
       function
@@ -184,7 +163,7 @@ module Code = struct
     fun ctx ->
     let max_cost : Cost.t =
       if max_cost < 0 then
-        Metric.max_cost cfg m
+        Metric.max_cost cfg m |> Cost.from_int
       else
         Cost.from_int max_cost
     in
