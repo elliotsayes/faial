@@ -116,7 +116,7 @@ module Solver = struct
     int
   =
     match
-      Offset_analysis.Default.run app.metric app.config s e
+      Index_analysis.Default.run app.metric app.config s e
     with
     | Ok e -> e.value
     | Error e ->
