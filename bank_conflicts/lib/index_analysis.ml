@@ -16,21 +16,23 @@ module UA = struct
     | Constant
     | Uniform
     | AnyAccurate
-    | AnyApprox
+    | Inc
 
   let max (x1:t) (x2:t) : t =
     match x1, x2 with
     | Constant, e | e, Constant -> e
     | Uniform, e | e, Uniform -> e
     | AnyAccurate, e | e, AnyAccurate -> e
-    | AnyApprox, AnyApprox -> AnyApprox
+    | Inc, Inc -> Inc
 
   let bin : N_binary.t -> (Exp.nexp * t) -> (Exp.nexp * t) -> (Exp.nexp * t) =
     fun o (e1, x1) (e2, x2) ->
       let both : Exp.nexp = Binary (o, e1, e2) in
       if x1 = x2 then both, x1
+      else if max x1 x2 = Uniform then
+        both, max x1 x2
       else if (o = Plus || o = Minus) && (x1 = Uniform || x2 = Uniform) then
-        (if x1 = Uniform then e2 else e1), AnyApprox
+        (if x1 = Uniform then e2 else e1), Inc
       else
         both, max x1 x2
 
@@ -70,13 +72,24 @@ module UA = struct
         CastInt e, r
       | NIf (c, e1, e2) ->
         if Exp.b_intersects locals c then
-          NIf (c, e1, e2), AnyApprox
+          NIf (c, e1, e2), Inc
         else
           let (e1, r1) = from_nexp e1 in
           let (e2, r2) = from_nexp e2 in
           NIf (c, e1, e2), max r1 r2
     in
     from_nexp
+
+  let to_string : Exp.nexp * t -> string =
+    fun (e, x) ->
+      let prefix =
+        match x with
+        | Constant -> "num"
+        | AnyAccurate -> "accurate"
+        | Inc -> "inc"
+        | Uniform -> "unif"
+      in
+      Exp.n_to_string e ^ ": " ^ prefix
 
 end
 
@@ -191,9 +204,12 @@ module Make (L:Logger.Logger) = struct
     (if e <> new_e then
       L.info ("UA: removed offset: " ^ Exp.n_to_string e ^ " 🡆 " ^ Exp.n_to_string new_e)
     );
+    if ty = UA.Uniform || ty = UA.Constant then
+      Ok (Metric.min_uncoalesced_accesses |> Cost.from_int)
+    else
     Vectorized.to_cost Metric.UncoalescedAccesses new_e ctx
     |> Result.map (fun c ->
-        if ty = UA.AnyApprox then
+        if ty = UA.Inc then
           let open Cost in
           L.info ("UA: incrementing approximated cost: " ^ Cost.to_string c);
           { c with
