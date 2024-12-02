@@ -1,3 +1,16 @@
+2024-11:
+- Inference: refactored the loop inference so that the same code is being
+  shared between CUDA and WGSL.
+- Inference: revisited how we handle the comma operator: better support
+  for side-effects and loops with comma operators.
+- Inference: initial support for loops with multiple loop variables.
+- faial-cost: revisted index analysis for uncoalesced accesses
+
+2024-10:
+- WGSL: better support for parsing atomics, globals (const, overrides),
+  relational and unary operators, bindings, pointer types, collectives,
+  image samplers.
+
 2024-09:
 - faial-drf: added support for analzing WGSL kernels
 
