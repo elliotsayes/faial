@@ -101,18 +101,26 @@ module Env = struct
 end
 
 
-let shared_arrays (k:Protocols.Kernel.t) : Variable.Set.t =
+let get_arrays (m:Metric.t) (k:Protocols.Kernel.t) : Variable.Set.t =
   Variable.Map.bindings k.arrays
   |> List.filter_map (fun (k, a) ->
-    if Memory.is_shared a then
-      Some k
-    else
-      None
-  )
+      match m with
+      | BankConflicts ->
+        if Memory.is_shared a then
+          Some k
+        else
+          None
+      | UncoalescedAccesses ->
+        if Memory.is_global a then
+          Some k
+        else
+          None
+      | CountAccesses ->
+        Some k
+    )
   |> Variable.Set.of_list
 
-
-let main (fname : string) : unit =
+let main (fname : string) (m:Metric.t) : unit =
   try
     let parsed = Protocol_parser.Default.to_proto fname in
     let proto = parsed.kernels in
@@ -120,8 +128,8 @@ let main (fname : string) : unit =
     print_endline ("env.json: " ^ Env.to_string env);
     try
       List.iter (fun p ->
-        let ctx = Env.to_vectorized ~bank_count:32 ~env ~arrays:(shared_arrays p) in
-        let v = Vectorized.eval ~verbose:true Metric.BankConflicts p.code ctx in
+        let ctx = Env.to_vectorized ~bank_count:32 ~env ~arrays:(get_arrays m p) in
+        let v = Vectorized.eval ~verbose:true m p.code ctx in
         print_endline ("Total cost: " ^ string_of_int v)
       ) proto;
       ()
@@ -142,7 +150,11 @@ let get_fname =
   let doc = "The path $(docv) of the GPU program." in
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
 
-let main_t = Term.(const main $ get_fname)
+let metric =
+  let doc = "Select the metric to measure the cost." in
+  Arg.(required & opt (some (enum Metric.choices)) None & info ["m"; "metric"] ~doc)
+
+let main_t = Term.(const main $ get_fname $ metric)
 
 let info =
   let doc = "Dynamic performance analysis for GPU programs" in
