@@ -118,7 +118,7 @@ let main (fname : string) : unit =
     let proto = parsed.kernels in
     let env = Env.load "env.json" in
     print_endline ("env.json: " ^ Env.to_string env);
-    (try
+    try
       List.iter (fun p ->
         let ctx = Env.to_vectorized ~bank_count:32 ~env ~arrays:(shared_arrays p) in
         let v = Vectorized.eval ~verbose:true Metric.BankConflicts p.code ctx in
@@ -127,7 +127,7 @@ let main (fname : string) : unit =
       ()
     with
       | Failure x -> print_endline ("Dynamic analysis failed: " ^ x)
-      | _ -> print_endline ("Dynamic analysis failed"))
+
 
   with
   | Common.ParseError b ->
