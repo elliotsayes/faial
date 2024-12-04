@@ -133,7 +133,8 @@ let to_string (ctx:t) : string =
     |> List.map (fun (x, y) -> "  " ^ Variable.name x ^ "=" ^ NMap.to_string y)
     |> String.concat "\n"
   in
-  "env:\n" ^ env
+  "cond: " ^ Exp.b_to_string ctx.cond ^
+  "\nenv:\n" ^ env
 
 let make ~bank_count ~thread_count ~use_array : t = {
   cond = Exp.Bool true;
@@ -352,14 +353,36 @@ let iter_res (r:Range.t) (ctx:t) : (loop, string) Result.t =
 let iter (r:Range.t) (ctx:t) : loop =
   iter_res r ctx |> Result.get_ok
 
+let is_active (ctx:t) : bool =
+  (
+    let* b = b_eval_res ctx.cond ctx in
+    Ok (BMap.some_true b)
+  )
+  |> Result.value ~default:false
+
 let eval ?(verbose=false) (m:Metric.t) : Protocols.Code.t -> t -> int =
   let rec eval (cost:int) (p:Protocols.Code.t) (ctx:t) : int =
+    let try_eval cost p ctx =
+      if is_active ctx then
+        eval cost p ctx
+      else
+        cost
+    in
     match p with
     | Sync _
     | Skip -> cost
-    | Access {array=x; index=[n]; _} ->
+    | Access {array=x; index=[n]; _} as p ->
       if ctx.use_array x then
-        let c = to_cost ~verbose m n ctx |> Result.get_ok |> Cost.value in
+        let c =
+          match to_cost ~verbose m n ctx with
+          | Ok e -> Cost.value e
+          | Error e ->
+            let a =
+              Code.to_string p
+              |> Common.replace ~substring:"\n" ~by:" "
+            in
+            failwith ("Error: " ^ e ^ "\n - Access: " ^ a ^ "\nContext: " ^ to_string ctx)
+        in
         cost + c
       else
         cost
@@ -367,8 +390,8 @@ let eval ?(verbose=false) (m:Metric.t) : Protocols.Code.t -> t -> int =
       failwith ("Unsupported access")
     | Decl {body=p; _} -> eval cost p ctx
     | If (b, p, q) ->
-      let cost = restrict b ctx |> eval cost p in
-      restrict (Exp.b_not b) ctx |> eval cost q
+      let cost = restrict b ctx |> try_eval cost p in
+      restrict (Exp.b_not b) ctx |> try_eval cost q
     | Loop {range=r; body} ->
       (match iter r ctx with
       | Next (r, ctx') ->
