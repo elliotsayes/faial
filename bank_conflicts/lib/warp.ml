@@ -77,18 +77,9 @@ let uncoalesced
   Cost.t
 =
   let warp_count = Array.length tids in
-  let min_index =
-    Array.combine indices enabled
-    |> Array.fold_left (fun (min_idx:int) (index, enabled) ->
-        if enabled && index >= 0 then
-          min min_idx index
-        else
-          min_idx
-      ) 0
-  in
   let tsx_map =
     let to_tsx_id (tsk:Task.t) : int =
-      (tsk.index - min_index) / warp_count
+      tsk.index / warp_count
     in
     TransactionMap.make to_tsx_id indices enabled tids
   in
