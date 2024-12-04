@@ -64,7 +64,10 @@ let bank_conflicts
   in
   let w = TransactionMap.make to_bid indices enabled tids in
   let state = TransactionMap.max w in
-  Cost.make ((Transaction.count state) - 1) state
+  (* we need to get the maximum, because all threads may be disabled,
+     in which case, we would get a transaction count of 0 and therefore
+     a cost of -1 *)
+  Cost.make (max ((Transaction.count state) - 1) 0) state
 
 let uncoalesced
   (indices:int array)
