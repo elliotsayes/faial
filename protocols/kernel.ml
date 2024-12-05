@@ -281,5 +281,9 @@ let to_s (k:t) : Indent.t list =
     Line "; end of code"
   ]
 
+
+let to_string (p:t) : string =
+  Indent.to_string (to_s p)
+
 let print (k:t) : unit =
   Indent.print (to_s k)
