@@ -397,6 +397,7 @@ let pico
   (compact:bool)
   (ignore_parsing_errors:bool)
   (show_map:bool)
+  (bank_count:int)
 =
   let parsed = Protocol_parser.Silent.to_proto
     ~abort_on_parsing_failure:(not ignore_parsing_errors)
@@ -405,7 +406,7 @@ let pico
     fname in
   let block_dim = parsed.options.block_dim in
   let grid_dim = parsed.options.grid_dim in
-  let config = Config.make ~block_dim ~grid_dim () in
+  let config = Config.make ~block_dim ~grid_dim ~bank_count () in
   run
     ~use_maxima
     ~use_absynth
@@ -572,6 +573,14 @@ let show_map =
   let doc = "Show the inferred Memory Access Protocol (MAP)." in
   Arg.(value & flag & info ["show-map"] ~doc)
 
+let bank_count =
+  let default = 32 in
+  let info =
+    Arg.info ["bank-count"]
+      ~docv:"BANK_COUNT"
+      ~doc:"The number of banks available in the GPU device."
+  in
+  Arg.value (Arg.opt Arg.int default info)
 
 let pico_t = Term.(
   const pico
@@ -603,6 +612,7 @@ let pico_t = Term.(
   $ compact
   $ ignore_parsing_errors
   $ show_map
+  $ bank_count
 )
 
 let info =
