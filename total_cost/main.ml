@@ -398,6 +398,7 @@ let pico
   (ignore_parsing_errors:bool)
   (show_map:bool)
   (bank_count:int)
+  (threads_per_warp:int)
 =
   let parsed = Protocol_parser.Silent.to_proto
     ~abort_on_parsing_failure:(not ignore_parsing_errors)
@@ -406,7 +407,8 @@ let pico
     fname in
   let block_dim = parsed.options.block_dim in
   let grid_dim = parsed.options.grid_dim in
-  let config = Config.make ~block_dim ~grid_dim ~bank_count () in
+  let config =
+    Config.make ~block_dim ~grid_dim ~bank_count ~threads_per_warp () in
   run
     ~use_maxima
     ~use_absynth
@@ -582,6 +584,15 @@ let bank_count =
   in
   Arg.value (Arg.opt Arg.int default info)
 
+let warp_size =
+  let default = 32 in
+  let info =
+    Arg.info ["warp-size"]
+      ~docv:"WARP_SIZE"
+      ~doc:"The number of threads per warp available in the GPU device."
+  in
+  Arg.value (Arg.opt Arg.int default info)
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -613,6 +624,7 @@ let pico_t = Term.(
   $ ignore_parsing_errors
   $ show_map
   $ bank_count
+  $ warp_size
 )
 
 let info =
