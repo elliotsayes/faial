@@ -256,7 +256,7 @@ let rec n_eval_res (n: Exp.nexp) (ctx:t) : (NMap.t, string) Result.t =
 
 and b_eval_res (b: Exp.bexp) (ctx:t) : (BMap.t, string) Result.t =
   match b with
-  | Bool b -> Ok (BMap.constant ~count:ctx.bank_count ~value:b)
+  | Bool b -> Ok (BMap.constant ~count:ctx.thread_count ~value:b)
 
   | CastBool (CastInt e) ->
     b_eval_res e ctx
