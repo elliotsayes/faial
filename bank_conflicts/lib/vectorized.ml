@@ -303,14 +303,9 @@ let to_cost
 :
   (Cost.t, string) Result.t
 =
-  if m = Metric.CountAccesses then Ok (Cost.from_int 1) else
   let* idx = n_eval_res index ctx in
   let* enabled = b_eval_res ctx.cond ctx in
-  if verbose then
-  print_endline ("accessing index: " ^ NMap.to_string idx);
   let idx = NMap.to_array idx in
-  if verbose then
-  print_endline ("active threads: " ^ BMap.to_string enabled);
   let enabled = BMap.to_array enabled in
   let is_valid : bool =
     Array.combine idx enabled
@@ -319,12 +314,23 @@ let to_cost
   if is_valid then
     let tids = tid ctx in
     Ok (
-      match m with
-      | BankConflicts ->
-        Warp.bank_conflicts ctx.bank_count idx enabled tids
-      | UncoalescedAccesses ->
-        Warp.uncoalesced idx enabled tids
-      | CountAccesses -> failwith "unexpected"
+      let cost =
+        match m with
+        | BankConflicts ->
+          Warp.bank_conflicts ctx.bank_count idx enabled tids
+        | UncoalescedAccesses ->
+          Warp.uncoalesced idx enabled tids
+        | CountAccesses -> Cost.from_int 1
+      in
+      if verbose then (
+        Array.map2 (fun idx enabled ->
+          if enabled then string_of_int idx else "_"
+        ) idx enabled
+        |> Array.to_list
+        |> String.concat ", "
+        |> fun x -> print_endline ("[" ^ x ^ "] -> " ^ Cost.to_string cost)
+      );
+      cost
     )
   else
     Error "index out of bounds"

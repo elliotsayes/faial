@@ -127,9 +127,13 @@ let main (fname : string) (m:Metric.t) : unit =
     let env = Env.load "env.json" in
     print_endline ("env.json: " ^ Env.to_string env);
     try
-      List.iter (fun p ->
-        let ctx = Env.to_vectorized ~bank_count:32 ~env ~arrays:(get_arrays m p) in
-        let v = Vectorized.eval ~verbose:true m p.code ctx in
+      List.iter (fun k ->
+        print_endline (Kernel.to_string k);
+        let ctx =
+          Env.to_vectorized ~bank_count:32 ~env ~arrays:(get_arrays m k)
+          |> Vectorized.restrict k.pre
+        in
+        let v = Vectorized.eval ~verbose:true m k.code ctx in
         print_endline ("Total cost: " ^ string_of_int v)
       ) proto;
       ()
