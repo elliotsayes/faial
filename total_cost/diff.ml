@@ -567,8 +567,8 @@ let pico_t = Term.(
 )
 
 let info =
-  let doc = "Static analysis of bank-conflicts for GPU programs" in
-  Cmd.info "faial-cost" ~version:"%%VERSION%%" ~doc
+  let doc = "The cost between two GPU kernels" in
+  Cmd.info "faial-cost-diff" ~version:"%%VERSION%%" ~doc
 
 let () =
   Cmd.v info pico_t

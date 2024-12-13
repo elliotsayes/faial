@@ -13,6 +13,7 @@ all: c-ast \
 	faial-sync \
 	faial-gen \
 	faial-cost \
+	faial-cost-diff \
 	wgsl-ast
 
 clean:
@@ -49,6 +50,10 @@ faial-bc:
 faial-cost:
 	$(DUNE) build $(BUILD)/total_cost/main.exe
 	cp -f $(BUILD)/total_cost/main.exe faial-cost
+
+faial-cost-diff:
+	$(DUNE) build $(BUILD)/total_cost/diff.exe
+	cp -f $(BUILD)/total_cost/diff.exe faial-cost-diff
 
 faial-sync:
 	$(DUNE) build barrier_div/main.exe
