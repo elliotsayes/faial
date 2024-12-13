@@ -108,7 +108,13 @@ let rec from_summation : Summation.t -> string =
 let from_stmt ?(strategy=Summation.Strategy.Max) (r: Ra.Stmt.t) : string =
   Summation.from_stmt ~strategy r |> from_summation
 
-let from_diff ?(strategy=Summation.Strategy.Max) (lhs: Ra.Stmt.t) (rhs: Ra.Stmt.t) : string =
+let from_diff
+  ?(strategy=Summation.Strategy.Max)
+  (lhs: Ra.Stmt.t)
+  (rhs: Ra.Stmt.t)
+:
+  string
+=
   let lhs = Summation.from_stmt ~strategy lhs in
   let rhs = Summation.from_stmt ~strategy rhs in
   Summation.minus lhs rhs
