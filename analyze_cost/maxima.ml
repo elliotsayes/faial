@@ -139,7 +139,10 @@ let parse_maxima (x:string) : string option =
   )
 
 let compile ?(compact=false) (code:string) : string =
-  "load(\"bitwise\")$\n" ^  (if compact then "pfeformat: true$\n" else "") ^ code ^ ",logcontract,simpsum,ratsimp;"
+  "load(\"bitwise\")$\n"
+  ^ (if compact then "pfeformat: true$\n" else "")
+  ^ code
+  ^ ",logcontract,simpsum,ratsimp;"
 
 let run_exe
   ?(verbose=false)
