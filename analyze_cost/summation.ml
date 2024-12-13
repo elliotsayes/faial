@@ -8,11 +8,13 @@ open Protocols
 module Op = struct
   type t =
     | Plus
+    | Minus
     | Max
     | Min
 
   let to_string : t -> string =
     function
+    | Minus -> "-"
     | Plus -> "+"
     | Max -> "max"
     | Min -> "min"
@@ -20,6 +22,7 @@ module Op = struct
   let eval : t -> int -> int -> int =
     function
     | Plus -> (+)
+    | Minus -> (-)
     | Max -> max
     | Min -> min
 end
@@ -30,6 +33,8 @@ type t =
   | If of Reals.boolean * t * t
   | Bin of Op.t * t * t
 
+let minus (lhs:t) (rhs:t) : t =
+  Bin (Minus, lhs, rhs)
 
 let sum (s:Set_range.t) (e:t) =
   match Set_range.count s, e with

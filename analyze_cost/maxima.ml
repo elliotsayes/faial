@@ -99,6 +99,8 @@ let rec from_summation : Summation.t -> string =
     ")"
   | Bin (Plus, lhs, rhs) ->
     from_summation lhs ^ " + " ^ from_summation rhs
+  | Bin (Minus, lhs, rhs) ->
+    from_summation lhs ^ " - " ^ from_summation rhs
   | Bin (o, lhs, rhs) ->
     Summation.Op.to_string o ^
     "(" ^ from_summation lhs ^ ", " ^ from_summation rhs ^ ")"
