@@ -97,28 +97,19 @@ let rec from_summation : Summation.t -> string =
       i_to_string b.lower_bound ^ ", " ^
       i_to_string b.upper_bound ^
     ")"
-  | Bin (Plus, lhs, rhs) ->
-    from_summation lhs ^ " + " ^ from_summation rhs
-  | Bin (Minus, lhs, rhs) ->
-    from_summation lhs ^ " - " ^ from_summation rhs
   | Bin (o, lhs, rhs) ->
-    Summation.Op.to_string o ^
-    "(" ^ from_summation lhs ^ ", " ^ from_summation rhs ^ ")"
+    (match o with
+    | Plus ->
+      from_summation lhs ^ " + " ^ from_summation rhs
+    | Minus ->
+      from_summation lhs ^ " - " ^ from_summation rhs
+    | _ ->
+      Summation.Op.to_string o ^
+      "(" ^ from_summation lhs ^ ", " ^ from_summation rhs ^ ")"
+    )
 
 let from_stmt ?(strategy=Summation.Strategy.Max) (r: Ra.Stmt.t) : string =
   Summation.from_stmt ~strategy r |> from_summation
-
-let from_diff
-  ?(strategy=Summation.Strategy.Max)
-  (lhs: Ra.Stmt.t)
-  (rhs: Ra.Stmt.t)
-:
-  string
-=
-  let lhs = Summation.from_stmt ~strategy lhs in
-  let rhs = Summation.from_stmt ~strategy rhs in
-  Summation.minus lhs rhs
-  |> from_summation
 
 let parse_maxima (x:string) : string option =
   if Common.contains ~substring:"incorrect syntax" x then None

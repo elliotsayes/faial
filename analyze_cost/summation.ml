@@ -64,6 +64,7 @@ let rec to_string : t -> string =
     to_string p ^ " else " ^ to_string q
   | Const x -> string_of_int x
   | Sum (b, s) -> "Σ_" ^ Set_range.to_string b ^ " " ^ to_string s
+  | Bin (Minus, lhs, rhs) -> "(" ^ to_string lhs ^ " - " ^ to_string rhs ^ ")"
   | Bin (Plus, lhs, rhs) -> "(" ^ to_string lhs ^ " + " ^ to_string rhs ^ ")"
   | Bin (o, lhs, rhs) -> Op.to_string o ^ "(" ^ to_string lhs ^ ", " ^ to_string rhs ^ ")"
 

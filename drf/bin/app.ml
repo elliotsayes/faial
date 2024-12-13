@@ -241,7 +241,7 @@ let only_kernel
   | Some name ->
     let ks =
       ks
-      |> List.filter (fun k -> let open Protocols.Kernel in k.name = name)
+      |> List.filter (fun k -> Protocols.Kernel.name k = name)
     in
     if ks = [] then
       (Logger.Colors.error ("kernel '" ^ name ^ "' not found!");

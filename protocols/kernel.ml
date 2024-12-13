@@ -25,6 +25,9 @@ type t = {
   block_dim: Dim3.t option;
 }
 
+let name (k:t) : string =
+  k.name
+
 let apply_arch (a:Architecture.t) (k:t) : t =
   let d = Architecture.to_defaults a in
   let arrays =

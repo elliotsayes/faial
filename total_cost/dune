@@ -9,3 +9,15 @@
     bank_conflicts ra inference analyze_cost
   )
 )
+
+(executable
+  (public_name faial-cost-diff)
+  (name diff)
+  (modules diff)
+  (libraries
+    ; 1st-party
+    cmdliner z3 printbox printbox-text
+    ; 1st-pary
+    bank_conflicts ra inference analyze_cost
+  )
+)
