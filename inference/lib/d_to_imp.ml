@@ -379,8 +379,8 @@ module Context = struct
 
   (* Generate the preamble *)
   let gen_preamble (c:t) : Imp.Stmt.t =
-    let open Imp.Stmt in
-    [Decl (List.map (fun (k,v) -> Imp.Decl.set k v) c.assigns)]
+    c.assigns
+    |> List.map (fun (k,v) -> Imp.Stmt.decl_set k v)
     |> Stmt.from_list
 end
 
@@ -435,7 +435,7 @@ let parse_decl_stmt
     let* d = parse_decl ctx d in
     return (
       match d with
-      | Some d -> Stmt.Decl [d]
+      | Some d -> Stmt.Decl d
       | None -> Stmt.Skip
     )
   )

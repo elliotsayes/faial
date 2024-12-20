@@ -14,7 +14,7 @@ type t =
   | Atomic of Atomic_write.t
   | Write of Write.t
   | LocationAlias of Alias.t
-  | Decl of Decl.t list
+  | Decl of Decl.t
   | Assign of {var: Variable.t; data: Exp.nexp; ty: C_type.t}
   | If of (Exp.bexp * t * t)
   | For of (Range.t * t)
@@ -115,7 +115,7 @@ let rec first : t -> t =
 
 let for_ (r:Range.t) (s:t) : t =
   match s with
-  | Skip | Decl [] -> Skip
+  | Skip -> Skip
   | _ -> For (r, s)
 
 let if_ (b:Exp.bexp) (p1:t) (p2:t) : t =
@@ -145,6 +145,15 @@ let rec skip_last : t -> t =
 let from_list : t list -> t =
   List.fold_left seq Skip
 
+let decl (d:Decl.t) : t =
+  Decl d
+
+let decl_set (x:Variable.t) (e:Exp.nexp) : t =
+  Decl (Decl.set x e)
+(*
+let decl_unset (x:Variable.t) : t =
+  Decl (Decl.unset x)
+*)
 let to_list ?(rev=true) : t -> t list =
   let rec loop (accum:t list) : t -> t list =
     function
@@ -161,16 +170,8 @@ let to_list ?(rev=true) : t -> t list =
 let assign (ty:C_type.t) (var:Variable.t) (data:Exp.nexp) : t =
   Assign {ty; var; data}
 
-let decl_unset (vs:Variable.Set.t) : t =
-  if Variable.Set.is_empty vs then
-    Skip
-  else
-    let vs =
-      vs
-      |> Variable.Set.elements
-      |> List.map Decl.unset
-    in
-    Decl vs
+let decl_unset (v:Variable.t) : t =
+  Decl (Decl.unset v)
 
 let to_s: t -> Indent.t list =
   let rec stmt_to_s : t -> Indent.t list =
@@ -204,10 +205,8 @@ let to_s: t -> Indent.t list =
     | Assign a -> [Line (Variable.name a.var ^ " = " ^ Exp.n_to_string a.data ^ ";")]
     | LocationAlias l ->
       [Line ("alias " ^ Alias.to_string l)]
-    | Decl [] -> []
-    | Decl l ->
-      let entries = String.concat ", " (List.map Decl.to_string l) in
-      [Line ("decl " ^ entries ^ ";")]
+    | Decl d ->
+      [Line ("decl " ^ Decl.to_string d ^ ";")]
 
     | If (b, s1, Skip) -> [
         Line ("if (" ^ Exp.b_to_string b ^ ") {");

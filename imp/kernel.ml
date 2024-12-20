@@ -226,8 +226,8 @@ let apply (args : (Variable.t * Arg.t) list) (k:t) : Stmt.t =
     let i =
       let open Arg in
       match a with
-      | Scalar e -> Stmt.Decl [Decl.set x e]
-      | Unsupported -> Stmt.Decl [Decl.unset x]
+      | Scalar e -> Stmt.decl_set x e
+      | Unsupported -> Stmt.decl_unset x
       | Array u -> Stmt.LocationAlias {
           target = x;
           source = u.address;

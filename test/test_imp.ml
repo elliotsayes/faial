@@ -35,7 +35,7 @@ let tests = "test_predicates" >::: [
     let id = Variable.from_name "id" in
     let sq = Variable.from_name "s_Q" in
     let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
-    let inc (x:Variable.t) = Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))] in
+    let inc (x:Variable.t) = Imp.Stmt.decl_set x (n_plus (Num 32) (Var x)) in
     let p : Stmt.t = Stmt.from_list [
       inc id;
       wr;
@@ -90,11 +90,11 @@ let tests = "test_predicates" >::: [
     let sq = Variable.from_name "s_Q" in
     let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
     let inc (x:Variable.t) =
-      Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))]
+      Imp.Stmt.decl_set x (n_plus (Num 32) (Var x))
     in
     let p = Stmt.(from_list [
-      Decl [Decl.unset tid];
-      Decl [Decl.set id (Var tid)];
+      Stmt.decl_unset tid;
+      Stmt.decl_set id (Var tid);
       wr;
       inc id;
       wr;
@@ -143,11 +143,11 @@ let tests = "test_predicates" >::: [
     let sq = Variable.from_name "s_Q" in
     let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
     let inc (x:Variable.t) =
-      Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))]
+      Imp.Stmt.decl_set x (n_plus (Num 32) (Var x))
     in
     let p = Imp.Stmt.(from_list [
-      Decl [Decl.unset tid];
-      Decl [Decl.set id (Var tid)];
+      Stmt.decl_unset tid;
+      Stmt.decl_set id (Var tid);
       wr;
       inc id;
       wr;
@@ -195,16 +195,16 @@ let tests = "test_predicates" >::: [
     let sq = Variable.from_name "s_Q" in
     let wr = Imp.Stmt.(Write {array=sq; index=[Var id]; payload=None}) in
     let inc (x:Variable.t) =
-      Imp.Stmt.Decl [Decl.set x (n_plus (Num 32) (Var x))]
+      Imp.Stmt.decl_set x (n_plus (Num 32) (Var x))
     in
     let p = Imp.Stmt.(from_list [
-      Decl [Decl.unset (Variable.from_name "threadIdx.x")];
-      Decl [Decl.set n (Var (Variable.from_name "threadIdx.x"))];
-      Decl [Decl.set k (Var (Variable.from_name "blockIdx.x"))];
-      Decl [Decl.set m (
+      Stmt.decl_unset (Variable.from_name "threadIdx.x");
+      Stmt.decl_set n (Var (Variable.from_name "threadIdx.x"));
+      Stmt.decl_set k (Var (Variable.from_name "blockIdx.x"));
+      Stmt.decl_set m (
         n_plus (Var n) (n_mult (Num 96) (Var k))
-      )];
-      Decl [Decl.set id (Var n)];
+      );
+      Stmt.decl_set id (Var n);
       wr;
       inc id;
       wr;
@@ -250,14 +250,10 @@ let tests = "test_predicates" >::: [
       index=[Var a; Var b]; payload=None}
     ) in
     let p = Imp.Stmt.(from_list [
-      Decl [
-        Decl.unset x;
-        Decl.set a (Var x);
-      ];
-      Decl [
-        Decl.unset x;
-        Decl.set b (Var x);
-      ];
+      decl_unset x;
+      decl_set a (Var x);
+      decl_unset x;
+      decl_set b (Var x);
       wr;
     ]) in
     let p1 : Scoped.t =

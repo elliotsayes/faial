@@ -173,7 +173,11 @@ let vars ?(init=Variable.Set.empty) (m:'a state) : (Variable.Set.t * 'a) =
 let unknowns ?(init=Variable.Set.empty) (m:Stmt.t state) : Stmt.t =
   let (vs, a) = vars ~init m in
   Stmt.seq
-    (Stmt.decl_unset vs)
+    (vs
+      |> Variable.Set.to_list
+      |> List.map Stmt.decl_unset
+      |> Stmt.from_list
+    )
     a
 
 (** Run the state monad only and returns something only when

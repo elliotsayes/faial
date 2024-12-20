@@ -269,10 +269,8 @@ let from_stmt : Params.t * Stmt.t -> Params.t * t =
     | Seq (LocationAlias e, s) ->
       let* s = imp_to_scoped s in
       return (loc_subst e s)
-    | Seq (Decl [], p) ->
-      imp_to_scoped p
-    | Seq (Decl (d::l), p) ->
-      let* s = imp_to_scoped (Seq (Decl l, p)) in
+    | Seq (Decl d, p) ->
+      let* s = imp_to_scoped p in
       return (Decl (d, s))
     | Seq (Assign {var; data; ty;}, p) ->
       let* body = imp_to_scoped p in

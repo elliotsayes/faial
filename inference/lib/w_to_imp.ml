@@ -542,7 +542,10 @@ module Expressions = struct
     ) in
     (* generate all of the statements *)
     Imp.Stmt.from_list [
-      Imp.Stmt.decl_unset vars;
+      (vars
+      |> Variable.Set.to_list
+      |> List.map Imp.Stmt.decl_unset
+      |> Imp.Stmt.from_list);
       Imp.Stmt.from_list reads;
       post
     ]
@@ -660,11 +663,11 @@ module Const = struct
   let to_stmt (c:t) : Imp.Stmt.t option =
     if C_type.is_int c.ty
     then
-      Some (Imp.Stmt.Decl [{
+      Some (Imp.Stmt.Decl {
           var=c.var;
           ty=c.ty;
           init=Some c.init;
-        }])
+        })
     else
       None
 end
@@ -909,7 +912,7 @@ module Statements = struct
               Imp.Stmt.seq
                 (match result with
                   | Some {var; _} ->
-                    Decl [Imp.Decl.unset var]
+                    Imp.Stmt.decl_unset var
                   | None -> Skip
                 )
                 (Call { args; kernel; ty=kernel; })
@@ -962,11 +965,11 @@ module LocalDeclarations = struct
       let* init = State.option_map n_tr l.init in
       return (
         if W_lang.Type.is_int l.ty then
-          Imp.Stmt.Decl [{
+          Imp.Stmt.Decl {
             var=l.var;
             ty=Types.tr l.ty;
             init;
-          }]
+          }
         else
           Skip
       )

@@ -108,45 +108,30 @@ module Infer = struct
         l
         |> List.map (fun i -> Decl.unset i.var)
     in
-    if l = [] then
-      Skip
-    else
-      Decl l
+    l
+    |> List.map Stmt.decl
+    |> Stmt.from_list
 
   (** Find the first init and return an alterated statement without the
       init found. *)
-  let parse_init (x:Variable.t) : Stmt.t -> Exp.nexp option * Stmt.t =
-    (* Search for a decl that is initialized *)
-    let rec parse_decl : Decl.t list -> Exp.nexp option * Decl.t list =
-      function
-      | {var; init; _} :: l when Variable.equal x var->
-        (init, l)
-      | d :: l ->
-        let (d', l) = parse_decl l in
-        (d', d :: l)
-      | [] ->
-        None, []
-    in
-    let rec parse_init : Stmt.t -> Exp.nexp option * Stmt.t =
-      function
-      | Decl l ->
-        let (d, l) = parse_decl l in
-        let s : Stmt.t = if l = [] then Skip else Decl l in
-        (d, s)
-      | Assign {var; data; _} when Variable.equal x var ->
-        (Some data, Skip)
-      | Seq (s1, s2) ->
-        let (d, s1) = parse_init s1 in
-        if Option.is_some d then
-          (* Don't recurse to s2 *)
-          (d, Stmt.seq s1 s2)
-        else
-          (* Not in s1, so recurse to s2 *)
-          let (d, s2) = parse_init s2 in
-          (d, Stmt.seq s1 s2)
-      | s -> (None, s)
-    in
-    parse_init
+  let rec parse_init (x:Variable.t) : Stmt.t -> Exp.nexp option * Stmt.t =
+    (* Search for a decl that is initialized; remove decl
+       if found *)
+    function
+    | Decl {var; init; _} when Variable.equal x var ->
+      (init, Skip)
+    | Assign {var; data; _} when Variable.equal x var ->
+      (Some data, Skip)
+    | Seq (s1, s2) ->
+      let (d, s1) = parse_init x s1 in
+      if Option.is_some d then
+        (* Don't recurse to s2 *)
+        (d, Stmt.seq s1 s2)
+      else
+        (* Not in s1, so recurse to s2 *)
+        let (d, s2) = parse_init x s2 in
+        (d, Stmt.seq s1 s2)
+    | s -> (None, s)
 
   let parse_cond (x:Variable.t) : Exp.bexp -> Comparator.t unop option =
     function
