@@ -109,9 +109,13 @@ module ParameterList = struct
       Params.empty
       l
 
-  let to_set (x:t) : Variable.Set.t =
+  let to_list (x:t) : Variable.t list =
     x
     |> List.map fst
+
+  let to_set (x:t) : Variable.Set.t =
+    x
+    |> to_list
     |> Variable.Set.of_list
 end
 
@@ -221,7 +225,7 @@ let compile (k:t) : Protocols.Kernel.t =
 let calls (k:t) : StringSet.t =
   Stmt.calls k.code
 
-let apply (args : (Variable.t * Arg.t) list) (k:t) : Stmt.t =
+let apply (args : Arg.t list) (k:t) : Stmt.t =
   List.fold_left (fun s (x, a) ->
     let i =
       let open Arg in
@@ -235,7 +239,7 @@ let apply (args : (Variable.t * Arg.t) list) (k:t) : Stmt.t =
         }
     in
     Stmt.Seq (i, s)
-  ) k.code args
+  ) k.code (Common.zip (ParameterList.to_list k.parameters) args)
 
 let inline (funcs:t StringMap.t) (k:t) : t =
   let rec inline (s:Stmt.t) : Stmt.t =

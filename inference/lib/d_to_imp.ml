@@ -535,7 +535,6 @@ let rec parse_stmt
       ) else
       Infer_exp.unknowns (
         let* args = State.list_map Arg.parse args in
-        let args = List.map2 (fun x y -> (x, y)) s.params args in
         let open Imp.Stmt in
         return (Call {kernel=s.kernel; ty=s.ty; args})
       )

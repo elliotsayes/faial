@@ -891,8 +891,8 @@ module Statements = struct
             let open State.Syntax in
             Expressions.run (
               let* args = State.list_map n_tr args in
-              let args : (Variable.t * Imp.Arg.t) list =
-                List.map2 (fun arg (name, ty) ->
+              let args : Imp.Arg.t list =
+                List.map2 (fun arg (_, ty) ->
                   let arg =
                     let open Imp in
                     if W_lang.Type.is_array ty then
@@ -906,7 +906,7 @@ module Statements = struct
                       (* unsupported *)
                       Unsupported
                   in
-                  (Variable.from_name name, arg)
+                  arg
                 ) args k
               in
               Imp.Stmt.seq

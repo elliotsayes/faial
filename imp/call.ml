@@ -1,9 +1,7 @@
-open Protocols
-
 type t = {
   kernel: string;
   ty: string;
-  args : (Variable.t * Arg.t) list
+  args : Arg.t list
 }
 
 let kernel_id ~kernel ~ty : string =
@@ -15,9 +13,7 @@ let unique_id (c:t) : string =
 let to_string (c:t) : string =
   let args =
     c.args
-    |> List.map (fun (k, a) ->
-      Variable.name k ^ "=" ^ Arg.to_string a
-    )
+    |> List.map Arg.to_string
     |> String.concat ", "
   in
   c.kernel ^ "(" ^ args ^ ")"
