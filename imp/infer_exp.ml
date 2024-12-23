@@ -76,6 +76,9 @@ let max (e1:t) (e2:t) : n =
 let or_ (e1:t) (e2:t) : b =
   BRel (BOr, e1, e2)
 
+let not_ (e:t) : b =
+  BNot e
+
 let n_eq (e1:t) (e2:t) : b =
   NRel (Eq, e1, e2)
 
