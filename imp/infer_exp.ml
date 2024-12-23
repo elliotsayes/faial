@@ -173,15 +173,19 @@ and to_bexp (e:t) : Exp.bexp state =
 let vars ?(init=Variable.Set.empty) (m:'a state) : (Variable.Set.t * 'a) =
   State.run init m
 
-let unknowns ?(init=Variable.Set.empty) (m:Stmt.t state) : Stmt.t =
+let decls ?(init=Variable.Set.empty) (m:'a state) : (Stmt.t * 'a) =
   let (vs, a) = vars ~init m in
-  Stmt.seq
-    (vs
-      |> Variable.Set.to_list
-      |> List.map Stmt.decl_unset
-      |> Stmt.from_list
-    )
-    a
+  let delcs =
+    vs
+    |> Variable.Set.to_list
+    |> List.map Stmt.decl_unset
+    |> Stmt.from_list
+  in
+  delcs, a
+
+let unknowns ?(init=Variable.Set.empty) (m:Stmt.t state) : Stmt.t =
+  let (d, a) = decls ~init m in
+  Stmt.seq d a
 
 (** Run the state monad only and returns something only when
    there are no unknowns *)

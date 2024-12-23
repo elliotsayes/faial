@@ -1005,6 +1005,7 @@ module Functions = struct
       visibility = Device;
       grid_dim = None;
       block_dim = None;
+      return = None;
     }
 end
 

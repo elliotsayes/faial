@@ -132,6 +132,8 @@ type t = {
   global_variables: Params.t;
   (* The code of a kernel performs the actual memory accesses. *)
   code: Stmt.t;
+  (* A kernel may return a value *)
+  return: Exp.nexp option;
   (* Visibility *)
   visibility: Visibility.t;
   (* Number of blocks *)

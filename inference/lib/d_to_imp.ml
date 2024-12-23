@@ -826,6 +826,7 @@ let parse_kernel
       );
     block_dim = None;
     grid_dim = None;
+    return = None;
   })
 
 let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list =
