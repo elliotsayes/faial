@@ -236,7 +236,7 @@ let apply (args : Arg.t list) (k:t) : Stmt.t =
       | Unsupported -> Stmt.decl_unset x
       | Array u -> Stmt.LocationAlias {
           target = x;
-          source = u.address;
+          source = u.array;
           offset = u.offset;
         }
     in

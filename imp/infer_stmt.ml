@@ -7,12 +7,42 @@ numeric/boolean expressions, which may generate new variable declarations.
 
 open Stage0
 open Protocols
-open State
+open State.Syntax
 
-type arg =
-  | Scalar of Infer_exp.t
-  | Array of {address: Variable.t; offset: Infer_exp.t}
-  | Unsupported
+module O_Array_use = Array_use (* Refer to the root Array_use *)
+
+module Array_use = struct
+  type t = {array: Variable.t; offset: Infer_exp.t; }
+
+  let make ?(offset=Infer_exp.num 0) (array:Variable.t) : t =
+    { array; offset }
+
+  let infer : t -> O_Array_use.t Infer_exp.state =
+    function
+    {array; offset} ->
+      let* offset = Infer_exp.to_nexp offset in
+      return {O_Array_use.array; O_Array_use.offset}
+end
+
+module O_Arg = Arg (* Refer to the root Arg *)
+
+module Arg = struct
+  type t =
+    | Scalar of Infer_exp.t
+    | Array of Array_use.t
+    | Unsupported
+
+  let infer : t -> O_Arg.t Infer_exp.state =
+    function
+    | Scalar e ->
+      let* e = Infer_exp.to_nexp e in
+      return (O_Arg.Scalar e)
+    | Array {array; offset} ->
+      let* offset = Infer_exp.to_nexp offset in
+      return (O_Arg.Array {array; offset})
+    | Unsupported ->
+      return O_Arg.Unsupported
+end
 
 type t =
   | Skip
@@ -55,7 +85,7 @@ type t =
   | Call of {
       kernel: string;
       ty: string;
-      args : arg list
+      args : Arg.t list
     }
   | Break
   | Continue
@@ -79,20 +109,6 @@ let rec skip_last : t -> t =
   | Seq (s1, s2) ->
     seq s1 (skip_last s2)
   | _ -> Skip
-
-(* Monadic let *)
-let ( let* ) = State.bind
-
-let to_arg : arg -> Arg.t Infer_exp.state =
-  function
-  | Scalar e ->
-    let* e = Infer_exp.to_nexp e in
-    return (Arg.Scalar e)
-  | Array {address; offset} ->
-    let* offset = Infer_exp.to_nexp offset in
-    return (Arg.Array {address; offset})
-  | Unsupported ->
-    return Arg.Unsupported
 
 let ret_assert (b:Infer_exp.t) (v:Assert.Visibility.t) : Stmt.t =
   match Infer_exp.(no_unknowns (to_bexp b)) with
@@ -191,7 +207,7 @@ let rec to_stmt : t -> Stmt.t =
 
   | Call { kernel; ty; args; } ->
     Infer_exp.unknowns (
-      let* args = State.list_map to_arg args in
+      let* args = State.list_map Arg.infer args in
       return (Stmt.Call {kernel; ty; args})
     )
 

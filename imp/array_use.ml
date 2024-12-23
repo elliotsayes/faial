@@ -1,9 +1,9 @@
 open Protocols
 
-type t = {address: Variable.t; offset: Exp.nexp}
+type t = {array: Variable.t; offset: Exp.nexp}
 
-let make ?(offset=Exp.Num 0) (address:Variable.t) : t =
-  {address; offset}
+let make ?(offset=Exp.Num 0) (array:Variable.t) : t =
+  {array; offset}
 
 let to_string (l:t) : string =
-  Variable.name l.address ^ ":(" ^ Exp.n_to_string l.offset ^ ")"
+  "&" ^ Variable.name l.array ^ "[" ^ Exp.n_to_string l.offset ^ "]"
