@@ -46,7 +46,7 @@ let rec i_to_string : Reals.integer -> string =
       | Pow -> "^"
     in
     if infix then
-      "(" ^ e1 ^ o ^ e2 ^ ")"
+      "(" ^ e1 ^ o ^ "(" ^ e2 ^ "))"
     else
       o ^ "(" ^ e1 ^ ", " ^ e2 ^")"
   | Unary (BitNot, e) ->
@@ -102,7 +102,7 @@ let rec from_summation : Summation.t -> string =
     | Plus ->
       from_summation lhs ^ " + " ^ from_summation rhs
     | Minus ->
-      from_summation lhs ^ " - " ^ from_summation rhs
+      from_summation lhs ^ " - (" ^ from_summation rhs ^ ")"
     | _ ->
       Summation.Op.to_string o ^
       "(" ^ from_summation lhs ^ ", " ^ from_summation rhs ^ ")"

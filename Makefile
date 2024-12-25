@@ -18,7 +18,7 @@ all: c-ast \
 
 clean:
 	$(DUNE) clean
-	rm -f faial-bin gen_kernels pico faial-gen
+	rm -f faial-bin gen_kernels pico faial-gen faial-cost-diff
 
 wgsl-ast:
 	$(DUNE) build inference/bin/w_ast.exe
