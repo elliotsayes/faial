@@ -909,14 +909,8 @@ module Statements = struct
                   arg
                 ) args k
               in
-              Imp.Stmt.seq
-                (match result with
-                  | Some {var; _} ->
-                    Imp.Stmt.decl_unset var
-                  | None -> Skip
-                )
-                (Call { args; kernel; ty=kernel; })
-              |> return
+              let result = Option.map W_lang.Ident.var result in
+              return (Call { result; args; kernel; ty=kernel; })
             )
           )
         | Loop {body; continuing; break_if=Some e} ->

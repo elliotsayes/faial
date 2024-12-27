@@ -1,4 +1,5 @@
 type t = {
+  result: Protocols.Variable.t option;
   kernel: string;
   ty: string;
   args : Arg.t list
@@ -16,4 +17,9 @@ let to_string (c:t) : string =
     |> List.map Arg.to_string
     |> String.concat ", "
   in
-  c.kernel ^ "(" ^ args ^ ")"
+  let pre =
+    match c.result with
+    | Some v -> Protocols.Variable.name v ^ " = "
+    | None -> ""
+  in
+  pre ^ c.kernel ^ "(" ^ args ^ ")"

@@ -13,15 +13,7 @@ let (@) = Common.append_tr
 
 open Exp
 
-(* Monadic let *)
-let ( let* ) = Result.bind
-(* Monadic pipe *)
-let (>>=) = Result.bind
-
 type d_error = string StackTrace.t
-
-let print_error : d_error -> unit =
-  StackTrace.iter prerr_endline
 
 let error_to_buffer (e: d_error) : Buffer.t =
   let b = Buffer.create 512 in
@@ -34,22 +26,6 @@ let unwrap : 'a d_result -> 'a =
   function
   | Ok a -> a
   | Error e -> failwith (error_to_buffer e |> Buffer.contents)
-
-let root_cause (msg:string) : 'a d_result =
-  Error (RootCause msg)
-
-let with_msg_ex (on_err:'a -> string) (f:'a -> 'b d_result) (c:'a): 'b d_result =
-  match f c with
-  | Ok o -> Ok o
-  | Error err -> Error (Because (on_err c, err))
-
-let with_msg (msg:string) (f:'a -> 'b d_result) (c:'a): 'b d_result =
-  match f c with
-  | Ok o -> Ok o
-  | Error err -> Error (Because (msg, err))
-
-let with_exp (msg:string) (e: D_lang.Expr.t) : (D_lang.Expr.t -> 'a d_result) -> D_lang.Expr.t -> 'a d_result =
-  with_msg (msg ^ ": " ^ D_lang.Expr.to_string e)
 
 let parse_var: D_lang.Expr.t -> Variable.t =
   function
@@ -112,7 +88,7 @@ let parse_bin (op:string) (l:Imp.Infer_exp.t) (r:Infer_exp.t) : Infer_exp.t =
     "(" ^ Infer_exp.to_string r ^ ")" in
     Unknown lbl
 
-let rec parse_exp (e:D_lang.Expr.t) : Infer_exp.t =
+let rec infer_expr (e:D_lang.Expr.t) : Infer_exp.t =
   match e with
   (* ---------------- CUDA SPECIFIC ----------- *)
   | MemberExpr {base=Ident base; name=field; _} ->
@@ -143,52 +119,52 @@ let rec parse_exp (e:D_lang.Expr.t) : Infer_exp.t =
     NExp (Num (Float.to_int n))
 
   | ConditionalOperator o ->
-    let b = parse_exp o.cond in
-    let n1 = parse_exp o.then_expr in
-    let n2 = parse_exp o.else_expr in
+    let b = infer_expr o.cond in
+    let n1 = infer_expr o.then_expr in
+    let n2 = infer_expr o.else_expr in
     NExp (NIf (b, n1, n2))
 
   | UnaryOperator {opcode="~"; child=e; _} ->
-    let n = parse_exp e in
+    let n = infer_expr e in
     NExp (Unary (BitNot, n))
 
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _}
     when Variable.name n = "divUp" ->
-    let n1 = parse_exp n1 in
-    let n2 = parse_exp n2 in
+    let n1 = infer_expr n1 in
+    let n2 = infer_expr n2 in
     (*  (n1 + n2 - 1)/n2 *)
     let n2_minus_1 : Infer_exp.n = Binary (Minus, n2, NExp (Num 1)) in
     let n1_plus_n2_minus_1 : Infer_exp.n = Binary (Plus, n1, NExp n2_minus_1) in
     NExp (Binary (Div, NExp n1_plus_n2_minus_1, n2))
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__other_int" ->
-    let n = parse_exp n in
+    let n = infer_expr n in
     NExp (Other n)
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__uniform_int" ->
-    let n = parse_exp n in
+    let n = infer_expr n in
     BExp (Infer_exp.thread_equal n)
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__distinct_int" ->
-    let n = parse_exp n in
+    let n = infer_expr n in
     BExp (Infer_exp.thread_distinct n)
 
   | CallExpr {func = Ident {name=f; kind=Function; _}; args = [n]; _} when Variable.name f = "__is_pow2" ->
-    let n = parse_exp n in
+    let n = infer_expr n in
     BExp (Pred ("pow2", n))
 
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _} when Variable.name n = "min" ->
-    let n1 = parse_exp n1 in
-    let n2 = parse_exp n2 in
+    let n1 = infer_expr n1 in
+    let n2 = infer_expr n2 in
     NExp (NIf (BExp (NRel (Lt, n1, n2)), n1, n2))
 
   | CallExpr {func = Ident {name=n; kind=Function; _}; args = [n1; n2]; _} when Variable.name n = "max" ->
-    let n1 = parse_exp n1 in
-    let n2 = parse_exp n2 in
+    let n1 = infer_expr n1 in
+    let n2 = infer_expr n2 in
     NExp (NIf (BExp (NRel (Gt, n1, n2)), n1, n2))
 
   | BinaryOperator {lhs=l; opcode="&"; rhs=IntegerLiteral 1; _} ->
-    let n = parse_exp l in
+    let n = infer_expr l in
     BExp (NRel (Eq, NExp (Binary (Mod, n, NExp (Num 2))), NExp (Num 0)))
 
   | BinaryOperator {
@@ -205,22 +181,22 @@ let rec parse_exp (e:D_lang.Expr.t) : Infer_exp.t =
       rhs=IntegerLiteral 0;
       _
     } when Decl_expr.equal n1 n2 ->
-    let n = parse_exp e in
+    let n = infer_expr e in
     BExp (Infer_exp.or_ (BExp (Pred ("pow2", n))) (BExp (Infer_exp.n_eq n (NExp (Num 0)))))
 
   | BinaryOperator {opcode=","; lhs=_; rhs=e; _} ->
-    parse_exp e
+    infer_expr e
 
   | BinaryOperator {opcode=o; lhs=n1; rhs=n2; _} ->
-    let n1 = parse_exp n1 in
-    let n2 = parse_exp n2 in
+    let n1 = infer_expr n1 in
+    let n2 = infer_expr n2 in
     parse_bin o n1 n2
 
   | CXXBoolLiteralExpr b ->
     BExp (Bool b)
 
   | UnaryOperator u when u.opcode = "!" ->
-    let b = parse_exp u.child in
+    let b = infer_expr u.child in
     BExp (BNot b)
 
   | RecoveryExpr _
@@ -237,21 +213,12 @@ let rec parse_exp (e:D_lang.Expr.t) : Infer_exp.t =
     failwith ("WARNING: parse_nexp: unsupported expression " ^ D_lang.Expr.name e ^ " : " ^ D_lang.Expr.to_string e)
 
 let to_nexp (e:D_lang.Expr.t) : Exp.nexp Infer_exp.state =
-  Infer_exp.to_nexp (parse_exp e)
-
-let to_bexp (e:D_lang.Expr.t) : Exp.bexp Infer_exp.state =
-  Infer_exp.to_bexp (parse_exp e)
+  Infer_exp.to_nexp (infer_expr e)
 
 let try_to_nexp (e:D_lang.Expr.t) : Exp.nexp option =
   e
-  |> parse_exp
+  |> infer_expr
   |> Infer_exp.to_nexp
-  |> Infer_exp.no_unknowns
-
-let try_to_bexp (e:D_lang.Expr.t) : Exp.bexp option =
-  e
-  |> parse_exp
-  |> Infer_exp.to_bexp
   |> Infer_exp.no_unknowns
 
 let parse_type (e:J_type.t) : C_type.t =
@@ -262,17 +229,13 @@ let parse_type (e:J_type.t) : C_type.t =
   )
   |> unwrap
 
-
-module Arg = struct
-  open Imp
-  open Stage0.State.Syntax
-
-  let rec parse_array : D_lang.Expr.t -> Array_use.t option Infer_exp.state =
+let infer_arg (e: D_lang.Expr.t) : Infer_stmt.Arg.t =
+  let rec to_array_use : D_lang.Expr.t -> Infer_stmt.Array_use.t option =
     function
     | Ident v ->
-      return (Some (Array_use.make v.name))
+      Some (Infer_stmt.Array_use.make v.name)
     | UnaryOperator {opcode; child=Ident _ as v; _} when opcode = "&" ->
-      parse_array v
+      to_array_use v
     | BinaryOperator o when o.opcode = "+" ->
       let lhs_ty = D_lang.Expr.to_type o.lhs |> parse_type in
       let address, offset =
@@ -280,35 +243,30 @@ module Arg = struct
         then o.lhs, o.rhs
         else o.rhs, o.lhs
       in
-      let* arr = parse_array address in
-      (match arr with
-      | Some arr ->
-        let* offset = to_nexp offset in
-        let arr : Imp.Array_use.t = {
-          arr with offset = Exp.n_plus offset arr.offset
-        } in
-        return (Some arr)
-      | None -> return None)
+      address
+      (* try to parse array use *)
+      |> to_array_use
+      (* add offset *)
+      |> Option.map (fun arr ->
+          let offset = infer_expr offset in
+          Infer_stmt.Array_use.add offset arr
+        )
     | _ ->
-      return None
-
-  let parse (e: D_lang.Expr.t) : Arg.t Infer_exp.state =
-    let open Imp.Arg in
-    let ty = D_lang.Expr.to_type e |> parse_type in
-    if C_type.is_array ty then (
-      let* a = parse_array e in
-      return (
-        match a with
-        | Some l -> Array l
-        | None -> Unsupported
-      )
-    ) else if C_type.is_int ty then (
-      (* Handle integer *)
-      let* e = to_nexp e in
-      return (Scalar e)
-    ) else
-      return Unsupported
-end
+      None
+  in
+  let ty = D_lang.Expr.to_type e |> parse_type in
+  if C_type.is_array ty then (
+    e
+    |> to_array_use
+    (* If we have an array, wrap it under Array *)
+    |> Option.map (fun o -> Infer_stmt.Arg.Array o)
+    (* Otherwise, return unsupported *)
+    |> Option.value ~default:Infer_stmt.Arg.Unsupported
+  ) else if C_type.is_int ty then (
+    (* Handle scalars *)
+    Scalar (infer_expr e)
+  ) else
+    Unsupported
 
 (* -------------------------------------------------------------- *)
 
@@ -384,63 +342,7 @@ module Context = struct
     |> Stmt.from_list
 end
 
-open Stage0.State.Syntax
-
-let parse_decl
-  (ctx:Context.t)
-  (d:D_lang.Decl.t)
-:
-  Imp.Decl.t option Imp.Infer_exp.state
-=
-  let x = d.var in
-  match
-    D_lang.Decl.types d
-    |> List.map (fun ty ->
-        Context.resolve (J_type.to_c_type ty) ctx
-      )
-    |> List.find_opt (fun ty ->
-        Context.is_int ty ctx
-      )
-  with
-  | Some ty ->
-    let* init : nexp option =
-      match d.init with
-      | Some (IExpr n) ->
-        let* n = to_nexp n in
-        return (Some n)
-      | _ -> return None
-    in
-    let d =
-      match init with
-      | Some n -> Imp.Decl.set ~ty x n
-      | None -> Imp.Decl.unset ~ty x
-    in
-    return (Some d)
-  | None ->
-    let x = Variable.name x in
-    let ty = J_type.to_string d.ty in
-    L.warning (
-      "parse_decl: skipping non-int local variable '" ^ x ^ "' "^
-      "type: " ^ ty
-    );
-    return None
-
-let parse_decl_stmt
-  (ctx:Context.t)
-  (d:D_lang.Decl.t)
-:
-  Imp.Stmt.t
-=
-  Infer_exp.unknowns (
-    let* d = parse_decl ctx d in
-    return (
-      match d with
-      | Some d -> Stmt.Decl d
-      | None -> Stmt.Skip
-    )
-  )
-
-let rec parse_load_expr
+let rec infer_load_expr
   (target:D_lang.Expr.t)
   (exp:D_lang.Expr.t)
 :
@@ -453,7 +355,7 @@ let rec parse_load_expr
   | CXXOperatorCallExpr {func=UnresolvedLookupExpr {name=n; _}; args=[lhs;rhs]; ty}
   | CXXOperatorCallExpr {func=Ident {name=n; _}; args=[lhs;rhs]; ty}
     when Variable.name n = "operator+" ->
-    let* l = parse_load_expr target lhs in
+    let* l = infer_load_expr target lhs in
     let offset : D_lang.Expr.t = BinaryOperator {
       opcode = "+";
       lhs = l.offset;
@@ -464,33 +366,11 @@ let rec parse_load_expr
   | CXXOperatorCallExpr _ ->
     None
   | BinaryOperator ({lhs=l; _} as b) ->
-    let* l = parse_load_expr target l in
+    let* l = infer_load_expr target l in
     let offset : D_lang.Expr.t = BinaryOperator {b with lhs=l.offset} in
     Some {l with offset}
   | _ ->
     None
-
-let parse_location_alias (s:d_location_alias) : Imp.Stmt.t =
-  Infer_exp.unknowns (
-    let source = parse_var s.source in
-    let target = parse_var s.target in
-    let* offset = to_nexp s.offset in
-    return (Imp.Stmt.LocationAlias { target; source; offset; })
-  )
-
-
-let cast_map f = Rjson.map_all f (fun idx _ e ->
-  StackTrace.Because ("Error parsing list: error in index #" ^ (string_of_int (idx + 1)), e))
-
-type 'a unop =
-  {op: 'a; arg: nexp}
-
-let ret_assert (b:D_lang.Expr.t) (v:Imp.Assert.Visibility.t) : Imp.Stmt.t =
-  let b = parse_exp b in
-  let open Imp.Stmt in
-  match Infer_exp.(no_unknowns (to_bexp b)) with
-  | Some b -> Assert (Imp.Assert.make b v)
-  | None -> Skip
 
 let asserts : Variable.Set.t =
   Variable.Set.of_list [
@@ -499,201 +379,236 @@ let asserts : Variable.Set.t =
     Variable.from_name "__requires"
   ]
 
-
-
-let rec parse_stmt
+let infer_stmt
   (ctx:Context.t)
-  (c:D_lang.Stmt.t)
 :
-  Imp.Stmt.t
+  D_lang.Stmt.t ->
+  Imp.Infer_stmt.t
 =
-  let parse_stmt = parse_stmt ctx in
   let resolve ty = Context.resolve ty ctx in
 
-  match c with
-  | Skip -> Skip
+  let infer_location_alias (s:d_location_alias) : Imp.Infer_stmt.t =
+    let source = parse_var s.source in
+    let target = parse_var s.target in
+    let offset = infer_expr s.offset in
+    Infer_stmt.LocationAlias { target; source; offset; }
+  in
 
-  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args=[]; _})
-    when Variable.name n = "__syncthreads" ->
-    Sync n.location
+  let infer_decl (d:D_lang.Decl.t) : Infer_stmt.t =
+    let x = d.var in
+    match
+      D_lang.Decl.types d
+      |> List.map (fun ty ->
+          Context.resolve (J_type.to_c_type ty) ctx
+        )
+      |> List.find_opt (fun ty ->
+          Context.is_int ty ctx
+        )
+    with
+    | Some ty ->
+      let init : Infer_exp.t option =
+        match d.init with
+        | Some (IExpr n) ->
+          Some (infer_expr n)
+        | _ -> None
+      in
+      let d : Infer_stmt.t =
+        match init with
+        | Some n -> Infer_stmt.decl_set ~ty x n
+        | None -> Infer_stmt.decl_unset ~ty x
+      in
+      d
+    | None ->
+      let x = Variable.name x in
+      let ty = J_type.to_string d.ty in
+      L.warning (
+        "parse_decl: skipping non-int local variable '" ^ x ^ "' "^
+        "type: " ^ ty
+      );
+      Skip
+  in
 
-  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args=[_]; _})
-    when Variable.name n = "sync" ->
-    Sync n.location
-
-    (* Static assert may have a message as second argument *)
-  | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = b :: _; _})
-    when Variable.Set.mem n asserts ->
-    ret_assert b Global
-
-  | SExpr (CallExpr {func = f; args; _ }) as e ->
+  let infer_call
+    ?(result=None)
+    (func:D_lang.Expr.t)
+    (args:D_lang.Expr.t list)
+  :
+    Infer_stmt.t
+  =
     let arg_count = List.length args in
-    (match Context.lookup_sig f arg_count ctx with
+    match Context.lookup_sig func arg_count ctx with
     | Some s ->
       if List.length s.params <> arg_count then (
-        failwith ("parse_stmt: CallExpr args mismatch: " ^ D_lang.Stmt.summarize e)
+        let e : D_lang.Expr.t = CallExpr {func; args; ty=J_type.unknown} in
+        failwith ("infer_call: CallExpr args mismatch: " ^ D_lang.Expr.to_string e)
       ) else
-      Infer_exp.unknowns (
-        let* args = State.list_map Arg.parse args in
-        let open Imp.Stmt in
-        return (Call {kernel=s.kernel; ty=s.ty; args})
-      )
+      let open Imp.Infer_stmt in
+      Call {
+        result;
+        kernel = s.kernel;
+        ty = s.ty;
+        args = List.map infer_arg args;
+      }
     | None ->
       Skip
-    )
+  in
 
-  | WriteAccessStmt w ->
-    let array =
-      w.target.name |> Variable.set_location w.target.location
-    in
-    Infer_exp.unknowns (
-      let* index = State.list_map to_nexp w.target.index in
-      return (Stmt.Write {array; index; payload=w.payload})
-    )
+  let rec infer : D_lang.Stmt.t -> Imp.Infer_stmt.t =
+    function
+    | Skip -> Skip
 
-  | ReadAccessStmt r ->
-    let array = r.source.name |> Variable.set_location r.source.location in
-    Infer_exp.unknowns (
-      let* index = State.list_map to_nexp r.source.index in
+    | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args=[]; _})
+      when Variable.name n = "__syncthreads" ->
+      Sync n.location
+
+    | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args=[_]; _})
+      when Variable.name n = "sync" ->
+      Sync n.location
+
+      (* Static assert may have a message as second argument *)
+    | SExpr (CallExpr {func = Ident {name=n; kind=Function; _}; args = b :: _; _})
+      when Variable.Set.mem n asserts ->
+      Infer_stmt.Assert (infer_expr b)
+
+    | SExpr (CallExpr {func; args; _ }) ->
+      infer_call func args
+
+    | WriteAccessStmt w ->
+      let array =
+        w.target.name |> Variable.set_location w.target.location
+      in
+      let index = List.map infer_expr w.target.index in
+      Infer_stmt.Write {
+        array;
+        index;
+        payload=w.payload
+      }
+
+    | ReadAccessStmt r ->
+      let array = r.source.name |> Variable.set_location r.source.location in
+      let index = List.map infer_expr r.source.index in
       let ty = r.ty |> resolve |> C_type.strip_array in
-      return (Stmt.Read {target=Some (ty, r.target); array; index})
-    )
+      Infer_stmt.Read {target=Some (ty, r.target); array; index}
 
-  | AtomicAccessStmt r ->
+    | AtomicAccessStmt r ->
 
-    let array = r.source.name |> Variable.set_location r.source.location in
-    Infer_exp.unknowns (
-      let* index = State.list_map to_nexp r.source.index in
+      let array = r.source.name |> Variable.set_location r.source.location in
+      let index = List.map infer_expr r.source.index in
       let ty = r.ty |> resolve |> C_type.strip_array in
-      return (Stmt.Atomic {
-          target=r.target;
-          atomic=r.atomic;
-          array;
-          index;
-          ty
-        }
+      Infer_stmt.Atomic {
+        target=r.target;
+        atomic=r.atomic;
+        array;
+        index;
+        ty
+      }
+
+
+    | IfStmt {cond; then_stmt; else_stmt} ->
+      Imp.Infer_stmt.If (
+        infer_expr cond,
+        infer then_stmt,
+        infer else_stmt
       )
-    )
 
-  | IfStmt {cond=b;then_stmt=ReturnStmt None;else_stmt=Skip} ->
-    let ty = D_lang.Expr.to_type b in
-    ret_assert (UnaryOperator {opcode="!"; child=b; ty}) Local
+    (* Support for location aliasing that declares a new variable *)
+    | DeclStmt [d] ->
+      let ( let* ) = Option.bind in
+      (* Detect non-standard declarations: *)
+      let s =
+        match d with
+        (* Detect kernel-calls: *)
+        | {init=Some (IExpr (CallExpr {func; args; _})); _} ->
+          (* Found a call, so extract the call and parse the rest
+            of the declaration yet unsetting the first decl *)
+          Some (infer_call ~result:(Some d.var) func args)
+        (* Detect array alias: *)
+        | {ty; init=Some (IExpr rhs); _} when
+          J_type.matches (fun x -> C_type.is_pointer x || C_type.is_auto x) ty
+        ->
+          let d_ty =
+            d.ty
+            |> J_type.to_c_type ~default:C_type.int
+            |> resolve
+            |> J_type.from_c_type
+          in
+          let lhs : D_lang.Expr.t = Ident (Decl_expr.from_name ~ty:d_ty d.var) in
+          let* a = infer_load_expr lhs rhs in
+          Some (infer_location_alias a)
+        (* Otherwise, nothing found *)
+        | _ ->
+          None
+      in
+      (match s with
+      | Some s -> s
+      | None ->
+        (* fall back to the default parsing of decls *)
+        infer_decl d)
+    | DeclStmt (d :: l) ->
+      Infer_stmt.seq (infer (DeclStmt [d])) (infer (DeclStmt l))
+    | DeclStmt [] -> Skip
 
-  | IfStmt {cond=b;then_stmt=BreakStmt;else_stmt=Skip} ->
-    let ty = D_lang.Expr.to_type b in
-    ret_assert (UnaryOperator {opcode="!"; child=b; ty}) Local
-
-  | IfStmt c ->
-    Infer_exp.unknowns (
-      let* b = to_bexp c.cond in
-      let t = parse_stmt c.then_stmt in
-      let e = parse_stmt c.else_stmt in
-      return (Imp.Stmt.if_ b t e)
-    )
-
-  (* Support for location aliasing that declares a new variable *)
-  | DeclStmt [d] ->
-    let ( let* ) = Option.bind in
-    (* Detect non-standard declarations: *)
-    let s =
-      match d with
-      (* Detect kernel-calls: *)
-      | {init=Some (IExpr rhs); _} when D_lang.Expr.is_call rhs ->
-        (* Found a call, so extract the call and parse the rest
-          of the declaration yet unsetting the first decl *)
-        Some (
-          Stmt.seq
-            (parse_stmt (SExpr rhs))
-            (parse_stmt (DeclStmt [{d with init = None}]))
-        )
-      (* Detect array alias: *)
-      | {ty; init=Some (IExpr rhs); _} when
-        J_type.matches (fun x -> C_type.is_pointer x || C_type.is_auto x) ty
-      ->
-        let d_ty =
-          d.ty
-          |> J_type.to_c_type ~default:C_type.int
-          |> resolve
-          |> J_type.from_c_type
-        in
-        let lhs : D_lang.Expr.t = Ident (Decl_expr.from_name ~ty:d_ty d.var) in
-        let* a = parse_load_expr lhs rhs in
-        Some (parse_location_alias a)
-      (* Otherwise, nothing found *)
-      | _ ->
-        None
-    in
-    (match s with
-    | Some s -> s
-    | None ->
-      (* fall back to the default parsing of decls *)
-      parse_decl_stmt ctx d)
-  | DeclStmt (d :: l) ->
-    Stmt.seq (parse_stmt (DeclStmt [d])) (parse_stmt (DeclStmt l))
-  | DeclStmt [] -> Skip
-
-  | SExpr ((BinaryOperator {opcode="="; lhs=Ident {ty; _} as lhs; rhs=rhs; _}))
-    when J_type.matches C_type.is_pointer ty
-  ->
-    parse_load_expr lhs rhs
-    |> Option.map parse_location_alias
-    |> Option.value ~default:Stmt.Skip
-
-  | SExpr (BinaryOperator {opcode="="; lhs=Ident {name=v; _}; rhs=rhs; ty; _})
+    | SExpr ((BinaryOperator {opcode="="; lhs=Ident {ty; _} as lhs; rhs=rhs; _}))
+      when J_type.matches C_type.is_pointer ty
     ->
-    Infer_exp.unknowns (
-      let* rhs = to_nexp rhs in
+      infer_load_expr lhs rhs
+      |> Option.map infer_location_alias
+      |> Option.value ~default:Infer_stmt.Skip
+
+    | SExpr (BinaryOperator {opcode="="; lhs=Ident {name=var; _}; rhs=rhs; ty; _})
+      ->
+      let rhs = infer_expr rhs in
       let ty = J_type.to_c_type ~default:C_type.int ty |> resolve in
-      return (Stmt.assign ty v rhs)
-    )
+      Infer_stmt.Assign {var; ty; data=rhs}
 
-  | ContinueStmt
-  | BreakStmt
-  | GotoStmt
-  | ReturnStmt _
-  | SExpr _ -> Stmt.Skip
+    | ContinueStmt -> Continue
+    | BreakStmt -> Break
+    | GotoStmt -> Skip
+    | ReturnStmt e ->
+      Return (Option.map infer_expr e)
+    | SExpr _ ->
+      Skip
 
-  | ForStmt s ->
-    Infer_exp.unknowns (
-      let init : Stmt.t =
+    | ForStmt s ->
+      let init : Infer_stmt.t =
         s.init
-        |> Option.map (fun (f:D_lang.ForInit.t) : Stmt.t ->
+        |> Option.map (fun (f:D_lang.ForInit.t) : Infer_stmt.t ->
             let s: D_lang.Stmt.t =
               match f with
               | Decls d -> D_lang.Stmt.DeclStmt d
               | Expr e -> SExpr e
             in
-            parse_stmt s
+            infer s
           )
-        |> Option.value ~default:Stmt.Skip
+        |> Option.value ~default:Infer_stmt.Skip
       in
-      let* cond = State.option_map to_bexp s.cond in
-      let cond = Option.value ~default:(Bool true) cond in
-      let body = parse_stmt s.body in
-      let inc = parse_stmt s.inc in
-      return (For.to_stmt For.{init; cond; inc;} body)
-    )
+      let cond =
+        s.cond
+        |> Option.map infer_expr
+        |> Option.value ~default:Infer_exp.true_
+      in
+      let body = infer s.body in
+      let inc = infer s.inc in
+      Infer_stmt.For {cond; init; body; inc}
 
-  | DoStmt w ->
-    Infer_exp.unknowns (
-      let body = parse_stmt w.body in
-      let* cond = to_bexp w.cond in
-      return (Stmt.Seq (body, For.infer_while cond body))
-    )
+    | DoStmt w ->
+      let body = infer w.body in
+      let cond = infer_expr w.cond in
+      DoWhile (cond, body)
 
-  | WhileStmt w ->
-    Infer_exp.unknowns (
-      let* cond = to_bexp w.cond in
-      return (For.infer_while cond (parse_stmt w.body))
-    )
+    | WhileStmt w ->
+      let body = infer w.body in
+      let cond = infer_expr w.cond in
+      While (cond, body)
 
-  | SwitchStmt {body=s; _}
-  | CaseStmt {body=s; _}
-  | DefaultStmt s ->
-    parse_stmt s
-  | Seq (s1, s2) ->
-    Seq (parse_stmt s1, parse_stmt s2)
-
+    | SwitchStmt {body=s; _}
+    | CaseStmt {body=s; _}
+    | DefaultStmt s ->
+      infer s
+    | Seq (s1, s2) ->
+      Seq (infer s1, infer s2)
+  in
+  infer
 
 type param = (Variable.t * C_type.t, Variable.t * Memory.t) Either.t
 
@@ -783,7 +698,7 @@ let parse_kernel
 :
   (Context.t * Imp.Kernel.t)
 =
-  let code = parse_stmt ctx k.code in
+  let (code, return) = Infer_stmt.infer (infer_stmt ctx k.code) in
   (* Add inferred shared arrays to global context *)
   let ctx =
     List.fold_left (fun ctx (x, m) ->
@@ -826,7 +741,7 @@ let parse_kernel
       );
     block_dim = None;
     grid_dim = None;
-    return = None;
+    return;
   })
 
 let parse_program (p:D_lang.Program.t) : Imp.Kernel.t list =

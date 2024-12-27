@@ -61,6 +61,12 @@ and to_b_string : b -> string =
   | Pred (o, e) ->
     o ^ "(" ^ to_string e ^ ")"
 
+let n_bin (o:N_binary.t) (e1:t) (e2:t) : n =
+  Binary (o, e1, e2)
+
+let plus : t -> t -> n =
+  n_bin Plus
+
 let lt (e1:t) (e2:t) : b =
   NRel (Lt, e1, e2)
 
@@ -96,6 +102,8 @@ let bool (b:bool) : t =
 
 let unknown (lbl:string) : t =
   Unknown lbl
+
+let true_ : t = bool true
 
 type 'a state = (Variable.Set.t, 'a) State.t
 

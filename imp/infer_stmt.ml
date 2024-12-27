@@ -17,6 +17,9 @@ module Array_use = struct
   let make ?(offset=Infer_exp.num 0) (array:Variable.t) : t =
     { array; offset }
 
+  let add (e:Infer_exp.t) (u:t) : t =
+    { u with offset = NExp (Infer_exp.plus u.offset e) }
+
   let infer : t -> O_Array_use.t Infer_exp.state =
     function
     {array; offset} ->
@@ -83,6 +86,7 @@ type t =
     }
   | If of (Infer_exp.t * t * t)
   | Call of {
+      result: Variable.t option;
       kernel: string;
       ty: string;
       args : Arg.t list
@@ -93,6 +97,15 @@ type t =
   | While of (Infer_exp.t * t)
   | DoWhile of (Infer_exp.t * t)
   | For of {init: t; cond: Infer_exp.t; inc: t; body: t}
+
+let decl_set ?(ty=C_type.int) (var: Variable.t) (init:Infer_exp.t) : t =
+  Decl {init=Some init; ty; var}
+
+let decl_unset ?(ty=C_type.int) (var: Variable.t) : t =
+  Decl {init=None; ty; var}
+
+let for_ ~init ~cond ~inc ~body : t =
+  For {init; cond; inc; body}
 
 let seq (s1:t) (s2:t) : t =
   match s1, s2 with
@@ -205,10 +218,10 @@ let rec to_stmt : t -> Stmt.t =
       )
     )
 
-  | Call { kernel; ty; args; } ->
+  | Call {result; kernel; ty; args;} ->
     Infer_exp.unknowns (
       let* args = State.list_map Arg.infer args in
-      return (Stmt.Call {kernel; ty; args})
+      return (Stmt.Call {result; kernel; ty; args})
     )
 
   | Break -> Skip
