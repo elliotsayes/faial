@@ -387,6 +387,10 @@ let infer_stmt
 =
   let resolve ty = Context.resolve ty ctx in
 
+  let infer_type (ty:J_type.t) : C_type.t =
+    Context.resolve (J_type.to_c_type ty) ctx
+  in
+
   let infer_location_alias (s:d_location_alias) : Imp.Infer_stmt.t =
     let source = parse_var s.source in
     let target = parse_var s.target in
@@ -521,7 +525,8 @@ let infer_stmt
         | {init=Some (IExpr (CallExpr {func; args; _})); _} ->
           (* Found a call, so extract the call and parse the rest
             of the declaration yet unsetting the first decl *)
-          Some (infer_call ~result:(Some d.var) func args)
+          let ty = infer_type d.ty in
+          Some (infer_call ~result:(Some (d.var, ty)) func args)
         (* Detect array alias: *)
         | {ty; init=Some (IExpr rhs); _} when
           J_type.matches (fun x -> C_type.is_pointer x || C_type.is_auto x) ty

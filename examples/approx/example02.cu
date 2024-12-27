@@ -1,5 +1,5 @@
 //saxpy,ind,ctrl
-//@AccessState1
+//@AccessState98
 /*
 Example 2: data flows from array to conditional
 

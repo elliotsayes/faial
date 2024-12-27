@@ -112,7 +112,8 @@ let tests = [
   (* add support for side-effects (reads/writes) in the conditions as commas *)
   "drf-loop-comma-in-cond.cu", [], 0;
   "racy-loop-comma-in-cond.cu", [], 1;
-
+  (* support for inlining functions which return values *)
+  "drf-inline-var.cu", [], 0;
 ]
 
 (* These are kernels that are being documented, but are

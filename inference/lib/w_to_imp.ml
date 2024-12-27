@@ -909,7 +909,12 @@ module Statements = struct
                   arg
                 ) args k
               in
-              let result = Option.map W_lang.Ident.var result in
+              let result =
+                Option.map (fun r ->
+                  let open W_lang.Ident in
+                  r.var, Types.tr r.ty
+                ) result
+              in
               return (Call { result; args; kernel; ty=kernel; })
             )
           )

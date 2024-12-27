@@ -86,7 +86,7 @@ type t =
     }
   | If of (Infer_exp.t * t * t)
   | Call of {
-      result: Variable.t option;
+      result: (Variable.t * C_type.t) option;
       kernel: string;
       ty: string;
       args : Arg.t list

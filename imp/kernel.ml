@@ -227,7 +227,14 @@ let compile (k:t) : Protocols.Kernel.t =
 let calls (k:t) : StringSet.t =
   Stmt.calls k.code
 
-let apply (args : Arg.t list) (k:t) : Stmt.t =
+let apply (result:(Variable.t * C_type.t) option) (args : Arg.t list) (k:t) : Stmt.t =
+  let code =
+    match result with
+    | Some (var, ty) ->
+      let d : Decl.t = {var; init=k.return; ty} in
+      Stmt.Seq (Stmt.decl d, k.code)
+    | None -> k.code
+  in
   List.fold_left (fun s (x, a) ->
     let i =
       let open Arg in
@@ -241,14 +248,14 @@ let apply (args : Arg.t list) (k:t) : Stmt.t =
         }
     in
     Stmt.Seq (i, s)
-  ) k.code (Common.zip (ParameterList.to_list k.parameters) args)
+  ) code (Common.zip (ParameterList.to_list k.parameters) args)
 
 let inline (funcs:t StringMap.t) (k:t) : t =
   let rec inline (s:Stmt.t) : Stmt.t =
     match s with
     | Call c ->
       (match StringMap.find_opt (Call.unique_id c) funcs with
-      | Some k -> apply c.args k
+      | Some k -> apply c.result c.args k
       | None -> s
       )
     | Sync _ | Assert _ | Read _ | Write _ | Atomic _ | Decl _

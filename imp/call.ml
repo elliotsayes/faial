@@ -1,5 +1,7 @@
+open Protocols
+
 type t = {
-  result: Protocols.Variable.t option;
+  result: (Variable.t * C_type.t) option;
   kernel: string;
   ty: string;
   args : Arg.t list
@@ -19,7 +21,8 @@ let to_string (c:t) : string =
   in
   let pre =
     match c.result with
-    | Some v -> Protocols.Variable.name v ^ " = "
+    | Some (v, ty) ->
+      Variable.name v ^ " : " ^ C_type.to_string ty ^ " = "
     | None -> ""
   in
   pre ^ c.kernel ^ "(" ^ args ^ ")"

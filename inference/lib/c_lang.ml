@@ -1741,16 +1741,16 @@ let is_kernel (j:Yojson.Basic.t) : bool =
           |> Result.value ~default:None
         )
       in
-      let params, _ =
+      let _params, _ =
         inner
         |> List.partition (j_filter_kind (fun k -> k = "ParmVarDecl"))
       in
       Ok (match List.find_map KernelAttr.parse attrs with
       | Some KernelAttr.Default -> true
       | None -> false
-      | Some KernelAttr.Auxiliary ->
+      | Some KernelAttr.Auxiliary -> true
         (* We only care about __device__ functions that manipulate arrays *)
-        List.exists has_array_type params
+(*         List.exists has_array_type params *)
       )
     ) else Ok false
   in
