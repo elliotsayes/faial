@@ -11,6 +11,18 @@ let tr_op_to_string : Reals.TruncateOp.t -> string =
   | Ceiling -> "ceiling"
   | Floor -> "floor"
 
+let par (s:string) : string =
+  "(" ^ s ^ ")"
+
+let call (name:string) (args:string list) : string =
+  name ^ "(" ^ String.concat "," args ^ ")"
+
+let infix ~lhs ~op ~rhs : string =
+  "(" ^ lhs ^ " " ^ op ^ " " ^ rhs ^ ")"
+
+let if_ ~cond ~then_branch ~else_branch : string =
+  Printf.sprintf "(if (%s) then %s else %s)" cond then_branch else_branch
+
 let rec i_to_string : Reals.integer -> string =
   function
   | Var x ->
@@ -22,17 +34,17 @@ let rec i_to_string : Reals.integer -> string =
   | Num x -> string_of_int x
   | FloatToInt (o, e) -> tr_op_to_string o ^ "(" ^ f_to_string e ^ ")"
   | Binary (Div, e1, e2) ->
-    "floor(" ^ i_to_string e1 ^ "/" ^ i_to_string e2 ^ ")"
-  | Binary (o, e1, e2) ->
-    let e1 = i_to_string e1 in
-    let e2 = i_to_string e2 in
-    let infix =
-      match o with
+    call "floor" [infix ~op:"/" ~lhs:(i_to_string e1) ~rhs:(i_to_string e2)]
+  | Binary (op, lhs, rhs) ->
+    let lhs = i_to_string lhs in
+    let rhs = i_to_string rhs in
+    let is_infix =
+      match op with
       | Plus | Minus | Mult | Div | Pow -> true
       | Mod | LeftShift | RightShift | BitXOr | BitOr | BitAnd -> false
     in
-    let o =
-      match o with
+    let op =
+      match op with
       | Plus -> "+"
       | Minus -> "-"
       | Mult -> "*"
@@ -45,68 +57,96 @@ let rec i_to_string : Reals.integer -> string =
       | BitAnd -> "bit_and"
       | Pow -> "^"
     in
-    if infix then
-      "(" ^ e1 ^ o ^ "(" ^ e2 ^ "))"
+    if is_infix then
+      infix ~lhs ~op ~rhs
     else
-      o ^ "(" ^ e1 ^ ", " ^ e2 ^")"
+      call op [lhs; rhs]
   | Unary (BitNot, e) ->
-    "bit_not(" ^ i_to_string e ^ ")"
+    call "bit_not" [i_to_string e]
   | Unary (Negate, e) ->
-    "-(" ^ i_to_string e ^ ")"
+    call "-" [i_to_string e]
   | If (b, e1, e2) ->
-    "(if (" ^ b_to_string b ^ ") then " ^ i_to_string e1 ^ " else " ^
-    i_to_string e2 ^")"
+    if_
+      ~cond:(b_to_string b)
+      ~then_branch:(i_to_string e1)
+      ~else_branch:(i_to_string e2)
   | BoolToInt e -> i_to_string (If (e, Num 1, Num 0))
 and b_to_string : Reals.boolean -> string =
   function
   | Bool true -> "true"
   | Bool false -> "false"
   | NRel (Eq, e1, e2) ->
-    "equal(" ^ i_to_string e1 ^ ", " ^ i_to_string e2 ^ ")"
+    call "equal" [i_to_string e1; i_to_string e2]
   | NRel (Neq, e1, e2) ->
-    "notequal(" ^ i_to_string e1 ^ ", " ^ i_to_string e2 ^ ")"
-  | NRel (o, e1, e2) ->
-    "(" ^ i_to_string e1 ^ " " ^ N_rel.to_string o ^
-    " " ^ i_to_string e2 ^ ")"
+    call "notequal" [i_to_string e1; i_to_string e2]
+  | NRel (op, lhs, rhs) ->
+    infix
+      ~lhs:(i_to_string lhs)
+      ~op:(N_rel.to_string op)
+      ~rhs:(i_to_string rhs)
   | BRel (BOr, e1, e2) ->
-    "(" ^ b_to_string e1 ^ " or " ^ b_to_string e2 ^ ")"
+    infix
+      ~lhs:(b_to_string e1)
+      ~op:"or"
+      ~rhs:(b_to_string e2)
   | BRel (BAnd, e1, e2) ->
-    "(" ^ b_to_string e1 ^ " and " ^ b_to_string e2 ^ ")"
+    infix
+      ~lhs:(b_to_string e1)
+      ~op:"and"
+      ~rhs:(b_to_string e2)
   | BNot e ->
-    "not (" ^ b_to_string e ^ ")"
+    Printf.sprintf "(not (%s))" (b_to_string e)
   | IntToBool e ->
-    "notequal(" ^ i_to_string e ^ ", 0)"
+    call "notequal" [i_to_string e; "0"]
+
 and f_to_string : Reals.floating_point -> string =
   function
   | Float f -> string_of_float f
   | Log (b, e) ->
-    "log(" ^ f_to_string e ^ ")/log(" ^ i_to_string b ^ ")"
+    infix
+      ~lhs:(call "log" [f_to_string e])
+      ~op:"/"
+      ~rhs:(call "log" [i_to_string b])
   | IntToFloat e ->
-    i_to_string e
+      i_to_string e
 
 let rec from_summation : Summation.t -> string =
   function
   | Const k -> string_of_int k
   | If (b, p, q) ->
-    "(if (" ^ b_to_string b ^ ") then " ^
-      from_summation p ^ " else " ^ from_summation q ^ ")"
+    if_
+      ~cond:(b_to_string b)
+      ~then_branch:(from_summation p)
+      ~else_branch:(from_summation q)
   | Sum (b, s) ->
-    "sum(" ^
-      from_summation s ^ ", " ^
-      Variable.name b.var ^ ", " ^
-      i_to_string b.lower_bound ^ ", " ^
-      i_to_string b.upper_bound ^
-    ")"
-  | Bin (o, lhs, rhs) ->
-    (match o with
-    | Plus ->
-      from_summation lhs ^ " + " ^ from_summation rhs
-    | Minus ->
-      from_summation lhs ^ " - (" ^ from_summation rhs ^ ")"
-    | _ ->
-      Summation.Op.to_string o ^
-      "(" ^ from_summation lhs ^ ", " ^ from_summation rhs ^ ")"
-    )
+    call "sum"
+      [
+        from_summation s;
+        i_to_string (Var b.var);
+        i_to_string b.lower_bound;
+        i_to_string b.upper_bound;
+      ]
+  | Bin (op, lhs, rhs) ->
+    let lhs = from_summation lhs in
+    let rhs = from_summation rhs in
+    let is_infix =
+      match op with
+      | Plus | Minus | Mult | Div -> true
+      | Max | Min -> false
+    in
+    let op =
+      match op with
+      | Plus -> "+"
+      | Minus -> "-"
+      | Mult -> "*"
+      | Div -> "/" (* XXX: integer division *)
+      | Max -> "max"
+      | Min -> "min"
+    in
+    if is_infix then
+      infix ~lhs ~op ~rhs
+    else
+      call op [lhs; rhs]
 
 let from_stmt ?(strategy=Summation.Strategy.Max) (r: Ra.Stmt.t) : string =
   Summation.from_stmt ~strategy r |> from_summation
@@ -162,9 +202,16 @@ let run_ratio
   (string, Errors.t) Result.t
 =
   if Ra.Stmt.is_zero denominator then Ok "0" else
-  "(" ^
-    from_stmt numerator ^ ") / (" ^
-    from_stmt denominator ^ ")"
+  let open Summation in
+  let s =
+    Bin (
+      Div,
+      Summation.from_stmt numerator,
+      Summation.from_stmt denominator
+    )
+  in
+  s
+  |> to_string
   |> compile ~compact
   |> run_exe ~verbose ~exe
 

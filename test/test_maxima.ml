@@ -40,7 +40,8 @@ let i_tests =
 
     FloatToInt (Floor, Float 1.9), Float.floor 1.9 |> Int.of_float;
     FloatToInt (Ceiling, Float 1.9), Float.ceil 1.9 |> Int.of_float;
-
+    Binary (Plus, Num 9, Binary (Div, Num 3, Num 3)), 9 + (3 / 3);
+    Binary (Div, Binary (Plus, Num 9, Num 3), Num 3), (9 + 3) / 3;
     Binary (Plus, x_, Num 1), x + 1;
     Binary (LeftShift, x_, Num 1), Int.shift_left x 1;
     Binary (RightShift, x_, Num 1), Int.shift_right x 1;
@@ -86,9 +87,17 @@ let b_tests : (Reals.boolean * bool) list =
 
 let f_tests : (Reals.floating_point * string) list =
   [
+    Float 1.0, "1.0b0";
     Float 1.1, "1.1b0";
     Log (Num 2, Float 3.0), "1.584962500721156b0";
     IntToFloat(Num 10), "1.0b1";
+  ]
+
+let s_tests : (Summation.t * int) list =
+  [
+    Const 1, 1;
+    Bin (Plus, Const 9, Bin (Div, Const 3, Const 3)), 9 + (3 / 3);
+    Bin (Div, Bin (Plus, Const 9, Const 3), Const 3), (9 + 3) / 3;
   ]
 
 let unit_test
@@ -141,6 +150,13 @@ let all_tests () : unit =
       ~given_expr:(Reals.f_to_string code)
       ~given_maxima:("bfloat(" ^ Maxima.f_to_string code ^ ")")
       ~expected_output:expected
+      ~assigns:[]
+  );
+  s_tests |> List.iter (fun (code, expected) ->
+    unit_test
+      ~given_expr:(Summation.to_string code)
+      ~given_maxima:(Maxima.from_summation code)
+      ~expected_output:(int_s expected)
       ~assigns:[]
   )
 
