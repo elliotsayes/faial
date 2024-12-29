@@ -147,25 +147,32 @@ let unique_id (k:t) : string =
   Call.kernel_id ~kernel:k.name ~ty:k.ty
 
 let to_s (k:t) : Indent.t list =
-    Line ""
-    ::
+  [
+    Indent.Line "";
     Line (
       Printf.sprintf
         "%s %s (%s)"
         (Visibility.to_string k.visibility)
         k.name
         (ParameterList.to_string k.parameters)
-    )
-    ::
+    );
     Line (
       Printf.sprintf
         "global {arrays: %s} {scalars: %s}"
         (Memory.map_to_string k.global_arrays)
         (Params.to_string k.global_variables)
-    )
-    ::
-    Stmt.to_s k.code
-
+    );
+    Line "{";
+    Block (
+      (if k.code = Skip then [] else Stmt.to_s k.code)
+      @
+      (match k.return with
+      | Some e -> [Indent.Line ("return " ^ Exp.n_to_string e ^ ";")]
+      | None -> []
+      )
+    );
+    Line "}";
+  ]
 
 let print (k: t) : unit =
   Indent.print (to_s k)

@@ -123,6 +123,9 @@ let rec skip_last : t -> t =
     seq s1 (skip_last s2)
   | _ -> Skip
 
+let from_list : t list -> t =
+  List.fold_left seq Skip
+
 let ret_assert (b:Infer_exp.t) (v:Assert.Visibility.t) : Stmt.t =
   match Infer_exp.(no_unknowns (to_bexp b)) with
   | Some b -> Assert (Assert.make b v)
@@ -183,8 +186,7 @@ let rec to_stmt : t -> Stmt.t =
       return (Stmt.assign ty var data)
     )
 
-  | If (e, Return None, Skip)
-  | If (e, Break, Skip) ->
+  | If (e, (Break | Return None | Continue), Skip) ->
     ret_assert (Infer_exp.BExp (Infer_exp.not_ e)) Local
 
   | If (e, p, q) ->

@@ -199,6 +199,7 @@ end
 module Expressions = struct
   open Stage0 (* because of State *)
   open W_lang
+  open Imp
   type t =
     | Unsupported
     | Literal of Literals.t
@@ -308,17 +309,16 @@ module Expressions = struct
       {target=Some (target_ty, target_var); array; index}
   end
 
-  type context = {reads: Read.t list; unknowns: Variable.Set.t}
+  type context = Read.t list
   type 'a state = (context, 'a) State.t
 
-  let counter = ref 1
-
-  let empty : context = {reads=[]; unknowns=Variable.Set.empty}
+  let empty : context = []
 
   let push_read (r: Read.t) : unit state =
-    State.update (fun s ->
-      { s with reads = r :: s.reads }
-    )
+    State.update (fun s -> r :: s )
+
+  (* Counter is used to generate new variables *)
+  let counter = ref 1
 
   let alloc (f: Variable.t -> Read.t) : Variable.t state =
     let count = !counter in
@@ -508,52 +508,32 @@ module Expressions = struct
       NExp (Imp.Infer_exp.max (to_i_exp arg1) (to_i_exp arg2))
     | _ -> Unknown "?"
 
-  let run_exp
-    (f:Imp.Infer_exp.t -> 'a Imp.Infer_exp.state)
-    (e:W_lang.Expression.t)
-  :
-    'a state
-  =
+
+  let tr (e: W_lang.Expression.t) : Imp.Infer_exp.t state =
     let* e = rewrite e in
-    Stage0.State.update_return (fun ctx ->
-      let e = f (to_i_exp e) in
-      let (vars, e) = Stage0.State.run ctx.unknowns e in
-      ({ ctx with unknowns = vars }, e)
-    )
+    return (to_i_exp e)
 
-  let n_tr : W_lang.Expression.t -> Exp.nexp state =
-    run_exp Imp.Infer_exp.to_nexp
-
-  let b_tr : W_lang.Expression.t -> Exp.bexp state =
-    run_exp Imp.Infer_exp.to_bexp
-
-  let run (e:Imp.Stmt.t state) : Imp.Stmt.t =
+  let run (e:Infer_stmt.t state) : Infer_stmt.t =
     (* given an empty context, output the final statement and context *)
-    let (ctx, post) = State.run empty e in
+    let (reads, post) = State.run empty e in
     (* convert each read to a statement, and output unknowns *)
-    let (vars, reads) = Imp.Infer_exp.vars ~init:ctx.unknowns (
-      Stage0.State.list_map (fun (r:Read.t) ->
+    let reads =
+      List.map (fun (r:Read.t) ->
         let array = r.array in
         let target = Option.map (fun (ty, x) -> (Types.tr ty, x)) r.target in
-        let l = List.map to_i_exp r.index in
-        let* index = State.list_map Imp.Infer_exp.to_nexp l in
-        return (Imp.Stmt.Read {index; array; target;})
-      ) ctx.reads
-    ) in
+        let index = List.map to_i_exp r.index in
+        Infer_stmt.Read {index; array; target;}
+      ) reads
+    in
     (* generate all of the statements *)
-    Imp.Stmt.from_list [
-      (vars
-      |> Variable.Set.to_list
-      |> List.map Imp.Stmt.decl_unset
-      |> Imp.Stmt.from_list);
-      Imp.Stmt.from_list reads;
+    Infer_stmt.seq
+      (Infer_stmt.from_list reads)
       post
-    ]
 
-  let reads (l:W_lang.Expression.t list) : Imp.Stmt.t =
+  let reads (l:W_lang.Expression.t list) : Infer_stmt.t =
     run (
-      let* _ = Stage0.State.list_map n_tr l in
-      return Imp.Stmt.Skip
+      let* _ = Stage0.State.list_map rewrite l in
+      return Infer_stmt.Skip
     )
 
   let pure (e:W_lang.Expression.t) : Imp.Infer_exp.t option =
@@ -562,10 +542,10 @@ module Expressions = struct
       return (to_i_exp e)
     )
     in
-    match ctx with
-    | {reads=[]; unknowns} when Variable.Set.is_empty unknowns ->
+    if ctx = [] then
       Some e
-    | _ -> None
+    else
+      None
 
   let no_unknowns
     (f:Imp.Infer_exp.t -> 'a Imp.Infer_exp.state)
@@ -747,11 +727,10 @@ end
 
 module Statements = struct
   open Imp
-  open Imp.Stmt
   open Stage0 (* make the state monad available *)
 
-  let tr (ctx:Context.t) : W_lang.Statement.t list -> Imp.Stmt.t =
-    let rec tr : W_lang.Statement.t -> Imp.Stmt.t =
+  let tr (ctx:Context.t) : W_lang.Statement.t list -> Infer_stmt.t =
+    let rec tr : W_lang.Statement.t -> Infer_stmt.t =
       fun s ->
       let r =
         match s with
@@ -761,14 +740,14 @@ module Statements = struct
           let* a = NDAccess.from_expression location e in
           let open Stage0.State.Syntax in
           Some (Expressions.run (
-            let* index = State.list_map Expressions.n_tr a.index in
-            let* value = Expressions.n_tr value in
+            let* index = State.list_map Expressions.tr a.index in
+            let* value = Expressions.tr value in
             let payload =
               match value with
-              | Num n -> Some n
+              | NExp (Num n) -> Some n
               | _ -> None
             in
-            return (Write {array=a.array.var; index; payload})
+            return (Infer_stmt.Write {array=a.array.var; index; payload})
           ))
 
         | Atomic {pointer=e;fun_;value;result; location} ->
@@ -776,9 +755,9 @@ module Statements = struct
           Some (Expressions.run (
             let open State.Syntax in
             (* find any reads inside value, but discard the result *)
-            let* _ = Expressions.n_tr value in
+            let* _ = Expressions.rewrite value in
             (* translate the index *)
-            let* index = State.list_map Expressions.n_tr a.index in
+            let* index = State.list_map Expressions.tr a.index in
             let fun_ = "atomic" ^ W_lang.AtomicFunction.to_string fun_ in
             let atomic : Atomic.t = {
               name = Variable.from_name fun_;
@@ -789,7 +768,7 @@ module Statements = struct
             let default = W_lang.Ident.atomic_result W_lang.Type.u32 in
             let result = Option.value ~default result in
             return (
-              Atomic {
+              Infer_stmt.Atomic {
                 array;
                 index;
                 ty=Types.tr result.ty;
@@ -802,28 +781,19 @@ module Statements = struct
           let* (ty, var) = Variables.tr i in
           Some (Expressions.run (
             let open State.Syntax in
-            let* data = Expressions.n_tr value in
-            return (Assign {var; data; ty})
+            let* data = Expressions.tr value in
+            return (Infer_stmt.Assign {var; data; ty})
           ))
           (* TODO: add support for stores *)
         | Store _ -> None
+        | Block [s] ->
+          Some (tr s)
         | Block [] ->
           Some Skip
         | Block (s::l) ->
           let s1 = tr s in
           let s2 = tr (Block l) in
           Some (Seq (s1, s2))
-        | If {condition; accept=[Return None]; reject=[]}
-        | If {condition; accept=[Break]; reject=[]}
-        | If {condition; accept=[Continue]; reject=[]} ->
-          Some (
-            let open Expressions in
-            run (
-              let open State.Syntax in
-              let* c = b_tr condition in
-              return (Assert (Assert.make (Exp.b_not c) Local))
-            )
-          )
         | If {condition; accept; reject} ->
           let accept = tr (Block accept) in
           let reject = tr (Block reject) in
@@ -831,73 +801,81 @@ module Statements = struct
             let open Expressions in
             let open State.Syntax in
             run (
-              let* c = b_tr condition in
-              return (If (c, accept, reject))
+              let* c = Expressions.tr condition in
+              return (Infer_stmt.If (c, accept, reject))
             )
           )
-        | Loop {body; continuing=[Store _] as c; break_if=Some condition} ->
-          let inc = tr (Block c) in
-          let body = tr (Block body) in
+
+        (* When condition is specified in break_if *)
+        | Loop {body; continuing=c; break_if=Some cond}
+        (* When break_if is unset, yet there's an if+break at the beginning
+           of body *)
+        | Loop {
+            body=(If {condition=cond; accept=[Break];reject=[]})::body;
+            continuing=c;
+            break_if=None;
+          }
+        ->
           Some (
             let open State.Syntax in
             Expressions.run (
-              let* cond = Expressions.b_tr condition in
-              let f : For.t = {
+              let* cond = Expressions.tr cond in
+              return (Infer_stmt.For {
                 init = Skip;
-                cond = Exp.b_not cond;
-                inc = inc;
-              } in
-              return (For.to_stmt f body)
+                cond = BExp (Infer_exp.not_ cond);
+                inc = tr (Block c);
+                body = tr (Block body);
+              })
             )
           )
-        | Loop {body=(If {condition; accept=[];reject=[Break]})::body; continuing=[Store _] as c; break_if=None} ->
-          let inc = tr (Block c) in
-          let body = tr (Block body) in
+
+        (* When break_if is unset, yet there's an if+else-break
+           at the beginning of body *)
+        | Loop {
+            body=(If {condition=cond; accept=[];reject=[Break]})::body;
+            continuing=c;
+            break_if=None
+          } ->
           Some (
-            let open Expressions in
             let open State.Syntax in
             Expressions.run (
-              let* cond = b_tr condition in
-              let f : For.t = {
+              let* cond = Expressions.tr cond in
+              return (Infer_stmt.For {
                 init = Skip;
-                cond = cond;
-                inc = inc;
-              } in
-              return (For.to_stmt f body)
+                cond;
+                inc = tr (Block c);
+                body = tr (Block body);
+              })
             )
           )
-        | Loop {body=(If {condition; accept=[Break];reject=[]})::body; break_if=None; continuing=[Store _] as c} ->
-          let inc = tr (Block c) in
-          let body = tr (Block body) in
+
+        (* Otherwise, when break_if is unset *)
+        | Loop {body; continuing=c; break_if=None} ->
           Some (
-            let open Expressions in
-            let open State.Syntax in
-            Expressions.run (
-              let* cond = b_tr condition in
-              let f : For.t = {
-                init = Skip;
-                cond = Exp.b_not cond;
-                inc = inc;
-              } in
-              return (For.to_stmt f body)
-            )
+            Infer_stmt.For {
+              init = Skip;
+              cond = Infer_exp.true_;
+              body = tr (Block body);
+              inc = tr (Block c);
+            }
           )
-        | Barrier _ -> Some (Stmt.Sync None)
+
+        | Barrier _ -> Some (Infer_stmt.Sync None)
 
         | Call {result; function_=kernel; arguments=args} ->
           let k = Context.lookup kernel ctx in
           Some (
-            let open Expressions in
             let open State.Syntax in
             Expressions.run (
-              let* args = State.list_map n_tr args in
-              let args : Imp.Arg.t list =
-                List.map2 (fun arg (_, ty) ->
+              let* args = State.list_map Expressions.tr args in
+              let args : Infer_stmt.Arg.t list =
+                List.map2 (fun (arg:Infer_exp.t) (_, ty) ->
                   let arg =
                     let open Imp in
                     if W_lang.Type.is_array ty then
                       (match arg with
-                      | Exp.Var x -> Arg.Array (Imp.Array_use.make x)
+                      | Infer_exp.NExp (Var x) ->
+                        Infer_stmt.Arg.Array (Infer_stmt.Array_use.make x)
                       | _ -> Unsupported)
                     else if W_lang.Type.is_int ty then
                       (* handle scalar *)
@@ -915,30 +893,20 @@ module Statements = struct
                   r.var, Types.tr r.ty
                 ) result
               in
-              return (Call { result; args; kernel; ty=kernel; })
+              return (Infer_stmt.Call { result; args; kernel; ty=kernel; })
             )
           )
-        | Loop {body; continuing; break_if=Some e} ->
-          let body = tr (Block body) in
-          let continuing = tr (Block continuing) in
-          let body : Stmt.t = Seq (body, continuing) in
+
+        | Return e ->
           Some (
-            let open Expressions in
             let open State.Syntax in
             Expressions.run (
-              let* cond = b_tr e in
-              return (Star (If (Exp.b_not cond, body, Skip)))
+              let* e = State.option_map Expressions.tr e in
+              return (Infer_stmt.Return e)
             )
           )
-
-        | Loop {body; continuing; break_if=None} ->
-          let body = tr (Block body) in
-          let continuing = tr (Block continuing) in
-          let body : Stmt.t = Seq (body, continuing) in
-          Some (Star body)
-
-        | Return _ -> None
-
+        | Break -> Some Break
+        | Continue -> Some Continue
         | _ -> None
       in
       match r with
@@ -953,18 +921,18 @@ module Statements = struct
 end
 
 module LocalDeclarations = struct
+  open Imp
   let tr_local
     (l:W_lang.LocalDeclaration.t)
   :
-    Imp.Stmt.t
+    Infer_stmt.t
   =
-    let open Expressions in
     let open State.Syntax in
     Expressions.run (
-      let* init = State.option_map n_tr l.init in
+      let* init = State.option_map Expressions.tr l.init in
       return (
         if W_lang.Type.is_int l.ty then
-          Imp.Stmt.Decl {
+          Infer_stmt.Decl {
             var=l.var;
             ty=Types.tr l.ty;
             init;
@@ -973,11 +941,11 @@ module LocalDeclarations = struct
           Skip
       )
     )
-  let tr : W_lang.LocalDeclaration.t list -> Imp.Stmt.t =
+  let tr : W_lang.LocalDeclaration.t list -> Infer_stmt.t =
     List.fold_left (fun s d ->
-        Imp.Stmt.seq s (tr_local d)
+        Infer_stmt.seq s (tr_local d)
       )
-      Imp.Stmt.Skip
+      Infer_stmt.Skip
 end
 
 module Functions = struct
@@ -988,23 +956,25 @@ module Functions = struct
     Imp.Kernel.t
   =
     let open Imp in
+    let (body, return) =
+      let body = e.body |> Statements.tr ctx in
+      Infer_stmt.seq (LocalDeclarations.tr e.locals) body
+      |> Infer_stmt.infer
+    in
     {
       name = e.name;
       ty = e.name;
       global_arrays = ctx.arrays;
       global_variables = ctx.params;
       parameters = Imp.Kernel.ParameterList.empty;
-      code = (
-        Stmt.seq
-          (Context.assigns ctx)
-          (Stmt.seq
-            (LocalDeclarations.tr e.locals)
-            (Statements.tr ctx e.body))
-      );
+      code = Stmt.seq
+        (Context.assigns ctx)
+        body
+      ;
       visibility = Device;
       grid_dim = None;
       block_dim = None;
-      return = None;
+      return;
     }
 end
 
