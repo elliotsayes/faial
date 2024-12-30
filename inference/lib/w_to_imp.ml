@@ -25,14 +25,18 @@ module Arrays = struct
       Some (size |> W_lang.ArraySize.to_int |> Option.to_list , [W_lang.Type.to_string base])
     | _ -> None
 
+  let tr_memory ?(hierarchy=Mem_hierarchy.GlobalMemory) (ty:W_lang.Type.t) : Memory.t option =
+    let ( let* ) = Option.bind in
+    let* (size, data_type) = tr_type ty in
+    Some {Memory.hierarchy; size; data_type}
+
   let tr_decl (d: W_lang.Declaration.t) : (Variable.t * Memory.t) option =
     let ( let* ) = Option.bind in
     match d.kind with
     | GlobalVariable g ->
-      let* h : Mem_hierarchy.t = tr_address_space g.space in
-      let* (size, data_type) = tr_type d.ty in
-      let name = d.name in
-      Some (Variable.from_name name, Memory.{hierarchy=h; size; data_type})
+      let* hierarchy : Mem_hierarchy.t = tr_address_space g.space in
+      let* m = tr_memory ~hierarchy d.ty in
+      Some (Variable.from_name d.name, m)
     | _ -> None
 
   let tr
@@ -95,6 +99,20 @@ module Types = struct
       ty
       |> Type.to_string
       |> C_type.make
+
+  let to_parameter (ty:Type.t) : Imp.Kernel.Parameter.Type.t =
+    let open Imp.Kernel.Parameter.Type in
+    if W_lang.Type.is_array ty then
+      ty
+      |> Arrays.tr_memory
+      |> Option.map (fun m -> Array m)
+      |> Option.value ~default:Unsupported
+    else if W_lang.Type.is_int ty then
+      Scalar (tr ty)
+    else
+      (* unsupported *)
+      Unsupported
+
 end
 
 module Variables = struct
@@ -948,6 +966,15 @@ module LocalDeclarations = struct
       Infer_stmt.Skip
 end
 
+module FunctionArguments = struct
+  let tr : W_lang.FunctionArgument.t -> Imp.Kernel.Parameter.t option=
+    function
+    | {name; ty; binding = None} ->
+      Some (Variable.from_name name, Types.to_parameter ty)
+    | _ -> None
+
+end
+
 module Functions = struct
   let tr
     (ctx:Context.t)
@@ -966,7 +993,7 @@ module Functions = struct
       ty = e.name;
       global_arrays = ctx.arrays;
       global_variables = ctx.params;
-      parameters = Imp.Kernel.ParameterList.empty;
+      parameters = List.filter_map FunctionArguments.tr e.arguments;
       code = Stmt.seq
         (Context.assigns ctx)
         body

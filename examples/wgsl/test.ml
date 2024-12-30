@@ -27,6 +27,8 @@ let tests = [
   "drf-loop-lt.wgsl", [], 0;
   (* Loop inference *)
   "drf-loop-relminus.wgsl", [], 0;
+  (* Kernel inlining with return value *)
+  "drf-inline-ret.wgsl", [], 0;
 ]
 
 let unsupported : Fpath.t list =
