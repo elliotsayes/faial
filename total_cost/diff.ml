@@ -143,13 +143,13 @@ module Solver = struct
   :
     Ra.Stmt.t
   =
-    let strategy =
+    let unif_cond =
       if a.approx_ifs then
-        Ra_compiler.Approximate
+        Ra_compiler.UniformCond.Approximate
       else
-        Ra_compiler.Exact
+        Ra_compiler.UniformCond.Exact
     in
-    let r = Ra_compiler.Default.from_kernel ~strategy idx_analysis a.config k in
+    let r = Ra_compiler.Default.from_kernel ~unif_cond idx_analysis a.config k in
     if a.skip_simpl_ra then r else Ra.Stmt.simplify r
 
   type r_cost = (cost, string) Result.t
