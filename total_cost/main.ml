@@ -13,9 +13,14 @@ let abort_when (b:bool) (msg:string) : unit =
     exit (-2)
   ) else ()
 
+module Goal = struct
+  type t = Total | Approx
+end
+
 module Solver = struct
 
   type t = {
+    goal: Goal.t;
     kernels: kernel list;
     use_maxima: bool;
     maxima_exe: string;
@@ -70,6 +75,7 @@ module Solver = struct
     ~metric
     ~compact
     ~show_map
+    ~goal
   :
     t
   =
@@ -105,6 +111,7 @@ module Solver = struct
       metric;
       compact;
       show_map;
+      goal;
     }
 
   let gen_cost
@@ -180,6 +187,43 @@ module Solver = struct
 
   type r_cost = (cost, string) Result.t
 
+  let approx_cost (a:t) (k:kernel) : r_cost =
+    let to_sum strategy =
+      let s = match strategy with
+      | Summation.Strategy.Max -> max_cost a
+      | Summation.Strategy.Min -> min_cost a
+      in
+      let ra = get_ra { a with strategy } k s in
+      if a.show_ra then (
+        Ra.Stmt.to_string ra |> print_endline;
+      );
+      Summation.from_stmt ~strategy ra
+    in
+    let start = Unix.gettimeofday () in
+    let s : Summation.t =
+      let open Summation in
+      minus
+        (to_sum Summation.Strategy.Max)
+        (to_sum Summation.Strategy.Min)
+    in
+    (if a.use_maxima then (
+      s
+      |> Maxima.from_summation
+      |> Maxima.compile ~compact:a.compact
+      |> Maxima.run_exe
+          ~verbose:a.show_code
+          ~exe:a.maxima_exe
+    ) else
+      let s = Summation.to_string s in
+      if a.show_code then (print_endline s);
+      Ok s
+    )
+    |> Result.map (fun c ->
+      {amount=c; analysis_duration=Unix.gettimeofday () -. start}
+    )
+    |> Result.map_error Errors.to_string
+
+
   let total_cost (a:t) (k:kernel) : r_cost =
     let s =
       if a.strategy = Summation.Strategy.Max then
@@ -189,8 +233,8 @@ module Solver = struct
     let r = get_ra a k s in
     get_cost a r
 
-  type summary =
-    | TotalCost of (kernel * r_cost) list
+
+  type summary = (kernel * r_cost) list
 
   let run (s:t) : summary =
     let pair f k =
@@ -237,7 +281,12 @@ module Solver = struct
         ;
         p)
     in
-    TotalCost (List.map (pair (total_cost s)) ks)
+    let cost =
+      match s.goal with
+      | Total -> total_cost
+      | Approx -> approx_cost
+    in
+    List.map (pair (cost s)) ks
 
 end
 
@@ -267,9 +316,9 @@ module TUI = struct
     in
     Stdlib.flush_all ();
     match Solver.run s with
-    | TotalCost [] ->
+    | [] ->
       abort_when (not s.ignore_absent) "No kernels found.";
-    | TotalCost l ->
+    | l ->
       List.iter print_r_cost l
 end
 
@@ -294,7 +343,7 @@ module JUI = struct
     in
     let kernels =
       match Solver.run s with
-      | TotalCost l -> `List (List.map (c_to_j "total_cost") l)
+      | l -> `List (List.map (c_to_j "total_cost") l)
     in
     `Assoc [
       "kernels", kernels;
@@ -338,6 +387,7 @@ let run
   ~strategy
   ~metric
   ~compact
+  ~goal
   (kernels : Protocols.Kernel.t list)
 :
   unit
@@ -369,6 +419,7 @@ let run
     ~metric
     ~compact
     ~show_map
+    ~goal
   in
   if output_json then
     JUI.run app
@@ -407,6 +458,7 @@ let pico
   (show_map:bool)
   (bank_count:int)
   (threads_per_warp:int)
+  (goal:Goal.t)
 =
   let parsed = Protocol_parser.Silent.to_proto
     ~abort_on_parsing_failure:(not ignore_parsing_errors)
@@ -445,6 +497,7 @@ let pico
     ~metric
     ~compact
     ~show_map
+    ~goal
     parsed.kernels
 
 
@@ -601,6 +654,18 @@ let warp_size =
   in
   Arg.value (Arg.opt Arg.int default info)
 
+let goal =
+  let doc =
+    "Calculate either the total cost (total) or " ^
+    "the difference between over- and under-approximation (approx)."
+  in
+  Arg.(
+    value &
+    opt (enum ["total", Goal.Total; "approx", Goal.Approx]) Goal.Total &
+    info ["goal"; "G"]
+    ~doc
+  )
+
 let pico_t = Term.(
   const pico
   $ get_fname
@@ -633,10 +698,11 @@ let pico_t = Term.(
   $ show_map
   $ bank_count
   $ warp_size
+  $ goal
 )
 
 let info =
-  let doc = "Static analysis of bank-conflicts for GPU programs" in
+  let doc = "Static analysis of performance cost of GPU programs" in
   Cmd.info "faial-cost" ~version:"%%VERSION%%" ~doc
 
 let () =
