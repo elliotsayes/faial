@@ -1,9 +1,15 @@
 open Stage0
 open Protocols
-
-type t =
-  | Exact
-  | Approximate
+module Divergence = struct
+  type t = Over | Under
+  let to_optimize : t -> Uniform_range.t =
+    function
+    | Over -> Maximize
+    | Under -> Minimize
+end
+module UniformCond = struct
+  type t = Exact | Approximate
+end
 
 module Make (L:Logger.Logger) = struct
   module R = Uniform_range.Make(L)
@@ -25,7 +31,8 @@ module Make (L:Logger.Logger) = struct
       from k.local_variables k.code
 
   let from_kernel
-    ?(strategy=Exact)
+    ?(unif_cond=UniformCond.Exact)
+    ?(divergence=Divergence.Over)
     (idx_analysis : Variable.Set.t -> Exp.nexp -> int)
     (cfg:Config.t)
     (k:Kernel.t)
@@ -33,7 +40,7 @@ module Make (L:Logger.Logger) = struct
     Ra.Stmt.t
   =
     let if_ : Exp.bexp -> Ra.Stmt.t -> Ra.Stmt.t -> Ra.Stmt.t =
-      match strategy with
+      match unif_cond with
       | Exact -> Ra.Stmt.Opt.if_
       | Approximate -> fun _ -> Ra.Stmt.Opt.choice
     in
@@ -61,10 +68,14 @@ module Make (L:Logger.Logger) = struct
         in
         let p = from_p locals p in
         let q = from_p locals q in
+        (* Warp-uniform *)
         if Variable.Set.is_empty fns then
           if_ b p q
-        else
+        (* Warp-divergent *)
+        else if divergence = Over then
           Seq (p, q)
+        else
+          Skip
       | Loop {range=r; body=p} ->
         let free_locals =
           Range.free_names r Variable.Set.empty
@@ -74,35 +85,41 @@ module Make (L:Logger.Logger) = struct
           Variable.Set.diff free_locals Variable.tid_set
           |> Variable.Set.is_empty
         in
+        (* Warp-uniform loop *)
         if Variable.Set.is_empty free_locals then
-          (* Uniform loop *)
           Loop {range=r; body=from_p locals p;}
-        else if not only_tid_in_locals then
-          (* Unsupported loop *)
-          Loop {range=r; body=from_p (Variable.Set.add (Range.var r) locals) p}
-        else
-        (* get the first number *)
-        let f = Range.first r in
-        let (r, p) =
-          match R.uniform params cfg.block_dim r with
-          | Some r ->
-            let locals =
-              (*
-                If the first element of the range has a tid, then
-                the loop variable should be considered a thread-local.
-                Otherwise, the loop variable can be considered
-                thread-global.
-              *)
-              if Exp.n_exists Variable.is_tid f then
-                Variable.Set.add (Range.var r) locals
-              else
-                locals
-            in
-            (* we need to invalidate the loop variable *)
-            (r, from_p locals p)
-          | None -> (r, from_p locals p)
-        in
-        Loop {range=r; body=p}
+        (* Warp-divergent loop *)
+        else if only_tid_in_locals then (
+          (* get the first number *)
+          let f = Range.first r in
+          let (r, p) =
+            let strat = Divergence.to_optimize divergence in
+            match R.uniform strat params cfg.block_dim r with
+            | Some r ->
+              let locals =
+                (*
+                  If the first element of the range has a tid, then
+                  the loop variable should be considered a thread-local.
+                  Otherwise, the loop variable can be considered
+                  thread-global.
+                *)
+                if Exp.n_exists Variable.is_tid f then
+                  Variable.Set.add (Range.var r) locals
+                else
+                  locals
+              in
+              (* we need to invalidate the loop variable *)
+              (r, from_p locals p)
+            | None -> (r, from_p locals p)
+          in
+          Loop {range=r; body=p}
+      ) else if divergence = Under then
+          Skip
+        (* When there are only tids in the set of local names,
+           then we maximize the loop *)
+      else (* maximizing, just leads to an arbitrary loop *)
+        (* Unsupported loop *)
+        Loop {range=r; body=from_p (Variable.Set.add (Range.var r) locals) p}
     in
     let locals =
       Params.to_set k.local_variables

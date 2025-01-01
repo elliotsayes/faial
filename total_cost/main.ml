@@ -161,13 +161,21 @@ module Solver = struct
   :
     Ra.Stmt.t
   =
-    let strategy =
+    let unif_cond =
       if a.approx_ifs then
-        Ra_compiler.Approximate
+        Ra_compiler.UniformCond.Approximate
       else
-        Ra_compiler.Exact
+        Ra_compiler.UniformCond.Exact
     in
-    let r = Ra_compiler.Default.from_kernel ~strategy idx_analysis a.config k in
+    let divergence =
+      match a.strategy with
+      | Max -> Ra_compiler.Divergence.Over
+      | Min -> Ra_compiler.Divergence.Under
+    in
+    let r =
+      Ra_compiler.Default.from_kernel
+        ~unif_cond ~divergence idx_analysis a.config k
+    in
     if a.skip_simpl_ra then r else Ra.Stmt.simplify r
 
   type r_cost = (cost, string) Result.t
@@ -457,7 +465,7 @@ let dim3 : Dim3.t Cmdliner.Arg.conv =
   in
   Arg.conv (parse, print)
 
-let get_fname = 
+let get_fname =
   let doc = "The path $(docv) of the GPU program." in
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
 

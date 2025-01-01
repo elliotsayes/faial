@@ -1,12 +1,17 @@
 open Stage0
 open Protocols
 
+type t =
+  | Maximize
+  | Minimize
+
 module Make (L:Logger.Logger) = struct
   (*
     Maximizes the given expression, and replaces tids by concrete values.
     *)
-  let maximize
+  let optimize
     ?(timeout=100)
+    (strategy:t)
     (block_dim:Dim3.t)
     (pre:Exp.bexp)
     (n:Exp.nexp)
@@ -21,7 +26,11 @@ module Make (L:Logger.Logger) = struct
       Z3.Model.model option
     =
       let open Z3 in
-      let _ = Optimize.maximize opt lb in
+      let _ =
+        match strategy with
+        | Maximize -> Optimize.maximize opt lb
+        | Minimize -> Optimize.minimize opt lb
+      in
       if Optimize.check opt = Solver.SATISFIABLE then
         Optimize.get_model opt
       else
@@ -93,7 +102,7 @@ module Make (L:Logger.Logger) = struct
   (*
    Given a range, makes that range uniform according to tids.
    *)
-  let uniform (params:Params.t) (block_dim:Dim3.t) (r:Range.t) : Range.t option =
+  let uniform (strategy:t) (params:Params.t) (block_dim:Dim3.t) (r:Range.t) : Range.t option =
     let open Exp in
     let fvs = Range.free_names r Variable.Set.empty in
     let pre =
@@ -105,7 +114,7 @@ module Make (L:Logger.Logger) = struct
       let r_subst (r:Range.t) : (Variable.t * Exp.nexp) list -> Range.t =
         List.fold_left (fun r (k,v) -> Subst.ReplacePair.r_subst (k, v) r) r
       in
-      match maximize block_dim pre (n_minus r.upper_bound r.lower_bound) with
+      match optimize strategy block_dim pre (n_minus r.upper_bound r.lower_bound) with
       | None ->
         L.error ("could not maximize expression: " ^ Range.to_string r);
         None
