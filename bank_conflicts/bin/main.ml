@@ -82,10 +82,11 @@ module Solver = struct
         | Mem_hierarchy.SharedMemory -> Metric.BankConflicts
         | GlobalMemory -> UncoalescedAccesses
       in
-      let max_cost = Metric.max_cost a.config m |> Cost.from_int in
+      let to_cost value = Cost.from_int ~value:value ~exact:true () in
+      let max_cost = Metric.max_cost a.config m |> to_cost in
       let r_cost = Bank.index_cost a.config m bank in
       let max_cost = Result.value ~default:max_cost r_cost in
-      let min_cost = Metric.min_cost m |> Cost.from_int in
+      let min_cost = Metric.min_cost m |> to_cost in
       let divergence = Divergence_analysis.from_bank bank in
       let cost = Result.value ~default:max_cost r_cost in
       let sim =
@@ -205,7 +206,7 @@ module TUI = struct
                 conflict.index
             in
             match tsx with
-            | Ok Cost.{value; state=Some {accesses=accs; _}} ->
+            | Ok Cost.{value; state=Some {accesses=accs; _}; _} ->
               let b = string_of_int value in
               let accs =
                 accs

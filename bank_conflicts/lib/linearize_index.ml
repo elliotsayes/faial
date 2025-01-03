@@ -2,13 +2,7 @@ open Stage0
 open Protocols
 
 (*
-  Given a protocol, generates a sequence of accesses with their
-  surrounding context (loops and conditionals).
-
-  Additionally, we:
-    - convert from multiple-dimension accesses to a single dimension
-    - take into account the byte size of the array type
-    - convert non-uniform loops into uniform loops
+  Converts from multiple-dimension accesses to a single dimension.
 *)
 
 type array_size = { byte_count: int; dim: int list}

@@ -320,7 +320,7 @@ let to_cost
           Warp.bank_conflicts ctx.bank_count idx enabled tids
         | UncoalescedAccesses ->
           Warp.uncoalesced idx enabled tids
-        | CountAccesses -> Cost.from_int 1
+        | CountAccesses -> Cost.from_int ~value:1 ~exact:true ()
       in
       if verbose then (
         Array.map2 (fun idx enabled ->

@@ -205,7 +205,10 @@ module Make (L:Logger.Logger) = struct
       L.info ("UA: removed offset: " ^ Exp.n_to_string e ^ " 🡆 " ^ Exp.n_to_string new_e)
     );
     if ty = UA.Uniform || ty = UA.Constant then
-      Ok (Metric.min_uncoalesced_accesses |> Cost.from_int)
+      Ok (
+        Metric.min_uncoalesced_accesses |>
+        (fun value -> Cost.from_int ~value ~exact:true ())
+      )
     else
     Vectorized.to_cost Metric.UncoalescedAccesses new_e ctx
     |> Result.map (fun c ->
@@ -229,7 +232,7 @@ module Make (L:Logger.Logger) = struct
   :
     (Cost.t, string) Result.t
   =
-    Ok (Cost.from_int 1)
+    Ok (Cost.from_int ~value:1 ~exact:true ())
 
   let run :
     Metric.t ->

@@ -116,7 +116,7 @@ module Make (L:Logger.Logger) = struct
       in
       match optimize strategy block_dim pre (n_minus r.upper_bound r.lower_bound) with
       | None ->
-        L.error ("could not maximize expression: " ^ Range.to_string r);
+        L.error ("could not minimize/maximize expression: " ^ Range.to_string r);
         None
       | Some v ->
         let r' = r_subst r v in

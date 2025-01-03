@@ -67,7 +67,11 @@ let bank_conflicts
   (* we need to get the maximum, because all threads may be disabled,
      in which case, we would get a transaction count of 0 and therefore
      a cost of -1 *)
-  Cost.make (max ((Transaction.count state) - 1) 0) state
+  Cost.make
+    ~value:(max ((Transaction.count state) - 1) 0)
+    ~state
+    ~exact:true
+    ()
 
 let uncoalesced
   (indices:int array)
@@ -89,4 +93,8 @@ let uncoalesced
     |> List.map (fun (_, e) -> Transaction.choose e)
     |> Transaction.from_list 0
   in
-  Cost.make (IntMap.cardinal tsx_map) state
+  Cost.make
+    ~value:(IntMap.cardinal tsx_map)
+    ~state
+    ~exact:true
+    ()

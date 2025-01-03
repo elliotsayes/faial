@@ -1,17 +1,18 @@
 type t = {
   value: int;
+  exact: bool;
   state: Transaction.t option;
 }
 
 let value (e:t) : int = e.value
 
-let from_int (value:int) : t =
+let make ~state ~value ~exact () : t =
   assert (value >= 0);
-  { value; state=None }
+  { value; state=Some state; exact }
 
-let make (value:int) (state:Transaction.t) : t =
+let from_int ~value ~exact () : t =
   assert (value >= 0);
-  { value; state=Some state; }
+  { value; state=None; exact }
 
 let (<) (lhs:t) (rhs:t) : bool =
   lhs.value < rhs.value
@@ -25,7 +26,7 @@ let (<=) (lhs:t) (rhs:t) : bool =
 let (>=) (lhs:t) (rhs:t) : bool =
   lhs.value >= rhs.value
 
-let zero : t = from_int 0
+let zero : t = from_int ~value:0 ~exact:true ()
 
 let to_string (e:t) : string =
   string_of_int e.value

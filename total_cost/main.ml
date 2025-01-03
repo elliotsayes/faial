@@ -17,6 +17,25 @@ module Goal = struct
   type t = Total | Approx
 end
 
+module Analysis_cost = struct
+  type t = {
+    amount: string;
+    analysis_duration: float;
+    exact_index: bool;
+    exact_loop: bool;
+    exact_condition: bool;
+  }
+  let make
+    ~amount
+    ~analysis_duration
+    ~approx:{Ra_compiler.Approx.exact_index; exact_loop; exact_condition}
+    ()
+  :
+    t
+  =
+    { amount; analysis_duration; exact_index; exact_loop; exact_condition }
+end
+
 module Solver = struct
 
   type t = {
@@ -116,32 +135,33 @@ module Solver = struct
 
   let gen_cost
     (app:t)
-    (default:int)
+    (default:Cost.t)
     (s:Variable.Set.t)
     (e:Exp.nexp)
   :
-    int
+    Cost.t
   =
     match
       Index_analysis.Default.run app.metric app.config s e
     with
-    | Ok e -> e.value
+    | Ok e -> e
     | Error e ->
       Logger.Colors.warning e;
       default
 
-  let min_cost (app:t) : Variable.Set.t -> Exp.nexp -> int =
-    gen_cost app (Metric.min_cost app.metric)
+  let min_cost (app:t) : Variable.Set.t -> Exp.nexp -> Cost.t =
+    gen_cost app (
+      Metric.min_cost app.metric
+      |> fun value -> Cost.from_int ~value ~exact:false ()
+    )
 
-  let max_cost (app:t) : Variable.Set.t -> Exp.nexp -> int =
-    gen_cost app (Metric.max_cost app.config app.metric)
+  let max_cost (app:t) : Variable.Set.t -> Exp.nexp -> Cost.t =
+    gen_cost app (
+      Metric.max_cost app.config app.metric
+      |> fun value -> Cost.from_int ~value ~exact:false ()
+    )
 
-  type cost = {
-    amount: string;
-    analysis_duration: float;
-  }
-
-  let get_cost (app:t) (r:Ra.Stmt.t) : (cost, string) Result.t =
+  let get_cost (app:t) ((r,approx):Ra.Stmt.t * Ra_compiler.Approx.t) : (Analysis_cost.t, string) Result.t =
     (if app.show_ra then (Ra.Stmt.to_string r |> print_endline) else ());
     let start = Unix.gettimeofday () in
     (if app.use_absynth then
@@ -156,18 +176,23 @@ module Solver = struct
     ) else
       Ok (r |> Summation.run ~show_code:app.show_code)
     )
-    |> Result.map (fun c ->
-      {amount=c; analysis_duration=Unix.gettimeofday () -. start}
-    )
+    |> Result.map (fun amount ->
+        Analysis_cost.make
+          ~amount
+          ~analysis_duration:(Unix.gettimeofday () -. start)
+          ~approx
+          ()
+      )
     |> Result.map_error Errors.to_string
 
   let get_ra
     (a:t)
     (k:kernel)
-    (idx_analysis: Variable.Set.t -> Exp.nexp -> int)
+    (idx_analysis: Variable.Set.t -> Exp.nexp -> Cost.t)
   :
-    Ra.Stmt.t
+    (Ra.Stmt.t * Ra_compiler.Approx.t, string) Result.t
   =
+    let ( let* ) = Result.bind in
     let unif_cond =
       if a.approx_ifs then
         Ra_compiler.UniformCond.Approximate
@@ -179,32 +204,41 @@ module Solver = struct
       | Max -> Ra_compiler.Divergence.Over
       | Min -> Ra_compiler.Divergence.Under
     in
-    let r =
+    let* (r, approx) =
       Ra_compiler.Default.from_kernel
         ~unif_cond ~divergence idx_analysis a.config k
     in
-    if a.skip_simpl_ra then r else Ra.Stmt.simplify r
+    Ok (
+      (if a.skip_simpl_ra then
+        r
+      else
+        Ra.Stmt.simplify r
+      ),
+      approx
+    )
 
-  type r_cost = (cost, string) Result.t
+  type r_cost = (Analysis_cost.t, string) Result.t
 
   let approx_cost (a:t) (k:kernel) : r_cost =
+    let ( let* ) = Result.bind in
     let to_sum strategy =
       let s = match strategy with
       | Summation.Strategy.Max -> max_cost a
       | Summation.Strategy.Min -> min_cost a
       in
-      let ra = get_ra { a with strategy } k s in
+      let* (ra, approx) = get_ra { a with strategy } k s in
       if a.show_ra then (
         Ra.Stmt.to_string ra |> print_endline;
+        Ra_compiler.Approx.to_string approx |> print_endline;
       );
-      Summation.from_stmt ~strategy ra
+      Ok (Summation.from_stmt ~strategy ra, approx)
     in
     let start = Unix.gettimeofday () in
-    let s : Summation.t =
+    let* (s, approx) : Summation.t * Ra_compiler.Approx.t =
       let open Summation in
-      minus
-        (to_sum Summation.Strategy.Max)
-        (to_sum Summation.Strategy.Min)
+      let* (over, approx1) = to_sum Strategy.Max in
+      let* (under, approx2) = to_sum Strategy.Min in
+      Ok (minus over under, Ra_compiler.Approx.add approx1 approx2)
     in
     (if a.use_maxima then (
       s
@@ -218,19 +252,24 @@ module Solver = struct
       if a.show_code then (print_endline s);
       Ok s
     )
-    |> Result.map (fun c ->
-      {amount=c; analysis_duration=Unix.gettimeofday () -. start}
-    )
+    |> Result.map (fun amount ->
+        Analysis_cost.make
+          ~amount
+          ~analysis_duration:(Unix.gettimeofday () -. start)
+          ~approx
+          ()
+      )
     |> Result.map_error Errors.to_string
 
 
   let total_cost (a:t) (k:kernel) : r_cost =
+    let ( let* ) = Result.bind in
     let s =
       if a.strategy = Summation.Strategy.Max then
         max_cost a
       else min_cost a
     in
-    let r = get_ra a k s in
+    let* r = get_ra a k s in
     get_cost a r
 
 
@@ -327,13 +366,16 @@ module JUI = struct
   type json = Yojson.Basic.t
   let to_json (s:Solver.t) : json =
     let c_to_j name ((k:kernel), r) : json =
-      let open Solver in
       match r with
       | Ok e ->
+        let open Analysis_cost in
         `Assoc [
-          (name, `String e.amount);
-          ("kernel_name", `String k.name);
-          ("analysis_duration_seconds", `Float e.analysis_duration);
+          name, `String e.amount;
+          "kernel_name", `String k.name;
+          "analysis_duration_seconds", `Float e.analysis_duration;
+          "exact_index", `Bool e.exact_index;
+          "exact_loop", `Bool e.exact_loop;
+          "exact_condition", `Bool e.exact_condition;
         ]
       | Error e ->
         `Assoc [

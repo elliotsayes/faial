@@ -24,9 +24,11 @@ let if_ ~cond ~then_branch ~else_branch : string =
   Printf.sprintf "(if (%s) then %s else %s)" cond then_branch else_branch
 
 let rec i_to_string : Reals.integer -> string =
-  function
+    function
   | Var x ->
-    let x = Variable.name x in
+    let x =
+      Variable.name x
+      |> Common.replace ~substring:"."  ~by:"__" in
     if x = "step" then
       "__step__"
     else

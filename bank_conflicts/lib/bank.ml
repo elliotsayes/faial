@@ -163,9 +163,10 @@ module Code = struct
     fun ctx ->
     let max_cost : Cost.t =
       if max_cost < 0 then
-        Metric.max_cost cfg m |> Cost.from_int
+        Metric.max_cost cfg m
+        |> (fun value -> Cost.from_int ~value ~exact:true ())
       else
-        Cost.from_int max_cost
+        Cost.from_int ~value:max_cost ~exact:true ()
     in
     let rec eval
       (c:Cost.t)
