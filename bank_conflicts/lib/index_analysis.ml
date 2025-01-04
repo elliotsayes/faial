@@ -1,15 +1,12 @@
 open Stage0
 open Protocols
 
-(*
-  Given a numeric expression try to remove any offsets in the form of
-  `expression + constant` or `expression - constant`.
-
-  The way we do this is by first getting all the free-names that are
-  **not** tids. Secondly, we rearrange the expression as a polynomial
-  in terms of each free variable. Third, we only keep polynomials that
-  mention a tid, otherwise we can safely discard such a polynomial.
-*)
+type t = {
+  strategy: Analysis_strategy.t;
+  thread_divergent:bool;
+  locals:Variable.Set.t;
+  index:Exp.nexp;
+}
 
 module UA = struct
   type t =
@@ -94,6 +91,15 @@ module UA = struct
 end
 
 module BC = struct
+  (*
+    Given a numeric expression try to remove any offsets in the form of
+    `expression + constant` or `expression - constant`.
+
+    The way we do this is by first getting all the free-names that are
+    **not** tids. Secondly, we rearrange the expression as a polynomial
+    in terms of each free variable. Third, we only keep polynomials that
+    mention a tid, otherwise we can safely discard such a polynomial.
+  *)
   type t =
     | Uniform
     | Any
@@ -183,69 +189,99 @@ module Make (L:Logger.Logger) = struct
 
   let run_bc
     (cfg:Config.t)
-    (locals:Variable.Set.t)
-    (e: Exp.nexp)
+    (ctx:t)
   :
-    (Cost.t, string) Result.t
+    Cost.t
   =
-    let ctx = Vectorized.from_config cfg in
-    let e = bc_remove_offset cfg locals e in
-    Vectorized.to_cost Metric.BankConflicts e ctx
-
-  let run_ua
-    (cfg:Config.t)
-    (locals:Variable.Set.t)
-    (e: Exp.nexp)
-  :
-    (Cost.t, string) Result.t
-  =
-    let ctx = Vectorized.from_config cfg in
-    let (new_e, ty) = UA.from_nexp cfg locals e in
-    (if e <> new_e then
-      L.info ("UA: removed offset: " ^ Exp.n_to_string e ^ " 🡆 " ^ Exp.n_to_string new_e)
-    );
-    if ty = UA.Uniform || ty = UA.Constant then
-      Ok (
-        Metric.min_uncoalesced_accesses |>
-        (fun value -> Cost.from_int ~value ~exact:true ())
-      )
+    if ctx.thread_divergent && ctx.strategy = UnderApproximation then
+      Cost.from_int ~value:Metric.min_bank_conflicts ~exact:false ()
     else
-    Vectorized.to_cost Metric.UncoalescedAccesses new_e ctx
-    |> Result.map (fun c ->
-        if ty = UA.Inc then
-          let open Cost in
-          L.info ("UA: incrementing approximated cost: " ^ Cost.to_string c);
-          { c with
-            value =
-              min
-                (c.value + 1)
-                (Metric.max_uncoalesced_accesses cfg)
-          }
-        else
-          c
+    let vec = Vectorized.from_config cfg in
+    let e = bc_remove_offset cfg ctx.locals ctx.index in
+    let default =
+      let value =
+        match ctx.strategy with
+        | OverApproximation -> Metric.max_bank_conflicts cfg
+        | UnderApproximation -> Metric.min_bank_conflicts
+      in
+      Cost.from_int ~value ~exact:false ()
+    in
+    match Vectorized.to_cost Metric.BankConflicts e vec with
+    | Ok cost -> cost
+    | Error msg ->
+      L.info ("BC: could not simulate cost " ^ Exp.n_to_string e ^ ": " ^ msg);
+      default
+
+  let run_ua (cfg:Config.t) (ctx:t) : Cost.t =
+    let vec = Vectorized.from_config cfg in
+    let (index, ty) = UA.from_nexp cfg ctx.locals ctx.index in
+    (if ctx.index <> index then
+      L.info (Printf.sprintf
+        "UA: removed offset: %s 🡆 %s"
+        (Exp.n_to_string ctx.index)
+        (Exp.n_to_string index)
       )
+    );
+    if ty = UA.Uniform || ty = UA.Constant then (
+      L.info ("UA: found a warp-uniform uncoalesced access" ^
+        Exp.n_to_string ctx.index);
+      Cost.from_int ~value:Metric.min_uncoalesced_accesses ~exact:true ()
+    ) else if ctx.thread_divergent && ctx.strategy = UnderApproximation then
+      Cost.from_int ~value:Metric.min_uncoalesced_accesses ~exact:false ()
+    else
+    let default =
+      let value =
+        match ctx.strategy with
+        | OverApproximation -> Metric.max_uncoalesced_accesses cfg
+        | UnderApproximation -> Metric.min_uncoalesced_accesses
+      in
+      Cost.from_int ~value ~exact:false ()
+    in
+    match Vectorized.to_cost Metric.UncoalescedAccesses index vec with
+    | Ok cost ->
+        if ty = UA.Inc then (
+          match ctx.strategy with
+          | OverApproximation ->
+            let open Cost in
+            L.info ("UA: incrementing approximated cost: " ^ Cost.to_string cost);
+            { cost with
+              value =
+                min
+                  (cost.value + 1)
+                  (Metric.max_uncoalesced_accesses cfg);
+              exact = false;
+            }
+          | UnderApproximation ->
+            { cost with exact = false }
+        ) else
+          cost
+    | Error msg ->
+      L.info ("UA: could not simulate cost " ^ Exp.n_to_string index ^ ": " ^ msg);
+      default
 
   let run_count
     (_cfg:Config.t)
-    (_locals:Variable.Set.t)
-    (_e: Exp.nexp)
+    (_ctx:t)
   :
-    (Cost.t, string) Result.t
+    Cost.t
   =
-    Ok (Cost.from_int ~value:1 ~exact:true ())
+    Cost.from_int ~value:1 ~exact:true ()
 
-  let run :
-    Metric.t ->
-    Config.t ->
-    Variable.Set.t ->
-    Exp.nexp ->
-    (Cost.t, string) Result.t
+  let run (m:Metric.t) (cfg:Config.t)
+    ~strategy
+    ~thread_divergent
+    ~locals
+    ~index
+  :
+    Cost.t
   =
-    function
-    | BankConflicts -> run_bc
-    | UncoalescedAccesses -> run_ua
-    | CountAccesses -> run_count
-
+    let run =
+      match m with
+      | BankConflicts -> run_bc
+      | UncoalescedAccesses -> run_ua
+      | CountAccesses -> run_count
+    in
+    run cfg {strategy; thread_divergent; locals; index}
 end
 module Default = Make(Logger.Colors)
 module Silent = Make(Logger.Silent)

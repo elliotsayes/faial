@@ -99,4 +99,5 @@ gitlab: gitlab-test gitlab-bin
 	faial-sync \
 	faial-gen \
 	faial-cost \
+	faial-cost-diff \
 	wgsl-ast

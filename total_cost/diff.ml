@@ -82,28 +82,6 @@ module Solver = struct
       show_map;
     }
 
-  let gen_cost
-    (app:t)
-    (default:int)
-    (s:Variable.Set.t)
-    (e:Exp.nexp)
-  :
-    int
-  =
-    match
-      Index_analysis.Default.run app.metric app.config s e
-    with
-    | Ok e -> e.value
-    | Error e ->
-      Logger.Colors.warning e;
-      default
-
-  let min_cost (app:t) : Variable.Set.t -> Exp.nexp -> int =
-    gen_cost app (Metric.min_cost app.metric)
-
-  let max_cost (app:t) : Variable.Set.t -> Exp.nexp -> int =
-    gen_cost app (Metric.max_cost app.config app.metric)
-
   type cost = {
     amount: string;
     analysis_duration: float;
@@ -139,29 +117,33 @@ module Solver = struct
   let get_ra
     (a:t)
     (k:kernel)
-    (idx_analysis: Variable.Set.t -> Exp.nexp -> int)
   :
-    Ra.Stmt.t
+    (Ra.Stmt.t, string) Result.t
   =
+    let ( let* ) = Result.bind in
     let unif_cond =
       if a.approx_ifs then
         Ra_compiler.UniformCond.Approximate
       else
         Ra_compiler.UniformCond.Exact
     in
-    let r = Ra_compiler.Default.from_kernel ~unif_cond idx_analysis a.config k in
-    if a.skip_simpl_ra then r else Ra.Stmt.simplify r
+    let* (r, _) =
+      Ra_compiler.Default.from_kernel
+        ~unif_cond ~strategy:a.strategy a.metric a.config k
+    in
+    Ok (if a.skip_simpl_ra then r else Ra.Stmt.simplify r)
 
   type r_cost = (cost, string) Result.t
 
   let total_cost (a:t) ((k1,k2):kernel*kernel) : r_cost =
+    let ( let* ) = Result.bind in
     let s =
       if a.strategy = Summation.Strategy.Max then
         max_cost a
       else min_cost a
     in
-    let r1 = get_ra a k1 s in
-    let r2 = get_ra a k2 s in
+    let* r1 = get_ra a k1 s in
+    let* r2 = get_ra a k2 s in
     get_cost a r1 r2
 
   type summary =
@@ -405,7 +387,6 @@ let pico
     ~grid_dim
     ~params
     ~approx_ifs
-    ~strategy
     ~metric
     ~compact
     ~show_map

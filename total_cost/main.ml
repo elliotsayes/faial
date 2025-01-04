@@ -62,7 +62,7 @@ module Solver = struct
     grid_dim: Dim3.t;
     params: (string * int) list;
     approx_ifs: bool;
-    strategy: Summation.Strategy.t;
+    strategy: Analysis_strategy.t;
     metric: Metric.t;
     compact: bool;
   }
@@ -133,34 +133,6 @@ module Solver = struct
       goal;
     }
 
-  let gen_cost
-    (app:t)
-    (default:Cost.t)
-    (s:Variable.Set.t)
-    (e:Exp.nexp)
-  :
-    Cost.t
-  =
-    match
-      Index_analysis.Default.run app.metric app.config s e
-    with
-    | Ok e -> e
-    | Error e ->
-      Logger.Colors.warning e;
-      default
-
-  let min_cost (app:t) : Variable.Set.t -> Exp.nexp -> Cost.t =
-    gen_cost app (
-      Metric.min_cost app.metric
-      |> fun value -> Cost.from_int ~value ~exact:false ()
-    )
-
-  let max_cost (app:t) : Variable.Set.t -> Exp.nexp -> Cost.t =
-    gen_cost app (
-      Metric.max_cost app.config app.metric
-      |> fun value -> Cost.from_int ~value ~exact:false ()
-    )
-
   let get_cost (app:t) ((r,approx):Ra.Stmt.t * Ra_compiler.Approx.t) : (Analysis_cost.t, string) Result.t =
     (if app.show_ra then (Ra.Stmt.to_string r |> print_endline) else ());
     let start = Unix.gettimeofday () in
@@ -188,7 +160,6 @@ module Solver = struct
   let get_ra
     (a:t)
     (k:kernel)
-    (idx_analysis: Variable.Set.t -> Exp.nexp -> Cost.t)
   :
     (Ra.Stmt.t * Ra_compiler.Approx.t, string) Result.t
   =
@@ -199,14 +170,9 @@ module Solver = struct
       else
         Ra_compiler.UniformCond.Exact
     in
-    let divergence =
-      match a.strategy with
-      | Max -> Ra_compiler.Divergence.Over
-      | Min -> Ra_compiler.Divergence.Under
-    in
     let* (r, approx) =
       Ra_compiler.Default.from_kernel
-        ~unif_cond ~divergence idx_analysis a.config k
+        ~unif_cond ~strategy:a.strategy a.metric a.config k
     in
     Ok (
       (if a.skip_simpl_ra then
@@ -222,22 +188,23 @@ module Solver = struct
   let approx_cost (a:t) (k:kernel) : r_cost =
     let ( let* ) = Result.bind in
     let to_sum strategy =
-      let s = match strategy with
-      | Summation.Strategy.Max -> max_cost a
-      | Summation.Strategy.Min -> min_cost a
-      in
-      let* (ra, approx) = get_ra { a with strategy } k s in
+      let* (ra, approx) = get_ra { a with strategy } k in
       if a.show_ra then (
         Ra.Stmt.to_string ra |> print_endline;
         Ra_compiler.Approx.to_string approx |> print_endline;
       );
+      let strategy =
+        match strategy with
+        | OverApproximation -> Summation.Strategy.Max
+        | UnderApproximation -> Summation.Strategy.Min
+      in
       Ok (Summation.from_stmt ~strategy ra, approx)
     in
     let start = Unix.gettimeofday () in
     let* (s, approx) : Summation.t * Ra_compiler.Approx.t =
       let open Summation in
-      let* (over, approx1) = to_sum Strategy.Max in
-      let* (under, approx2) = to_sum Strategy.Min in
+      let* (over, approx1) = to_sum OverApproximation in
+      let* (under, approx2) = to_sum UnderApproximation in
       Ok (minus over under, Ra_compiler.Approx.add approx1 approx2)
     in
     (if a.use_maxima then (
@@ -264,12 +231,7 @@ module Solver = struct
 
   let total_cost (a:t) (k:kernel) : r_cost =
     let ( let* ) = Result.bind in
-    let s =
-      if a.strategy = Summation.Strategy.Max then
-        max_cost a
-      else min_cost a
-    in
-    let* r = get_ra a k s in
+    let* r = get_ra a k in
     get_cost a r
 
 
@@ -493,7 +455,7 @@ let pico
   (only_writes:bool)
   (params:(string * int) list)
   (approx_ifs:bool)
-  (strategy:Summation.Strategy.t)
+  (strategy:Analysis_strategy.t)
   (metric:Metric.t)
   (compact:bool)
   (ignore_parsing_errors:bool)
@@ -660,7 +622,18 @@ let approx_ifs =
 
 let strategy =
   let doc = "Generate minimum cost for approximate costs (default is maximum cost)." in
-  Arg.(value & opt (enum ["min", Summation.Strategy.Min; "max", Summation.Strategy.Max]) Summation.Strategy.Max & info ["cost"] ~doc)
+  Arg.(
+    value &
+    opt
+      (enum
+        [
+          "min", Analysis_strategy.UnderApproximation;
+          "max", Analysis_strategy.OverApproximation;
+        ]
+      )
+      Analysis_strategy.OverApproximation &
+    info ["cost"] ~doc
+  )
 
 let metric =
   let doc = "Select the metric to measure the cost." in

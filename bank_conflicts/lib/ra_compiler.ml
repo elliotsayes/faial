@@ -1,12 +1,5 @@
 open Stage0
 open Protocols
-module Divergence = struct
-  type t = Over | Under
-  let to_optimize : t -> Uniform_range.t =
-    function
-    | Over -> Maximize
-    | Under -> Minimize
-end
 module UniformCond = struct
   type t = Exact | Approximate
 end
@@ -27,6 +20,12 @@ module Approx = struct
       exact_condition = lhs.exact_condition && rhs.exact_condition;
     }
 
+  let is_thread_uniform (e:t) : bool =
+    e.exact_loop && e.exact_condition
+
+  let is_thread_divergent (e:t) : bool =
+    not (is_thread_uniform e)
+
   let set_unexact_cond (e:t) : t =
     { e with exact_index = false }
 
@@ -46,8 +45,14 @@ module Approx = struct
       (f e.exact_condition)
 end
 
+let to_optimize : Analysis_strategy.t -> Uniform_range.t =
+  function
+  | OverApproximation -> Uniform_range.Maximize
+  | UnderApproximation -> Uniform_range.Minimize
+
 module Make (L:Logger.Logger) = struct
   module R = Uniform_range.Make(L)
+  module I = Index_analysis.Make(L)
   module L = Linearize_index.Make(L)
 
   let from_access_context
@@ -67,8 +72,8 @@ module Make (L:Logger.Logger) = struct
 
   let from_kernel
     ?(unif_cond=UniformCond.Exact)
-    ?(divergence=Divergence.Over)
-    (idx_analysis : Variable.Set.t -> Exp.nexp -> Cost.t)
+    ?(strategy=Analysis_strategy.OverApproximation)
+    (m:Metric.t)
     (cfg:Config.t)
     (k:Kernel.t)
   :
@@ -82,6 +87,8 @@ module Make (L:Logger.Logger) = struct
     in
     let lin = L.linearize cfg k.arrays in
     let params = k.global_variables in
+    let idx_analysis = I.run m cfg ~strategy in
+    let uniform_loop = R.uniform (to_optimize strategy) params cfg.block_dim in
     let rec from_p (approx:Approx.t) (locals:Variable.Set.t)
     :
       Code.t -> (Ra.Stmt.t * Approx.t, string) Result.t
@@ -97,8 +104,13 @@ module Make (L:Logger.Logger) = struct
         Ok (
           l
           |> lin x (* Returns None when the array is being ignored *)
-          |> Option.map (fun e ->
-              let tick = idx_analysis locals e in
+          |> Option.map (fun index ->
+              let tick =
+                idx_analysis
+                  ~thread_divergent:(Approx.is_thread_divergent approx)
+                  ~locals
+                  ~index
+              in
               (
                 Ra.Stmt.Tick (Cost.value tick),
                 Approx.set_exact_index tick.exact approx
@@ -126,10 +138,10 @@ module Make (L:Logger.Logger) = struct
           (* Warp-divergent *)
           else
             let p =
-              match divergence with
-              | Over ->
+              match strategy with
+              | OverApproximation ->
                 Seq (p, q)
-              | Under ->
+              | UnderApproximation ->
                 Skip
             in
             (p, Approx.set_unexact_cond approx)
@@ -152,8 +164,7 @@ module Make (L:Logger.Logger) = struct
           (* get the first number *)
           let f = Range.first range in
           let (range, locals) =
-            let strat = Divergence.to_optimize divergence in
-            match R.uniform strat params cfg.block_dim range with
+            match uniform_loop range with
             | Some range ->
               let locals =
                 (*
@@ -174,7 +185,7 @@ module Make (L:Logger.Logger) = struct
           in
           let* (body, approx) = from_p approx locals body in
           Ok (Loop {range; body}, Approx.set_unexact_loop approx)
-        ) else if divergence = Under then
+        ) else if strategy = UnderApproximation then
           Ok (Skip, Approx.set_unexact_loop approx)
           (* When there are only tids in the set of local names,
             then we maximize the loop *)
