@@ -162,7 +162,7 @@ module Make (L:Logger.Logger) = struct
         (* Warp-divergent loop *)
         else if only_tid_in_locals then (
           (* get the first number *)
-          let f = Range.first range in
+          let init = Range.first range in
           let (range, locals) =
             match uniform_loop range with
             | Some range ->
@@ -173,7 +173,7 @@ module Make (L:Logger.Logger) = struct
                   Otherwise, the loop variable can be considered
                   thread-global.
                 *)
-                if Exp.n_exists Variable.is_tid f then
+                if Exp.n_exists Variable.is_tid init then
                   Variable.Set.add (Range.var range) locals
                 else
                   locals
@@ -185,23 +185,10 @@ module Make (L:Logger.Logger) = struct
           in
           let* (body, approx) = from_p approx locals body in
           Ok (Loop {range; body}, Approx.set_unexact_loop approx)
-        ) else if strategy = UnderApproximation then
-          Ok (Skip, Approx.set_unexact_loop approx)
-          (* When there are only tids in the set of local names,
-            then we maximize the loop *)
-        else (* maximizing, just leads to an arbitrary loop *)
-          let* (body, approx) =
-            from_p approx (Variable.Set.add (Range.var range) locals) body
-          in
-          (* At this point the loop bounds are unknown, yet the body
-             may produce 0 ticks, in which case, we can just eagerly
-             collapse the loop. *)
-          if Ra.Stmt.is_zero body then
-            Ok (Skip, Approx.set_unexact_loop approx)
-          else
-            (* Finally, we get to a point where the loop bounds are
-               thread-local and we know nothing about them. *)
-            Error ("Unsupported loop range: " ^ Range.to_string range)
+        ) else
+          (* Finally, we get to a point where the loop bounds are
+              thread-local and we know nothing about them. *)
+          Error ("Unsupported loop range: " ^ Range.to_string range)
     in
     let locals =
       Params.to_set k.local_variables
