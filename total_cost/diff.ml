@@ -31,7 +31,7 @@ module Solver = struct
     grid_dim: Dim3.t;
     params: (string * int) list;
     approx_ifs: bool;
-    strategy: Summation.Strategy.t;
+    strategy: Analysis_strategy.t;
     metric: Metric.t;
     compact: bool;
   }
@@ -137,13 +137,8 @@ module Solver = struct
 
   let total_cost (a:t) ((k1,k2):kernel*kernel) : r_cost =
     let ( let* ) = Result.bind in
-    let s =
-      if a.strategy = Summation.Strategy.Max then
-        max_cost a
-      else min_cost a
-    in
-    let* r1 = get_ra a k1 s in
-    let* r2 = get_ra a k2 s in
+    let* r1 = get_ra a k1 in
+    let* r2 = get_ra a k2 in
     get_cost a r1 r2
 
   type summary =
@@ -351,7 +346,7 @@ let pico
   (only_writes:bool)
   (params:(string * int) list)
   (approx_ifs:bool)
-  (strategy:Summation.Strategy.t)
+  (strategy:Analysis_strategy.t)
   (metric:Metric.t)
   (compact:bool)
   (ignore_parsing_errors:bool)
@@ -387,6 +382,7 @@ let pico
     ~grid_dim
     ~params
     ~approx_ifs
+    ~strategy
     ~metric
     ~compact
     ~show_map
@@ -484,7 +480,18 @@ let approx_ifs =
 
 let strategy =
   let doc = "Generate minimum cost for approximate costs (default is maximum cost)." in
-  Arg.(value & opt (enum ["min", Summation.Strategy.Min; "max", Summation.Strategy.Max]) Summation.Strategy.Max & info ["cost"] ~doc)
+  Arg.(
+    value &
+    opt
+      (enum
+        [
+          "min", Analysis_strategy.UnderApproximation;
+          "max", Analysis_strategy.OverApproximation;
+        ]
+      )
+      Analysis_strategy.OverApproximation &
+    info ["cost"] ~doc
+  )
 
 let metric =
   let doc = "Select the metric to measure the cost." in
