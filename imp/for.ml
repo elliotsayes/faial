@@ -70,6 +70,7 @@ module Infer = struct
     name: Variable.t;
     init: Exp.nexp option;
     pre_loop: Stmt.t;
+    loop_guard: Exp.bexp;
     cond: Comparator.t unop;
     inc: Increment.t unop;
     other_incs: Increment.t unop list;
@@ -133,15 +134,23 @@ module Infer = struct
         (d, Stmt.seq s1 s2)
     | s -> (None, s)
 
-  let parse_cond (x:Variable.t) : Exp.bexp -> Comparator.t unop option =
-    function
-    | NRel (o, Var var, arg) when Variable.equal var x ->
-      (match Comparator.parse o with
-      | Some op -> Some {var; op; arg}
-      | _ -> None)
-    | CastBool (Binary (Minus, Var var, arg)) ->
-      Some {var; op=RelMinus; arg}
-    | _ -> None
+  let parse_cond (x:Variable.t) : Exp.bexp -> (Comparator.t unop * Exp.bexp) option =
+    let ( let* ) = Option.bind in
+    let rec parse ~accum : Exp.bexp -> (Comparator.t unop * Exp.bexp) option =
+      function
+      | BRel (BAnd, e1, e2) ->
+        (match parse ~accum:(Exp.b_and e2 accum) e1 with
+          | Some x -> Some x
+          | None -> parse ~accum:(Exp.b_and e1 accum) e2
+        )
+      | NRel (o, Var var, arg) when Variable.equal var x ->
+        let* op = Comparator.parse o in
+        Some ({var; op; arg}, accum)
+      | CastBool (Binary (Minus, Var var, arg)) ->
+        Some ({var; op=RelMinus; arg}, accum)
+      | _ -> None
+    in
+    parse ~accum:(Bool true)
 
   (**
     Find every increment that is possible to find.
@@ -196,11 +205,12 @@ module Infer = struct
         let name = inc.var in
         (* Try to find a range from this increment: *)
         (match
-          let* cond = parse_cond name loop.cond in
+          let* (cond, loop_guard) = parse_cond name loop.cond in
           let (init, pre_loop) = parse_init name loop.init in
           Some {
             other_incs=skipped @ todo;
             post_body=Stmt.Skip;
+            loop_guard;
             init; pre_loop; name; cond; inc;
           }
         with
@@ -262,6 +272,7 @@ module Infer = struct
 end
 
 let to_stmt (l:t) (body:Stmt.t) : Stmt.t =
+  if body = Skip then Skip else
   match
     let* inf = Infer.parse l in
     let* r = Infer.to_range inf in
@@ -271,7 +282,7 @@ let to_stmt (l:t) (body:Stmt.t) : Stmt.t =
     let body =
       Stmt.from_list [
         Infer.extract_incs r inf.other_incs;
-        body;
+        Stmt.if_ inf.loop_guard body Skip;
         inf.post_body
       ]
     in
