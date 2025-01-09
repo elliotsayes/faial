@@ -120,9 +120,7 @@ let for_ (r:Range.t) (s:t) : t =
 
 let if_ (b:Exp.bexp) (p1:t) (p2:t) : t =
   match b, p1, p2 with
-  | (Bool false, _, p)
-  | (Bool true, p, _)
-    -> p
+  | (Bool b, p, q) -> if b then p else q
   | (_, Skip, Skip) -> Skip
   | _ -> If (b, p1, p2)
 
