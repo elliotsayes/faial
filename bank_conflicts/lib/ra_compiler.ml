@@ -186,6 +186,8 @@ module Make (L:Logger.Logger) = struct
           let* (body, approx) = from_p approx locals body in
           Ok (Loop {range; body}, Approx.set_unexact_loop approx)
         ) else
+          let* (body, _) = from_p approx locals body in
+          if Ra.Stmt.is_zero body then Ok (Skip, Approx.exact) else
           (* Finally, we get to a point where the loop bounds are
               thread-local and we know nothing about them. *)
           Error ("Unsupported loop range: " ^ Range.to_string range)
