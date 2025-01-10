@@ -163,7 +163,7 @@ module Code = struct
     fun ctx ->
     let max_cost : Cost.t =
       if max_cost < 0 then
-        Metric.max_cost cfg m
+        Metric.max_cost_from cfg m
         |> (fun value -> Cost.from_int ~value ~exact:true ())
       else
         Cost.from_int ~value:max_cost ~exact:true ()
@@ -218,7 +218,7 @@ module Code = struct
           l
           |> lin x
           |> Option.map (fun e ->
-              let e = O.bc_remove_offset cfg locals e in
+              let e = O.bc_remove_offset_aux cfg locals e in
               Seq.return (x, Index e)
             )
           |> Option.value ~default:Seq.empty

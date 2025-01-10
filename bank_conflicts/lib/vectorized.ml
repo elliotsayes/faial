@@ -68,6 +68,7 @@ module BMap : sig
   val get : int -> t -> bool
   val to_array: t -> bool array
   val from_array: bool array -> t
+  val count : bool -> t -> int
 end = struct
   type t = bool array
 
@@ -97,6 +98,9 @@ end = struct
 
   let to_array x = x
   let from_array x = x
+
+  let count (b:bool) (a:t) : int =
+    Array.fold_left (fun sum b' -> if b = b' then sum + 1 else sum) 0 a
 end
 
 let n_map3
@@ -294,6 +298,19 @@ let n_eval (e:Exp.nexp) (ctx:t) : NMap.t =
 
 let b_eval (e:Exp.bexp) (ctx:t) : BMap.t =
   b_eval_res e ctx |> Result.get_ok
+
+let max_cost (m:Metric.t) (ctx:t) : Cost.t =
+  let thread_count =
+    match b_eval_res ctx.cond ctx with
+    | Ok enabled ->
+      BMap.count true enabled
+    | Error _ ->
+      ctx.thread_count
+  in
+  Cost.from_int
+    ~value:(Metric.max_cost ~thread_count ~bank_count:ctx.bank_count m)
+    ~exact:false
+    ()
 
 let to_cost
   ?(verbose=false)

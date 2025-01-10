@@ -10,6 +10,18 @@ module Approx = struct
   let exact : t =
     { exact_index = true; exact_loop = true; exact_condition = true}
 
+  let to_string (e:t) : string =
+    let f =
+      function
+      | true -> "exact"
+      | false -> "inexact"
+    in
+    Printf.sprintf
+      "{index=%s, loop=%s, cond=%s}"
+      (f e.exact_index)
+      (f e.exact_loop)
+      (f e.exact_condition)
+
   let set_exact_index (e:bool) (a:t) : t =
     { a with exact_index = e }
 
@@ -27,22 +39,11 @@ module Approx = struct
     not (is_thread_uniform e)
 
   let set_unexact_cond (e:t) : t =
-    { e with exact_index = false }
+    { e with exact_condition = false }
 
   let set_unexact_loop (e:t) : t =
     { e with exact_loop = false }
 
-  let to_string (e:t) : string =
-    let f =
-      function
-      | true -> "exact"
-      | false -> "inexact"
-    in
-    Printf.sprintf
-      "{index=%s, loop=%s, cond=%s}"
-      (f e.exact_index)
-      (f e.exact_loop)
-      (f e.exact_condition)
 end
 
 let to_optimize : Analysis_strategy.t -> Uniform_range.t =
@@ -69,6 +70,84 @@ module Make (L:Logger.Logger) = struct
     in
     fun k ->
       from k.local_variables k.code
+  module Context = struct
+    type t = {
+      divergence: Exp.bexp;
+      approx: Approx.t;
+      locals: Variable.Set.t;
+    }
+
+    let make (locals:Variable.Set.t) : t =
+      { divergence = Bool true; approx = Approx.exact; locals}
+
+    let add_local (var:Variable.t) (ctx:t) : t =
+      { ctx with locals = Variable.Set.add var ctx.locals }
+
+    let set_unexact_cond (ctx:t) : t =
+      { ctx with approx = Approx.set_unexact_cond ctx.approx }
+
+    let set_unexact_loop (ctx:t) : t =
+      { ctx with approx = Approx.set_unexact_loop ctx.approx }
+
+    let add_condition (cond:Exp.bexp) (ctx:t) : t * Divergence.t =
+      let fns =
+        Variable.Set.inter
+          (Exp.b_free_names cond Variable.Set.empty)
+          ctx.locals
+      in
+      let only_tid_in_locals =
+        Variable.Set.diff fns Variable.tid_set
+        |> Variable.Set.is_empty
+      in
+      if Variable.Set.is_empty fns then
+        (* warp-uniform *)
+        (ctx, Divergence.Uniform)
+      else
+        (* warp-divergent *)
+        (if only_tid_in_locals then
+          { ctx with divergence = Exp.b_and cond ctx.divergence }
+        else
+          set_unexact_cond ctx
+        ), Divergence.Divergent
+
+    let add_range (uniform_loop:Range.t -> Range.t option) (range:Range.t) (ctx:t) : (Range.t * t) option =
+      let free_locals =
+        Range.free_names range Variable.Set.empty
+        |> Variable.Set.inter ctx.locals
+      in
+      let only_tid_in_locals =
+        Variable.Set.diff free_locals Variable.tid_set
+        |> Variable.Set.is_empty
+      in
+      (* Warp-uniform loop *)
+      if Variable.Set.is_empty free_locals then
+        Some (range, ctx)
+      (* Warp-divergent loop *)
+      else if only_tid_in_locals then (
+        (* get the first number *)
+        let init = Range.first range in
+        match uniform_loop range with
+        | Some range ->
+          let ctx =
+            (*
+              If the first element of the range has a tid, then
+              the loop variable should be considered a thread-local.
+              Otherwise, the loop variable can be considered
+              thread-global.
+            *)
+            if Exp.n_exists Variable.is_tid init then
+              add_local (Range.var range) ctx
+            else
+              ctx
+          in
+          (* In either case we must mark the loop as inexact *)
+          Some (range, set_unexact_loop ctx)
+        | None ->
+          None
+      ) else
+        None
+
+  end
 
   let from_kernel
     ?(unif_cond=UniformCond.Exact)
@@ -89,16 +168,15 @@ module Make (L:Logger.Logger) = struct
     let params = k.global_variables in
     let idx_analysis = I.run m cfg ~strategy in
     let uniform_loop = R.uniform (to_optimize strategy) params cfg.block_dim in
-    let rec from_p (approx:Approx.t) (locals:Variable.Set.t)
-    :
+    let rec from_p (ctx:Context.t) :
       Code.t -> (Ra.Stmt.t * Approx.t, string) Result.t
     =
       let open Ra.Stmt in
       function
       | Skip -> Ok (Skip, Approx.exact)
       | Seq (p, q) ->
-        let* (p, approx1) = from_p approx locals p in
-        let* (q, approx2) = from_p approx locals q in
+        let* (p, approx1) = from_p ctx p in
+        let* (q, approx2) = from_p ctx q in
         Ok (Seq (p, q), Approx.add approx1 approx2)
       | Access {array=x; index=l; _} ->
         Ok (
@@ -107,13 +185,13 @@ module Make (L:Logger.Logger) = struct
           |> Option.map (fun index ->
               let tick =
                 idx_analysis
-                  ~thread_divergent:(Approx.is_thread_divergent approx)
-                  ~locals
+                  ~locals:ctx.locals
                   ~index
+                  ~divergence:ctx.divergence
               in
               (
                 Ra.Stmt.Tick (Cost.value tick),
-                Approx.set_exact_index tick.exact approx
+                Approx.set_exact_index tick.exact ctx.approx
               )
             )
             (* When the array is ignored, return Skip *)
@@ -121,85 +199,42 @@ module Make (L:Logger.Logger) = struct
         )
       | Sync _ -> Ok (Skip, Approx.exact)
       | Decl {body=p; var; _} ->
-        from_p approx (Variable.Set.add var locals) p
+        from_p (Context.add_local var ctx) p
       | If (b, p, q) ->
-        let fns =
-          Variable.Set.inter
-            (Exp.b_free_names b Variable.Set.empty)
-            locals
+        let (ctx, div) = Context.add_condition b ctx in
+        let* (p, approx1) = from_p ctx p in
+        let* (q, approx2) = from_p ctx q in
+        let code =
+          match div, strategy with
+          | Uniform, _ -> if_ b p q
+          | Divergent, OverApproximation -> Seq (p, q)
+          | Divergent, UnderApproximation -> Skip
         in
-        let* (p, approx1) = from_p approx locals p in
-        let* (q, approx2) = from_p approx locals q in
-        let approx = Approx.add approx1 approx2 in
-        Ok (
-          (* Warp-uniform *)
-          if Variable.Set.is_empty fns then
-            (if_ b p q, approx)
-          (* Warp-divergent *)
-          else
-            let p =
-              match strategy with
-              | OverApproximation ->
-                Seq (p, q)
-              | UnderApproximation ->
-                Skip
-            in
-            (p, Approx.set_unexact_cond approx)
-        )
+        Ok (code, Approx.add approx1 approx2)
       | Loop {range; body} ->
-        let free_locals =
-          Range.free_names range Variable.Set.empty
-          |> Variable.Set.inter locals
-        in
-        let only_tid_in_locals =
-          Variable.Set.diff free_locals Variable.tid_set
-          |> Variable.Set.is_empty
-        in
-        (* Warp-uniform loop *)
-        if Variable.Set.is_empty free_locals then
-          let* (body, approx) = from_p approx locals body in
+        (match Context.add_range uniform_loop range ctx with
+        | Some (range, ctx) ->
+          let* (body, approx) = from_p ctx body in
           Ok (Loop {range; body;}, approx)
-        (* Warp-divergent loop *)
-        else if only_tid_in_locals then (
-          (* get the first number *)
-          let init = Range.first range in
-          let (range, locals) =
-            match uniform_loop range with
-            | Some range ->
-              let locals =
-                (*
-                  If the first element of the range has a tid, then
-                  the loop variable should be considered a thread-local.
-                  Otherwise, the loop variable can be considered
-                  thread-global.
-                *)
-                if Exp.n_exists Variable.is_tid init then
-                  Variable.Set.add (Range.var range) locals
-                else
-                  locals
-              in
-              (* we need to invalidate the loop variable *)
-              (range, locals)
-            | None ->
-              (range, locals)
-          in
-          let* (body, approx) = from_p approx locals body in
-          Ok (Loop {range; body}, Approx.set_unexact_loop approx)
-        ) else
-          let* (body, _) = from_p approx locals body in
-          if Ra.Stmt.is_zero body then Ok (Skip, Approx.exact) else
-          (* Finally, we get to a point where the loop bounds are
-              thread-local and we know nothing about them. *)
-          Error ("Unsupported loop range: " ^ Range.to_string range)
+        | None ->
+          let* (body, _) = from_p ctx body in
+          if Ra.Stmt.is_zero body then
+            Ok (Skip, Approx.exact)
+          else
+            (* Finally, we get to a point where the loop bounds are
+                thread-local and we know nothing about them. *)
+            Error ("Unsupported loop range: " ^ Range.to_string range)
+        )
     in
-    let locals =
+    let ctx =
       Params.to_set k.local_variables
       |> Variable.Set.union Variable.tid_set
+      |> Context.make
     in
     k.code
     |> Code.subst_block_dim cfg.block_dim
     |> Code.subst_grid_dim cfg.grid_dim
-    |> from_p Approx.exact locals
+    |> from_p ctx
 end
 module Default = Make(Logger.Colors)
 module Silent = Make(Logger.Silent)

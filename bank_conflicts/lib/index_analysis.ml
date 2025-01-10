@@ -3,9 +3,10 @@ open Protocols
 
 type t = {
   strategy: Analysis_strategy.t;
-  thread_divergent:bool;
-  locals:Variable.Set.t;
-  index:Exp.nexp;
+  locals: Variable.Set.t;
+  index: Exp.nexp;
+  divergence: Exp.bexp;
+  config: Config.t;
 }
 
 module UA = struct
@@ -176,45 +177,50 @@ end
 module Make (L:Logger.Logger) = struct
   open Exp
 
-  let bc_remove_offset (cfg:Config.t) (locals:Variable.Set.t) (n: Exp.nexp) : Exp.nexp =
+  let bc_remove_offset_aux
+    (cfg:Config.t)
+    (locals:Variable.Set.t) (index:Exp.nexp)
+  : Exp.nexp =
     let after =
-      match BC.from_nexp cfg locals n with
+      match BC.from_nexp cfg locals index with
       | _, Uniform -> Num 0
       | e, Any -> e
     in
-    (if n <> after then
-      L.info ("BC: removed offset: " ^ Exp.n_to_string n ^ " 🡆 " ^ Exp.n_to_string after)
+    (if index <> after then
+      L.info ("BC: removed offset: " ^ Exp.n_to_string index ^ " 🡆 " ^ Exp.n_to_string after)
     );
     after
 
+  let bc_remove_offset (ctx:t) : Exp.nexp =
+    bc_remove_offset_aux ctx.config ctx.locals ctx.index
+
+  let to_vectorized (ctx:t) : Vectorized.t =
+    let vec = Vectorized.from_config ctx.config in
+    if Result.is_ok (Vectorized.b_eval_res ctx.divergence vec) then
+      Vectorized.restrict ctx.divergence vec
+    else (
+      L.info (
+        "Index analysis: ignoring divergence: " ^ Exp.b_to_string ctx.divergence
+      );
+      vec
+    )
+
   let run_bc
-    (cfg:Config.t)
     (ctx:t)
   :
     Cost.t
   =
-    if ctx.thread_divergent && ctx.strategy = UnderApproximation then
-      Cost.from_int ~value:Metric.min_bank_conflicts ~exact:false ()
-    else
-    let vec = Vectorized.from_config cfg in
-    let e = bc_remove_offset cfg ctx.locals ctx.index in
-    let default =
-      let value =
-        match ctx.strategy with
-        | OverApproximation -> Metric.max_bank_conflicts cfg
-        | UnderApproximation -> Metric.min_bank_conflicts
-      in
-      Cost.from_int ~value ~exact:false ()
-    in
-    match Vectorized.to_cost Metric.BankConflicts e vec with
+    let vec = to_vectorized ctx in
+    let index = bc_remove_offset ctx in
+    match Vectorized.to_cost Metric.BankConflicts index vec with
     | Ok cost -> cost
     | Error msg ->
-      L.info ("BC: could not simulate cost " ^ Exp.n_to_string e ^ ": " ^ msg);
-      default
+      L.info ("BC: could not simulate cost " ^ Exp.n_to_string index ^ ": " ^ msg);
+      Vectorized.max_cost Metric.BankConflicts vec
 
-  let run_ua (cfg:Config.t) (ctx:t) : Cost.t =
-    let vec = Vectorized.from_config cfg in
-    let (index, ty) = UA.from_nexp cfg ctx.locals ctx.index in
+  let run_ua (ctx:t) : Cost.t =
+    let vec = to_vectorized ctx in
+    let (index, ty) = UA.from_nexp ctx.config ctx.locals ctx.index in
     (if ctx.index <> index then
       L.info (Printf.sprintf
         "UA: removed offset: %s 🡆 %s"
@@ -226,52 +232,35 @@ module Make (L:Logger.Logger) = struct
       L.info ("UA: found a warp-uniform uncoalesced access" ^
         Exp.n_to_string ctx.index);
       Cost.from_int ~value:Metric.min_uncoalesced_accesses ~exact:true ()
-    ) else if ctx.thread_divergent && ctx.strategy = UnderApproximation then
-      Cost.from_int ~value:Metric.min_uncoalesced_accesses ~exact:false ()
-    else
-    let default =
-      let value =
-        match ctx.strategy with
-        | OverApproximation -> Metric.max_uncoalesced_accesses cfg
-        | UnderApproximation -> Metric.min_uncoalesced_accesses
-      in
-      Cost.from_int ~value ~exact:false ()
-    in
-    match Vectorized.to_cost Metric.UncoalescedAccesses index vec with
+    ) else
+    match Vectorized.to_cost UncoalescedAccesses index vec with
     | Ok cost ->
-        if ty = UA.Inc then (
-          match ctx.strategy with
-          | OverApproximation ->
-            let open Cost in
-            L.info ("UA: incrementing approximated cost: " ^ Cost.to_string cost);
-            { cost with
-              value =
-                min
-                  (cost.value + 1)
-                  (Metric.max_uncoalesced_accesses cfg);
-              exact = false;
-            }
-          | UnderApproximation ->
-            { cost with exact = false }
-        ) else
-          cost
+      if ty = UA.Inc then (
+        L.info ("UA: incrementing approximated cost: " ^ Cost.to_string cost);
+        let v =
+          min
+            (cost.value + 1)
+            (Vectorized.max_cost UncoalescedAccesses vec |> Cost.value)
+        in
+        Cost.set_value v cost
+      ) else
+        cost
     | Error msg ->
       L.info ("UA: could not simulate cost " ^ Exp.n_to_string index ^ ": " ^ msg);
-      default
+      Vectorized.max_cost UncoalescedAccesses vec
 
   let run_count
-    (_cfg:Config.t)
     (_ctx:t)
   :
     Cost.t
   =
     Cost.from_int ~value:1 ~exact:true ()
 
-  let run (m:Metric.t) (cfg:Config.t)
+  let run (m:Metric.t) (config:Config.t)
     ~strategy
-    ~thread_divergent
     ~locals
     ~index
+    ~divergence
   :
     Cost.t
   =
@@ -281,7 +270,7 @@ module Make (L:Logger.Logger) = struct
       | UncoalescedAccesses -> run_ua
       | CountAccesses -> run_count
     in
-    run cfg {strategy; thread_divergent; locals; index}
+    run {config; divergence; strategy; locals; index}
 end
 module Default = Make(Logger.Colors)
 module Silent = Make(Logger.Silent)

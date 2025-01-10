@@ -83,7 +83,7 @@ module Solver = struct
         | GlobalMemory -> UncoalescedAccesses
       in
       let to_cost value = Cost.from_int ~value:value ~exact:true () in
-      let max_cost = Metric.max_cost a.config m |> to_cost in
+      let max_cost = Metric.max_cost_from a.config m |> to_cost in
       let r_cost = Bank.index_cost a.config m bank in
       let max_cost = Result.value ~default:max_cost r_cost in
       let min_cost = Metric.min_cost m |> to_cost in

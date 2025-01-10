@@ -6,6 +6,9 @@ type t = {
 
 let value (e:t) : int = e.value
 
+let set_value (value:int) (e:t) : t =
+  { e with value }
+
 let make ~state ~value ~exact () : t =
   assert (value >= 0);
   { value; state=Some state; exact }
