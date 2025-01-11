@@ -9,62 +9,54 @@ all: c-ast \
 	faial-bc \
 	faial-drf \
 	data-dep \
-	faial-bc-dyn \
 	faial-sync \
 	faial-gen \
 	faial-cost \
 	faial-cost-diff \
+	faial-cost-dyn \
 	wgsl-ast
 
 clean:
 	$(DUNE) clean
 	rm -f faial-bin gen_kernels pico faial-gen faial-cost-diff
 
-wgsl-ast:
-	$(DUNE) build inference/bin/w_ast.exe
+build:
+	$(DUNE) build
+
+wgsl-ast: build
 	cp -f $(BUILD)/inference/bin/w_ast.exe wgsl-ast
 
-c-ast:
-	$(DUNE) build inference/bin/c_ast.exe
+c-ast: build
 	cp -f $(BUILD)/inference/bin/c_ast.exe c-ast
 
-data-dep:
-	$(DUNE) build approx/bin/main.exe
+data-dep: build
 	cp -f $(BUILD)/approx/bin/main.exe data-dep
 
 build-test:
 	$(DUNE) build test
 
-faial-drf:
-	$(DUNE) build drf/bin/main.exe
+faial-drf: build
 	cp -f $(BUILD)/drf/bin/main.exe faial-drf
 
-faial-bc-dyn:
-	$(DUNE) build bank_conflicts/bin/dyn.exe
-	cp -f $(BUILD)/bank_conflicts/bin/dyn.exe faial-bc-dyn
+faial-cost-dyn: build
+	cp -f $(BUILD)/total_cost/dyn.exe faial-cost-dyn
 
-faial-bc:
-	$(DUNE) build $(BUILD)/bank_conflicts/bin/main.exe
+faial-bc: build
 	cp -f $(BUILD)/bank_conflicts/bin/main.exe faial-bc
 
-faial-cost:
-	$(DUNE) build $(BUILD)/total_cost/main.exe
+faial-cost: build
 	cp -f $(BUILD)/total_cost/main.exe faial-cost
 
-faial-cost-diff:
-	$(DUNE) build $(BUILD)/total_cost/diff.exe
+faial-cost-diff: build
 	cp -f $(BUILD)/total_cost/diff.exe faial-cost-diff
 
-faial-sync:
-	$(DUNE) build barrier_div/main.exe
+faial-sync: build
 	cp -f $(BUILD)/barrier_div/main.exe faial-sync
 
-faial-gen:
-	$(DUNE) build codegen/corvo.exe
+faial-gen: build
 	cp -f $(BUILD)/codegen/corvo.exe faial-gen
 
-gen_kernels:
-	$(DUNE) build codegen/gen_kernels.exe
+gen_kernels: build
 	cp -f $(BUILD)/codegen/gen_kernels.exe gen_kernels
 
 test: build-test
@@ -84,9 +76,9 @@ gitlab: gitlab-test gitlab-bin
 
 .PHONY: \
 	all \
+	build \
 	clean \
 	faial-bc \
-	faial-bc-dyn \
 	faial-drf \
 	build-test \
 	test \
@@ -99,5 +91,6 @@ gitlab: gitlab-test gitlab-bin
 	faial-sync \
 	faial-gen \
 	faial-cost \
+	faial-cost-dyn \
 	faial-cost-diff \
 	wgsl-ast

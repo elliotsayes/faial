@@ -20,12 +20,12 @@ module Data = struct
       with
         Type_error _ -> None)
     | _ -> None
-
+(*
   let to_int : t -> int =
     function
     | Int i -> i
     | _ -> failwith "to_int"
-
+*)
   let to_nmap ~count : t -> NMap.t option =
     function
     | Int value ->
@@ -46,6 +46,25 @@ end
 
 module Env = struct
   type t = (string * Data.t) list
+
+  let lookup (var:string) (e:t) : Data.t option =
+    List.assoc_opt var e
+
+  let lookup_scalar (var:string) (default:int) (e:t) : int =
+    match lookup var e with
+    | Some (Int n) -> n
+    | _ -> default
+
+  let lookup_dim3 (prefix:string) (default:Dim3.t) (e:t) : Dim3.t =
+    let field k default =
+      lookup_scalar (prefix ^ "." ^ k) default e
+    in
+    Dim3.{
+      x = field "x" default.x;
+      y = field "y" default.y;
+      z = field "z" default.z;
+    }
+
   let load (fname : string) : t =
     try
       let open Yojson.Basic in
@@ -62,23 +81,34 @@ module Env = struct
         prerr_endline ("Error parsing '" ^ fname ^ "': " ^ e);
         []
 
-  let to_vectorized ~bank_count ~env:(env:t) ~arrays : Vectorized.t =
-    let use_array x = Variable.Set.mem x arrays in
-    let block_dim =
-      let to_v (key:string) (default:int) : int =
-        env
-        |> List.assoc_opt key
-        |> Option.map Data.to_int
-        |> Option.value ~default
-      in
-      let x = to_v "blockDim.x" bank_count in
-      let y = to_v "blockDim.y" 1 in
-      let z = to_v "blockDim.z" 1 in
-      Dim3.{x; y; z}
-    in
+  let to_vectorized ~bank_count ~env:(env:t) (k:Protocols.Kernel.t) : Vectorized.t =
+    (*
+    let arrays (m:Metric.t) : Variable.Set.t =
+      Variable.Map.bindings k.arrays
+      |> List.filter_map (fun (k, a) ->
+          match m with
+          | BankConflicts ->
+            if Memory.is_shared a then
+              Some k
+            else
+              None
+          | UncoalescedAccesses ->
+            if Memory.is_global a then
+              Some k
+            else
+              None
+          | CountAccesses ->
+            Some k
+        )
+      |> Variable.Set.of_list
+    in*)
+    let block_dim = lookup_dim3 "blockDim" Dim3.{x=32;y=1;z=1} env in
+    let grid_dim = lookup_dim3 "gridDim" Dim3.{x=1;y=1;z=1} env in
+    let config = Config.make ~block_dim ~grid_dim () in
     print_endline (Dim3.to_string block_dim);
+    let linearize = Linearize_index.Default.linearize config k.arrays in
     let ctx =
-      Vectorized.make ~bank_count ~thread_count:bank_count ~use_array
+      Vectorized.make ~bank_count ~thread_count:bank_count ~linearize
       |> Vectorized.put_tids block_dim
     in
     print_endline (Vectorized.to_string ctx);
@@ -101,25 +131,6 @@ module Env = struct
 end
 
 
-let get_arrays (m:Metric.t) (k:Protocols.Kernel.t) : Variable.Set.t =
-  Variable.Map.bindings k.arrays
-  |> List.filter_map (fun (k, a) ->
-      match m with
-      | BankConflicts ->
-        if Memory.is_shared a then
-          Some k
-        else
-          None
-      | UncoalescedAccesses ->
-        if Memory.is_global a then
-          Some k
-        else
-          None
-      | CountAccesses ->
-        Some k
-    )
-  |> Variable.Set.of_list
-
 let main (fname : string) (m:Metric.t) : unit =
   try
     let parsed = Protocol_parser.Default.to_proto fname in
@@ -130,7 +141,7 @@ let main (fname : string) (m:Metric.t) : unit =
       List.iter (fun k ->
         print_endline (Kernel.to_string k);
         let ctx =
-          Env.to_vectorized ~bank_count:32 ~env ~arrays:(get_arrays m k)
+          Env.to_vectorized ~bank_count:32 ~env k
           |> Vectorized.restrict k.pre
         in
         let v = Vectorized.eval ~verbose:true m k.code ctx in

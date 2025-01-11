@@ -9,9 +9,3 @@
     bank_conflicts ra inference
   )
 )
-
-(executable
- (public_name faial-bc-dyn)
- (name dyn)
- (modules dyn)
- (libraries inference cmdliner z3 bank_conflicts ra))

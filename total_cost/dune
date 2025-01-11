@@ -21,3 +21,9 @@
     bank_conflicts ra inference analyze_cost
   )
 )
+
+(executable
+ (public_name faial-cost-dyn)
+ (name dyn)
+ (modules dyn)
+ (libraries inference cmdliner z3 bank_conflicts ra))

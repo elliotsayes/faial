@@ -127,7 +127,7 @@ type t = {
   thread_count: int;
   cond: Exp.bexp;
   env: NMap.t Variable.Map.t;
-  use_array: Variable.t -> bool
+  linearize: Variable.t -> Exp.nexp list -> Exp.nexp option;
 }
 
 let to_string (ctx:t) : string =
@@ -140,12 +140,12 @@ let to_string (ctx:t) : string =
   "cond: " ^ Exp.b_to_string ctx.cond ^
   "\nenv:\n" ^ env
 
-let make ~bank_count ~thread_count ~use_array : t = {
+let make ~bank_count ~thread_count ~linearize : t = {
   cond = Exp.Bool true;
   env = Variable.Map.empty;
   bank_count;
   thread_count;
-  use_array;
+  linearize;
 }
 
 let restrict (b:Exp.bexp) (ctx:t) : t =
@@ -195,14 +195,15 @@ let tid (ctx:t) : Dim3.t array =
   tid_opt ctx |> Option.get
 
 let from_config
+  ?(linearize=fun _ _ -> None)
   (params:Config.t)
 :
   t
 =
   make
-  ~bank_count:params.bank_count
-  ~thread_count:params.threads_per_warp
-  ~use_array:(fun _ -> true)
+    ~bank_count:params.bank_count
+    ~thread_count:params.threads_per_warp
+    ~linearize
   |> put_tids params.block_dim
 
 let ( let* ) = Result.bind
@@ -394,8 +395,9 @@ let eval ?(verbose=false) (m:Metric.t) : Protocols.Code.t -> t -> int =
     match p with
     | Sync _
     | Skip -> cost
-    | Access {array=x; index=[n]; _} as p ->
-      if ctx.use_array x then
+    | Access {array=x; index; _} as p ->
+      (match ctx.linearize x index with
+      | Some n ->
         let c =
           match to_cost ~verbose m n ctx with
           | Ok e -> Cost.value e
@@ -407,10 +409,8 @@ let eval ?(verbose=false) (m:Metric.t) : Protocols.Code.t -> t -> int =
             failwith ("Error: " ^ e ^ "\n - Access: " ^ a ^ "\nContext: " ^ to_string ctx)
         in
         cost + c
-      else
-        cost
-    | Access _ ->
-      failwith ("Unsupported access")
+      | None ->
+        cost)
     | Decl {body=p; _} -> eval cost p ctx
     | If (b, p, q) ->
       let cost = restrict b ctx |> try_eval cost p in
