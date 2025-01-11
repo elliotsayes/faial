@@ -20,12 +20,7 @@ module Data = struct
       with
         Type_error _ -> None)
     | _ -> None
-(*
-  let to_int : t -> int =
-    function
-    | Int i -> i
-    | _ -> failwith "to_int"
-*)
+
   let to_nmap ~count : t -> NMap.t option =
     function
     | Int value ->
@@ -50,20 +45,20 @@ module Env = struct
   let lookup (var:string) (e:t) : Data.t option =
     List.assoc_opt var e
 
-  let lookup_scalar (var:string) (default:int) (e:t) : int =
+  let lookup_scalar (var:string) (e:t) : int option =
     match lookup var e with
-    | Some (Int n) -> n
-    | _ -> default
+    | Some (Int n) -> Some n
+    | _ -> None
 
-  let lookup_dim3 (prefix:string) (default:Dim3.t) (e:t) : Dim3.t =
-    let field k default =
-      lookup_scalar (prefix ^ "." ^ k) default e
+  let lookup_dim3 (prefix:string) (e:t) : Dim3.t option =
+    let ( let* ) = Option.bind in
+    let field k =
+      lookup_scalar (prefix ^ "." ^ k) e
     in
-    Dim3.{
-      x = field "x" default.x;
-      y = field "y" default.y;
-      z = field "z" default.z;
-    }
+    let* x = field "x" in
+    let* y = field "y" in
+    let* z = field "z" in
+    Some (Dim3.{x; y; z; })
 
   let load (fname : string) : t =
     try
@@ -81,46 +76,6 @@ module Env = struct
         prerr_endline ("Error parsing '" ^ fname ^ "': " ^ e);
         []
 
-  let to_vectorized ~bank_count ~env:(env:t) (k:Protocols.Kernel.t) : Vectorized.t =
-    (*
-    let arrays (m:Metric.t) : Variable.Set.t =
-      Variable.Map.bindings k.arrays
-      |> List.filter_map (fun (k, a) ->
-          match m with
-          | BankConflicts ->
-            if Memory.is_shared a then
-              Some k
-            else
-              None
-          | UncoalescedAccesses ->
-            if Memory.is_global a then
-              Some k
-            else
-              None
-          | CountAccesses ->
-            Some k
-        )
-      |> Variable.Set.of_list
-    in*)
-    let block_dim = lookup_dim3 "blockDim" Dim3.{x=32;y=1;z=1} env in
-    let grid_dim = lookup_dim3 "gridDim" Dim3.{x=1;y=1;z=1} env in
-    let config = Config.make ~block_dim ~grid_dim () in
-    print_endline (Dim3.to_string block_dim);
-    let linearize = Linearize_index.Default.linearize config k.arrays in
-    let ctx =
-      Vectorized.make ~bank_count ~thread_count:bank_count ~linearize
-      |> Vectorized.put_tids block_dim
-    in
-    print_endline (Vectorized.to_string ctx);
-    List.fold_left (fun ctx ((k:string), v) ->
-      let k = Variable.from_name k in
-      match Data.to_nmap v ~count:bank_count with
-      | Some v' ->
-        print_endline (Variable.name k ^ " = " ^ Data.to_string v);
-        Vectorized.put k v' ctx
-      | None -> ctx
-    ) ctx env
-
   let to_string (env:t) : string =
     let env =
       env
@@ -130,6 +85,54 @@ module Env = struct
     "{" ^ env ^ "}"
 end
 
+module Runner = struct
+  type t = {
+    config: Config.t;
+    vec: Vectorized.t;
+  }
+  let to_string (r:t) : string =
+    Printf.sprintf
+      "{\n  config=%s,\n  vec=\n%s\n}"
+      (Config.to_string r.config)
+      (Vectorized.to_string r.vec)
+
+  let make
+    ?(threads_per_warp=32)
+    ?(bank_count=32)
+    (env:Env.t)
+  : t
+    =
+    let block_dim =
+      Env.lookup_dim3 "blockDim" env |> Option.value ~default:Dim3.{x=32;y=1;z=1}
+    in
+    let grid_dim =
+      Env.lookup_dim3 "gridDim" env |> Option.value ~default:Dim3.{x=1;y=1;z=1}
+    in
+    let config : Config.t =
+      Config.make ~bank_count ~block_dim ~grid_dim ~threads_per_warp ()
+    in
+    let vec : Vectorized.t =
+      let ctx =
+        Vectorized.make ~bank_count ~thread_count:threads_per_warp
+        |> Vectorized.put_tids block_dim
+      in
+      List.fold_left (fun ctx ((k:string), v) ->
+        let k = Variable.from_name k in
+        match Data.to_nmap v ~count:bank_count with
+        | Some v' ->
+          Vectorized.put k v' ctx
+        | None -> ctx
+      ) ctx env
+    in
+    {config; vec}
+
+  let run (m:Metric.t) (k:Kernel.t) (e:t) : int =
+    let linearize = Linearize_index.Default.linearize e.config k.arrays in
+    e.vec
+    |> Vectorized.restrict k.pre
+    |> Vectorized.eval ~verbose:true m linearize k.code
+
+end
 
 let main (fname : string) (m:Metric.t) : unit =
   try
@@ -137,14 +140,12 @@ let main (fname : string) (m:Metric.t) : unit =
     let proto = parsed.kernels in
     let env = Env.load "env.json" in
     print_endline ("env.json: " ^ Env.to_string env);
+    let r = Runner.make env in
+    print_endline ("Runner: " ^ Runner.to_string r);
     try
       List.iter (fun k ->
         print_endline (Kernel.to_string k);
-        let ctx =
-          Env.to_vectorized ~bank_count:32 ~env k
-          |> Vectorized.restrict k.pre
-        in
-        let v = Vectorized.eval ~verbose:true m k.code ctx in
+        let v = Runner.run m k r in
         print_endline ("Total cost: " ^ string_of_int v)
       ) proto;
       ()

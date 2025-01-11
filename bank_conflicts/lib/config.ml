@@ -8,6 +8,15 @@ type t = {
   bytes_per_word: int;
 }
 
+let to_string (c:t) : string =
+  Printf.sprintf
+    "{block_dim=%s, grid_dim=%s, threads_per_warp=%d, bank_count=%d, bytes_per_word=%d}"
+    (Dim3.to_string c.block_dim)
+    (Dim3.to_string c.grid_dim)
+    c.threads_per_warp
+    c.bank_count
+    c.bytes_per_word
+
 let total_blocks (cfg:t) : int =
   Dim3.total cfg.grid_dim
 
