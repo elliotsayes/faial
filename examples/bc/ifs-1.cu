@@ -4,8 +4,8 @@ __global__
 void saxpy(int n, float a, float *x)
 {
   if (threadIdx.x <= 16) {
-    y[10 + 2 * threadIdx.x] = a;
+    y[10 + 2 * threadIdx.x] = a; // cost: 1
   } else {
-    y[4 * threadIdx.x] = a;
+    y[4 * threadIdx.x] = a; // cost: 1
   }
 }
