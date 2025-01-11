@@ -62,7 +62,7 @@ let tests = [
   "loops-nested-2-ind.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 0 ≤ j ≤ (n - 1)} 1";
   "loops-nested-2-pow.cu", [], "Σ_{i | 0 ≤ i ≤ (n - 1)} Σ_{j | 1 ≤ j ≤ ⌊log₂((n - 1))⌋} 1";
   "loops-nested-2-ind-step.cu", [], "Σ_{i | 0 ≤ i ≤ ⌊(n - 1) / step1⌋} Σ_{j | 0 ≤ j ≤ ⌊((m - 1) - (i * step1)) / step2⌋} 1";
-  "ifs-1.cu", [], "3";
+  "ifs-1.cu", [], "2";
   "ifs-2.cu", [], "if ((n < 4)) then 1 else 3";
 ]
 
@@ -75,7 +75,6 @@ let unsupported : Fpath.t list =
     "blockDim-tid.cu";
     "data-dep.cu";
     "empty.cu";
-    "ifs-1.cu";
     "ifs-seq-3.cu";
     "loops-nested-3.cu";
     "loops-nested-4.cu";

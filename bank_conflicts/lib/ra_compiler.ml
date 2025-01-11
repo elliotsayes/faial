@@ -89,26 +89,41 @@ module Make (L:Logger.Logger) = struct
     let set_unexact_loop (ctx:t) : t =
       { ctx with approx = Approx.set_unexact_loop ctx.approx }
 
-    let add_condition (cond:Exp.bexp) (ctx:t) : t * Divergence.t =
-      let fns =
-        Variable.Set.inter
-          (Exp.b_free_names cond Variable.Set.empty)
-          ctx.locals
-      in
-      let only_tid_in_locals =
-        Variable.Set.diff fns Variable.tid_set
-        |> Variable.Set.is_empty
-      in
-      if Variable.Set.is_empty fns then
-        (* warp-uniform *)
-        (ctx, Divergence.Uniform)
-      else
-        (* warp-divergent *)
-        (if only_tid_in_locals then
-          { ctx with divergence = Exp.b_and cond ctx.divergence }
+    let rec add_condition (cond:Exp.bexp) (ctx:t) : t * Divergence.t =
+      (*
+        When we find an and, we try to each sub-expression so that we can
+        be as precise as possible and possibly miss some sub-conditions.
+      *)
+      match cond with
+      | BRel (BAnd, cond1, cond2) ->
+        let (ctx, div1) = add_condition cond1 ctx in
+        let (ctx, div2) = add_condition cond2 ctx in
+        (ctx, Divergence.add div1 div2)
+      | _ ->
+        let fns =
+          Variable.Set.inter
+            (Exp.b_free_names cond Variable.Set.empty)
+            ctx.locals
+        in
+        let only_tid_in_locals =
+          Variable.Set.diff fns Variable.tid_set
+          |> Variable.Set.is_empty
+        in
+        if Variable.Set.is_empty fns then
+          (* warp-uniform *)
+          (ctx, Divergence.Uniform)
         else
-          set_unexact_cond ctx
-        ), Divergence.Divergent
+          (* warp-divergent *)
+          (if only_tid_in_locals then
+            { ctx with divergence = Exp.b_and cond ctx.divergence }
+          else
+            set_unexact_cond ctx
+          ), Divergence.Divergent
+
+    let add_if (cond:Exp.bexp) (ctx:t) : t * t * Divergence.t =
+      let (ctx1, div) = add_condition cond ctx in
+      let (ctx2, _) = add_condition (Exp.b_not cond) ctx in
+      (ctx1, ctx2, div)
 
     let add_range (uniform_loop:Range.t -> Range.t option) (range:Range.t) (ctx:t) : (Range.t * t) option =
       let free_locals =
@@ -201,9 +216,9 @@ module Make (L:Logger.Logger) = struct
       | Decl {body=p; var; _} ->
         from_p (Context.add_local var ctx) p
       | If (b, p, q) ->
-        let (ctx, div) = Context.add_condition b ctx in
-        let* (p, approx1) = from_p ctx p in
-        let* (q, approx2) = from_p ctx q in
+        let (ctx1, ctx2, div) = Context.add_if b ctx in
+        let* (p, approx1) = from_p ctx1 p in
+        let* (q, approx2) = from_p ctx2 q in
         let code =
           match div, strategy with
           | Uniform, _ -> if_ b p q
