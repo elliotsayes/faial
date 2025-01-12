@@ -152,30 +152,19 @@ let run_test ~metric ((filename:string), (args:string list), (expected_output:st
   ));
   Stdlib.flush_all ()
 
+let run_all ~metric tests : unit =
+  List.iter (fun (filename, args, expected_output) ->
+    run_test ~metric (filename, "--only-cost" :: args, expected_output)
+  ) tests;
+  print_endline ""
 
 let () =
   let open Fpath in
   print_endline "-=- Checking bank-conflicts examples -=-\n";
-  let _per_request_tests =
-    match Subprocess.make "maxima" ["--version"] |> Subprocess.check_output with
-    | Some maxima_version ->
-      print_endline ("(" ^ String.trim maxima_version ^ ")");
-      per_request_tests
-    | None ->
-      print_endline "(MAXIMA NOT FOUND, tests skiped)";
-      []
-  in
-  print_endline ("\nBC tests:");
-  bc_tests
-  |> List.iter (fun (filename, args, expected_output) ->
-    run_test ~metric:"bc" (filename, "--only-cost" :: args, expected_output)
-  );
-  print_endline ("\nUA tests:");
-  ua_tests
-  |> List.iter (fun (filename, args, expected_output) ->
-    run_test ~metric:"ua" (filename, "--only-cost" :: args, expected_output)
-  );
-  print_endline "";
+  print_endline ("BC tests:");
+  run_all ~metric:"bc" bc_tests;
+  print_endline ("UA tests:");
+  run_all ~metric:"ua" ua_tests;
   print_endline ("Skiped files:");
   unsupported |> List.iter (fun f ->
     if not (Files.exists f) then (
