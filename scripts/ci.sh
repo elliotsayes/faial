@@ -21,10 +21,11 @@ tar xvf c-to-json-bin.tar.bz2 &&
 rm c-to-json-bin.tar.bz2 &&
 # faial:
 cp \
-  ../faial-bc-dyn \
   ../faial-bc \
   ../c-ast \
+  ../wgsl-ast \
   ../faial-drf \
+  ../faial-cost-dyn \
   ../faial-cost \
   bin/ &&
 cp ../scripts/faial-drf ../README.md ../LICENSE  ./ &&
