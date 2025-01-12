@@ -13,7 +13,7 @@ let per_request_tests = [
   "setRowReadColPad.cu", ["--only-writes"], "1";
 ]
 
-let tests = [
+let bc_tests = [
   "2tid.cu", ["--blockDim=1024"; "--gridDim=2";], "1";
   "4tid.cu", ["--blockDim=1024"; "--gridDim=1";], "3";
   "6tid.cu", ["--blockDim=1024"; "--gridDim=1";], "1";
@@ -66,6 +66,14 @@ let tests = [
   "ifs-2.cu", [], "if ((n < 4)) then 1 else 3";
 ]
 
+let ua_tests = [
+  "ua-aligned-1.cu", [], "4";
+  "ua-aligned-2.cu", [], "5";
+  "ua-aligned-3.cu", [], "5";
+  "ua-aligned-4.cu", [], "2";
+  "ua-aligned-5.cu", [], "3";
+]
+
 (* These are kernels that are being documented, but are
    not currently being checked *)
 let unsupported : Fpath.t list =
@@ -98,15 +106,15 @@ let unsupported : Fpath.t list =
     "loops-nested-2-tid.cu";
   ] |> List.map (fun x -> Fpath.(v "." / x))
 
-let faial_bc_path : Fpath.t = Files.from_string "../../total_cost/main.exe"
+let cost_exe : Fpath.t = Files.from_string "../../total_cost/main.exe"
 
-let faial_bc ?(args=[]) (fname:Fpath.t) : Subprocess.t =
+let cost ?(metric="bc") ?(args=[]) (fname:Fpath.t) : Subprocess.t =
   Subprocess.make
-    (Fpath.to_string faial_bc_path)
-    (args @ ["--metric"; "bc"; fname |> Fpath.to_string])
+    (Fpath.to_string cost_exe)
+    (args @ ["--metric"; metric; fname |> Fpath.to_string])
 
 let used_files : Fpath.Set.t =
-  tests @ per_request_tests
+  bc_tests @ ua_tests @ per_request_tests
   (* get just the filenames as paths *)
   |> List.map (fun (x, _, _) -> Fpath.(v "." / x))
   (* convert to a set *)
@@ -122,12 +130,12 @@ let missed_files (dir:Fpath.t) : Fpath.Set.t =
   let unsupported = Fpath.Set.of_list unsupported in
   Fpath.Set.diff (Fpath.Set.diff all_cu_files used_files) unsupported
 
-let run_test ((filename:string), (args:string list), (expected_output:string)) : unit =
+let run_test ~metric ((filename:string), (args:string list), (expected_output:string)) : unit =
   let str_args = if args = [] then "" else (String.concat " " args ^ " ") in
   let bullet = " - " in
   print_string (bullet ^ "faial-cost " ^ str_args ^ filename);
   Stdlib.flush_all ();
-  let given = faial_bc ~args (Fpath.v filename) |> Subprocess.run_split in
+  let given = cost ~metric ~args (Fpath.v filename) |> Subprocess.run_split in
   let expected_output = expected_output |> String.trim in
   let given_output = given.stdout |> String.trim in
   (if given.status = Unix.WEXITED 0 && expected_output = given_output then (
@@ -157,17 +165,15 @@ let () =
       print_endline "(MAXIMA NOT FOUND, tests skiped)";
       []
   in
-  (* TODO:
-  print_string ("Per request tests ");
-  per_request_tests
+  print_endline ("\nBC tests:");
+  bc_tests
   |> List.iter (fun (filename, args, expected_output) ->
-    run_test (filename, "--only-cost" :: "--per-request" :: args, expected_output)
+    run_test ~metric:"bc" (filename, "--only-cost" :: args, expected_output)
   );
-  *)
-  print_endline ("\nOther tests:");
-  tests
+  print_endline ("\nUA tests:");
+  ua_tests
   |> List.iter (fun (filename, args, expected_output) ->
-    run_test (filename, "--only-cost" :: args, expected_output)
+    run_test ~metric:"ua" (filename, "--only-cost" :: args, expected_output)
   );
   print_endline "";
   print_endline ("Skiped files:");

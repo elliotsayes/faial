@@ -39,6 +39,13 @@ module UA = struct
 
   let from_nexp (cfg:Config.t) (locals:Variable.Set.t) : Exp.nexp -> Exp.nexp * t =
     let locals = Variable.Set.union locals Variable.tid_set in
+    let word : int = 8 * cfg.bytes_per_word in
+    let is_aligned (e:Exp.nexp) (ty:t) : bool =
+      ty <> AnyAccurate &&
+      match e with
+      | Num n -> n > 0 && n mod word == 0
+      | _ -> false
+    in
     let rec from_nexp : Exp.nexp -> Exp.nexp * t =
       function
       | Num n -> Num n, Constant
@@ -54,6 +61,15 @@ module UA = struct
         Var x, r
       | Unary (o, e) ->
         map (fun e -> Unary (o, e)) (from_nexp e)
+      | Binary (Mult, e1, e2) ->
+        let (e1, ty1) = from_nexp e1 in
+        let (e2, ty2) = from_nexp e2 in
+      (* Any divisor of 32 can be elided when it's being multiplies by
+         a unfiorm/constant/inc *)
+        if is_aligned e1 ty2 || is_aligned e2 ty1 then
+          (Num 0, Constant)
+        else
+          bin Mult (e1, ty1) (e2, ty2)
       | Binary (o, e1, e2) ->
         bin o (from_nexp e1) (from_nexp e2)
       | NCall (f, e) ->
