@@ -43,6 +43,7 @@ build-dist:
   artifacts:
     paths:
       - c-ast
+      - wgsl-ast
       - faial-drf
       - faial-bc
       - faial-cost-dyn
