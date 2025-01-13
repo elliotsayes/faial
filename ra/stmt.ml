@@ -3,6 +3,7 @@ open Protocols
 
 type t =
   | Skip
+  | Clamp of {value: Exp.nexp; upper_bound: int}
   | Tick of int
   | Loop of {range: Range.t; body: t}
   | Seq of t * t
@@ -11,18 +12,36 @@ type t =
 
 let rec is_zero : t -> bool =
   function
+  | Clamp {value=Num 0; upper_bound=_}
   | Skip
   | Tick 0 -> true
+  | Clamp _
   | Tick _ -> false
   | Loop {body=r; _} -> is_zero r
   | Seq (p, q) | Choice (p, q) -> is_zero p && is_zero q
   | If (_, p, q) -> is_zero p && is_zero q
+
+let tick (e:Exp.nexp) : t =
+  match e with
+  | Num n -> Tick n
+  | _ ->
+    let range =
+      (* Make sure we generate a fresh loop variable *)
+      let fns = Exp.n_free_names e Variable.Set.empty in
+      let x = Variable.fresh fns (Variable.from_name "cost") in
+      Range.make
+        ~lower_bound:(Num 1)
+        x
+        e
+    in
+    Loop {range; body=Tick 1}
 
 let to_environ (s:t) : Environ.t =
   let rec fvs (s:t) (env:Environ.Fvs.t) : Environ.Fvs.t =
     match s with
     | Skip
     | Tick _ -> env
+    | Clamp {value; _} -> Environ.Fvs.add_n value env
     | Loop {range=r; body=p} ->
       env
       |> fvs p
@@ -46,6 +65,7 @@ module MakeSubst (S:Subst.SUBST) = struct
   let rec subst (s: S.t) : t -> t =
     function
     | Skip -> Skip
+    | Clamp {value; upper_bound} -> Clamp {value=M.n_subst s value; upper_bound}
     | Tick k -> Tick k
     | Seq (p, q) -> Seq (subst s p, subst s q)
     | Choice (p, q) -> Choice (subst s p, subst s q)
@@ -67,6 +87,10 @@ let rec indent : t -> Indent.t list =
   let open Indent in
   function
   | Tick k -> [Line ("tick(" ^ string_of_int k ^ ");")]
+  | Clamp {value; upper_bound} ->
+    [Line
+      ("clamp_tick(" ^ Exp.n_to_string value ^ ", " ^
+                      string_of_int upper_bound ^ ")")]
   | Skip -> [Line "skip;"]
   | Seq (p, q) -> indent p @ indent q
   | Choice (p, q) ->
@@ -119,7 +143,18 @@ module Opt = struct
 
   let choice (p:t) (q:t) : t =
     Choice (p, q)
+
 end
+
+(* Performs a tick, up to a certain upper bound.
+   Negative values are ignored. *)
+let clamp_to_tick ~value ~upper_bound : t =
+  Opt.if_ (Exp.n_gt value (Num 0))
+    (Opt.if_ (Exp.n_lt value (Num upper_bound))
+      (tick value)
+      (Tick upper_bound)
+    )
+    Skip
 
 let rec simplify : t -> t =
   function
@@ -132,6 +167,9 @@ let rec simplify : t -> t =
     Opt.loop (Constfold.r_opt r) (simplify p)
   | Seq (p, q) ->
     Opt.seq (simplify p) (simplify q)
+  | Clamp {value; upper_bound} ->
+    if upper_bound <= 0 then Skip else
+      Clamp {value=Constfold.n_opt value; upper_bound}
 
 let to_string (x:t) : string =
   indent x |> Indent.to_string

@@ -9,6 +9,22 @@ type t = {
   config: Config.t;
 }
 
+let const_tid (tid:Variable.t) : Exp.nexp -> Exp.nexp option =
+  let rec const_tid : Exp.nexp -> Exp.nexp option =
+    function
+    | Var x when Variable.(equal tid x) -> Some (Num 1)
+    | Binary (Mult, e1, e2) ->
+      (match const_tid e1 with
+      | Some e1 -> Some (Binary (Mult, e1, e2))
+      | None ->
+        (match const_tid e2 with
+        | Some e2 -> Some (Binary (Mult, e1, e2))
+        | None -> None)
+      )
+    | _ -> None
+  in
+  const_tid
+
 module UA = struct
   type t =
     | Constant
@@ -67,7 +83,7 @@ module UA = struct
       (* Any divisor of 32 can be elided when it's being multiplies by
          a unfiorm/constant/inc *)
         if is_aligned e1 ty2 || is_aligned e2 ty1 then
-          (Num 0, Constant)
+          (Num word, Constant)
         else
           bin Mult (e1, ty1) (e2, ty2)
       | Binary (o, e1, e2) ->
@@ -190,6 +206,15 @@ module BC = struct
       Exp.n_to_string e ^ ": " ^ prefix
 end
 
+module IndexCost = struct
+  type t = {
+    code: Ra.Stmt.t;
+    exact: bool;
+  }
+  let from_cost (c:Cost.t) : t =
+    { code = Ra.Stmt.Tick (Cost.value c); exact=c.exact }
+end
+
 module Make (L:Logger.Logger) = struct
   open Exp
 
@@ -224,17 +249,18 @@ module Make (L:Logger.Logger) = struct
   let run_bc
     (ctx:t)
   :
-    Cost.t
+    IndexCost.t
   =
     let vec = to_vectorized ctx in
     let index = bc_remove_offset ctx in
-    match Vectorized.to_cost Metric.BankConflicts index vec with
+    (match Vectorized.to_cost Metric.BankConflicts index vec with
     | Ok cost -> cost
     | Error msg ->
       L.info ("BC: could not simulate cost " ^ Exp.n_to_string index ^ ": " ^ msg);
-      Vectorized.max_cost Metric.BankConflicts vec
+      Vectorized.max_cost Metric.BankConflicts vec)
+    |> IndexCost.from_cost
 
-  let run_ua (ctx:t) : Cost.t =
+  let run_ua (ctx:t) : IndexCost.t =
     let vec = to_vectorized ctx in
     let (index, ty) = UA.from_nexp ctx.config ctx.locals ctx.index in
     (if ctx.index <> index then
@@ -245,32 +271,59 @@ module Make (L:Logger.Logger) = struct
       )
     );
     if ty = UA.Uniform || ty = UA.Constant then (
-      L.info ("UA: found a warp-uniform uncoalesced access" ^
+      L.info ("UA: found coalesced access (warp-uniform): " ^
         Exp.n_to_string ctx.index);
       Cost.from_int ~value:Metric.min_uncoalesced_accesses ~exact:true ()
+      |> IndexCost.from_cost
     ) else
-    match Vectorized.to_cost UncoalescedAccesses index vec with
-    | Ok cost ->
-      if ty = UA.Inc then (
-        L.info ("UA: incrementing approximated cost: " ^ Cost.to_string cost);
-        let v =
-          min
-            (cost.value + 1)
-            (Vectorized.max_cost UncoalescedAccesses vec |> Cost.value)
+    let to_cost index =
+      (match Vectorized.to_cost UncoalescedAccesses index vec with
+      | Ok cost ->
+        if ty = UA.Inc then (
+          L.info ("UA: incrementing approximated cost: " ^ Cost.to_string cost);
+          let v =
+            min
+              (cost.value + 1)
+              (Vectorized.max_cost UncoalescedAccesses vec |> Cost.value)
+          in
+          Cost.set_value v cost
+        ) else
+          cost
+      | Error msg ->
+        L.info ("UA: could not simulate cost " ^ Exp.n_to_string index ^ ": " ^ msg);
+        Vectorized.max_cost UncoalescedAccesses vec)
+      |> IndexCost.from_cost
+    in
+    let fns = Exp.n_free_names index Variable.Set.empty in
+    let globals = Variable.Set.diff fns ctx.locals in
+    let unknowns = Variable.Set.diff ctx.locals Variable.tid_set in
+    let my_unknowns = Variable.Set.inter fns unknowns in
+    (* When there are globals and no unknowns *)
+    if not (Variable.Set.is_empty globals) && Variable.Set.is_empty my_unknowns then (
+      (* Try to find tidx * uniform *)
+      match const_tid Variable.tid_x index with
+      | Some coef ->
+        L.info (
+          Printf.sprintf
+            "UA: found uniform-times-tid, generating exact cost: %s 🡆 %s"
+            (Exp.n_to_string index)
+            (Exp.n_to_string coef)
+          );
+        let code =
+          Ra.Stmt.Clamp {value=coef; upper_bound=Vectorized.tid_count vec}
         in
-        Cost.set_value v cost
-      ) else
-        cost
-    | Error msg ->
-      L.info ("UA: could not simulate cost " ^ Exp.n_to_string index ^ ": " ^ msg);
-      Vectorized.max_cost UncoalescedAccesses vec
+        {code; exact=true}
+      | _ -> to_cost index
+    ) else
+      index
+      |> to_cost
 
   let run_count
     (_ctx:t)
   :
-    Cost.t
+    IndexCost.t
   =
-    Cost.from_int ~value:1 ~exact:true ()
+    IndexCost.from_cost (Cost.from_int ~value:1 ~exact:true ())
 
   let run (m:Metric.t) (config:Config.t)
     ~strategy
@@ -278,7 +331,7 @@ module Make (L:Logger.Logger) = struct
     ~index
     ~divergence
   :
-    Cost.t
+    IndexCost.t
   =
     let run =
       match m with

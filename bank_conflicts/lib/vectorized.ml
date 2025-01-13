@@ -309,6 +309,11 @@ let max_cost (m:Metric.t) (ctx:t) : Cost.t =
     ~exact:false
     ()
 
+let tid_count (ctx:t) : int =
+  match b_eval_res ctx.cond ctx with
+  | Ok enabled -> BMap.count true enabled
+  | Error _ -> ctx.thread_count
+
 let to_cost
   ?(verbose=false)
   (m:Metric.t)

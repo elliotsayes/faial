@@ -198,15 +198,15 @@ module Make (L:Logger.Logger) = struct
           l
           |> lin x (* Returns None when the array is being ignored *)
           |> Option.map (fun index ->
-              let tick =
+              let cost =
                 idx_analysis
                   ~locals:ctx.locals
                   ~index
                   ~divergence:ctx.divergence
               in
               (
-                Ra.Stmt.Tick (Cost.value tick),
-                Approx.set_exact_index tick.exact ctx.approx
+                cost.code,
+                Approx.set_exact_index cost.exact ctx.approx
               )
             )
             (* When the array is ignored, return Skip *)

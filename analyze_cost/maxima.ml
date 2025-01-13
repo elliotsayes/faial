@@ -112,9 +112,20 @@ and f_to_string : Reals.floating_point -> string =
   | IntToFloat e ->
       i_to_string e
 
+let max (lhs:string) (rhs:string) : string =
+  call "max" [lhs; rhs]
+
+let min (lhs:string) (rhs:string) : string =
+  call "min" [lhs; rhs]
+
+let clamp ~value ~upper_bound : string =
+  min (max (i_to_string value) "0") (string_of_int upper_bound)
+
 let rec from_summation : Summation.t -> string =
   function
   | Const k -> string_of_int k
+  | Clamp {value; upper_bound} ->
+    clamp ~value ~upper_bound
   | If (b, p, q) ->
     if_
       ~cond:(b_to_string b)
@@ -158,7 +169,7 @@ let parse_maxima (x:string) : string option =
   else Some (
     let lines = String.split_on_char '\n' x in
     let max_len = List.map String.length lines
-      |> List.fold_left max 0
+      |> List.fold_left Int.max 0
     in
     let offsets =
       lines
@@ -168,7 +179,7 @@ let parse_maxima (x:string) : string option =
         |> Option.map fst
       )
     in
-    let min_offset = List.fold_left min max_len offsets in
+    let min_offset = List.fold_left Int.min max_len offsets in
     lines
     |> List.map (fun line ->
       Slice.from_start min_offset

@@ -46,6 +46,8 @@ let from_stmt (s: Stmt.t) : t list =
           ~cost:0
           ~dst:[{id=idx+1;args=[]}] ();
       ]
+    | Clamp {value; upper_bound} ->
+      translate idx (Stmt.clamp_to_tick ~value ~upper_bound)
     | Tick k ->
       idx + 1,
       [

@@ -34,6 +34,7 @@ module Op = struct
 end
 
 type t =
+  | Clamp of {value: Reals.t; upper_bound: int}
   | Const of int
   | Sum of Set_range.t * t
   | If of Reals.boolean * t * t
@@ -68,6 +69,8 @@ let rec to_string : t -> string =
   | If (b, p, q) ->
     "if (" ^ Reals.b_to_string b ^ ") then " ^
     to_string p ^ " else " ^ to_string q
+  | Clamp {value; upper_bound} ->
+    "clamp(" ^ Reals.to_string value ^ ", " ^ string_of_int upper_bound ^ ")"
   | Const x -> string_of_int x
   | Sum (b, s) -> "Σ_" ^ Set_range.to_string b ^ " " ^ to_string s
   | Bin (Minus, lhs, rhs) -> "(" ^ to_string lhs ^ " - " ^ to_string rhs ^ ")"
@@ -78,6 +81,8 @@ let subst ((x,v): Variable.t * Reals.t) : t -> t =
   let rec subst : t -> t =
     function
     | Const _ as e -> e
+    | Clamp {value; upper_bound} ->
+      Clamp {value=Reals.i_subst (x, v) value; upper_bound}
     | Bin (o, lhs, rhs) -> Bin (o, subst lhs, subst rhs)
     | If (b, p, q) ->
       If (Reals.b_subst (x, v) b, subst p, subst q)
@@ -125,6 +130,8 @@ let from_stmt ?(strategy=Strategy.Max) : Ra.Stmt.t -> t =
   let rec from_stmt : Ra.Stmt.t -> t =
     function
     | Ra.Stmt.Tick k -> Const k
+    | Clamp {value; upper_bound} ->
+      Clamp {value=Reals.from_nexp value; upper_bound}
     | Skip -> Const 0
     | If (b, p, q) -> If (Reals.from_bexp b, from_stmt p, from_stmt q)
     | Seq (p, q) -> plus (from_stmt p) (from_stmt q)

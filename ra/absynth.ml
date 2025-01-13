@@ -7,6 +7,8 @@ let from_stmt : Stmt.t -> string =
     function
     | Skip -> indent depth ^ "tick 0\n"
     | Tick k -> indent depth ^ "tick " ^ string_of_int k ^ "\n"
+    | Clamp {value; upper_bound} ->
+      translate depth (Stmt.clamp_to_tick ~value ~upper_bound)
     | Choice (p, q) ->
       indent depth ^ "if random:\n" ^
       translate (depth + 1) p ^
@@ -50,7 +52,7 @@ let write_string ~filename ~data : unit =
     raise ex
 
 let parse_absynth (x:string) : string option =
-  let (let*) = Option.bind in
+  let ( let* ) = Option.bind in
   let* x =
     String.split_on_char '\n' x
     |> List.find_opt (String.starts_with ~prefix:"    Bound:")
