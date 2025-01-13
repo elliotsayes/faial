@@ -45,7 +45,7 @@ build-dist:
       - c-ast
       - faial-drf
       - faial-bc
-      - faial-bc-dyn
+      - faial-cost-dyn
       - faial-cost
       - README.md
       - LICENSE
