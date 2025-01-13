@@ -149,12 +149,9 @@ end
 (* Performs a tick, up to a certain upper bound.
    Negative values are ignored. *)
 let clamp_to_tick ~value ~upper_bound : t =
-  Opt.if_ (Exp.n_gt value (Num 0))
-    (Opt.if_ (Exp.n_lt value (Num upper_bound))
-      (tick value)
-      (Tick upper_bound)
-    )
-    Skip
+  Opt.if_ (Exp.n_lt value (Num upper_bound))
+    (tick value)
+    (Tick upper_bound)
 
 let rec simplify : t -> t =
   function
