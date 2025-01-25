@@ -27,7 +27,7 @@ module Phased = struct
           ranges = []
         }
         |> Streamutil.one
-      | SeqLoop (p, {range=r; body=q}) ->
+      | Loop {range=r; body=q} ->
         (* Rule:
           P |> p    q = { for x in [n,m) Q | Q \in p }
           ------------------------------
@@ -35,13 +35,10 @@ module Phased = struct
         *)
         (* Break down the body into phases, and prefix each phase with the
             binding *)
-        phase p
-        |> Streamutil.sequence (
-          phase q
-          |> Streamutil.map (fun bi ->
-            (* For every phase in q, prefix it with variable in r *)
-            add r bi
-          )
+        phase q
+        |> Streamutil.map (fun bi ->
+          (* For every phase in q, prefix it with variable in r *)
+          add r bi
         )
       | Seq (p, q) ->
         (* Rule:

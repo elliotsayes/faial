@@ -2,9 +2,10 @@ open Stage0
 open Protocols
 open Subst
 
-let (@) = Common.append_tr
-
-module Code = struct
+(**
+  This code is syntactically limited so that PreCode.seq is a total function
+  *)
+module PreCode = struct
   type t =
     | Sync of Unsync.t
     | SeqLoop of t * loop
@@ -58,19 +59,40 @@ module Code = struct
     match align w with
       (p, c) -> Seq (Sync c, p)
 
+end
+
+(**
+  We first translate using PreCode and then we simplify the data-type.
+  *)
+module Code = struct
+  type t =
+    | Sync of Unsync.t
+    | Loop of {range: Range.t; body: t}
+    | Seq of t * t
+
   let rec to_s: t -> Indent.t list =
     function
     | Seq (p, q) -> to_s p @ to_s q
     | Sync e -> Unsync.to_s e @ [Line "sync;"]
-    | SeqLoop (p, {range=r; body=q}) ->
-      to_s p
-      @
+    | Loop {range=r; body=q} ->
       [
         Line ("foreach* (" ^ Range.to_string r ^ ") {");
         Block (to_s q);
         Line "}"
       ]
 
+  let rec from_pre : PreCode.t -> t =
+    function
+    | Sync u -> Sync u
+    | SeqLoop (p, {range; body}) ->
+      Seq (from_pre p, Loop {range; body=from_pre body})
+    | Seq (p, q) ->
+      Seq (from_pre p, from_pre q)
+
+  let align (w:Sync.t) : t =
+    w
+    |> PreCode.align
+    |> from_pre
 end
 
 module Kernel = struct
