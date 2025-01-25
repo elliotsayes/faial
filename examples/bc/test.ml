@@ -76,6 +76,7 @@ let ua_tests = [
   "ua-unif-times-tid-1.cu", [], "clamp((4 * n), 32)";
   "ua-unif-times-tid-2.cu", [], "32";
   "ua-unif-times-tid-3.cu", [], "clamp((4 * n), 16)";
+  "ua-unif-times-tid-4.cu", [], "clamp((32 + (4 * n)), 16)";
 ]
 
 (* These are kernels that are being documented, but are

@@ -77,6 +77,18 @@ module UA = struct
         Var x, r
       | Unary (o, e) ->
         map (fun e -> Unary (o, e)) (from_nexp e)
+      | Binary (Mult, Num n1, Num n2) ->
+        Num (n1 * n2), Constant
+      | Binary (Mult, Binary (Mult, e, Num n1), Num n2)
+      | Binary (Mult, Binary (Mult, Num n1, e), Num n2)
+      | Binary (Mult, Num n1, Binary (Mult, e, Num n2))
+      | Binary (Mult, Num n1, Binary (Mult, Num n2, e)) ->
+        from_nexp Exp.(n_mult (Num (n1 * n2)) e)
+      | Binary (Mult, Num n, Binary (Mult, e1, e2)) ->
+        from_nexp Exp.(n_mult (n_mult (Num n) e1) e2)
+      | Binary (Mult, Num n, Binary (Plus, e1, e2))
+      | Binary (Mult, Binary (Plus, e1, e2), Num n) ->
+        from_nexp (Exp.(n_plus (n_mult (Num n) e1) (n_mult (Num n) e2)))
       | Binary (Mult, e1, e2) ->
         let (e1, ty1) = from_nexp e1 in
         let (e2, ty2) = from_nexp e2 in

@@ -70,7 +70,7 @@ let rec to_string : t -> string =
     "if (" ^ Reals.b_to_string b ^ ") then " ^
     to_string p ^ " else " ^ to_string q
   | Clamp {value; upper_bound} ->
-    "clamp(" ^ Reals.to_string value ^ ", " ^ string_of_int upper_bound ^ ")"
+    "min(" ^ Reals.to_string value ^ ", " ^ string_of_int upper_bound ^ ")"
   | Const x -> string_of_int x
   | Sum (b, s) -> "Σ_" ^ Set_range.to_string b ^ " " ^ to_string s
   | Bin (Minus, lhs, rhs) -> "(" ^ to_string lhs ^ " - " ^ to_string rhs ^ ")"
