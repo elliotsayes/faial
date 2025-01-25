@@ -70,13 +70,13 @@ module Code = struct
         |> flat_map (fun p ->
           branch (Exp.b_not b) q |> map (seq p)
         )
-      | Loop {range=r; body=p} ->
+      | Loop {range; body=p} ->
         infer p
         |> map (
           function
-          | Both (p, c) -> SInst (Loop (Skip, r, p, c))
-          | SInst p -> SInst (Loop (Skip, r, p, Skip))
-          | UInst c -> UInst (Opt.loop r c)
+          | Both (p, c) -> SInst (SeqLoop (Skip, {range; body=p, c}))
+          | SInst p -> SInst (SeqLoop (Skip, {range; body=p, Skip}))
+          | UInst c -> UInst (Opt.loop range c)
         )
       | Seq (p, q) ->
         infer p

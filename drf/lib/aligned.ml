@@ -7,8 +7,9 @@ let (@) = Common.append_tr
 module Code = struct
   type t =
     | Sync of Unsync.t
-    | Loop of t * Range.t * t
+    | SeqLoop of t * loop
     | Seq of t * t
+  and loop = {range: Range.t; body: t}
 
   module Make (S:SUBST) = struct
     module M = Subst.Make(S)
@@ -18,12 +19,12 @@ module Code = struct
       match i with
       | Seq (p, q) -> Seq (subst s p, subst s q)
       | Sync c -> Sync (U.subst s c)
-      | Loop (p, r, q) ->
+      | SeqLoop (p, {range=r; body=q}) ->
         let q = M.add s r.var (function
           | Some s -> subst s q
           | None -> q
         ) in
-        Loop (subst s p, M.r_subst s r, q)
+        SeqLoop (subst s p, {range=M.r_subst s r; body=q})
 
   end
 
@@ -33,21 +34,21 @@ module Code = struct
   let rec seq (c:Unsync.t) : t -> t =
     function
     | Sync c' -> Sync (Unsync.seq c c')
-    | Loop (p, r, q) -> Loop (seq c p, r, q)
+    | SeqLoop (p, l) -> SeqLoop (seq c p, l)
     | Seq (p, q) -> Seq (seq c p, q)
 
   let align (w:Sync.t) : t =
     let rec align : Sync.t -> t * Unsync.t =
       function
       | Sync c -> (Sync c, Skip)
-      | Loop (c1, r, p, c2) ->
+      | SeqLoop (c1, {range=r; body=p, c2}) ->
         let (q, c3) = align p in
         let q1 = seq c1 (subst (r.var, Range.first r) q) in
         let c = Unsync.seq c3 c2 in
         let r' = Range.next r in
         let x = r.var in
         let x_dec = Range.prev r in
-        (Loop (q1, r', seq (Unsync.subst (x, x_dec) c) q),
+        (SeqLoop (q1, {range=r'; body=seq (Unsync.subst (x, x_dec) c) q}),
           Unsync.subst (x, Range.lossy_last r) c)
       | Seq (i, p) ->
         let (i, c1) = align i in
@@ -61,7 +62,7 @@ module Code = struct
     function
     | Seq (p, q) -> to_s p @ to_s q
     | Sync e -> Unsync.to_s e @ [Line "sync;"]
-    | Loop (p, r, q) ->
+    | SeqLoop (p, {range=r; body=q}) ->
       to_s p
       @
       [

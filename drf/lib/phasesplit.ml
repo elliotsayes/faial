@@ -27,7 +27,7 @@ module Phased = struct
           ranges = []
         }
         |> Streamutil.one
-      | Loop (p, r, q) ->
+      | SeqLoop (p, {range=r; body=q}) ->
         (* Rule:
           P |> p    q = { for x in [n,m) Q | Q \in p }
           ------------------------------

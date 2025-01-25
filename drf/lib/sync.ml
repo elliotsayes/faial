@@ -5,15 +5,16 @@ open Exp
 
 type t =
   | Sync of Unsync.t
-  | Loop of Unsync.t * Range.t * t * Unsync.t
+  | SeqLoop of (Unsync.t * loop)
   | Seq of t * t
+and loop = {range: Range.t; body: t * Unsync.t }
 
 let skip : t = Sync Skip
 
 let rec to_s: t -> Indent.t list =
   function
   | Sync e -> Unsync.to_s e @ [Line "sync;"]
-  | Loop (c1, r, p, c2) ->
+  | SeqLoop (c1, {range=r; body=p, c2}) ->
     Unsync.to_s c1
     @
     [
@@ -33,12 +34,12 @@ module Make (S:SUBST) = struct
   let rec subst (s:S.t) : t -> t =
     function
     | Sync c -> Sync (U.subst s c)
-    | Loop (c1, r, p, c2) ->
+    | SeqLoop (c1, {range=r; body=p, c2}) ->
       let (p, c2) = M.add s r.var (function
         | Some s -> subst s p, U.subst s c2
         | None -> p, c2
       ) in
-      Loop (U.subst s c1, M.r_subst s r, p, c2)
+      SeqLoop (U.subst s c1, {range=M.r_subst s r; body=p, c2})
     | Seq (p, q) -> Seq (subst s p, subst s q)
 
 end
@@ -52,8 +53,8 @@ let inline_cond (b:bexp) (w:t) : t =
   let rec inline : t -> t =
     function
     | Sync c -> Sync (Seq (Assert b, c))
-    | Loop (c1, r, w, c2) ->
-      Loop (Seq (Assert b, c1), r, inline w, Seq (Assert b, c2))
+    | SeqLoop (c1, {range; body=w, c2}) ->
+      SeqLoop (Seq (Assert b, c1), {range; body=inline w, Seq (Assert b, c2)})
     | Seq (p, q) -> Seq (inline p, inline q)
   in
   match b with
@@ -65,7 +66,7 @@ let inline_cond (b:bexp) (w:t) : t =
 let rec map_first (f: Unsync.t -> Unsync.t) : t -> t =
   function
   | Sync c -> Sync (f c)
-  | Loop (c1, r, w1, c2) -> Loop (f c1, r, w1, c2)
+  | SeqLoop (c1, l) -> SeqLoop (f c1, l)
   | Seq (p, q) -> Seq (map_first f p, q)
 
 let add (u:Unsync.t) : t -> t =
@@ -74,7 +75,7 @@ let add (u:Unsync.t) : t -> t =
 let rec free_names (i:t) (fns:Variable.Set.t) : Variable.Set.t =
   match i with
   | Sync c -> Unsync.free_names c fns
-  | Loop (c1, r, p, c2) ->
+  | SeqLoop (c1, {range=r; body=p, c2}) ->
     Unsync.free_names c2 fns
     |> free_names p
     |> Variable.Set.remove (Range.var r)
