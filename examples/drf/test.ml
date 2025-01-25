@@ -114,6 +114,8 @@ let tests = [
   "racy-loop-comma-in-cond.cu", [], 1;
   (* support for inlining functions which return values *)
   "drf-inline-var.cu", [], 0;
+  (* ensure that an aligned protocol remains aligned *)
+  "drf-loop-aligned-1.cu", [], 0;
 ]
 
 (* These are kernels that are being documented, but are
@@ -212,7 +214,7 @@ let () =
       print_endline (" - " ^ exe ^ " " ^ String.concat " " (args @ [filename]));
       let test_exe =
         test_exe
-        |> Fpath.relativize ~root:build_dir
+        |> Fpath.relativize ~root:workspace_dir
         |> Option.get
         |> Fpath.to_string
       in

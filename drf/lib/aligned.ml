@@ -38,24 +38,31 @@ module PreCode = struct
     | SeqLoop (p, l) -> SeqLoop (seq c p, l)
     | Seq (p, q) -> Seq (seq c p, q)
 
-  let align (w:Sync.t) : t =
-    let rec align : Sync.t -> t * Unsync.t =
-      function
-      | Sync c -> (Sync c, Skip)
-      | SeqLoop (c1, {range=r; body=p, c2}) ->
-        let (q, c3) = align p in
-        let q1 = seq c1 (subst (r.var, Range.first r) q) in
-        let c = Unsync.seq c3 c2 in
-        let r' = Range.next r in
-        let x = r.var in
-        let x_dec = Range.prev r in
-        (SeqLoop (q1, {range=r'; body=seq (Unsync.subst (x, x_dec) c) q}),
-          Unsync.subst (x, Range.lossy_last r) c)
-      | Seq (i, p) ->
-        let (i, c1) = align i in
-        let (q, c2) = align p in
-        Seq (i, seq c1 q), c2
-    in
+  let rec align : Sync.t -> t * Unsync.t =
+    function
+    | Sync c -> (Sync c, Skip)
+
+    | SeqLoop (before_loop, {range=r; body=s_body, u_body_post}) ->
+      (* Rec yields the aligned body and leak *)
+      let (a_body, u_body_pre) = align s_body in
+      (* The unsynchronized body *)
+      let u_body = Unsync.seq u_body_pre u_body_post in
+      (* First iteration: before_loop; aligned code (instantiated to first iter) *)
+      let first_iter = seq before_loop (subst (r.var, Range.first r) a_body) in
+      (* the leak of the previous iteration followed by the aligned *)
+      let body =
+        seq (Unsync.subst (r.var, Range.prev r) u_body) a_body
+      in
+      (SeqLoop (first_iter, {range=Range.next r; body}),
+        (* leaks the last iteration *)
+        Unsync.subst (r.var, Range.lossy_last r) u_body)
+
+    | Seq (i, p) ->
+      let (i, c1) = align i in
+      let (q, c2) = align p in
+      Seq (i, seq c1 q), c2
+
+  let align_ex (w:Sync.t) : t =
     match align w with
       (p, c) -> Seq (Sync c, p)
 
@@ -64,7 +71,16 @@ end
 (**
   We first translate using PreCode and then we simplify the data-type.
   *)
-module Code = struct
+module Code : sig
+  type t =
+    | Sync of Unsync.t
+    | Loop of {range: Range.t; body: t}
+    | Seq of t * t
+
+  val to_s : t -> Indent.t list
+  val from_sync : Sync.t -> t
+end = struct
+
   type t =
     | Sync of Unsync.t
     | Loop of {range: Range.t; body: t}
@@ -89,10 +105,77 @@ module Code = struct
     | Seq (p, q) ->
       Seq (from_pre p, from_pre q)
 
-  let align (w:Sync.t) : t =
-    w
-    |> PreCode.align
-    |> from_pre
+  (* Load a protocol without side effects *)
+  let rec from_pure : Sync.t -> t option =
+    let ( let* ) = Option.bind in
+    function
+    | Sync u ->
+      Some (Sync u)
+    | SeqLoop (Skip, {range; body=body, Skip}) ->
+      let* body = from_pure body in
+      Some (Loop {range; body})
+    | SeqLoop _ ->
+      None
+    | Seq (p, q) ->
+      let* p = from_pure p in
+      let* q = from_pure q in
+      Some (Seq (p, q))
+
+  (**
+    Parse a pure protocol, or align a side-effect free protocol
+    *)
+  let try_align (s:Sync.t) : t option =
+    match from_pure s with
+    | Some s -> Some s
+    | None ->
+      let (s, u) = PreCode.align s in
+      if u = Skip then
+        Some (from_pre s)
+      else
+        None
+
+  (** Forcefully align a protocol *)
+  let align (s: Sync.t) : t =
+    PreCode.align_ex s |> from_pre
+
+  (**
+    Try identify already aligned loops and if possible avoid aligning
+    protocols. This should improve the performance of already synchronized
+    protocls.
+    *)
+  let rec from_sync (s: Sync.t) : t =
+    (*
+      We try to infer pure syncs from left-to-right.
+      Once we fail the first sync, we fall back to aligning the whole
+      protocol.
+     *)
+    match s with
+    | Sync u -> Sync u
+      (* peel nested sequences, so that we can improve our coverage *)
+    | Seq (Seq (p, q), r) ->
+      from_sync (Seq (p, Seq (q, r)))
+    | Seq (p, q) as seq ->
+      (match try_align p with
+      | Some p ->
+        (* The first fragment is side-effect free, so we can digest it,
+           and continue processing q without concerns about sid effects. *)
+        Seq (p, from_sync q)
+      | None ->
+        (* once the first sub-protocol fails, align the whole sequence *)
+        align seq)
+    | SeqLoop (Skip, _) as p ->
+      (* Check if the loop body has no side-effects *)
+      (match from_pure p with
+      | Some p ->
+        (* no side effects, we can return it as is *)
+        p
+      | None ->
+        (* has side effects, just align the whole protocol *)
+        align p
+      )
+    | SeqLoop _ as p ->
+      align p
+
 end
 
 module Kernel = struct
@@ -143,7 +226,7 @@ module Kernel = struct
       local_variables = k.local_variables;
       arrays = k.arrays;
       pre = k.pre;
-      code = Code.align k.code;
+      code = Code.from_sync k.code;
       visibility = k.visibility;
       grid_dim = k.grid_dim;
       block_dim = k.block_dim;
