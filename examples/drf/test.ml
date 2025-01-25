@@ -136,10 +136,19 @@ let unsupported : Fpath.t list =
 
 (* ---- Testing-specific code ----- *)
 
-let faial_drf_path : Fpath.t = Files.from_string "../../drf/bin/main.exe"
+(* Get the absolute path of the test binary *)
+let test_exe : Fpath.t = Fpath.(v Sys.executable_name |> normalize)
+(* Get the absolute path of the test binary *)
+let test_dir : Fpath.t = Fpath.(test_exe |> parent)
+(* Get the absolute path of the build directory *)
+let build_dir : Fpath.t = Fpath.(test_dir |> parent |> parent |> normalize)
+(* Get the absolute path of the root of our project *)
+let workspace_dir : Fpath.t = Fpath.(build_dir |> parent |> parent)
+(* Get the path of faial-drf *)
+let faial_drf_exe : Fpath.t = Fpath.(build_dir / "drf" / "bin" / "main.exe")
 
 let faial_drf ?(args=[]) (fname:Fpath.t) : Subprocess.t =
-  Subprocess.make (Fpath.to_string faial_drf_path) (args @ [fname |> Fpath.to_string])
+  Subprocess.make (Fpath.to_string faial_drf_exe) (args @ [fname |> Fpath.to_string])
 
 let used_files : Fpath.Set.t =
   tests
@@ -161,6 +170,7 @@ let missed_files (dir:Fpath.t) : Fpath.Set.t =
 let () =
   let open Fpath in
   print_endline "Checking examples for DRF:";
+  Unix.chdir (Fpath.to_string test_dir);
   tests
   |> List.iter (fun (filename, args, expected_status) ->
     let str_args = if args = [] then "" else (String.concat " " args ^ " ") in
@@ -183,6 +193,31 @@ let () =
       print_endline (given.stdout);
       print_endline (given.stderr);
       print_endline ("ERROR: Expected return code " ^ string_of_int expected_status ^ " but got " ^ exit_code);
+      print_endline "";
+      (* Get the generated binary *)
+      let exe =
+        faial_drf_exe
+        |> Fpath.relativize ~root:workspace_dir
+        |> Option.value ~default:(Fpath.v "faial-drf")
+        |> Fpath.to_string
+      in
+      (* Get the path of the test file *)
+      let filename =
+        test_dir / filename
+        |> Fpath.relativize ~root:workspace_dir
+        |> Option.get
+        |> Fpath.to_string
+      in
+      print_endline "Re-run file:";
+      print_endline (" - " ^ exe ^ " " ^ String.concat " " (args @ [filename]));
+      let test_exe =
+        test_exe
+        |> Fpath.relativize ~root:build_dir
+        |> Option.get
+        |> Fpath.to_string
+      in
+      print_endline "Re-run test:";
+      print_endline (" - dune exec " ^ test_exe);
       exit 1
     ));
     Stdlib.flush_all ();
