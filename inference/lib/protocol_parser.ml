@@ -75,14 +75,12 @@ module Make (L:Logger.Logger) = struct
     ?(exit_status=2)
     ?(wgsl_to_json="wgsl-to-json")
     ?(ignore_asserts=false)
-    (fname:string)
+    (wgsl_json:string)
   :
     imp_kernel t
   =
     let j = Wgsl_to_json.wgsl_to_json
-      ~on_error:(fun _ -> exit exit_status)
-      ~exe:wgsl_to_json
-      fname
+      wgsl_json
     in
     let options : Gv_parser.t = Gv_parser.make () in
     (* Override block_dim/grid_dim if they user provided *)
@@ -124,28 +122,16 @@ module Make (L:Logger.Logger) = struct
     ?(cu_to_json="cu-to-json")
     ?(wgsl_to_json="wgsl-to-json")
     ?(ignore_asserts=false)
-    (fname:string)
+    (wgsl_json:string)
   :
     imp_kernel t =
-  if String.ends_with ~suffix:".wgsl" fname then
     wgsl_to_imp
       ~block_dim
       ~grid_dim
       ~exit_status
       ~wgsl_to_json
       ~ignore_asserts
-      fname
-  else
-    cu_to_imp
-      ~abort_on_parsing_failure
-      ~block_dim
-      ~grid_dim
-      ~includes
-      ~macros
-      ~exit_status
-      ~cu_to_json
-      ~ignore_asserts
-      fname
+      wgsl_json
 
   let to_proto
     ?(abort_on_parsing_failure=true)
@@ -158,7 +144,7 @@ module Make (L:Logger.Logger) = struct
     ?(macros=[])
     ?(cu_to_json="cu-to-json")
     ?(ignore_asserts=false)
-    (fname:string)
+    (wgsl_json:string)
   :
     proto_kernel t
   =
@@ -172,7 +158,7 @@ module Make (L:Logger.Logger) = struct
       ~exit_status
       ~macros
       ~ignore_asserts
-      fname
+      wgsl_json
     in
     { parsed with
       kernels =

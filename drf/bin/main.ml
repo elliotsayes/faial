@@ -2,7 +2,7 @@ open Stage0
 open Protocols
 
 let main
-  (filename: string)
+  (wgsl_json: string)
   (timeout:int option)
   (show_proofs:bool)
   (show_proto:bool)
@@ -53,7 +53,7 @@ let main
       [Architecture.Block]
   in
   let app = App.parse
-    ~filename
+    ~wgsl_json
     ~timeout
     ~show_proofs
     ~show_proto
@@ -94,9 +94,9 @@ let main
 
 open Cmdliner
 
-let get_fname = 
-  let doc = "The path $(docv) of the GPU program." in
-  Arg.(required & pos 0 (some file) None & info [] ~docv:"FILENAME" ~doc)
+let get_wgsl_json = 
+  let doc = "The GPU program as WGSL json" in
+  Arg.(required & pos 0 (some string) None & info [] ~docv:"WGSLJSON" ~doc)
 
 let get_timeout =
   let doc = "Sets a timeout in millisecs. Default: $(docv)" in
@@ -277,7 +277,7 @@ let cu_to_json =
 
 let main_t = Term.(
   const main
-  $ get_fname
+  $ get_wgsl_json
   $ get_timeout
   $ show_proofs
   $ show_proto

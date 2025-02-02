@@ -4,7 +4,7 @@ open Drf
 open Inference
 
 type t = {
-  filename: string;
+  wgsl_json: string;
   kernels: Kernel.t list;
   timeout:int option;
   show_proofs:bool;
@@ -60,7 +60,7 @@ let to_string (app:t) : string =
     list_string (List.map Architecture.to_string l)
   in
   match app with
-  | {filename; kernels; timeout; show_proofs; show_proto; show_wf;
+  | {wgsl_json; kernels; timeout; show_proofs; show_proto; show_wf;
      show_align; show_phase_split; show_loc_split; show_flat_acc;
      show_symbexp; logic; le_index = _; ge_index = _; eq_index = _;
      only_array = _; thread_idx_1 = _; block_idx_1 = _; thread_idx_2 = _;
@@ -68,7 +68,7 @@ let to_string (app:t) : string =
      only_kernel; macros; only_true_data_races; ignore_asserts } ->
     let only_kernel = Option.value ~default:"(null)" only_kernel in
     let kernels = List.length kernels |> string_of_int in
-    "filename: " ^ filename ^
+    "wgsl_json: " ^ wgsl_json ^
     "\nonly_kernel: " ^ only_kernel ^
     "\nblock_dim: " ^ opt dim3 block_dim ^
     "\ngrid_dim: " ^ opt dim3 grid_dim ^
@@ -90,7 +90,7 @@ let to_string (app:t) : string =
     "\n"
 
 let parse
-  ~filename
+  ~wgsl_json
   ~timeout
   ~show_proofs
   ~show_proto
@@ -134,7 +134,7 @@ let parse
     ~macros
     ~cu_to_json
     ~ignore_asserts
-    filename
+    wgsl_json
   in
   let kernels = parsed.kernels in
   let block_dim =
@@ -150,7 +150,7 @@ let parse
       Some parsed.options.grid_dim
   in
   {
-    filename;
+    wgsl_json;
     timeout;
     show_proofs;
     show_proto;
