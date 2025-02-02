@@ -1,7 +1,7 @@
 open Protocols
 
 let faial_drf_call_wgsl wgsl_json_str =
-  let archs = [Architecture.Block] in  (* Default to Block level *)
+  let archs = [Architecture.Grid; Architecture.Block] in (* Equivalent to `all_levels` *)
   let app = App.parse
     ~wgsl_json:wgsl_json_str
     ~timeout:None
@@ -33,7 +33,7 @@ let faial_drf_call_wgsl wgsl_json_str =
     ~only_true_data_races:false
     ~macros:[]
     ~cu_to_json:""
-    ~all_dims:false
+    ~all_dims:true (* Important for true DRF analysis *)
     ~ignore_asserts:false
   in
   App.run app |> Rui.render
