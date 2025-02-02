@@ -79,7 +79,7 @@ module Make (L:Logger.Logger) = struct
   :
     imp_kernel t
   =
-    let j = Wgsl_to_json.wgsl_to_json
+    let j = Wgsl_json.wgsl_json
       wgsl_json
     in
     let options : Gv_parser.t = Gv_parser.make () in

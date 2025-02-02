@@ -9,9 +9,9 @@ let parse (j:Yojson.Basic.t) : W_lang.Program.t =
 
 
 let main
-  (fname: string)
+  (wgsl_json: string)
 : unit =
-  let j = Wgsl_to_json.wgsl_to_json fname in
+  let j = Wgsl_json.wgsl_json wgsl_json in
   let p = parse j |> W_lang.Program.map_expression W_lang.Expression.simplify in
   print_string (W_lang.Program.to_string p);
   print_endline ("\n-------------------------------------- IMP --------------------------------------\n");
