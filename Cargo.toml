@@ -1,0 +1,13 @@
+[package]
+name = "faial-sys"
+version = "0.0.0"
+edition = "2021"
+links = "drf_api"
+build = "rust/build.rs"
+
+[lib]
+path = "rust/lib.rs"
+
+[dependencies]
+log = "0.4.25"
+parking_lot = "0.12.3"

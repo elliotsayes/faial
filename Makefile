@@ -2,9 +2,10 @@ DUNE = dune
 
 GITLAB_CACHE = /tmp/gitlab-cache
 
-BUILD = _build/default
+DUNE_BUILD ?= _build
+BUILD = $(DUNE_BUILD)/default
 BIN = $(BUILD)/bin
-TEST = _build/test
+TEST = $(DUNE_BUILD)/test
 all: c-ast \
 	faial-bc \
 	faial-drf \
@@ -21,7 +22,8 @@ clean:
 	rm -f faial-bin gen_kernels pico faial-gen faial-cost-diff
 
 build:
-	$(DUNE) build
+	echo "building dune in $(DUNE_BUILD)"
+	$(DUNE) build --build-dir $(DUNE_BUILD)
 
 drf_api_example: build
 	clang examples/drf_api/main.c -o $(BUILD)/drf_api_example $(BUILD)/drf/bin/drf_api.so

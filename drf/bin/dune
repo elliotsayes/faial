@@ -24,10 +24,10 @@
  ; )
  (modes (native shared_object)))
 
-; (install 
-;  (section lib)
-;  (files
-;   (drf_api.so as libdrf_api-1.0.0.so))) 
+(install 
+ (section lib)
+ (files
+  (drf_api.so as libdrf_api.so))) 
 
 ; (rule
 ;  (target libdrf_api.so)
