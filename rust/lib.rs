@@ -1,3 +1,5 @@
+extern crate link_cplusplus;
+
 use std::ffi::{CStr, CString};
 
 use log::trace;

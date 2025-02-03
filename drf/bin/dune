@@ -1,3 +1,4 @@
+ ; '-lz3ml' '-lz3' '-lstdc++' '-lthreadsnat' '-lzarith' '-lgmp' '-lcamlstrnat' '-lANSITerminal_stubs' '-lunixnat' '-lpthread'
 
 (executable
  (name drf_api)
@@ -9,14 +10,35 @@
   stage0 protocols drf inference)
  (foreign_stubs (language c) (names cstub))
  (flags (
-   :standard 
-   -cclib -install_name
-   -cclib "@rpath/libdrf_api.so"
+  :standard 
+  -noautolink
+  ; -linkall
+  ; -cclib -static
+  ; -cclib -no-pie
+  ; -cclib -L/Users/elliot/Code/AO/GPU/Fork/faial/vendor
+  -cclib -lz3ml
+  -cclib -lthreadsnat
+  -cclib -lzarith
+  -cclib -lcamlstrnat
+  -cclib -lANSITerminal_stubs
+  -cclib -lunixnat
+  ; -cclib -lz3
+  -cclib /Users/elliot/Code/AO/GPU/Test/z3/build/libz3.a
+  ; -cclib -lgmp
+  -cclib /opt/homebrew/Cellar/gmp/6.3.0/lib/libgmp.a
+  
+  ; stdc++ should be dynamically linked at build time
+  ; -cclib -lstdc++
  ))
- (modes (native shared_object)))
+ (modes (native object)))
+
+(rule
+ (targets drf_api.a)
+ (deps drf_api.exe.o)
+ (action (run ar rcs %{targets} %{deps})))
 
 (install
  (section lib)
  (files
-  (drf_api.so as libdrf_api.so)   ; install libmyproject.so
-  (cstub.h as drf_api.h)))         ; install header as myproject.h
+  (drf_api.a as libdrf_api.a)   ; install libdrf_api.so
+  (cstub.h as drf_api.h)))        ; install header as drf_api.h

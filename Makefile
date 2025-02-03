@@ -29,9 +29,10 @@ build:
 drf_api_example: build
 	clang -o $(BUILD)/drf_api_example \
 		examples/drf_api/main.c \
-		$(INSTALL)/lib/faial/libdrf_api.so \
+		$(INSTALL)/lib/faial/drf_api.o \
 		-I$(INSTALL)/lib/faial \
-		-Wl,-rpath,$(INSTALL)/lib/faial
+		-Wl,-rpath,$(INSTALL)/lib/faial \
+		-lstdc++
 
 run_drf_api_example: drf_api_example
 	./$(BUILD)/drf_api_example

@@ -11,3 +11,4 @@ path = "rust/lib.rs"
 [dependencies]
 log = "0.4"
 parking_lot = "0.12"
+link-cplusplus = { version = "1.0.9", features = ["libc++"] }
