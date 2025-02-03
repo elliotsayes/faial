@@ -19,19 +19,15 @@ all: c-ast \
 clean:
 	$(DUNE) clean
 	rm -f faial-bin gen_kernels pico faial-gen faial-cost-diff
-	rm -f drf/bin/drf_api.so
-	rm -f drf_api_example
 
 build:
 	$(DUNE) build
 
-drf_api: clean drf/bin/drf_api.so
+drf_api_example: build
+	clang examples/drf_api/main.c -o $(BUILD)/drf_api_example $(BUILD)/drf/bin/drf_api.so
 
-drf/bin/drf_api.so: build
-	cp -f $(BUILD)/drf/bin/drf_api.so drf/bin
-
-drf_api_example: drf_api
-	clang -o drf_api_example examples/drf_api/main.c _build/default/drf/bin/drf_api.so
+run_drf_api_example: drf_api_example
+	cd $(BUILD) && ./drf_api_example
 
 wgsl-ast: build
 	cp -f $(BUILD)/inference/bin/w_ast.exe wgsl-ast

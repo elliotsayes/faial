@@ -14,12 +14,19 @@ const char* drf_example_wgsl_json_str = "[{\"binding\":{\"binding\":0,\"group\":
 // Racy example WGSL JSON
 const char* racy_example_wgsl_json_str = "[{\"binding\":{\"binding\":0,\"group\":0},\"init\":null,\"kind\":\"GlobalDeclaration\",\"name\":\"data\",\"space\":{\"access\":{\"load\":true,\"store\":true},\"kind\":\"Storage\"},\"ty\":{\"inner\":{\"base\":{\"inner\":{\"kind\":\"Scalar\",\"value\":{\"kind\":\"Float\",\"width\":4}},\"name\":null},\"kind\":\"Array\",\"size\":{\"kind\":\"Dynamic\"}},\"name\":null}},{\"early_depth_test\":null,\"function\":{\"arguments\":[{\"binding\":{\"kind\":\"BuiltIn\",\"value\":\"GlobalInvocationId\"},\"kind\":\"FunctionArgument\",\"name\":\"id\",\"ty\":{\"inner\":{\"kind\":\"Vector\",\"scalar\":{\"kind\":\"Uint\",\"width\":4},\"size\":3},\"name\":null}}],\"body\":[{\"kind\":\"Store\",\"location\":{\"filename\":\"racy-saxpy.wgsl\",\"length\":27,\"line_number\":8,\"line_position\":3,\"offset\":235},\"pointer\":{\"base\":{\"kind\":\"GlobalVariable\",\"name\":\"data\",\"ty\":{\"inner\":{\"base\":{\"inner\":{\"kind\":\"Scalar\",\"value\":{\"kind\":\"Float\",\"width\":4}},\"name\":null},\"kind\":\"Array\",\"size\":{\"kind\":\"Dynamic\"}},\"name\":null}},\"index\":{\"kind\":\"Binary\",\"left\":{\"base\":{\"binding\":{\"kind\":\"BuiltIn\",\"value\":\"GlobalInvocationId\"},\"kind\":\"FunctionArgument\",\"name\":\"id\",\"ty\":{\"inner\":{\"kind\":\"Vector\",\"scalar\":{\"kind\":\"Uint\",\"width\":4},\"size\":3},\"name\":null}},\"index\":0,\"kind\":\"AccessIndex\",\"location\":{\"filename\":\"racy-saxpy.wgsl\",\"length\":4,\"line_number\":7,\"line_position\":11,\"offset\":227}},\"op\":\"Add\",\"right\":{\"kind\":\"Literal\",\"value\":{\"kind\":\"u32\",\"value\":1}}},\"kind\":\"Access\",\"location\":{\"filename\":\"racy-saxpy.wgsl\",\"length\":11,\"line_number\":8,\"line_position\":3,\"offset\":235}},\"value\":{\"kind\":\"Binary\",\"left\":{\"kind\":\"Load\",\"pointer\":{\"base\":{\"kind\":\"GlobalVariable\",\"name\":\"data\",\"ty\":{\"inner\":{\"base\":{\"inner\":{\"kind\":\"Scalar\",\"value\":{\"kind\":\"Float\",\"width\":4}},\"name\":null},\"kind\":\"Array\",\"size\":{\"kind\":\"Dynamic\"}},\"name\":null}},\"index\":{\"base\":{\"binding\":{\"kind\":\"BuiltIn\",\"value\":\"GlobalInvocationId\"},\"kind\":\"FunctionArgument\",\"name\":\"id\",\"ty\":{\"inner\":{\"kind\":\"Vector\",\"scalar\":{\"kind\":\"Uint\",\"width\":4},\"size\":3},\"name\":null}},\"index\":0,\"kind\":\"AccessIndex\",\"location\":{\"filename\":\"racy-saxpy.wgsl\",\"length\":4,\"line_number\":7,\"line_position\":11,\"offset\":227}},\"kind\":\"Access\",\"location\":{\"filename\":\"racy-saxpy.wgsl\",\"length\":7,\"line_number\":8,\"line_position\":17,\"offset\":249}}},\"op\":\"Multiply\",\"right\":{\"kind\":\"Literal\",\"value\":{\"kind\":\"f32\",\"value\":2.0}}}},{\"kind\":\"Return\",\"value\":null}],\"kind\":\"Function\",\"locals\":[],\"name\":\"computeSomething\",\"result\":null},\"kind\":\"EntryPoint\",\"name\":\"computeSomething\",\"stage\":\"Compute\",\"workgroup_size\":[32,1,1]}]";
 
+// Invalid example WGSL JSON
+const char* invalid_example_wgsl_json_str = "[{\"kind\":\"EntryPoint\",\"name\":\"computeSomething\",\"stage\":\"Compute\",\"workgroup_size\":[32,1,1]}]";
+
 int main(int argc, char *argv[]) {
     char* drf_output = faial_drf_call_wgsl(drf_example_wgsl_json_str);
-    printf("DRF Output: %s\n", drf_output);
+    printf("DRF Output: %s\n\n", drf_output);
 
     char* racy_output = faial_drf_call_wgsl(racy_example_wgsl_json_str);
-    printf("Racy Output: %s\n", racy_output);
+    printf("Racy Output: %s\n\n", racy_output);
+
+    // TODO: This exits the application without returning
+    char* invalid_output = faial_drf_call_wgsl(invalid_example_wgsl_json_str);
+    printf("Invalid Output: %s\n\n", invalid_output);
 
     return 0;
 }
