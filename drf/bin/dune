@@ -7,29 +7,16 @@
   cmdliner printbox printbox-text
   ; 1st-party
   stage0 protocols drf inference)
- (foreign_stubs (language c) (names cstub)) 
- (flags :standard -linkall)
- ; (flags :standard -verbose)
- ; (flags :standard
- ;  -noautolink
- ;  -cclib -lz3ml ; 1
- ;  -cclib /Users/elliot/Code/AO/GPU/Fork/faial/libz3.a ; 2
- ;  ; -cclib -lstdc++ ; 3
- ;  -cclib -lthreadsnat ; 4
- ;  -cclib -lzarith ; 5
- ;  -cclib -lgmp ; 6
- ;  -cclib -lcamlstrnat ; 7
- ;  -cclib -lANSITerminal_stubs ; 8
- ;  -cclib -lunixnat ; 9
- ; )
+ (foreign_stubs (language c) (names cstub))
+ (flags (
+   :standard 
+   -cclib -install_name
+   -cclib "@rpath/libdrf_api.so"
+ ))
  (modes (native shared_object)))
 
-(install 
+(install
  (section lib)
  (files
-  (drf_api.so as libdrf_api.so))) 
-
-; (rule
-;  (target libdrf_api.so)
-;  (deps drf_api.so)
-;  (action (copy %{deps} %{target})))
+  (drf_api.so as libdrf_api.so)   ; install libmyproject.so
+  (cstub.h as drf_api.h)))         ; install header as myproject.h
