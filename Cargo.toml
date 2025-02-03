@@ -9,5 +9,5 @@ build = "rust/build.rs"
 path = "rust/lib.rs"
 
 [dependencies]
-log = "0.4.25"
-parking_lot = "0.12.3"
+log = "0.4"
+parking_lot = "0.12"
